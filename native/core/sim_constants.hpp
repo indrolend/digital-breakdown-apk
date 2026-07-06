@@ -40,6 +40,15 @@ struct SimConstants {
     float playerGroundY = 0.55f;
     float targetDamping = 5.5f;
     float targetWanderForce = 0.6f;
+
+    float cameraDistance = 8.2f;
+    float cameraHeight = 2.2f;
+    float cameraPitch = 0.42f;
+    float cameraPitchMin = 0.18f;
+    float cameraPitchMax = 0.92f;
+    float cameraPitchScale = 5.4f;
+    float cameraFollowRate = 8.0f;
+    float cameraPitchRate = 8.0f;
 };
 
 constexpr float FIXED_DT = 1.0f / 30.0f;
