@@ -50,6 +50,14 @@ struct RoomState {
     int requiredCaptures = 3;
 };
 
+struct CameraState {
+    float yaw = 3.14159265358979323846f;
+    float pitch = 0.42f;
+    float targetPitch = 0.42f;
+    Vec3 pos = {0.0f, 6.0f, 20.0f};
+    Vec3 lookAt = {0.0f, 1.25f, 12.0f};
+};
+
 struct WorldState {
     PlayerState player;
     TargetState targets[MAX_TARGETS];
@@ -57,6 +65,7 @@ struct WorldState {
     int targetCount = 0;
     int captureCount = 0;
     RoomState room;
+    CameraState camera;
 };
 
 } // namespace db
