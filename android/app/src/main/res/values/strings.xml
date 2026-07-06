@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Digital Breakdown</string>
+    <string name="title_activity_main">Digital Breakdown</string>
+    <string name="package_name">com.indrolend.digitalbreakdown</string>
+    <string name="custom_url_scheme">com.indrolend.digitalbreakdown</string>
+</resources>
