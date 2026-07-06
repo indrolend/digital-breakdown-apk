@@ -40,3 +40,8 @@ www/manifest.json
 www/module.js
 www/script.js
 www/service-worker.js
+
+android/.gitignore
+android/app/.gitignore
+android/app/src/androidTest/
+android/app/src/test/
