@@ -11,6 +11,7 @@ void updateWorld(WorldState& world, const InputIntent& input, const SimConstants
 void updatePlayer(WorldState& world, const InputIntent& input, const SimConstants& c, float dt);
 void updateTargets(WorldState& world, const InputIntent& input, const SimConstants& c, float dt);
 void updateCaptures(WorldState& world, const SimConstants& c, float dt);
+void updateCamera(WorldState& world, const InputIntent& input, const SimConstants& c, float dt);
 void clampToRoom(Vec3& pos, const SimConstants& c);
 int countAliveTargets(const WorldState& world);
 int countFilledCaptures(const WorldState& world);
