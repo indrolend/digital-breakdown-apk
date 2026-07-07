@@ -11,13 +11,18 @@ struct SimConstants {
     int maxStoredSouls = 5;
     int capturePoints = 3;
 
-    float walkSpeed = 7.0f;
-    float sprintSpeed = 11.5f;
-    float accel = 34.0f;
-    float airAccel = 13.0f;
-    float friction = 13.0f;
-    float gravity = 24.0f;
-    float jumpSpeed = 9.2f;
+    // PC browser movement contract, simplified for the native core.
+    float walkAccel = 16.0f;
+    float runAccel = 42.0f;
+    float walkMaxSpeed = 18.0f;
+    float runMaxSpeed = 42.0f;
+    float groundFriction = 0.88f;
+    float airFriction = 0.985f;
+    float airAccelMultiplier = 0.62f;
+    float airMaxSpeedMultiplier = 1.08f;
+    float gravity = 14.0f;
+    float jumpSpeed = 4.5f;
+    float wallSlideRetention = 0.94f;
 
     float batteryMax = 100.0f;
     float batteryIdleRegen = 22.0f;
@@ -26,8 +31,9 @@ struct SimConstants {
     float batterySprintDrain = 3.0f;
     float batteryAirDrain = 0.9f;
     float batteryVacuumDrain = 1.35f;
-    float batteryJumpCost = 4.5f;
-    float batteryCaptureGain = 6.0f;
+    float batteryJumpCost = 3.0f;
+    float batteryCaptureGain = 18.0f;
+    float batterySoulEfficiency = 0.16f;
 
     float vacuumRange = 6.0f;
     float vacuumLatchRadius = 1.0f;
@@ -37,18 +43,18 @@ struct SimConstants {
 
     float captureRadius = 1.75f;
 
+    float groundY = 0.0f;
     float playerGroundY = 0.55f;
     float targetDamping = 5.5f;
     float targetWanderForce = 0.6f;
 
-    float cameraDistance = 8.2f;
-    float cameraHeight = 2.2f;
-    float cameraPitch = 0.42f;
-    float cameraPitchMin = 0.18f;
-    float cameraPitchMax = 0.92f;
-    float cameraPitchScale = 5.4f;
-    float cameraFollowRate = 8.0f;
-    float cameraPitchRate = 8.0f;
+    // PC browser third-person camera constants.
+    float cameraDistance = 3.0f;
+    float cameraHeight = 1.1f;
+    float cameraLookLift = 0.45f;
+    float cameraMinGroundOffset = 0.8f;
+    float cursorSensitivity = 0.003f;
+    float cursorMaxPitch = 1.50796449f; // PI * 0.48
 };
 
 constexpr float FIXED_DT = 1.0f / 30.0f;
