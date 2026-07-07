@@ -11,6 +11,18 @@ float seededPhase(int i) {
     return static_cast<float>(i) * 1.61803398875f;
 }
 
+float lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+Vec3 lerp(Vec3 a, Vec3 b, float t) {
+    return Vec3{
+        lerp(a.x, b.x, t),
+        lerp(a.y, b.y, t),
+        lerp(a.z, b.z, t)
+    };
+}
+
 void spawnTarget(TargetState& t, int index, float x, float z) {
     t.pos = {x, 0.0f, z};
     t.vel = {0.0f, 0.0f, 0.0f};
@@ -51,6 +63,16 @@ void resetWorld(WorldState& world, const SimConstants& c) {
     world.player.souls = 0;
     world.player.grounded = true;
     world.player.alive = true;
+
+    world.camera.yaw = PI;
+    world.camera.pitch = c.cameraPitch;
+    world.camera.targetPitch = c.cameraPitch;
+    world.camera.lookAt = {world.player.pos.x, world.player.pos.y + 0.7f, world.player.pos.z};
+    world.camera.pos = {
+        world.player.pos.x + std::sin(world.camera.yaw) * c.cameraDistance,
+        world.player.pos.y + c.cameraHeight + world.camera.pitch * c.cameraPitchScale,
+        world.player.pos.z + std::cos(world.camera.yaw) * c.cameraDistance
+    };
 
     static constexpr float targetSpots[MAX_TARGETS][2] = {
         {-8.0f, -12.0f},
@@ -226,11 +248,33 @@ void updateCaptures(WorldState& world, const SimConstants& c, float /*dt*/) {
     }
 }
 
+void updateCamera(WorldState& world, const InputIntent& input, const SimConstants& c, float dt) {
+    CameraState& cam = world.camera;
+
+    cam.yaw -= input.lookX * 0.008f;
+    cam.targetPitch += input.lookY * 0.005f;
+    cam.targetPitch = clamp(cam.targetPitch, c.cameraPitchMin, c.cameraPitchMax);
+
+    const float pitchBlend = clamp(c.cameraPitchRate * dt, 0.0f, 1.0f);
+    cam.pitch = lerp(cam.pitch, cam.targetPitch, pitchBlend);
+
+    const Vec3 desired = {
+        world.player.pos.x + std::sin(cam.yaw) * c.cameraDistance,
+        world.player.pos.y + c.cameraHeight + cam.pitch * c.cameraPitchScale,
+        world.player.pos.z + std::cos(cam.yaw) * c.cameraDistance
+    };
+
+    const float followBlend = clamp(c.cameraFollowRate * dt, 0.0f, 1.0f);
+    cam.pos = lerp(cam.pos, desired, followBlend);
+    cam.lookAt = {world.player.pos.x, world.player.pos.y + 0.7f, world.player.pos.z};
+}
+
 void updateWorld(WorldState& world, const InputIntent& input, const SimConstants& c, float dt) {
     if (dt <= 0.0f) return;
     updatePlayer(world, input, c, dt);
     updateTargets(world, input, c, dt);
     updateCaptures(world, c, dt);
+    updateCamera(world, input, c, dt);
 }
 
 int countAliveTargets(const WorldState& world) {
