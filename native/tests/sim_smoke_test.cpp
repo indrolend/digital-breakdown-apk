@@ -17,6 +17,10 @@ bool expect(bool condition, const char* message) {
     return true;
 }
 
+bool changed(float a, float b) {
+    return std::fabs(a - b) > 0.0001f;
+}
+
 void step(db::WorldState& world, const db::InputIntent& input, const db::SimConstants& constants, int ticks) {
     for (int i = 0; i < ticks; ++i) {
         db::updateWorld(world, input, constants, db::FIXED_DT);
@@ -36,6 +40,16 @@ int main() {
     ok &= expect(world.captureCount == constants.capturePoints, "reset spawns capture points");
     ok &= expect(world.player.souls == 0, "reset clears stored souls");
     ok &= expect(db::countAliveTargets(world) == constants.activeTargets, "all targets alive after reset");
+
+    db::InputIntent look;
+    look.lookX = 3.0f;
+    look.lookY = 2.0f;
+    const float oldYaw = world.camera.yaw;
+    const float oldPitch = world.camera.pitch;
+    step(world, look, constants, 6);
+    ok &= expect(changed(world.camera.yaw, oldYaw), "look input changes camera yaw");
+    ok &= expect(changed(world.camera.pitch, oldPitch), "look input changes camera pitch");
+    ok &= expect(world.camera.targetPitch <= constants.cameraPitchMax, "camera target pitch remains clamped high");
 
     db::InputIntent jump;
     jump.jump = true;
@@ -84,6 +98,7 @@ int main() {
               << " aliveTargets=" << db::countAliveTargets(world)
               << " filledCaptures=" << db::countFilledCaptures(world)
               << " player=(" << world.player.pos.x << "," << world.player.pos.y << "," << world.player.pos.z << ")"
+              << " camera=(" << world.camera.pos.x << "," << world.camera.pos.y << "," << world.camera.pos.z << ")"
               << "\n";
 
     return ok ? 0 : 1;
