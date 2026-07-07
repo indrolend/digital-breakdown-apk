@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "../core/input_intent.hpp"
+#include "../core/render_state.hpp"
 #include "../core/sim_constants.hpp"
 #include "../core/simulation.hpp"
 #include "../core/world_state.hpp"
@@ -40,6 +41,10 @@ int main() {
     ok &= expect(world.captureCount == constants.capturePoints, "reset spawns capture points");
     ok &= expect(world.player.souls == 0, "reset clears stored souls");
     ok &= expect(db::countAliveTargets(world) == constants.activeTargets, "all targets alive after reset");
+
+    db::RenderFrame renderFrame;
+    db::buildRenderFrame(renderFrame, world, constants);
+    ok &= expect(renderFrame.boxCount > 12, "render frame emits room/player/target boxes");
 
     db::InputIntent look;
     look.lookX = 3.0f;
@@ -95,12 +100,16 @@ int main() {
     ok &= expect(world.room.clear, "all capture points clear room");
     ok &= expect(world.room.roomIndex == 2, "room index advances on clear");
 
+    db::buildRenderFrame(renderFrame, world, constants);
+    ok &= expect(renderFrame.boxCount > 0, "render frame still emits after room clear");
+
     std::cout << "summary room=" << world.room.roomIndex
               << " clear=" << (world.room.clear ? 1 : 0)
               << " battery=" << world.player.battery
               << " souls=" << world.player.souls
               << " aliveTargets=" << db::countAliveTargets(world)
               << " filledCaptures=" << db::countFilledCaptures(world)
+              << " boxes=" << renderFrame.boxCount
               << " player=(" << world.player.pos.x << "," << world.player.pos.y << "," << world.player.pos.z << ")"
               << " camera=(" << world.camera.pos.x << "," << world.camera.pos.y << "," << world.camera.pos.z << ")"
               << "\n";
