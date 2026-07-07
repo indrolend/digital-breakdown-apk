@@ -16,11 +16,46 @@ float lerp(float a, float b, float t) {
 }
 
 Vec3 lerp(Vec3 a, Vec3 b, float t) {
-    return Vec3{
-        lerp(a.x, b.x, t),
-        lerp(a.y, b.y, t),
-        lerp(a.z, b.z, t)
+    return Vec3{lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)};
+}
+
+float horizLen(Vec3 v) {
+    return std::sqrt(v.x * v.x + v.z * v.z);
+}
+
+void clampHorizontalSpeed(Vec3& v, float maxSpeed) {
+    const float speed = horizLen(v);
+    if (speed <= maxSpeed || speed <= 0.0001f) return;
+    const float s = maxSpeed / speed;
+    v.x *= s;
+    v.z *= s;
+}
+
+Vec3 cursorForward(float yaw) {
+    return Vec3{-std::sin(yaw), 0.0f, -std::cos(yaw)};
+}
+
+Vec3 cursorRight(float yaw) {
+    return Vec3{std::cos(yaw), 0.0f, -std::sin(yaw)};
+}
+
+Vec3 normalizedMoveFromCursor(float moveX, float moveZ, float yaw) {
+    Vec3 forward = cursorForward(yaw);
+    Vec3 right = cursorRight(yaw);
+    Vec3 move = {
+        forward.x * moveZ + right.x * moveX,
+        0.0f,
+        forward.z * moveZ + right.z * moveX
     };
+    const float len = horizLen(move);
+    if (len <= 0.0001f) return Vec3{};
+    return mul(move, 1.0f / len);
+}
+
+float batteryPower(const PlayerState& player, const SimConstants& c) {
+    const float carriedSoulPenalty = 1.0f / (1.0f + static_cast<float>(player.souls) * c.batterySoulEfficiency);
+    const float batteryScale = clamp(player.battery / c.batteryMax, 0.35f, 1.0f);
+    return carriedSoulPenalty * batteryScale;
 }
 
 void spawnTarget(TargetState& t, int index, float x, float z) {
@@ -41,11 +76,11 @@ void spawnCapture(CapturePointState& c, float x, float z) {
 } // namespace
 
 void clampToRoom(Vec3& pos, const SimConstants& c) {
-    constexpr float pad = 0.8f;
+    constexpr float pad = 1.1f;
     const float halfW = c.roomWidth * 0.5f;
     const float halfD = c.roomDepth * 0.5f;
     pos.x = clamp(pos.x, -halfW + pad, halfW - pad);
-    pos.z = clamp(pos.z, -halfD + pad, halfD - pad);
+    pos.z = clamp(pos.z, -halfD + 0.8f, halfD - 0.72f);
 }
 
 void resetWorld(WorldState& world, const SimConstants& c) {
@@ -55,24 +90,20 @@ void resetWorld(WorldState& world, const SimConstants& c) {
     world.room.clear = false;
     world.room.requiredCaptures = c.capturePoints;
 
-    world.player.pos = {0.0f, c.playerGroundY, 12.0f};
+    world.player.pos = {0.0f, c.playerGroundY, c.roomDepth * 0.5f - 5.5f};
     world.player.vel = {0.0f, 0.0f, 0.0f};
-    world.player.yaw = PI;
-    world.player.targetYaw = PI;
+    world.player.yaw = 0.0f;
+    world.player.targetYaw = 0.0f;
     world.player.battery = c.batteryMax;
     world.player.souls = 0;
     world.player.grounded = true;
     world.player.alive = true;
 
-    world.camera.yaw = PI;
-    world.camera.pitch = c.cameraPitch;
-    world.camera.targetPitch = c.cameraPitch;
-    world.camera.lookAt = {world.player.pos.x, world.player.pos.y + 0.7f, world.player.pos.z};
-    world.camera.pos = {
-        world.player.pos.x + std::sin(world.camera.yaw) * c.cameraDistance,
-        world.player.pos.y + c.cameraHeight + world.camera.pitch * c.cameraPitchScale,
-        world.player.pos.z + std::cos(world.camera.yaw) * c.cameraDistance
-    };
+    world.camera.yaw = 0.0f;
+    world.camera.pitch = 0.0f;
+    world.camera.aimDir = cursorForward(world.camera.yaw);
+    world.camera.lookAt = add(world.player.pos, Vec3{0.0f, c.cameraLookLift, 0.0f});
+    world.camera.pos = add(world.player.pos, Vec3{0.0f, c.cameraHeight, c.cameraDistance});
 
     static constexpr float targetSpots[MAX_TARGETS][2] = {
         {-8.0f, -12.0f},
@@ -104,33 +135,26 @@ void resetWorld(WorldState& world, const SimConstants& c) {
 void updatePlayer(WorldState& world, const InputIntent& input, const SimConstants& c, float dt) {
     PlayerState& p = world.player;
 
-    float mx = input.moveX;
-    float mz = input.moveZ;
-    const float magSq = mx * mx + mz * mz;
-    const bool moving = magSq > 0.0001f;
+    const float moveMagSq = input.moveX * input.moveX + input.moveZ * input.moveZ;
+    const bool moving = moveMagSq > 0.0001f;
     const bool vacuuming = input.vacuum && p.battery > 1.0f;
     const bool sprinting = input.sprint && moving && !vacuuming && p.battery > 5.0f;
 
-    const float desiredSpeedBase = sprinting ? c.sprintSpeed : c.walkSpeed;
-    const float desiredSpeed = vacuuming ? desiredSpeedBase * c.vacuumMoveMult : desiredSpeedBase;
+    const float power = batteryPower(p, c);
+    const float airControl = p.grounded ? 1.0f : c.airAccelMultiplier;
+    const float airSpeed = p.grounded ? 1.0f : c.airMaxSpeedMultiplier;
+    const float accel = (sprinting ? c.runAccel : c.walkAccel) * power * airControl;
+    const float maxSpeed = (sprinting ? c.runMaxSpeed : c.walkMaxSpeed) * power * airSpeed;
+    const float vacuumSlow = vacuuming ? c.vacuumMoveMult : 1.0f;
 
     if (moving) {
-        const float invMag = 1.0f / std::sqrt(magSq);
-        mx *= invMag;
-        mz *= invMag;
-
-        const Vec3 desired = {mx * desiredSpeed, 0.0f, mz * desiredSpeed};
-        const float accel = p.grounded ? c.accel : c.airAccel;
-        const float blend = clamp(accel * dt, 0.0f, 1.0f);
-
-        p.vel.x += (desired.x - p.vel.x) * blend;
-        p.vel.z += (desired.z - p.vel.z) * blend;
-        p.targetYaw = std::atan2(mx, mz);
-    } else {
-        const float damp = dampFactor(c.friction, dt);
-        p.vel.x *= damp;
-        p.vel.z *= damp;
+        const Vec3 move = normalizedMoveFromCursor(input.moveX, input.moveZ, world.camera.yaw);
+        p.vel.x += move.x * accel * vacuumSlow * dt;
+        p.vel.z += move.z * accel * vacuumSlow * dt;
+        p.targetYaw = std::atan2(-move.x, -move.z);
     }
+
+    clampHorizontalSpeed(p.vel, maxSpeed * vacuumSlow);
 
     if (input.jump && p.grounded && p.battery >= c.batteryJumpCost) {
         p.vel.y = c.jumpSpeed;
@@ -138,7 +162,9 @@ void updatePlayer(WorldState& world, const InputIntent& input, const SimConstant
         p.battery -= c.batteryJumpCost;
     }
 
-    p.vel.y -= c.gravity * dt;
+    if (!p.grounded) {
+        p.vel.y -= c.gravity * dt;
+    }
 
     p.pos.x += p.vel.x * dt;
     p.pos.y += p.vel.y * dt;
@@ -150,16 +176,31 @@ void updatePlayer(WorldState& world, const InputIntent& input, const SimConstant
         p.grounded = true;
     }
 
+    const float beforeX = p.pos.x;
+    const float beforeZ = p.pos.z;
     clampToRoom(p.pos, c);
+    if (p.pos.x != beforeX) {
+        p.vel.x = 0.0f;
+        p.vel.z *= c.wallSlideRetention;
+    }
+    if (p.pos.z != beforeZ) {
+        p.vel.z = 0.0f;
+        p.vel.x *= c.wallSlideRetention;
+    }
+
+    const float friction = p.grounded ? c.groundFriction : c.airFriction;
+    const float fr = std::pow(friction, dt * 60.0f);
+    p.vel.x *= fr;
+    p.vel.z *= fr;
 
     float drain = 0.0f;
-    if (moving) drain += c.batteryWalkDrain;
-    if (sprinting) drain += c.batterySprintDrain;
+    if (moving) drain += sprinting ? c.batterySprintDrain : c.batteryWalkDrain;
     if (!p.grounded) drain += c.batteryAirDrain;
     if (vacuuming) drain += c.batteryVacuumDrain;
 
-    const float regen = drain > 0.0f ? c.batteryActiveRegen : c.batteryIdleRegen;
-    p.battery += (regen - drain) * dt;
+    if (drain > 0.0f) p.battery -= drain * dt;
+    else p.battery += c.batteryIdleRegen * dt;
+    if (drain > 0.0f && !sprinting) p.battery += c.batteryActiveRegen * dt;
     p.battery = clamp(p.battery, 0.0f, c.batteryMax);
 
     const float yawDiff = shortestAngle(p.yaw, p.targetYaw);
@@ -197,7 +238,7 @@ void updateTargets(WorldState& world, const InputIntent& input, const SimConstan
                 t.alive = false;
                 t.lifecycle = TargetLifecycle::Captured;
                 p.souls += 1;
-                p.battery = clamp(p.battery + 3.0f, 0.0f, c.batteryMax);
+                p.battery = clamp(p.battery + c.batteryCaptureGain, 0.0f, c.batteryMax);
                 continue;
             }
         } else {
@@ -251,30 +292,33 @@ void updateCaptures(WorldState& world, const SimConstants& c, float /*dt*/) {
 void updateCamera(WorldState& world, const InputIntent& input, const SimConstants& c, float dt) {
     CameraState& cam = world.camera;
 
-    cam.yaw -= input.lookX * 0.008f;
-    cam.targetPitch += input.lookY * 0.005f;
-    cam.targetPitch = clamp(cam.targetPitch, c.cameraPitchMin, c.cameraPitchMax);
+    cam.yaw -= input.lookX * c.cursorSensitivity;
+    cam.pitch = clamp(cam.pitch - input.lookY * c.cursorSensitivity, -c.cursorMaxPitch, c.cursorMaxPitch);
 
-    const float pitchBlend = clamp(c.cameraPitchRate * dt, 0.0f, 1.0f);
-    cam.pitch = lerp(cam.pitch, cam.targetPitch, pitchBlend);
-
-    const Vec3 desired = {
-        world.player.pos.x + std::sin(cam.yaw) * c.cameraDistance,
-        world.player.pos.y + c.cameraHeight + cam.pitch * c.cameraPitchScale,
-        world.player.pos.z + std::cos(cam.yaw) * c.cameraDistance
+    const float cosPitch = std::cos(cam.pitch);
+    cam.aimDir = Vec3{
+        -std::sin(cam.yaw) * cosPitch,
+        std::sin(cam.pitch),
+        -std::cos(cam.yaw) * cosPitch
     };
 
-    const float followBlend = clamp(c.cameraFollowRate * dt, 0.0f, 1.0f);
+    const Vec3 offset = mul(cam.aimDir, -c.cameraDistance);
+    Vec3 desired = add(world.player.pos, offset);
+    desired.y += c.cameraHeight;
+    const float minCameraY = c.groundY + c.cameraMinGroundOffset;
+    if (desired.y < minCameraY) desired.y = minCameraY;
+
+    const float followBlend = clamp(12.0f * dt, 0.0f, 1.0f);
     cam.pos = lerp(cam.pos, desired, followBlend);
-    cam.lookAt = {world.player.pos.x, world.player.pos.y + 0.7f, world.player.pos.z};
+    cam.lookAt = add(add(world.player.pos, mul(cam.aimDir, 10.0f)), Vec3{0.0f, c.cameraLookLift, 0.0f});
 }
 
 void updateWorld(WorldState& world, const InputIntent& input, const SimConstants& c, float dt) {
     if (dt <= 0.0f) return;
+    updateCamera(world, input, c, dt);
     updatePlayer(world, input, c, dt);
     updateTargets(world, input, c, dt);
     updateCaptures(world, c, dt);
-    updateCamera(world, input, c, dt);
 }
 
 int countAliveTargets(const WorldState& world) {
