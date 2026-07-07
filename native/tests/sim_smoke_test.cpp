@@ -49,7 +49,13 @@ int main() {
     step(world, look, constants, 6);
     ok &= expect(changed(world.camera.yaw, oldYaw), "look input changes camera yaw");
     ok &= expect(changed(world.camera.pitch, oldPitch), "look input changes camera pitch");
-    ok &= expect(world.camera.targetPitch <= constants.cameraPitchMax, "camera target pitch remains clamped high");
+    ok &= expect(world.camera.pitch <= constants.cursorMaxPitch, "camera pitch remains clamped high");
+
+    db::InputIntent move;
+    move.moveZ = 1.0f;
+    const float startZ = world.player.pos.z;
+    step(world, move, constants, 12);
+    ok &= expect(changed(world.player.pos.z, startZ), "forward movement changes player z using camera basis");
 
     db::InputIntent jump;
     jump.jump = true;
@@ -58,14 +64,12 @@ int main() {
     ok &= expect(world.player.battery < constants.batteryMax, "jump costs battery");
 
     db::resetWorld(world, constants);
+    world.player.pos.x = -8.0f;
+    world.player.pos.z = -11.25f;
 
-    db::InputIntent captureRoute;
-    captureRoute.moveX = -0.35f;
-    captureRoute.moveZ = -1.0f;
-    for (int tick = 0; tick < 300; ++tick) {
-        captureRoute.vacuum = tick > 60;
-        db::updateWorld(world, captureRoute, constants, db::FIXED_DT);
-    }
+    db::InputIntent vacuum;
+    vacuum.vacuum = true;
+    step(world, vacuum, constants, 90);
 
     ok &= expect(world.player.souls >= 1, "vacuum captures at least one target");
     ok &= expect(db::countAliveTargets(world) < constants.activeTargets, "captured target is removed from alive count");
