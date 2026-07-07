@@ -51,11 +51,11 @@ struct RoomState {
 };
 
 struct CameraState {
-    float yaw = 3.14159265358979323846f;
-    float pitch = 0.42f;
-    float targetPitch = 0.42f;
-    Vec3 pos = {0.0f, 6.0f, 20.0f};
-    Vec3 lookAt = {0.0f, 1.25f, 12.0f};
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    Vec3 aimDir = {0.0f, 0.0f, -1.0f};
+    Vec3 pos = {0.0f, 2.1f, 15.0f};
+    Vec3 lookAt = {0.0f, 1.0f, 12.0f};
 };
 
 struct WorldState {
