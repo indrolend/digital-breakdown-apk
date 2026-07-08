@@ -94,6 +94,15 @@ function Get-AdbExe {
     throw 'ADB not found. Run phone-session.ps1 first or set $env:DB_ADB_PATH.'
 }
 
+function Invoke-Adb {
+    # Run an adb command without letting stderr diagnostic output become
+    # a terminating PowerShell 5.1 error. Judge success by .ExitCode, not
+    # by the presence of stderr text.
+    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$AdbArgs)
+    $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
+    return [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+}
+
 # ---------------------------------------------------------------------------
 # Evidence directory (shared across sub-scripts)
 # ---------------------------------------------------------------------------
@@ -141,7 +150,8 @@ Write-Host ""
 Write-Host "--- Step 1: ADB check ---"
 try {
     $adb = Get-AdbExe
-    $deviceLines = & $adb devices 2>&1 | Select-String "device$"
+    $r = Invoke-Adb devices
+    $deviceLines = $r.Output | Select-String "device$"
     if ($deviceLines) {
         $deviceId = ($deviceLines | Select-Object -First 1).ToString().Trim().Split()[0]
         Write-Host "[ok] ADB device: $deviceId"
@@ -202,7 +212,8 @@ if ($EvidenceOnly) {
     Write-Host "--- Step 3: Pulling APK from phone ---"
     $LocalApkPath = Join-Path $env:USERPROFILE "Downloads\$OutName"
     try {
-        $deviceCheck = & $adb shell "ls '$DeviceApkPath' 2>/dev/null" 2>&1
+        $r = Invoke-Adb shell "ls '$DeviceApkPath' 2>/dev/null"
+        $deviceCheck = $r.Output
         if (-not $deviceCheck -or $deviceCheck -match "No such file") {
             Write-Host "[fail] APK not found on device at: $DeviceApkPath"
             Write-Host "  Run in Termux: db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run $RunId --artifact $ArtifactName --out $DeviceApkPath"
@@ -210,8 +221,8 @@ if ($EvidenceOnly) {
             Save-Result
             exit 1
         }
-        & $adb pull $DeviceApkPath $LocalApkPath
-        if ($LASTEXITCODE -eq 0) {
+        $r = Invoke-Adb pull $DeviceApkPath $LocalApkPath
+        if ($r.ExitCode -eq 0) {
             Write-Host "[ok] Pulled: $LocalApkPath"
             $result["pull"] = "pass"
             $result["apkPath"] = $LocalApkPath
@@ -274,7 +285,8 @@ if ($EvidenceOnly) {
             # Check if APK already on device
             $deviceHasApk = $false
             try {
-                $deviceCheck = & $adb shell "ls '$DeviceApkPath' 2>/dev/null" 2>&1
+                $rCheck = Invoke-Adb shell "ls '$DeviceApkPath' 2>/dev/null"
+                $deviceCheck = $rCheck.Output
                 if ($deviceCheck -and $deviceCheck -notmatch "No such file") {
                     Write-Host "[info] APK already exists on device: $DeviceApkPath"
                     $read = Read-Host "Re-download? [y/N]"
@@ -325,8 +337,8 @@ if ($EvidenceOnly) {
     Write-Host "--- Step 3: Pulling APK from phone ---"
     $LocalApkPath = Join-Path $env:USERPROFILE "Downloads\$OutName"
     try {
-        & $adb pull $DeviceApkPath $LocalApkPath
-        if ($LASTEXITCODE -eq 0) {
+        $r = Invoke-Adb pull $DeviceApkPath $LocalApkPath
+        if ($r.ExitCode -eq 0) {
             Write-Host "[ok] Pulled: $LocalApkPath"
             $result["pull"] = "pass"
             $result["apkPath"] = $LocalApkPath
@@ -364,31 +376,41 @@ if (-not $EvidenceOnly) {
     Write-Host "--- Step 4: Install ---"
     $installPath = Join-Path $EvidenceDir "install.txt"
     $launchPath = Join-Path $EvidenceDir "launch.txt"
-
-    $installOutput = & $adb install -r $LocalApkPath 2>&1
-    $installCode = $LASTEXITCODE
-    $installOutput | Set-Content -Encoding UTF8 $installPath
-
-    if ($installCode -ne 0 -and ($installOutput -join "`n") -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE" -and $Package) {
-        & $adb uninstall $Package 2>&1 | Out-Null
-        $installOutput = & $adb install -r $LocalApkPath 2>&1
-        $installCode = $LASTEXITCODE
+    try {
+        $r = Invoke-Adb install -r $LocalApkPath
+        $installOutput = $r.Output
+        $installCode = $r.ExitCode
         $installOutput | Set-Content -Encoding UTF8 $installPath
-    }
 
-    if ($installCode -eq 0) {
-        $result["install"] = "pass"
-        Write-Host "[ok] Install complete."
-        Write-Host "[adb] Launching $Package ..."
-        $launchOutput = & $adb shell monkey -p $Package 1 2>&1
-        $launchCode = $LASTEXITCODE
-        $launchOutput | Set-Content -Encoding UTF8 $launchPath
-        $result["launch"] = if ($launchCode -eq 0) { "pass" } else { "fail" }
-    } else {
-        Write-Host "[warn] Install step failed. See install.txt"
-        $result["install"] = "fail"
-        $result["launch"] = "skipped"
-        "[skipped] Launch skipped because install failed." | Set-Content -Encoding UTF8 $launchPath
+        if ($installCode -ne 0 -and ($installOutput -join "`n") -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE" -and $Package) {
+            Invoke-Adb uninstall $Package | Out-Null
+            $r = Invoke-Adb install -r $LocalApkPath
+            $installOutput = $r.Output
+            $installCode = $r.ExitCode
+            $installOutput | Set-Content -Encoding UTF8 $installPath
+        }
+
+        if ($installCode -eq 0) {
+            $result["install"] = "pass"
+            Write-Host "[ok] Install complete."
+            Write-Host "[adb] Launching $Package ..."
+            $r = Invoke-Adb shell monkey -p $Package 1
+            $launchOutput = $r.Output
+            $launchCode = $r.ExitCode
+            $launchOutput | Set-Content -Encoding UTF8 $launchPath
+            $result["launch"] = if ($launchCode -eq 0) { "pass" } else { "fail" }
+        } else {
+            Write-Host "[warn] Install step failed. See install.txt"
+            $result["install"] = "fail"
+            $result["launch"] = "skipped"
+            "[skipped] Launch skipped because install failed." | Set-Content -Encoding UTF8 $launchPath
+        }
+    } catch {
+        Write-Host "[warn] Install/launch error: $_"
+        if ($result["install"] -notin @("pass", "fail")) { $result["install"] = "fail" }
+        if ($result["launch"] -notin @("pass", "fail")) { $result["launch"] = "fail" }
+        if (-not (Test-Path $installPath)) { "[error] $_" | Set-Content -Encoding UTF8 $installPath }
+        if (-not (Test-Path $launchPath)) { "[skipped] Launch aborted by install error." | Set-Content -Encoding UTF8 $launchPath }
     }
 } else {
     "[skipped] EvidenceOnly mode requested." | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "install.txt")

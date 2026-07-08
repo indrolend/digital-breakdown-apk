@@ -55,6 +55,15 @@ function Get-AdbExe {
     throw 'ADB not found. Run phone-session.ps1 first or set $env:DB_ADB_PATH.'
 }
 
+function Invoke-Adb {
+    # Run an adb command without letting stderr diagnostic output become
+    # a terminating PowerShell 5.1 error. Judge success by .ExitCode, not
+    # by the presence of stderr text.
+    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$AdbArgs)
+    $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
+    return [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+}
+
 $adb = Get-AdbExe
 
 # ---------------------------------------------------------------------------
@@ -76,7 +85,8 @@ Write-Host "[evidence] Saving to: $EvidenceDir"
 # Check device
 # ---------------------------------------------------------------------------
 
-$deviceLines = & $adb devices 2>&1 | Select-String "device$"
+$r = Invoke-Adb devices
+$deviceLines = $r.Output | Select-String "device$"
 if (-not $deviceLines) {
     Write-Host "[fail] No ADB device. Connect phone."
     exit 1
@@ -109,44 +119,50 @@ if (-not $SkipLogcat) {
     # Give app time to run/crash if just launched
     Start-Sleep -Seconds 3
 
-    $logcatFull = & $adb logcat -d -v time 2>&1
-    $logcatFullPath = Join-Path $EvidenceDir "logcat-full.txt"
-    $logcatFull | Set-Content -Encoding UTF8 $logcatFullPath
-    Write-Host "[ok] Full logcat: $logcatFullPath ($($logcatFull.Count) lines)"
+    try {
+        $r = Invoke-Adb logcat -d -v time
+        $logcatFull = $r.Output
+        $logcatFullPath = Join-Path $EvidenceDir "logcat-full.txt"
+        $logcatFull | Set-Content -Encoding UTF8 $logcatFullPath
+        Write-Host "[ok] Full logcat: $logcatFullPath ($($logcatFull.Count) lines)"
 
-    # Filtered: DBNATIVE + crash markers
-    $filterPattern = "DBNATIVE|AndroidRuntime|FATAL|crash|$Package"
-    $logcatFiltered = $logcatFull | Select-String -Pattern $filterPattern -AllMatches
-    $logcatFilteredPath = Join-Path $EvidenceDir "logcat-filtered.txt"
-    $logcatFiltered | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 $logcatFilteredPath
-    Write-Host "[ok] Filtered logcat: $logcatFilteredPath ($($logcatFiltered.Count) lines)"
+        # Filtered: DBNATIVE + crash markers
+        $filterPattern = "DBNATIVE|AndroidRuntime|FATAL|crash|$Package"
+        $logcatFiltered = $logcatFull | Select-String -Pattern $filterPattern -AllMatches
+        $logcatFilteredPath = Join-Path $EvidenceDir "logcat-filtered.txt"
+        $logcatFiltered | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 $logcatFilteredPath
+        Write-Host "[ok] Filtered logcat: $logcatFilteredPath ($($logcatFiltered.Count) lines)"
 
-    $result["logcat"] = "pass"
+        $result["logcat"] = "pass"
 
-    # DBNATIVE frames check
-    $dbnativeLines = $logcatFull | Select-String "DBNATIVE"
-    if ($dbnativeLines) {
-        Write-Host "[ok] DBNATIVE log entries found: $($dbnativeLines.Count)"
-        $result["dbnativeLogs"] = "pass"
-        $dbnativeLines | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "logcat-dbnative.txt")
-    } else {
-        Write-Host "[warn] No DBNATIVE log entries found."
-        $result["dbnativeLogs"] = "fail"
-    }
+        # DBNATIVE frames check
+        $dbnativeLines = $logcatFull | Select-String "DBNATIVE"
+        if ($dbnativeLines) {
+            Write-Host "[ok] DBNATIVE log entries found: $($dbnativeLines.Count)"
+            $result["dbnativeLogs"] = "pass"
+            $dbnativeLines | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "logcat-dbnative.txt")
+        } else {
+            Write-Host "[warn] No DBNATIVE log entries found."
+            $result["dbnativeLogs"] = "fail"
+        }
 
-    # Crash scan
-    $crashPattern = "FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing"
-    $crashLines = $logcatFull | Select-String -Pattern $crashPattern -AllMatches
-    # Exclude known browser/system noise
-    $appCrashLines = $crashLines | Where-Object { $_.Line -notmatch "com\.android\.chrome|cr_CrashFileManager" }
-    if ($appCrashLines) {
-        Write-Host "[warn] Crash/fatal markers found in logcat:"
-        $appCrashLines | ForEach-Object { Write-Host "  $($_.Line)" }
-        $appCrashLines | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "logcat-crashes.txt")
-        $result["crashScan"] = "fail"
-    } else {
-        Write-Host "[ok] No app crash markers found."
-        $result["crashScan"] = "pass"
+        # Crash scan
+        $crashPattern = "FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing"
+        $crashLines = $logcatFull | Select-String -Pattern $crashPattern -AllMatches
+        # Exclude known browser/system noise
+        $appCrashLines = $crashLines | Where-Object { $_.Line -notmatch "com\.android\.chrome|cr_CrashFileManager" }
+        if ($appCrashLines) {
+            Write-Host "[warn] Crash/fatal markers found in logcat:"
+            $appCrashLines | ForEach-Object { Write-Host "  $($_.Line)" }
+            $appCrashLines | ForEach-Object { $_.Line } | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "logcat-crashes.txt")
+            $result["crashScan"] = "fail"
+        } else {
+            Write-Host "[ok] No app crash markers found."
+            $result["crashScan"] = "pass"
+        }
+    } catch {
+        Write-Host "[warn] Logcat capture error: $_"
+        if ($result["logcat"] -eq "skipped") { $result["logcat"] = "fail" }
     }
 }
 
@@ -158,23 +174,28 @@ if (-not $SkipScreenshot) {
     Write-Host ""
     Write-Host "[screenshot] Capturing screen ..."
 
-    & $adb shell screencap -p $ScreenshotDevice 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[warn] screencap failed."
-        $result["screenshot"] = "fail"
-    } else {
-        $localScreen = Join-Path $EvidenceDir "screen.png"
-        & $adb pull $ScreenshotDevice $localScreen 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $localScreen)) {
-            $screenSize = (Get-Item $localScreen).Length
-            Write-Host "[ok] Screenshot saved: $localScreen ($([math]::Round($screenSize / 1KB, 1)) KB)"
-            $result["screenshot"] = "pass"
-            # Clean up device-side screenshot
-            & $adb shell rm -f $ScreenshotDevice 2>&1 | Out-Null
-        } else {
-            Write-Host "[warn] Failed to pull screenshot."
+    try {
+        $r = Invoke-Adb shell screencap -p $ScreenshotDevice
+        if ($r.ExitCode -ne 0) {
+            Write-Host "[warn] screencap failed."
             $result["screenshot"] = "fail"
+        } else {
+            $localScreen = Join-Path $EvidenceDir "screen.png"
+            $r2 = Invoke-Adb pull $ScreenshotDevice $localScreen
+            if ($r2.ExitCode -eq 0 -and (Test-Path $localScreen)) {
+                $screenSize = (Get-Item $localScreen).Length
+                Write-Host "[ok] Screenshot saved: $localScreen ($([math]::Round($screenSize / 1KB, 1)) KB)"
+                $result["screenshot"] = "pass"
+                # Clean up device-side screenshot
+                Invoke-Adb shell rm -f $ScreenshotDevice | Out-Null
+            } else {
+                Write-Host "[warn] Failed to pull screenshot."
+                $result["screenshot"] = "fail"
+            }
         }
+    } catch {
+        Write-Host "[warn] Screenshot capture error: $_"
+        if ($result["screenshot"] -eq "skipped") { $result["screenshot"] = "fail" }
     }
 }
 

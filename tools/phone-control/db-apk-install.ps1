@@ -70,6 +70,15 @@ function Get-AdbExe {
     throw 'ADB not found. Run phone-session.ps1 first or set $env:DB_ADB_PATH.'
 }
 
+function Invoke-Adb {
+    # Run an adb command without letting stderr diagnostic output become
+    # a terminating PowerShell 5.1 error. Judge success by .ExitCode, not
+    # by the presence of stderr text.
+    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$AdbArgs)
+    $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
+    return [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+}
+
 $adb = Get-AdbExe
 
 # ---------------------------------------------------------------------------
@@ -79,7 +88,8 @@ $adb = Get-AdbExe
 Write-Host ""
 Write-Host "=== APK Install Helper ==="
 
-$deviceLines = & $adb devices 2>&1 | Select-String "device$"
+$r = Invoke-Adb devices
+$deviceLines = $r.Output | Select-String "device$"
 if (-not $deviceLines) {
     Write-Host "[fail] No authorized ADB device detected."
     Write-Host "  Connect phone, unlock, and tap Allow on USB debugging prompt."
@@ -104,7 +114,8 @@ if (-not $LocalPath) {
 
 if (-not $SkipPull) {
     # Check if APK exists on device
-    $deviceCheck = & $adb shell "ls '$DevicePath' 2>/dev/null" 2>&1
+    $r = Invoke-Adb shell "ls '$DevicePath' 2>/dev/null"
+    $deviceCheck = $r.Output
     if (-not $deviceCheck -or $deviceCheck -match "No such file") {
         Write-Host "[fail] APK not found on device at: $DevicePath"
         Write-Host "  Run db-apk-artifact-download on the phone first:"
@@ -114,8 +125,8 @@ if (-not $SkipPull) {
 
     Write-Host "[adb] Pulling APK from device: $DevicePath"
     Write-Host "      -> $LocalPath"
-    & $adb pull $DevicePath $LocalPath
-    if ($LASTEXITCODE -ne 0) {
+    $r = Invoke-Adb pull $DevicePath $LocalPath
+    if ($r.ExitCode -ne 0) {
         Write-Host "[fail] adb pull failed."
         exit 1
     }
@@ -137,18 +148,20 @@ Write-Host "[info] APK size: $([math]::Round($apkSize / 1MB, 2)) MB"
 
 Write-Host ""
 Write-Host "[adb] Installing APK ..."
-$installOutput = & $adb install -r $LocalPath 2>&1
-$installCode = $LASTEXITCODE
+$r = Invoke-Adb install -r $LocalPath
+$installOutput = $r.Output
+$installCode = $r.ExitCode
 Write-Host $installOutput
 
 if ($installCode -ne 0) {
     if ($installOutput -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
         Write-Host "[warn] Install failed due to signature mismatch. Uninstalling existing app ..."
         if ($Package) {
-            & $adb uninstall $Package | Out-Null
+            Invoke-Adb uninstall $Package | Out-Null
             Write-Host "[adb] Re-installing after uninstall ..."
-            $installOutput = & $adb install -r $LocalPath 2>&1
-            $installCode = $LASTEXITCODE
+            $r = Invoke-Adb install -r $LocalPath
+            $installOutput = $r.Output
+            $installCode = $r.ExitCode
             Write-Host $installOutput
         } else {
             Write-Host "[fail] Cannot uninstall: -Package not specified."
@@ -172,9 +185,10 @@ Write-Host "[ok] APK installed successfully."
 if (-not $SkipLaunch -and $Package) {
     Write-Host ""
     Write-Host "[adb] Launching $Package ..."
-    $launchOutput = & $adb shell monkey -p $Package 1 2>&1
+    $r = Invoke-Adb shell monkey -p $Package 1
+    $launchOutput = $r.Output
     Write-Host $launchOutput
-    if ($LASTEXITCODE -eq 0) {
+    if ($r.ExitCode -eq 0) {
         Write-Host "[ok] Launch command sent."
         Write-Host "  Wait a few seconds, then capture evidence:"
         Write-Host "    . .\db-apk-evidence.ps1 -Package $Package"
