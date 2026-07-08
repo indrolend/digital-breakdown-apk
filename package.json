@@ -13,7 +13,11 @@
     "repo:clean": "./scripts/clean.sh",
     "logs:janitor": "./scripts/clean.sh logs",
     "android:postboot": "./scripts/postboot-status.sh",
-    "android:live-debug": "./scripts/live-android-debug.sh"
+    "android:live-debug": "./scripts/live-android-debug.sh",
+    "lg:probe": "./scripts/probe-lg.sh adb",
+    "lg:fastboot": "./scripts/probe-lg.sh fastboot",
+    "lg:download": "./scripts/probe-lg.sh download",
+    "lg:full": "./scripts/probe-lg.sh full"
   },
   "keywords": [],
   "author": "",
