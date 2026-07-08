@@ -31,7 +31,11 @@
     "checkpoint": "./scripts/checkpoint.sh",
     "android:mirror": "./scripts/mirror-android.sh",
     "android:demo-cycle": "./scripts/build-android.sh && ./scripts/install-android.sh && ./scripts/mirror-android.sh --no-launch",
-    "android:demo-window": "./scripts/demo-window-mac.sh"
+    "android:demo-window": "./scripts/android.sh demo-window",
+    "android": "./scripts/android.sh",
+    "android:test": "./scripts/android.sh test",
+    "android:demo": "./scripts/android.sh demo",
+    "android:logs": "./scripts/android.sh logs"
   },
   "keywords": [],
   "author": "",
