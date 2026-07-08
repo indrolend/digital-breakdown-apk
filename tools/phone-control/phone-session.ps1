@@ -317,7 +317,7 @@ function global:StartScrcpy {
     $exe = Find-Scrcpy
     if (-not $exe) {
         Write-Host "[scrcpy] Not found. Download from https://github.com/Genymobile/scrcpy/releases"
-        Write-Host "  Then save path with: Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath PATH"
+        Write-Host "  Then save path with: Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath C:\path\to\scrcpy.exe"
         return
     }
     Write-Host "[scrcpy] Starting with: $exe"
