@@ -58,6 +58,7 @@ install_packages() {
 
     # Map package name -> representative command to check for installation.
     # termux-api provides termux-clipboard-get (not a binary named termux-api).
+    local check_cmd
     declare -A pkg_cmd=(
         [git]=git
         [curl]=curl
@@ -67,7 +68,7 @@ install_packages() {
         [termux-api]=termux-clipboard-get
     )
     for pkg in git curl jq openssh nano termux-api; do
-        local check_cmd="${pkg_cmd[$pkg]}"
+        check_cmd="${pkg_cmd[$pkg]}"
         if command -v "$check_cmd" >/dev/null 2>&1; then
             ok "$pkg already installed."
         else
