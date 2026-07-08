@@ -33,8 +33,9 @@
 .PARAMETER SkipDownload
     Skip the Termux gh download step (use if APK is already on the phone).
 
-.PARAMETER SkipInstall
-    Skip install/launch; only capture evidence.
+.PARAMETER EvidenceOnly
+    Skip download/pull/install/launch and only capture evidence.
+    Backward compatible alias: -SkipInstall
 
 .PARAMETER LocalApkPath
     Provide a local APK path to skip both Termux download and adb pull.
@@ -68,7 +69,8 @@ param(
     [string]$OutName          = "app-debug.apk",
     [string]$DeviceApkDir     = "/sdcard/Download/db-apks",
     [switch]$SkipDownload,
-    [switch]$SkipInstall,
+    [Alias("SkipInstall")]
+    [switch]$EvidenceOnly,
     [string]$LocalApkPath     = ""
 )
 
@@ -96,8 +98,8 @@ function Get-AdbExe {
 # ---------------------------------------------------------------------------
 
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
-$pkgShort = $Package -replace "com\.indrolend\.", "" -replace "\.", "-"
-$EvidenceDir = Join-Path $env:USERPROFILE "Downloads\db-demo-evidence\$pkgShort-$ts"
+$pkgSafe = $Package -replace "[^a-zA-Z0-9\.\-_]", "-"
+$EvidenceDir = Join-Path $env:USERPROFILE "Downloads\db-demo-evidence\$pkgSafe-$ts"
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
 
 # Accumulate results
@@ -160,7 +162,16 @@ try {
 
 $DeviceApkPath = "$DeviceApkDir/$OutName"
 
-if ($LocalApkPath) {
+if ($EvidenceOnly) {
+    Write-Host ""
+    Write-Host "--- Step 2: Evidence-only mode (skip download/pull/install/launch) ---"
+    $result["download"] = "skipped"
+    $result["pull"] = "skipped"
+    $result["install"] = "skipped"
+    $result["launch"] = "skipped"
+    $result["apkPath"] = "evidence-only"
+
+} elseif ($LocalApkPath) {
     Write-Host ""
     Write-Host "--- Step 2: Using local APK (skipping Termux download and pull) ---"
     if (-not (Test-Path $LocalApkPath)) {
@@ -327,45 +338,54 @@ if ($LocalApkPath) {
 }
 
 # Write apk-source.txt
-"Run ID: $RunId`nArtifact: $ArtifactName`nDevice path: $DeviceApkPath`nLocal path: $LocalApkPath" |
+$apkSourceLines = @(
+    "Run ID: $RunId"
+    "Artifact: $ArtifactName"
+    "Device path: $DeviceApkPath"
+    "Local path: $LocalApkPath"
+    "Mode: $(if ($EvidenceOnly) { 'EvidenceOnly' } elseif ($SkipDownload) { 'SkipDownload' } elseif ($LocalApkPath) { 'LocalApkPath' } else { 'Full' })"
+)
+$apkSourceLines |
     Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "apk-source.txt")
 
 # ---------------------------------------------------------------------------
 # Step 4: Install + Launch
 # ---------------------------------------------------------------------------
 
-if (-not $SkipInstall) {
+if (-not $EvidenceOnly) {
     Write-Host ""
     Write-Host "--- Step 4: Install ---"
-    $installScript = Join-Path $ScriptDir "db-apk-install.ps1"
-    if (Test-Path $installScript) {
-        try {
-            & $installScript -DevicePath $DeviceApkPath -LocalPath $LocalApkPath -Package $Package -SkipPull -ErrorAction Stop
-            $result["install"] = "pass"
-            $result["launch"] = "pass"
-            Write-Host "[ok] Install and launch complete."
-        } catch {
-            Write-Host "[warn] Install/launch step had an error: $_"
-            $result["install"] = "fail"
-        }
-    } else {
-        # Inline install if script not available
-        Write-Host "[info] Running inline install ..."
-        & $adb install -r $LocalApkPath 2>&1 | Tee-Object -Variable installOut
-        if ($LASTEXITCODE -eq 0) {
-            $result["install"] = "pass"
-            $installOut | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "install.txt")
-        } else {
-            $result["install"] = "fail"
-        }
+    $installPath = Join-Path $EvidenceDir "install.txt"
+    $launchPath = Join-Path $EvidenceDir "launch.txt"
 
-        if ($result["install"] -eq "pass") {
-            Write-Host "[adb] Launching $Package ..."
-            & $adb shell monkey -p $Package 1 2>&1 | Tee-Object -Variable launchOut
-            $result["launch"] = if ($LASTEXITCODE -eq 0) { "pass" } else { "fail" }
-            $launchOut | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "launch.txt")
-        }
+    $installOutput = & $adb install -r $LocalApkPath 2>&1
+    $installCode = $LASTEXITCODE
+    $installOutput | Set-Content -Encoding UTF8 $installPath
+
+    if ($installCode -ne 0 -and ($installOutput -join "`n") -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE" -and $Package) {
+        & $adb uninstall $Package 2>&1 | Out-Null
+        $installOutput = & $adb install -r $LocalApkPath 2>&1
+        $installCode = $LASTEXITCODE
+        $installOutput | Set-Content -Encoding UTF8 $installPath
     }
+
+    if ($installCode -eq 0) {
+        $result["install"] = "pass"
+        Write-Host "[ok] Install complete."
+        Write-Host "[adb] Launching $Package ..."
+        $launchOutput = & $adb shell monkey -p $Package 1 2>&1
+        $launchCode = $LASTEXITCODE
+        $launchOutput | Set-Content -Encoding UTF8 $launchPath
+        $result["launch"] = if ($launchCode -eq 0) { "pass" } else { "fail" }
+    } else {
+        Write-Host "[warn] Install step failed. See install.txt"
+        $result["install"] = "fail"
+        $result["launch"] = "skipped"
+        "[skipped] Launch skipped because install failed." | Set-Content -Encoding UTF8 $launchPath
+    }
+} else {
+    "[skipped] EvidenceOnly mode requested." | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "install.txt")
+    "[skipped] EvidenceOnly mode requested." | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "launch.txt")
 }
 
 # ---------------------------------------------------------------------------

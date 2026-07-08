@@ -63,8 +63,8 @@ $adb = Get-AdbExe
 
 if (-not $EvidenceDir) {
     $ts = Get-Date -Format "yyyyMMdd-HHmmss"
-    $pkgShort = $Package -replace "com\.indrolend\.", "" -replace "\.", "-"
-    $EvidenceDir = Join-Path $env:USERPROFILE "Downloads\db-demo-evidence\$pkgShort-$ts"
+    $pkgSafe = $Package -replace "[^a-zA-Z0-9\.\-_]", "-"
+    $EvidenceDir = Join-Path $env:USERPROFILE "Downloads\db-demo-evidence\$pkgSafe-$ts"
 }
 
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null

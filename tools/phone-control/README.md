@@ -163,8 +163,11 @@ DbApkInstall `
 ### Skip download (APK already on phone)
 
 ```powershell
-DbApkDemo -RunId 0 -ArtifactName unused `
+DbApkDemo `
+  -RunId 28961104004 `
+  -ArtifactName digital-breakdown-native-debug-apk `
   -Package com.indrolend.digitalbreakdown.native `
+  -OutName pr2-native-debug.apk `
   -SkipDownload
 ```
 
@@ -179,8 +182,15 @@ DbApkDemo -RunId 0 -ArtifactName unused `
 ### Evidence-only (app already installed)
 
 ```powershell
-. .\tools\phone-control\db-apk-evidence.ps1 -Package com.indrolend.digitalbreakdown.native
+DbApkDemo `
+  -RunId 0 `
+  -ArtifactName unused `
+  -Package com.indrolend.digitalbreakdown.native `
+  -OutName pr2-native-debug.apk `
+  -EvidenceOnly
 ```
+
+Backward-compatible alias: `-SkipInstall` maps to the same behavior as `-EvidenceOnly`.
 
 ### Evidence output structure
 
@@ -209,8 +219,8 @@ Downloads\db-demo-evidence\<pkg>-<YYYYMMDD-HHMMSS>\
   "install":      "pass|fail|skipped",
   "launch":       "pass|fail|skipped",
   "dbnativeLogs": "pass|fail|skipped",
-  "crashScan":    "pass|fail",
-  "screenshot":   "pass|fail",
+  "crashScan":    "pass|fail|skipped",
+  "screenshot":   "pass|fail|skipped",
   "apkPath":      "...",
   "package":      "com.indrolend.digitalbreakdown.native"
 }
