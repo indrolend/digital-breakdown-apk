@@ -14,6 +14,8 @@ CRASH_FILE="$LOG_DIR/crash-$STAMP.txt"
 SCREEN_FILE="$LOG_DIR/screen-$STAMP.png"
 SCREEN_BEFORE_FILE="$LOG_DIR/screen-$STAMP-before-input.png"
 RESULT_FILE="$LOG_DIR/result-$STAMP.json"
+INPUT_TAP_DELAY="${INPUT_TAP_DELAY:-1}"
+INPUT_SWIPE_DELAY="${INPUT_SWIPE_DELAY:-2}"
 
 BUILD_RESULT="fail"
 INSTALL_RESULT="fail"
@@ -58,6 +60,7 @@ initialize_artifacts() {
   printf 'pending\n' > "$CRASH_FILE"
 
   if command -v base64 >/dev/null 2>&1; then
+    # 1x1 transparent PNG placeholder so failed runs still leave a screen-*.png artifact behind.
     printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6pYJ0AAAAASUVORK5CYII=' | base64 -d > "$SCREEN_FILE"
     cp "$SCREEN_FILE" "$SCREEN_BEFORE_FILE"
   else
@@ -173,9 +176,9 @@ probe_input() {
   drag_x=$((mid_x + (width / 6)))
 
   adb shell input tap "$mid_x" "$mid_y"
-  sleep 1
+  sleep "$INPUT_TAP_DELAY"
   adb shell input swipe "$mid_x" "$mid_y" "$drag_x" "$mid_y" 250
-  sleep 2
+  sleep "$INPUT_SWIPE_DELAY"
 }
 
 verify_probe_output() {
