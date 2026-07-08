@@ -66,6 +66,18 @@ initialize_artifacts() {
   fi
 }
 
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+    return
+  fi
+  echo ""
+}
+
 ensure_local_properties() {
   if [ -f "$NATIVE_DIR/local.properties" ]; then
     return
@@ -152,7 +164,7 @@ probe_input() {
   size="$(adb shell wm size 2>/dev/null | tr -d '\r' | grep -Eo '[0-9]+x[0-9]+' | head -1 || true)"
   width="${size%x*}"
   height="${size#*x}"
-  if [ -z "${width:-}" ] || [ -z "${height:-}" ] || [ "$width" = "$size" ]; then
+  if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
     width=1280
     height=720
   fi
@@ -171,9 +183,9 @@ verify_probe_output() {
   echo "== Probe evidence =="
 
   if [ -f "$SCREEN_BEFORE_FILE" ] && [ -f "$SCREEN_FILE" ]; then
-    before_hash="$(sha256sum "$SCREEN_BEFORE_FILE" | awk '{print $1}')"
-    after_hash="$(sha256sum "$SCREEN_FILE" | awk '{print $1}')"
-    if [ "$before_hash" != "$after_hash" ]; then
+    before_hash="$(hash_file "$SCREEN_BEFORE_FILE")"
+    after_hash="$(hash_file "$SCREEN_FILE")"
+    if [ -n "$before_hash" ] && [ -n "$after_hash" ] && [ "$before_hash" != "$after_hash" ]; then
       echo "probeEvidence=screenshot-changed" | tee -a "$STATUS_FILE"
       return 0
     fi
