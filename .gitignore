@@ -45,3 +45,7 @@ android/.gitignore
 android/app/.gitignore
 android/app/src/androidTest/
 android/app/src/test/
+
+android/app/src/main/assets/
+android/app/src/main/res/xml/config.xml
+android/capacitor-cordova-android-plugins/
