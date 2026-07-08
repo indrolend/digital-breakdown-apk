@@ -125,6 +125,7 @@ try {
 
             $crashPattern = "FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing"
             $crashLines = $fullLines | Select-String -Pattern $crashPattern -AllMatches | ForEach-Object { $_.Line }
+            # Exclude known browser-process noise so package-under-test crash signals stay actionable.
             $appCrashLines = $crashLines | Where-Object { $_ -notmatch "com\.android\.chrome|cr_CrashFileManager" }
             if ($appCrashLines -and $appCrashLines.Count -gt 0) {
                 Write-PhoneTextFile -PhonePath "$PhoneEvidenceDir/logcat-crashes.txt" -Lines $appCrashLines

@@ -8,6 +8,7 @@ REPO="indrolend/digital-breakdown-apk"
 RUN_ID=""
 ARTIFACT_NAME=""
 OUT_PATH="/sdcard/Download/db-control/apks/current.apk"
+FORCE=0
 
 usage() {
     cat <<'USAGE'
@@ -18,6 +19,7 @@ Options:
   --run       GitHub Actions run ID (required)
   --artifact  Artifact name (required)
   --out       Output APK path (default: /sdcard/Download/db-control/apks/current.apk)
+  --force     Overwrite existing APK without prompting
   --help      Show help
 USAGE
 }
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --run)       RUN_ID="$2";        shift 2 ;;
         --artifact)  ARTIFACT_NAME="$2"; shift 2 ;;
         --out)       OUT_PATH="$2";      shift 2 ;;
+        --force)     FORCE=1;            shift 1 ;;
         --help|-h)   usage; exit 0 ;;
         *) echo "[error] Unknown argument: $1"; usage; exit 1 ;;
     esac
@@ -49,10 +52,14 @@ mkdir -p "$OUT_DIR"
 
 if [[ -f "$OUT_PATH" ]]; then
     echo "[info] APK already exists at $OUT_PATH"
-    read -r -p "Overwrite current.apk? [y/N] " overwrite
-    if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-        echo "[ok] Keeping existing APK."
-        exit 0
+    if [[ "$FORCE" -eq 1 ]]; then
+        echo "[ok] --force set; overwriting existing APK."
+    else
+        read -r -p "Overwrite current.apk? [y/N] " overwrite
+        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+            echo "[ok] Keeping existing APK."
+            exit 0
+        fi
     fi
 fi
 

@@ -309,7 +309,7 @@ db-clip-get
 
 ### Without Termux:API (file fallback)
 
-Clipboard is saved to `~/db-control/.clipboard`.
+Clipboard is saved to `/sdcard/Download/db-control/.clipboard`.
 
 ### From Windows
 
@@ -354,7 +354,7 @@ Default flow keeps evidence authoritative on phone.
 | `git`, `gh`, `jq`, etc. | Phone / Termux |
 | Project utility scripts | Phone / Termux (`/data/data/com.termux/files/usr/bin/`) |
 | APK artifacts | Phone (`/sdcard/Download/db-control/apks/current.apk`) |
-| Temp/state files | Phone (`/sdcard/Download/db-control/`) |
+| Temp/state files (excluding `apks/` and `evidence/`) | Phone (`/sdcard/Download/db-control/`) |
 | ADB path config | Windows (`$env:USERPROFILE\.db-phone-config.ps1`) |
 | Evidence/logs (authoritative) | Phone (`/sdcard/Download/db-control/evidence/latest/`) |
 | Evidence mirror (optional) | Windows (`$env:USERPROFILE\Downloads\db-control\evidence-latest\`) |

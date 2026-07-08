@@ -128,6 +128,13 @@ function Ensure-PhoneLayout {
 function Archive-LatestEvidence {
     param([string]$ArchiveStamp)
 
+    if ($PhoneEvidenceArchive -notlike "/sdcard/Download/db-control/evidence/archive*") {
+        throw "Unsafe archive path detected: $PhoneEvidenceArchive"
+    }
+    if ($PhoneEvidenceLatest -notlike "/sdcard/Download/db-control/evidence/latest*") {
+        throw "Unsafe latest evidence path detected: $PhoneEvidenceLatest"
+    }
+
     $hasFiles = Invoke-Adb shell "ls -A '$PhoneEvidenceLatest' 2>/dev/null"
     if ($hasFiles.ExitCode -ne 0) { return }
     if (-not ($hasFiles.Output | Out-String).Trim()) { return }
@@ -150,6 +157,9 @@ function Archive-LatestEvidence {
 }
 
 function Clear-LatestEvidence {
+    if ($PhoneEvidenceLatest -notlike "/sdcard/Download/db-control/evidence/latest*") {
+        throw "Unsafe latest evidence path detected: $PhoneEvidenceLatest"
+    }
     $clear = Invoke-Adb shell "rm -rf '$PhoneEvidenceLatest'/*"
     if ($clear.ExitCode -ne 0) {
         Add-ResultError "Could not clear latest evidence folder on phone."

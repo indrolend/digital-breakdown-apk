@@ -359,6 +359,7 @@ REPO="indrolend/digital-breakdown-apk"
 RUN_ID=""
 ARTIFACT_NAME=""
 OUT_PATH="/sdcard/Download/db-control/apks/current.apk"
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -366,6 +367,7 @@ while [[ $# -gt 0 ]]; do
         --run)       RUN_ID="$2";        shift 2 ;;
         --artifact)  ARTIFACT_NAME="$2"; shift 2 ;;
         --out)       OUT_PATH="$2";      shift 2 ;;
+        --force)     FORCE=1;            shift 1 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -384,6 +386,14 @@ fi
 # Destination directory
 OUT_DIR="$(dirname "$OUT_PATH")"
 mkdir -p "$OUT_DIR"
+
+if [[ -f "$OUT_PATH" && "$FORCE" -ne 1 ]]; then
+    read -r -p "APK exists at $OUT_PATH. Overwrite? [y/N] " overwrite
+    if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+        echo "[ok] Keeping existing APK."
+        exit 0
+    fi
+fi
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
