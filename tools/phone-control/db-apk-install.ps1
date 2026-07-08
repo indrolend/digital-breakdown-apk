@@ -108,7 +108,7 @@ if (-not $SkipPull) {
     if (-not $deviceCheck -or $deviceCheck -match "No such file") {
         Write-Host "[fail] APK not found on device at: $DevicePath"
         Write-Host "  Run db-apk-artifact-download on the phone first:"
-        Write-Host "    PhoneCmd 'db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run <id> --artifact <name> --out $DevicePath'"
+        Write-Host "    PhoneCmd 'db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run RUN_ID --artifact ARTIFACT_NAME --out $DevicePath'"
         exit 1
     }
 

@@ -19,6 +19,23 @@ This will:
 4. Detect Termux username.
 5. Load helper commands into your PowerShell session.
 
+### Windows PowerShell 5.1 parse check
+
+Before running on a new machine, validate parser compatibility:
+
+```powershell
+Get-ChildItem .\tools\phone-control\*.ps1 | ForEach-Object {
+  $errors = $null
+  $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $_.FullName -Raw), [ref]$errors)
+  if ($errors) {
+    Write-Host "Parse failed: $($_.Name)"
+    $errors
+    exit 1
+  }
+  Write-Host "Parsed: $($_.Name)"
+}
+```
+
 ### First-time phone bootstrap
 
 Copy and run in Termux (or use `adb push` / `adb shell`):

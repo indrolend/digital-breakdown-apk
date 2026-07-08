@@ -48,7 +48,7 @@ function Save-PhoneConfig {
         [string]$ScrcpyPath = ""
     )
     $lines = @(
-        "# Digital Breakdown phone-control config — auto-generated",
+        "# Digital Breakdown phone-control config - auto-generated",
         "`$env:DB_ADB_PATH = '$AdbPath'"
     )
     if ($ScrcpyPath) {
@@ -237,7 +237,7 @@ function Start-SshForward {
     Assert-DeviceConnected | Out-Null
     Write-Host "[adb] Forwarding tcp:8022 -> tcp:8022 ..."
     & $adb forward tcp:8022 tcp:8022 | Out-Null
-    Write-Host "[ssh] Forward active. Connect with: ssh -p 8022 <user>@127.0.0.1"
+    Write-Host "[ssh] Forward active. Connect with: ssh -p 8022 USER@127.0.0.1"
 }
 
 # ---------------------------------------------------------------------------
@@ -317,7 +317,7 @@ function global:StartScrcpy {
     $exe = Find-Scrcpy
     if (-not $exe) {
         Write-Host "[scrcpy] Not found. Download from https://github.com/Genymobile/scrcpy/releases"
-        Write-Host "  Then save path with: Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath '<path>'"
+        Write-Host "  Then save path with: Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath PATH"
         return
     }
     Write-Host "[scrcpy] Starting with: $exe"
@@ -421,9 +421,9 @@ Write-Host ""
 Write-Host "Loaded commands:"
 Write-Host "  OpenTermux           - Open Termux app on phone"
 Write-Host "  Phone                - SSH into Termux"
-Write-Host "  PhoneCmd <cmd>       - Run command in Termux over SSH"
+Write-Host "  PhoneCmd CMD         - Run command in Termux over SSH"
 Write-Host "  DbMenu               - Open db-menu in Termux"
-Write-Host "  PhoneClipSet <text>  - Set Android clipboard"
+Write-Host "  PhoneClipSet TEXT    - Set Android clipboard"
 Write-Host "  PhoneClipGet         - Read Android clipboard"
 Write-Host "  StartScrcpy          - Start screen mirror"
 Write-Host "  DbApkDemo ...        - Full APK download/install/evidence run"

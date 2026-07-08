@@ -15,7 +15,7 @@
     Android package name (e.g. com.indrolend.digitalbreakdown.native).
 
 .PARAMETER EvidenceDir
-    Override evidence output directory. Default: Downloads\db-demo-evidence\<timestamp>\.
+    Override evidence output directory. Default: Downloads\db-demo-evidence\TIMESTAMP\.
 
 .PARAMETER ScreenshotDevice
     Device-side path to save the screenshot. Default: /sdcard/Download/db-apks/screen.png
