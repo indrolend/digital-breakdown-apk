@@ -63,7 +63,7 @@ initialize_artifacts() {
 
   if command -v base64 >/dev/null 2>&1; then
     # 1x1 transparent PNG placeholder so failed runs still leave a screen-*.png artifact behind.
-    if printf '%s' "$PLACEHOLDER_SCREEN_PNG_BASE64" | base64 -d > "$SCREEN_FILE"; then
+    if decode_base64 "$PLACEHOLDER_SCREEN_PNG_BASE64" > "$SCREEN_FILE"; then
       cp "$SCREEN_FILE" "$SCREEN_BEFORE_FILE"
     else
       echo "Placeholder PNG decode failed" | tee -a "$STATUS_FILE"
@@ -87,6 +87,18 @@ hash_file() {
     return
   fi
   echo ""
+}
+
+decode_base64() {
+  if printf '%s' "$1" | base64 -d >/dev/null 2>&1; then
+    printf '%s' "$1" | base64 -d
+    return 0
+  fi
+  if printf '%s' "$1" | base64 -D >/dev/null 2>&1; then
+    printf '%s' "$1" | base64 -D
+    return 0
+  fi
+  return 1
 }
 
 ensure_local_properties() {
@@ -173,8 +185,13 @@ valid_display_size() {
   local width="$1"
   local height="$2"
 
-  case "$width:$height" in
-    *[!0-9:]* | :* | *: | "")
+  case "$width" in
+    *[!0-9]* | "")
+      return 1
+      ;;
+  esac
+  case "$height" in
+    *[!0-9]* | "")
       return 1
       ;;
   esac
