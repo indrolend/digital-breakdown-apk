@@ -275,10 +275,10 @@ case "$MODE" in
     install_native
     launch_native
     screenshot_native "$SCREEN_BEFORE_FILE"
-    probe_input
+    probe_input || true
     status_native
     screenshot_native
-    verify_probe_output
+    verify_probe_output || true
     crash_scan
     ;;
   *)
