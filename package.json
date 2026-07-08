@@ -27,7 +27,8 @@
     "lg:fastboot-cycle": "./scripts/run-cycle.sh fastboot-cycle",
     "lg:download-note": "./scripts/run-cycle.sh download-note",
     "lg:probe:verbose": "./scripts/probe-lg.sh adb --verbose",
-    "lg:fastboot:verbose": "./scripts/probe-lg.sh fastboot --verbose"
+    "lg:fastboot:verbose": "./scripts/probe-lg.sh fastboot --verbose",
+    "checkpoint": "./scripts/checkpoint.sh"
   },
   "keywords": [],
   "author": "",
