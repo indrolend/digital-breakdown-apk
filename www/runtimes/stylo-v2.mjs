@@ -1,3 +1,5 @@
+import { MobileTelemetry } from "../mobile-telemetry.mjs";
+MobileTelemetry.mark("runtime_loaded", { runtime: "stylo-v2" });
 ﻿import * as THREE from "three";
 
 window.__ANDROID_LOW_POWER_MODE__ = true;
@@ -649,6 +651,8 @@ function resize() {
 }
 
 function loop() {
+MobileTelemetry.mark("runtime_ready");
+  MobileTelemetry.frame();
   requestAnimationFrame(loop);
 
   const dt = Math.min(0.033, clock.getDelta());

@@ -1,3 +1,6 @@
+import { MobileTelemetry } from "./mobile-telemetry.mjs";
+MobileTelemetry.init();
+MobileTelemetry.mark("entry_loaded");
 ﻿import * as THREE from "three";
 
 window.__ANDROID_LOW_POWER_MODE__ = true;

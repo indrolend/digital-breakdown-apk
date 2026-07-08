@@ -24,5 +24,5 @@ echo ""
 adb logcat -c || true
 
 adb logcat 2>/dev/null \
-  | grep -Ei --line-buffered "$APP_ID|Capacitor|chromium|WebView|crash|fatal|ANR|AndroidRuntime|OpenGL|EGL|Adreno|libc" \
+  | grep -Ei --line-buffered "$APP_ID|DBTEL|Capacitor|chromium|WebView|crash|fatal|ANR|AndroidRuntime|OpenGL|EGL|Adreno|libc" \
   | tee "$LOG"

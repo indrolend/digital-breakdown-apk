@@ -40,6 +40,13 @@ posttest() {
   ./scripts/status-android.sh
 
   echo ""
+  echo "== Recent telemetry =="
+  adb logcat -d -t 1200 2>/dev/null \
+    | grep '\[DBTEL\]' \
+    | tail -40 \
+    || echo "No DBTEL telemetry found."
+
+  echo ""
   echo "== Recent crash scan =="
   adb logcat -d -t 1000 2>/dev/null \
     | grep -Ei 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing|has stopped' \
