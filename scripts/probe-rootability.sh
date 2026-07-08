@@ -51,16 +51,24 @@ echo "== Kernel =="
 adb shell uname -a | tee "$OUT_DIR/uname.txt"
 
 echo "== Mounts =="
-adb shell mount | tee "$OUT_DIR/mount.txt"
+adb shell mount | tee "$OUT_DIR/mount.txt" || true
 
 echo "== Block devices =="
-adb shell ls -al /dev/block/by-name 2>&1 | tee "$OUT_DIR/block-by-name.txt"
+adb shell '
+if [ -d /dev/block/by-name ]; then
+  ls -al /dev/block/by-name
+else
+  echo "/dev/block/by-name not present"
+  echo "Searching likely block symlink directories..."
+  find /dev/block -maxdepth 4 -type l 2>/dev/null | sort | head -300
+fi
+' 2>&1 | tee "$OUT_DIR/block-by-name.txt" || true
 
 echo "== Packages related to LG / update / boot =="
-adb shell pm list packages | grep -Ei 'lg|update|boot|carrier|metropcs|tmobile|system' | tee "$OUT_DIR/packages-filtered.txt" || true
+adb shell pm list packages 2>&1 | grep -Ei 'lg|update|boot|carrier|metropcs|tmobile|system' | tee "$OUT_DIR/packages-filtered.txt" || true
 
 echo "== Check su presence, non-invasive =="
-adb shell 'command -v su || echo "no su in PATH"' | tee "$OUT_DIR/su-check.txt"
+adb shell 'command -v su || echo "no su in PATH"' | tee "$OUT_DIR/su-check.txt" || true
 
 echo "== Done ADB probe =="
 echo "Next optional step: bootloader / fastboot probe."
