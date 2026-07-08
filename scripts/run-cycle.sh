@@ -41,8 +41,9 @@ posttest() {
 
   echo ""
   echo "== Recent crash scan =="
-  adb logcat -d -t 800 2>/dev/null \
-    | grep -Ei 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|crash|fatal' \
+  adb logcat -d -t 1000 2>/dev/null \
+    | grep -Ei 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing|has stopped' \
+    | grep -Evi 'cr_CrashFileManager|Crash Reports does not exist' \
     || echo "No crash lines found."
 }
 
@@ -68,8 +69,6 @@ case "$MODE" in
   test-cycle)
     ./scripts/build-android.sh
     ./scripts/install-android.sh
-    sleep 2
-    launch_app
     sleep 5
     posttest
     ;;

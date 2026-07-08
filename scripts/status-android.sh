@@ -34,12 +34,19 @@ echo slot_suffix=\$(getprop ro.boot.slot_suffix)
 echo app_path=\$(pm path $APP_ID 2>/dev/null | head -1)
 echo app_pid=\$(pidof $APP_ID 2>/dev/null)
 echo foreground=\$(dumpsys activity activities 2>/dev/null | grep -Ei 'mResumedActivity|topResumedActivity|ResumedActivity' | head -1 | tr -s ' ')
-echo mem_available_kb=\$(grep MemAvailable /proc/meminfo | awk '{print \$2}')
-echo swap_free_kb=\$(grep SwapFree /proc/meminfo | awk '{print \$2}')
 " > "$TMP" 2>/dev/null || {
   echo "ADB status failed. Is the phone booted and authorized?"
   exit 1
 }
+
+MEMINFO="$(adb shell cat /proc/meminfo 2>/dev/null | tr -d '\r' || true)"
+MEM_AVAILABLE="$(printf "%s\n" "$MEMINFO" | awk '/MemAvailable/ {print $2; exit}')"
+SWAP_FREE="$(printf "%s\n" "$MEMINFO" | awk '/SwapFree/ {print $2; exit}')"
+
+{
+  echo "mem_available_kb=${MEM_AVAILABLE}"
+  echo "swap_free_kb=${SWAP_FREE}"
+} >> "$TMP"
 
 # Normalize empty values and remove volatile whitespace.
 sed -i.bak 's/[[:space:]]*$//' "$TMP"

@@ -25,7 +25,9 @@
     "android:posttest": "./scripts/run-cycle.sh posttest",
     "lg:diagnose": "./scripts/run-cycle.sh diagnose",
     "lg:fastboot-cycle": "./scripts/run-cycle.sh fastboot-cycle",
-    "lg:download-note": "./scripts/run-cycle.sh download-note"
+    "lg:download-note": "./scripts/run-cycle.sh download-note",
+    "lg:probe:verbose": "./scripts/probe-lg.sh adb --verbose",
+    "lg:fastboot:verbose": "./scripts/probe-lg.sh fastboot --verbose"
   },
   "keywords": [],
   "author": "",

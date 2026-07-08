@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 MODE="${1:-adb}"
+VERBOSE="${2:-}"
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT_DIR="logs/lg-probe-$MODE-$TS"
 mkdir -p "$OUT_DIR"
@@ -21,11 +22,17 @@ capture() {
   shift
   local file="$OUT_DIR/$name.txt"
 
-  echo ""
-  echo "== $name =="
-  set +e
-  "$@" 2>&1 | tee "$file"
-  set -e
+  if [ "$VERBOSE" = "--verbose" ]; then
+    echo ""
+    echo "== $name =="
+    set +e
+    "$@" 2>&1 | tee "$file"
+    set -e
+  else
+    set +e
+    "$@" > "$file" 2>&1
+    set -e
+  fi
 
   keep_if_nonempty "$file"
   return 0
@@ -36,11 +43,17 @@ capture_shell() {
   local cmd="$2"
   local file="$OUT_DIR/$name.txt"
 
-  echo ""
-  echo "== $name =="
-  set +e
-  adb shell "$cmd" 2>&1 | tee "$file"
-  set -e
+  if [ "$VERBOSE" = "--verbose" ]; then
+    echo ""
+    echo "== $name =="
+    set +e
+    adb shell "$cmd" 2>&1 | tee "$file"
+    set -e
+  else
+    set +e
+    adb shell "$cmd" > "$file" 2>&1
+    set -e
+  fi
 
   keep_if_nonempty "$file"
   return 0
@@ -72,7 +85,15 @@ write_summary() {
 
   echo ""
   echo "== Summary =="
-  cat "$summary"
+  if [ "$VERBOSE" = "--verbose" ]; then
+    cat "$summary"
+  else
+    grep -E "^(model|name|device|manufacturer|hardware|platform|android|sdk|patch|oem_unlock_supported|oem_unlock_allowed|flash_locked|verifiedbootstate|veritymode|slot_suffix|abi|abilist)=" "$OUT_DIR/getprop-summary.txt" 2>/dev/null || true
+    if [ -f "$OUT_DIR/su-check.txt" ]; then
+      echo "su=$(cat "$OUT_DIR/su-check.txt" | tr -d "\r")"
+    fi
+    echo "summary=$summary"
+  fi
 }
 
 probe_adb() {
@@ -157,14 +178,16 @@ probe_fastboot() {
     fastboot getvar secure 2>&1 || true
     fastboot getvar current-slot 2>&1 || true
     fastboot flashing get_unlock_ability 2>&1 || true
-  } | tee "$OUT_DIR/fastboot-basic.txt"
+  } > "$OUT_DIR/fastboot-basic.txt"
+  if [ "$VERBOSE" = "--verbose" ]; then cat "$OUT_DIR/fastboot-basic.txt"; fi
   keep_if_nonempty "$OUT_DIR/fastboot-basic.txt"
 
   {
     echo "--- unlock-related, read-only ---"
     fastboot oem device-id 2>&1 || true
     fastboot oem device-info 2>&1 || true
-  } | tee "$OUT_DIR/fastboot-unlock.txt"
+  } > "$OUT_DIR/fastboot-unlock.txt"
+  if [ "$VERBOSE" = "--verbose" ]; then cat "$OUT_DIR/fastboot-unlock.txt"; fi
   keep_if_nonempty "$OUT_DIR/fastboot-unlock.txt"
 
   capture "fastboot-all" fastboot getvar all
@@ -195,7 +218,9 @@ usage() {
   cat <<'TXT'
 Usage:
   ./scripts/probe-lg.sh adb
+  ./scripts/probe-lg.sh adb --verbose
   ./scripts/probe-lg.sh fastboot
+  ./scripts/probe-lg.sh fastboot --verbose
   ./scripts/probe-lg.sh download
   ./scripts/probe-lg.sh full
 
