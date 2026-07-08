@@ -16,6 +16,9 @@ SCREEN_BEFORE_FILE="$LOG_DIR/screen-$STAMP-before-input.png"
 RESULT_FILE="$LOG_DIR/result-$STAMP.json"
 INPUT_TAP_DELAY="${INPUT_TAP_DELAY:-1}"
 INPUT_SWIPE_DELAY="${INPUT_SWIPE_DELAY:-2}"
+INPUT_SWIPE_DURATION="${INPUT_SWIPE_DURATION:-250}"
+MIN_DISPLAY_DIM="${MIN_DISPLAY_DIM:-100}"
+MAX_DISPLAY_DIM="${MAX_DISPLAY_DIM:-10000}"
 # Base64 for a 1x1 transparent PNG fallback artifact when a run fails before a real screenshot is captured.
 PLACEHOLDER_SCREEN_PNG_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6pYJ0AAAAASUVORK5CYII='
 
@@ -191,10 +194,10 @@ valid_display_size() {
   if ! printf '%s\n' "$height" | grep -Eq '^[0-9]+$'; then
     return 1
   fi
-  if [ "$width" -le 100 ] || [ "$height" -le 100 ]; then
+  if [ "$width" -le "$MIN_DISPLAY_DIM" ] || [ "$height" -le "$MIN_DISPLAY_DIM" ]; then
     return 1
   fi
-  if [ "$width" -ge 10000 ] || [ "$height" -ge 10000 ]; then
+  if [ "$width" -ge "$MAX_DISPLAY_DIM" ] || [ "$height" -ge "$MAX_DISPLAY_DIM" ]; then
     return 1
   fi
   return 0
@@ -220,7 +223,7 @@ probe_input() {
 
   adb shell input tap "$mid_x" "$mid_y"
   sleep "$INPUT_TAP_DELAY"
-  adb shell input swipe "$mid_x" "$mid_y" "$drag_x" "$mid_y" 250
+  adb shell input swipe "$mid_x" "$mid_y" "$drag_x" "$mid_y" "$INPUT_SWIPE_DURATION"
   sleep "$INPUT_SWIPE_DELAY"
 }
 
