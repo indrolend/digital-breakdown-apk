@@ -6,11 +6,13 @@
 
 set -euo pipefail
 
-DB_HOME="$HOME/db-control"
+DB_HOME="/sdcard/Download/db-control"
 TERMUX_BIN="/data/data/com.termux/files/usr/bin"
 SDCARD_DOWNLOAD="/sdcard/Download"
-TERMUX_USER_FILE="$SDCARD_DOWNLOAD/termux-user.txt"
-APK_DIR="$SDCARD_DOWNLOAD/db-apks"
+TERMUX_USER_FILE="$DB_HOME/termux-user.txt"
+APK_DIR="$DB_HOME/apks"
+EVIDENCE_DIR="$DB_HOME/evidence"
+TOOLS_DIR="$DB_HOME/tools"
 
 log() { echo "[bootstrap] $*"; }
 ok()  { echo "[ok] $*"; }
@@ -115,7 +117,17 @@ ensure_sshd() {
 ensure_db_home() {
     mkdir -p "$DB_HOME"
     mkdir -p "$APK_DIR"
-    ok "Directories ready: $DB_HOME  $APK_DIR"
+    mkdir -p "$EVIDENCE_DIR/latest"
+    mkdir -p "$EVIDENCE_DIR/archive"
+    mkdir -p "$TOOLS_DIR"
+    ok "Directories ready: $DB_HOME  $APK_DIR  $EVIDENCE_DIR  $TOOLS_DIR"
+}
+
+persist_bootstrap_copy() {
+    local target="$TOOLS_DIR/termux-control-bootstrap.sh"
+    cp "$0" "$target" 2>/dev/null || true
+    chmod +x "$target" 2>/dev/null || true
+    ok "Bootstrap copy ready at $target"
 }
 
 # ---------------------------------------------------------------------------
@@ -128,9 +140,9 @@ write_db_menu() {
 #!/data/data/com.termux/files/usr/bin/bash
 # db-menu — Digital Breakdown terminal menu
 
-DB_HOME="$HOME/db-control"
+DB_HOME="/sdcard/Download/db-control"
 SDCARD_DOWNLOAD="/sdcard/Download"
-APK_DIR="$SDCARD_DOWNLOAD/db-apks"
+APK_DIR="$DB_HOME/apks"
 
 show_status() {
     echo ""
@@ -207,8 +219,8 @@ menu_apk() {
                 read -r -p "GitHub run ID: " run_id
                 read -r -p "Artifact name [digital-breakdown-native-debug-apk]: " art_name
                 art_name="${art_name:-digital-breakdown-native-debug-apk}"
-                read -r -p "Output filename [pr-native-debug.apk]: " out_name
-                out_name="${out_name:-pr-native-debug.apk}"
+                read -r -p "Output filename [current.apk]: " out_name
+                out_name="${out_name:-current.apk}"
                 db-apk-artifact-download \
                     --repo indrolend/digital-breakdown-apk \
                     --run "$run_id" \
@@ -225,8 +237,8 @@ menu_apk() {
                 ;;
             4)
                 echo "Screenshot is captured from the Windows side via:"
-                echo "  adb shell screencap -p /sdcard/Download/db-apks/screen.png"
-                echo "  adb pull /sdcard/Download/db-apks/screen.png"
+                echo "  adb shell screencap -p /sdcard/Download/db-control/evidence/latest/screen.png"
+                echo "  adb pull /sdcard/Download/db-control/evidence/latest/screen.png"
                 ;;
             5)
                 echo "Logcat evidence is captured from the Windows side via:"
@@ -339,14 +351,14 @@ write_db_apk_download() {
     cat > "$target" << 'DLEOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # db-apk-artifact-download — Download a GitHub Actions artifact via gh CLI.
-# Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME --out PATH
+# Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH]
 
 set -euo pipefail
 
 REPO="indrolend/digital-breakdown-apk"
 RUN_ID=""
 ARTIFACT_NAME=""
-OUT_PATH=""
+OUT_PATH="/sdcard/Download/db-control/apks/current.apk"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -358,8 +370,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$RUN_ID" || -z "$ARTIFACT_NAME" || -z "$OUT_PATH" ]]; then
-    echo "Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME --out PATH"
+if [[ -z "$RUN_ID" || -z "$ARTIFACT_NAME" ]]; then
+    echo "Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH]"
     exit 1
 fi
 
@@ -446,7 +458,7 @@ write_db_clip() {
     cat > "$set_target" << 'CLIPSET'
 #!/data/data/com.termux/files/usr/bin/bash
 # db-clip-set — Set Android clipboard. Reads from stdin or first argument.
-CLIP_FILE="$HOME/db-control/.clipboard"
+CLIP_FILE="/sdcard/Download/db-control/.clipboard"
 mkdir -p "$(dirname "$CLIP_FILE")"
 
 if [[ $# -gt 0 ]]; then
@@ -470,7 +482,7 @@ CLIPSET
     cat > "$get_target" << 'CLIPGET'
 #!/data/data/com.termux/files/usr/bin/bash
 # db-clip-get — Get Android clipboard.
-CLIP_FILE="$HOME/db-control/.clipboard"
+CLIP_FILE="/sdcard/Download/db-control/.clipboard"
 
 if command -v termux-clipboard-get >/dev/null 2>&1; then
     termux-clipboard-get
@@ -508,8 +520,8 @@ set -euo pipefail
 DRY_RUN=0
 if [[ "${1:-}" == "--dry-run" ]]; then DRY_RUN=1; fi
 
-DB_CONTROL="$HOME/db-control"
-APK_DIR="/sdcard/Download/db-apks"
+DB_CONTROL="/sdcard/Download/db-control"
+APK_DIR="$DB_CONTROL/apks"
 CLIP_FILE="$DB_CONTROL/.clipboard"
 
 log_would() { echo "[would delete] $*"; }
@@ -576,13 +588,13 @@ write_db_pr2() {
     cat > "$target" << 'PR2EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # db-pr2 — Quick helper for PR#2 native debug APK smoke test.
-# Downloads the latest native debug artifact and places it in /sdcard/Download/db-apks/.
+# Downloads the latest native debug artifact and places it in /sdcard/Download/db-control/apks/.
 
 set -euo pipefail
 
 REPO="indrolend/digital-breakdown-apk"
 ARTIFACT="digital-breakdown-native-debug-apk"
-OUT="/sdcard/Download/db-apks/pr2-native-debug.apk"
+OUT="/sdcard/Download/db-control/apks/current.apk"
 
 echo "=== PR#2 native debug APK download ==="
 
@@ -617,7 +629,7 @@ echo "APK ready at: $OUT"
 echo ""
 echo "On Windows, now run:"
 echo "  . .\\tools\\phone-control\\phone-session.ps1"
-echo "  DbApkInstall -DevicePath /sdcard/Download/db-apks/pr2-native-debug.apk -Package com.indrolend.digitalbreakdown.native"
+echo "  DbApkInstall -DevicePath /sdcard/Download/db-control/apks/current.apk -Package com.indrolend.digitalbreakdown.native"
 PR2EOF
     chmod +x "$target"
     ok "db-pr2 installed at $target"
@@ -633,8 +645,9 @@ log "User:   $(whoami)"
 log "Home:   $HOME"
 
 check_storage
-repair_user_file
 ensure_db_home
+persist_bootstrap_copy
+repair_user_file
 install_packages
 ensure_sshd
 write_db_menu

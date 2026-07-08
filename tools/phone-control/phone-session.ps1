@@ -204,7 +204,7 @@ function Get-TermuxUser {
     if (-not $deviceId) { return $null }
 
     # Read user from file written by bootstrap script
-    $raw = & $adb shell "cat /sdcard/Download/termux-user.txt 2>/dev/null" 2>$null
+    $raw = & $adb shell "cat /sdcard/Download/db-control/termux-user.txt 2>/dev/null || cat /sdcard/Download/termux-user.txt 2>/dev/null" 2>$null
     if ($raw -and $raw -notmatch "No such file|is a directory") {
         $script:TermuxUser = $raw.Trim()
         return $script:TermuxUser
@@ -219,7 +219,7 @@ function Get-TermuxUser {
 
     Write-Host "[phone] Could not read Termux username automatically."
     Write-Host "  Run the bootstrap on the phone first:"
-    Write-Host "    PhoneCmd 'bash /sdcard/Download/termux-control-bootstrap.sh'"
+    Write-Host "    PhoneCmd 'bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh'"
     Write-Host "  Or set manually:"
     $u = Read-Host "  Enter Termux username (e.g. u0_a234)"
     if ($u) {
@@ -326,11 +326,11 @@ function global:StartScrcpy {
 
 function global:DbApkDemo {
     <#
-    .SYNOPSIS Full APK demo: download artifact -> pull -> install -> launch -> evidence.
+    .SYNOPSIS Full APK demo: download artifact -> install -> launch -> phone evidence.
     .PARAMETER RunId     GitHub Actions run ID.
     .PARAMETER ArtifactName  Name of the artifact to download.
     .PARAMETER Package   Android package name.
-    .PARAMETER OutName   Output APK filename (default: app-debug.apk).
+    .PARAMETER OutName   Output APK filename on phone (default: current.apk).
     .PARAMETER SkipDownload  Skip Termux gh download (use if APK already on phone).
     .PARAMETER EvidenceOnly  Preferred parameter name. Skips download/pull/install/launch and captures evidence only.
     .PARAMETER SkipInstall   Deprecated compatibility alias kept for older commands.
@@ -340,10 +340,15 @@ function global:DbApkDemo {
         [Parameter(Mandatory)][string]$RunId,
         [Parameter(Mandatory)][string]$ArtifactName,
         [Parameter(Mandatory)][string]$Package,
-        [string]$OutName = "app-debug.apk",
+        [string]$OutName = "current.apk",
         [switch]$SkipDownload,
         [Alias("SkipInstall")]
-        [switch]$EvidenceOnly
+        [switch]$EvidenceOnly,
+        [switch]$PullEvidenceToWindows,
+        [switch]$NoPullEvidence,
+        [switch]$ArchivePreviousEvidence,
+        [switch]$CleanBeforeRun,
+        [int]$KeepEvidenceCount = 10
     )
     $demoScript = Join-Path $script:PhoneSessionDir "db-apk-demo.ps1"
     if (-not (Test-Path $demoScript)) {
@@ -355,19 +360,24 @@ function global:DbApkDemo {
         -Package $Package `
         -OutName $OutName `
         -SkipDownload:$SkipDownload `
-        -EvidenceOnly:$EvidenceOnly
+        -EvidenceOnly:$EvidenceOnly `
+        -PullEvidenceToWindows:$PullEvidenceToWindows `
+        -NoPullEvidence:$NoPullEvidence `
+        -ArchivePreviousEvidence:$ArchivePreviousEvidence `
+        -CleanBeforeRun:$CleanBeforeRun `
+        -KeepEvidenceCount $KeepEvidenceCount
 }
 
 function global:DbApkInstall {
     <#
-    .SYNOPSIS Pull APK from phone and install it.
-    .PARAMETER DevicePath  Path on device, e.g. /sdcard/Download/db-apks/app.apk
-    .PARAMETER LocalPath   Where to save on Windows (default: Downloads).
+    .SYNOPSIS Install APK from phone stable path.
+    .PARAMETER DevicePath  Path on device, default /sdcard/Download/db-control/apks/current.apk
+    .PARAMETER LocalPath   Optional Windows mirror path.
     .PARAMETER Package     Android package name.
     #>
     param(
-        [Parameter(Mandatory)][string]$DevicePath,
-        [string]$LocalPath = (Join-Path $env:USERPROFILE "Downloads\$(Split-Path $DevicePath -Leaf)"),
+        [string]$DevicePath = "/sdcard/Download/db-control/apks/current.apk",
+        [string]$LocalPath = "",
         [string]$Package = ""
     )
     $installScript = Join-Path $script:PhoneSessionDir "db-apk-install.ps1"
@@ -426,6 +436,6 @@ Write-Host "  DbMenu               - Open db-menu in Termux"
 Write-Host "  PhoneClipSet TEXT    - Set Android clipboard"
 Write-Host "  PhoneClipGet         - Read Android clipboard"
 Write-Host "  StartScrcpy          - Start screen mirror"
-Write-Host "  DbApkDemo ...        - Full APK download/install/evidence run"
-Write-Host "  DbApkInstall ...     - Pull + install APK from phone storage"
+Write-Host "  DbApkDemo ...        - Full phone-first APK + evidence run"
+Write-Host "  DbApkInstall ...     - Install APK from phone stable path"
 Write-Host ""

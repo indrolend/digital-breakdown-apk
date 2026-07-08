@@ -41,19 +41,20 @@ Get-ChildItem .\tools\phone-control\*.ps1 | ForEach-Object {
 Copy and run in Termux (or use `adb push` / `adb shell`):
 
 ```bash
-bash /sdcard/Download/termux-control-bootstrap.sh
+bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
 ```
 
 If the file is not on the phone yet, push it from Windows:
 
 ```powershell
-adb push .\tools\phone-control\termux-control-bootstrap.sh /sdcard/Download/
+adb shell mkdir -p /sdcard/Download/db-control/tools
+adb push .\tools\phone-control\termux-control-bootstrap.sh /sdcard/Download/db-control/tools/
 ```
 
 Then run:
 
 ```powershell
-PhoneCmd "bash /sdcard/Download/termux-control-bootstrap.sh"
+PhoneCmd "bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh"
 ```
 
 ---
@@ -147,17 +148,20 @@ DbApkDemo `
   -RunId 28961104004 `
   -ArtifactName digital-breakdown-native-debug-apk `
   -Package com.indrolend.digitalbreakdown.native `
-  -OutName pr2-native-debug.apk
+  -OutName current.apk `
+  -PullEvidenceToWindows `
+  -CleanBeforeRun
 ```
 
 This runs:
-1. SSH → Termux: `db-apk-artifact-download` downloads the artifact.
-2. `adb pull` pulls the APK to Windows.
-3. `adb install -r` installs the APK.
-4. `adb shell monkey` launches the app.
-5. `adb logcat` captures filtered + full logs.
-6. `adb shell screencap` captures a screenshot.
-7. Evidence written to `Downloads\db-demo-evidence\<pkg>-<timestamp>\`.
+1. SSH -> Termux: `db-apk-artifact-download` writes to phone stable APK path.
+2. `adb shell pm install -r` installs from phone path.
+3. `adb shell monkey` launches the app.
+4. `adb logcat -c` (optional via `-CleanBeforeRun`) clears stale logs.
+5. `adb logcat -d -v time` captures bounded logs.
+6. `adb shell screencap` captures a screenshot to phone evidence path.
+7. Evidence written to `/sdcard/Download/db-control/evidence/latest/`.
+8. Optional Windows mirror with `-PullEvidenceToWindows` to `Downloads\db-control\evidence-latest\`.
 
 ### Termux-only fallback (APK already downloaded)
 
@@ -166,14 +170,14 @@ db-apk-artifact-download \
   --repo indrolend/digital-breakdown-apk \
   --run 28961104004 \
   --artifact digital-breakdown-native-debug-apk \
-  --out /sdcard/Download/db-apks/pr2-native-debug.apk
+  --out /sdcard/Download/db-control/apks/current.apk
 ```
 
 Then from Windows:
 
 ```powershell
 DbApkInstall `
-  -DevicePath /sdcard/Download/db-apks/pr2-native-debug.apk `
+  -DevicePath /sdcard/Download/db-control/apks/current.apk `
   -Package com.indrolend.digitalbreakdown.native
 ```
 
@@ -184,7 +188,7 @@ DbApkDemo `
   -RunId 28961104004 `
   -ArtifactName digital-breakdown-native-debug-apk `
   -Package com.indrolend.digitalbreakdown.native `
-  -OutName pr2-native-debug.apk `
+  -OutName current.apk `
   -SkipDownload
 ```
 
@@ -193,7 +197,7 @@ DbApkDemo `
 ```powershell
 DbApkDemo -RunId 0 -ArtifactName unused `
   -Package com.indrolend.digitalbreakdown.native `
-  -LocalApkPath "$env:USERPROFILE\Downloads\app-debug.apk"
+  -LocalApkPath "$env:USERPROFILE\Downloads\current.apk"
 ```
 
 ### Evidence-only (app already installed)
@@ -203,17 +207,16 @@ DbApkDemo `
   -RunId 0 `
   -ArtifactName unused `
   -Package com.indrolend.digitalbreakdown.native `
-  -OutName pr2-native-debug.apk `
+  -OutName current.apk `
   -EvidenceOnly
 ```
 
 Deprecated compatibility alias: `-SkipInstall` maps to the same behavior as `-EvidenceOnly` (broader than the legacy alias name).
 
-### Evidence output structure
+### Evidence output structure (phone source of truth)
 
 ```
-Downloads\db-demo-evidence\<pkg>-<YYYYMMDD-HHMMSS>\
-  apk-source.txt        # Run ID, artifact name, paths
+/sdcard/Download/db-control/evidence/latest/
   install.txt           # adb install output
   launch.txt            # monkey launch output
   logcat-full.txt       # Full logcat dump
@@ -224,22 +227,37 @@ Downloads\db-demo-evidence\<pkg>-<YYYYMMDD-HHMMSS>\
   result.json           # Pass/fail summary
 ```
 
+Archived snapshots (optional with `-ArchivePreviousEvidence`) are kept at:
+
+```
+/sdcard/Download/db-control/evidence/archive/YYYYMMDD-HHMMSS/
+```
+
 `result.json` shape:
 
 ```json
 {
-  "adb":          "pass|fail",
-  "ssh":          "pass|fail|skipped",
-  "ghAuth":       "pass|fail|skipped",
-  "download":     "pass|fail|skipped",
-  "pull":         "pass|fail|skipped",
-  "install":      "pass|fail|skipped",
-  "launch":       "pass|fail|skipped",
-  "dbnativeLogs": "pass|fail|skipped",
-  "crashScan":    "pass|fail|skipped",
-  "screenshot":   "pass|fail|skipped",
-  "apkPath":      "...",
-  "package":      "com.indrolend.digitalbreakdown.native"
+  "adb": "pass|fail|warning|skipped",
+  "ssh": "pass|fail|warning|skipped",
+  "ghAuth": "pass|fail|warning|skipped",
+  "download": "pass|fail|warning|skipped",
+  "pull": "pass|fail|warning|skipped",
+  "install": "pass|fail|warning|skipped",
+  "launch": "pass|fail|warning|skipped",
+  "evidence": "pass|fail|warning|skipped",
+  "dbnativeLogs": "pass|fail|warning|skipped",
+  "crashScan": "pass|fail|warning|skipped",
+  "screenshot": "pass|fail|warning|skipped",
+  "apkPathPhone": "/sdcard/Download/db-control/apks/current.apk",
+  "apkPathWindows": "optional",
+  "evidencePathPhone": "/sdcard/Download/db-control/evidence/latest",
+  "evidencePathWindows": "optional",
+  "package": "com.indrolend.digitalbreakdown.native",
+  "runId": "28961104004",
+  "artifactName": "digital-breakdown-native-debug-apk",
+  "timestamp": "ISO-8601",
+  "logcatCleared": "pass|fail|warning|skipped",
+  "errorSummary": []
 }
 ```
 
@@ -268,7 +286,7 @@ APK / Demo Tools submenu:
 ```
 === APK / Demo Tools ===
   1) Download latest native debug artifact from PR/run
-  2) List APKs in /sdcard/Download/db-apks
+  2) List APKs in /sdcard/Download/db-control/apks
   3) Launch native package  (Windows-side)
   4) Capture screenshot     (Windows-side)
   5) Capture logcat evidence (Windows-side)
@@ -317,14 +335,14 @@ Or from the menu: `5) Cleanup / Waste management`.
 - Never deletes GitHub auth.
 - Never deletes broad `/sdcard/Download` contents.
 - Only deletes known paths:
-  - `~/db-control/.clipboard`
-  - Old APKs in `/sdcard/Download/db-apks/` (keeps newest)
+  - `/sdcard/Download/db-control/.clipboard`
+  - Old APKs in `/sdcard/Download/db-control/apks/` (keeps newest)
   - Stale bootstrap copies in `/sdcard/Download/`
 
 ### Windows-side cleanup
 
-Evidence folders in `Downloads\db-demo-evidence\` can be deleted manually.
-Each run is in its own timestamped subfolder.
+Optional mirror folder is `Downloads\db-control\evidence-latest\`.
+Default flow keeps evidence authoritative on phone.
 
 ---
 
@@ -335,11 +353,11 @@ Each run is in its own timestamped subfolder.
 | GitHub auth | Phone / Termux (`~/.config/gh/`) |
 | `git`, `gh`, `jq`, etc. | Phone / Termux |
 | Project utility scripts | Phone / Termux (`/data/data/com.termux/files/usr/bin/`) |
-| APK artifacts | Phone (`/sdcard/Download/db-apks/`) |
-| Temp/state files | Phone (`~/db-control/`) |
+| APK artifacts | Phone (`/sdcard/Download/db-control/apks/current.apk`) |
+| Temp/state files | Phone (`/sdcard/Download/db-control/`) |
 | ADB path config | Windows (`$env:USERPROFILE\.db-phone-config.ps1`) |
-| Evidence/logs | Windows (`$env:USERPROFILE\Downloads\db-demo-evidence\`) |
-| Pulled APKs | Windows (`$env:USERPROFILE\Downloads\`) |
+| Evidence/logs (authoritative) | Phone (`/sdcard/Download/db-control/evidence/latest/`) |
+| Evidence mirror (optional) | Windows (`$env:USERPROFILE\Downloads\db-control\evidence-latest\`) |
 
 ---
 
@@ -368,7 +386,7 @@ adb devices   # Accept prompt on phone
 The bootstrap script detects and repairs this:
 
 ```bash
-bash /sdcard/Download/termux-control-bootstrap.sh
+bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
 ```
 
 ### sshd not running

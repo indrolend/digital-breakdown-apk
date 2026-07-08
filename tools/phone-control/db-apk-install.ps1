@@ -1,44 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Windows-side APK install and launch helper.
-
-.DESCRIPTION
-    Pulls an APK from Android shared storage, installs it, and optionally launches
-    the package. Part of the Digital Breakdown phone-control workflow.
-
-.PARAMETER DevicePath
-    Path of the APK on the Android device (e.g. /sdcard/Download/db-apks/app.apk).
-
-.PARAMETER LocalPath
-    Where to save the pulled APK on Windows. Defaults to Downloads folder.
-
-.PARAMETER Package
-    Android package name to launch after install (optional).
-
-.PARAMETER SkipPull
-    If set, assumes LocalPath already contains the APK (skips adb pull).
-
-.PARAMETER SkipLaunch
-    If set, installs but does not launch.
-
-.EXAMPLE
-    # Pull from phone and install
-    .\db-apk-install.ps1 `
-        -DevicePath /sdcard/Download/db-apks/pr2-native-debug.apk `
-        -Package com.indrolend.digitalbreakdown.native
-
-.EXAMPLE
-    # Install from local APK already on Windows
-    .\db-apk-install.ps1 `
-        -DevicePath /sdcard/Download/db-apks/pr2-native-debug.apk `
-        -LocalPath "$env:USERPROFILE\Downloads\pr2-native-debug.apk" `
-        -SkipPull `
-        -Package com.indrolend.digitalbreakdown.native
+    Install APK from stable phone path with optional Windows pull.
 #>
 
 param(
-    [Parameter(Mandatory)][string]$DevicePath,
+    [string]$DevicePath = "/sdcard/Download/db-control/apks/current.apk",
     [string]$LocalPath = "",
     [string]$Package = "",
     [switch]$SkipPull,
@@ -46,22 +13,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-
-# ---------------------------------------------------------------------------
-# Load phone-session helpers if available
-# ---------------------------------------------------------------------------
-
-$sessionScript = Join-Path $PSScriptRoot "phone-session.ps1"
-if (Test-Path $sessionScript) {
-    # Already dot-sourced if running through DbApkInstall
-    if (-not (Get-Command Require-Adb -ErrorAction SilentlyContinue)) {
-        . $sessionScript
-    }
-}
-
-# ---------------------------------------------------------------------------
-# Resolve ADB
-# ---------------------------------------------------------------------------
 
 function Get-AdbExe {
     if ($env:DB_ADB_PATH -and (Test-Path $env:DB_ADB_PATH)) { return $env:DB_ADB_PATH }
@@ -71,133 +22,67 @@ function Get-AdbExe {
 }
 
 function Invoke-Adb {
-    # Run an adb command without letting stderr diagnostic output become
-    # a terminating PowerShell 5.1 error. Judge success by .ExitCode, not
-    # by the presence of stderr text.
-    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$AdbArgs)
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$AdbArgs)
     $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
-    return [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
 }
 
 $adb = Get-AdbExe
 
-# ---------------------------------------------------------------------------
-# Check device
-# ---------------------------------------------------------------------------
-
 Write-Host ""
-Write-Host "=== APK Install Helper ==="
+Write-Host "=== APK Install Helper (Phone-First) ==="
 
 $r = Invoke-Adb devices
 $deviceLines = $r.Output | Select-String "device$"
 if (-not $deviceLines) {
     Write-Host "[fail] No authorized ADB device detected."
-    Write-Host "  Connect phone, unlock, and tap Allow on USB debugging prompt."
-    Write-Host "  Then run: adb devices"
     exit 1
 }
-$deviceId = ($deviceLines | Select-Object -First 1).ToString().Trim().Split()[0]
-Write-Host "[adb] Device: $deviceId"
 
-# ---------------------------------------------------------------------------
-# Resolve local path
-# ---------------------------------------------------------------------------
-
-if (-not $LocalPath) {
-    $apkName = Split-Path $DevicePath -Leaf
-    $LocalPath = Join-Path $env:USERPROFILE "Downloads\$apkName"
+$exists = Invoke-Adb shell "ls '$DevicePath' 2>/dev/null"
+if ($exists.ExitCode -ne 0 -or ($exists.Output -join "`n") -match "No such file") {
+    Write-Host "[fail] APK not found at phone path: $DevicePath"
+    exit 1
 }
-
-# ---------------------------------------------------------------------------
-# Pull APK from device
-# ---------------------------------------------------------------------------
 
 if (-not $SkipPull) {
-    # Check if APK exists on device
-    $r = Invoke-Adb shell "ls '$DevicePath' 2>/dev/null"
-    $deviceCheck = $r.Output
-    if (-not $deviceCheck -or $deviceCheck -match "No such file") {
-        Write-Host "[fail] APK not found on device at: $DevicePath"
-        Write-Host "  Run db-apk-artifact-download on the phone first:"
-        Write-Host "    PhoneCmd 'db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run RUN_ID --artifact ARTIFACT_NAME --out $DevicePath'"
-        exit 1
+    if (-not $LocalPath) {
+        $LocalPath = Join-Path $env:TEMP ("db-control-" + (Split-Path $DevicePath -Leaf))
     }
-
-    Write-Host "[adb] Pulling APK from device: $DevicePath"
-    Write-Host "      -> $LocalPath"
-    $r = Invoke-Adb pull $DevicePath $LocalPath
-    if ($r.ExitCode -ne 0) {
-        Write-Host "[fail] adb pull failed."
-        exit 1
-    }
-    Write-Host "[ok] APK pulled."
-} else {
-    if (-not (Test-Path $LocalPath)) {
-        Write-Host "[fail] Local APK not found at: $LocalPath"
-        exit 1
-    }
-    Write-Host "[skip] Using existing local APK: $LocalPath"
-}
-
-$apkSize = (Get-Item $LocalPath).Length
-Write-Host "[info] APK size: $([math]::Round($apkSize / 1MB, 2)) MB"
-
-# ---------------------------------------------------------------------------
-# Install APK
-# ---------------------------------------------------------------------------
-
-Write-Host ""
-Write-Host "[adb] Installing APK ..."
-$r = Invoke-Adb install -r $LocalPath
-$installOutput = $r.Output
-$installCode = $r.ExitCode
-Write-Host $installOutput
-
-if ($installCode -ne 0) {
-    if ($installOutput -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
-        Write-Host "[warn] Install failed due to signature mismatch. Uninstalling existing app ..."
-        if ($Package) {
-            Invoke-Adb uninstall $Package | Out-Null
-            Write-Host "[adb] Re-installing after uninstall ..."
-            $r = Invoke-Adb install -r $LocalPath
-            $installOutput = $r.Output
-            $installCode = $r.ExitCode
-            Write-Host $installOutput
-        } else {
-            Write-Host "[fail] Cannot uninstall: -Package not specified."
-            exit 1
-        }
-    }
-    if ($installCode -ne 0) {
-        Write-Host "[fail] Install failed. See output above."
-        Write-Host "  Next steps:"
-        Write-Host "    adb install -r '$LocalPath'"
-        exit 1
+    $pull = Invoke-Adb pull $DevicePath $LocalPath
+    if ($pull.ExitCode -ne 0) {
+        Write-Host "[warn] adb pull failed; continuing with phone-side install."
+    } else {
+        Write-Host "[ok] Optional local mirror: $LocalPath"
     }
 }
 
-Write-Host "[ok] APK installed successfully."
+Write-Host "[adb] Installing from phone path: $DevicePath"
+$install = Invoke-Adb shell pm install -r "$DevicePath"
+$installText = $install.Output -join "`n"
+Write-Host $installText
 
-# ---------------------------------------------------------------------------
-# Launch app
-# ---------------------------------------------------------------------------
+if ($install.ExitCode -ne 0 -and $installText -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE" -and $Package) {
+    Invoke-Adb uninstall $Package | Out-Null
+    $install = Invoke-Adb shell pm install -r "$DevicePath"
+    $installText = $install.Output -join "`n"
+    Write-Host $installText
+}
+
+if ($install.ExitCode -ne 0 -and $installText -notmatch "Success") {
+    Write-Host "[fail] Install failed."
+    exit 1
+}
+
+Write-Host "[ok] Install complete."
 
 if (-not $SkipLaunch -and $Package) {
-    Write-Host ""
-    Write-Host "[adb] Launching $Package ..."
-    $r = Invoke-Adb shell monkey -p $Package 1
-    $launchOutput = $r.Output
-    Write-Host $launchOutput
-    if ($r.ExitCode -eq 0) {
+    $launch = Invoke-Adb shell monkey -p $Package 1
+    if ($launch.ExitCode -eq 0) {
         Write-Host "[ok] Launch command sent."
-        Write-Host "  Wait a few seconds, then capture evidence:"
-        Write-Host "    . .\db-apk-evidence.ps1 -Package $Package"
     } else {
-        Write-Host "[warn] Launch command returned non-zero. App may still have launched."
+        Write-Host "[warn] Launch returned non-zero."
     }
-} elseif (-not $Package) {
-    Write-Host "[skip] No -Package specified; skipping launch."
 }
 
-Write-Host ""
 Write-Host "=== Install complete ==="
