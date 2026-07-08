@@ -35,7 +35,15 @@
     "android": "./scripts/android.sh",
     "android:test": "./scripts/android.sh test",
     "android:demo": "./scripts/android.sh demo",
-    "android:logs": "./scripts/android.sh logs"
+    "android:logs": "./scripts/android.sh logs",
+    "native": "./scripts/native-android.sh",
+    "native:build": "./scripts/native-android.sh build",
+    "native:install": "./scripts/native-android.sh install",
+    "native:launch": "./scripts/native-android.sh launch",
+    "native:test": "./scripts/native-android.sh test",
+    "native:status": "./scripts/native-android.sh status",
+    "native:screenshot": "./scripts/native-android.sh screenshot",
+    "native:watch-artifacts": "./scripts/watch-native-artifacts.sh"
   },
   "keywords": [],
   "author": "",
