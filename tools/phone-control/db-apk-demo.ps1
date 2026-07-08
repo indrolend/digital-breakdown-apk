@@ -35,7 +35,7 @@
 
 .PARAMETER EvidenceOnly
     Skip download/pull/install/launch and only capture evidence.
-    Backward compatible alias: -SkipInstall
+    Deprecated compatibility alias: -SkipInstall
 
 .PARAMETER LocalApkPath
     Provide a local APK path to skip both Termux download and adb pull.
@@ -161,8 +161,10 @@ try {
 # ---------------------------------------------------------------------------
 
 $DeviceApkPath = "$DeviceApkDir/$OutName"
+$runMode = "Full"
 
 if ($EvidenceOnly) {
+    $runMode = "EvidenceOnly"
     Write-Host ""
     Write-Host "--- Step 2: Evidence-only mode (skip download/pull/install/launch) ---"
     $result["download"] = "skipped"
@@ -172,6 +174,7 @@ if ($EvidenceOnly) {
     $result["apkPath"] = "evidence-only"
 
 } elseif ($LocalApkPath) {
+    $runMode = "LocalApkPath"
     Write-Host ""
     Write-Host "--- Step 2: Using local APK (skipping Termux download and pull) ---"
     if (-not (Test-Path $LocalApkPath)) {
@@ -186,6 +189,7 @@ if ($EvidenceOnly) {
     $result["apkPath"] = $LocalApkPath
 
 } elseif ($SkipDownload) {
+    $runMode = "SkipDownload"
     Write-Host ""
     Write-Host "--- Step 2: Skipping Termux download (APK should already be on phone) ---"
     $result["download"] = "skipped"
@@ -343,7 +347,7 @@ $apkSourceLines = @(
     "Artifact: $ArtifactName"
     "Device path: $DeviceApkPath"
     "Local path: $LocalApkPath"
-    "Mode: $(if ($EvidenceOnly) { 'EvidenceOnly' } elseif ($SkipDownload) { 'SkipDownload' } elseif ($LocalApkPath) { 'LocalApkPath' } else { 'Full' })"
+    "Mode: $runMode"
 )
 $apkSourceLines |
     Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "apk-source.txt")

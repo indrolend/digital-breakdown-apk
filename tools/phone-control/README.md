@@ -190,7 +190,7 @@ DbApkDemo `
   -EvidenceOnly
 ```
 
-Backward-compatible alias: `-SkipInstall` maps to the same behavior as `-EvidenceOnly`.
+Deprecated compatibility alias: `-SkipInstall` maps to the same behavior as `-EvidenceOnly`.
 
 ### Evidence output structure
 
