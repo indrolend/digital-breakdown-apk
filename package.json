@@ -19,7 +19,13 @@
     "lg:download": "./scripts/probe-lg.sh download",
     "lg:full": "./scripts/probe-lg.sh full",
     "android:status": "./scripts/status-android.sh",
-    "android:postboot:verbose": "./scripts/postboot-status.sh"
+    "android:postboot:verbose": "./scripts/postboot-status.sh",
+    "android:cycle": "./scripts/run-cycle.sh android-cycle",
+    "android:test-cycle": "./scripts/run-cycle.sh test-cycle",
+    "android:posttest": "./scripts/run-cycle.sh posttest",
+    "lg:diagnose": "./scripts/run-cycle.sh diagnose",
+    "lg:fastboot-cycle": "./scripts/run-cycle.sh fastboot-cycle",
+    "lg:download-note": "./scripts/run-cycle.sh download-note"
   },
   "keywords": [],
   "author": "",
