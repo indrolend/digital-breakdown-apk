@@ -62,9 +62,15 @@ initialize_artifacts() {
 
   if command -v base64 >/dev/null 2>&1; then
     # 1x1 transparent PNG placeholder so failed runs still leave a screen-*.png artifact behind.
-    printf '%s' "$PLACEHOLDER_SCREEN_PNG_BASE64" | base64 -d > "$SCREEN_FILE"
-    cp "$SCREEN_FILE" "$SCREEN_BEFORE_FILE"
+    if printf '%s' "$PLACEHOLDER_SCREEN_PNG_BASE64" | base64 -d > "$SCREEN_FILE"; then
+      cp "$SCREEN_FILE" "$SCREEN_BEFORE_FILE"
+    else
+      echo "Placeholder PNG decode failed" | tee -a "$STATUS_FILE"
+      : > "$SCREEN_FILE"
+      : > "$SCREEN_BEFORE_FILE"
+    fi
   else
+    echo "base64 command unavailable; creating empty placeholder screenshots" | tee -a "$STATUS_FILE"
     : > "$SCREEN_FILE"
     : > "$SCREEN_BEFORE_FILE"
   fi
@@ -162,6 +168,22 @@ screenshot_native() {
   echo "Saved: $target"
 }
 
+valid_display_size() {
+  local width="$1"
+  local height="$2"
+
+  if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  if [ "$width" -le 100 ] || [ "$height" -le 100 ]; then
+    return 1
+  fi
+  if [ "$width" -ge 10000 ] || [ "$height" -ge 10000 ]; then
+    return 1
+  fi
+  return 0
+}
+
 probe_input() {
   local size width height mid_x mid_y drag_x
   echo "== Probe input =="
@@ -172,7 +194,7 @@ probe_input() {
   size="$(adb shell wm size 2>/dev/null | tr -d '\r' | grep -Eo '[0-9]+x[0-9]+' | head -1 || true)"
   width="${size%x*}"
   height="${size#*x}"
-  if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]] || [ "$width" -le 100 ] || [ "$height" -le 100 ] || [ "$width" -ge 10000 ] || [ "$height" -ge 10000 ]; then
+  if ! valid_display_size "$width" "$height"; then
     width=1280
     height=720
   fi
