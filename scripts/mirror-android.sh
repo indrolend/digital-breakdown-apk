@@ -23,7 +23,6 @@ echo "Close the scrcpy window to end mirroring."
 
 scrcpy \
   --stay-awake \
-  --turn-screen-off=false \
   --window-title "Digital Breakdown - LG Stylo 4" \
   --max-size 1024 \
   --video-bit-rate 4M
