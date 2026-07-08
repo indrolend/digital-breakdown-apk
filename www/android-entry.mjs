@@ -651,7 +651,10 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
+MobileTelemetry.mark("runtime_ready");
+
 function loop() {
+  MobileTelemetry.frame();
   requestAnimationFrame(loop);
 
   const dt = Math.min(0.033, clock.getDelta());
