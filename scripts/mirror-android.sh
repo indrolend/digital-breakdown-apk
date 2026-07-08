@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_ID="com.indrolend.digitalbreakdown"
+NO_LAUNCH="${1:-}"
 
 if ! command -v scrcpy >/dev/null 2>&1; then
   echo "scrcpy not found."
@@ -13,9 +14,11 @@ fi
 echo "== ADB devices =="
 adb devices
 
-echo ""
-echo "== Launch app =="
-adb shell monkey -p "$APP_ID" 1 >/dev/null || true
+if [ "$NO_LAUNCH" != "--no-launch" ]; then
+  echo ""
+  echo "== Launch app =="
+  adb shell monkey -p "$APP_ID" 1 >/dev/null || true
+fi
 
 echo ""
 echo "== Start scrcpy mirror =="
