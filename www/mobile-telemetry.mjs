@@ -82,6 +82,46 @@ function frame(fields = {}) {
   }
 }
 
+function startHeartbeat() {
+  let last = performance.now();
+  let frames = 0;
+  let worst = 0;
+  let first = false;
+
+  function tick() {
+    const now = performance.now();
+    const dt = now - last;
+    last = now;
+    frames += 1;
+    worst = Math.max(worst, dt);
+
+    if (!first) {
+      first = true;
+      emit("first_frame", { source: "heartbeat", frame_ms: Math.round(dt) });
+    }
+
+    if (now - START_MS >= 3000 && frames > 0) {
+      const elapsed = now - START_MS;
+      const fps = Math.round((frames * 1000) / elapsed);
+      const avg = Math.round(elapsed / frames);
+
+      emit("perf", {
+        source: "heartbeat",
+        fps,
+        avg_ms: avg,
+        worst_ms: Math.round(worst)
+      });
+
+      frames = 0;
+      worst = 0;
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+}
+
 function bindInputMarkers() {
   const onInput = (type) => {
     if (state.firstInputLogged) return;
@@ -124,6 +164,7 @@ function init() {
 
   installGlobalErrorHandlers();
   bindInputMarkers();
+  startHeartbeat();
 
   document.addEventListener("visibilitychange", () => {
     emit("visibility", { state: document.visibilityState });

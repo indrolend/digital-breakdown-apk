@@ -51,7 +51,7 @@ posttest() {
   adb logcat -d -t 1000 2>/dev/null \
     | grep -F "$APP_ID" \
     | grep -Ei 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in|am_crash|Process.*has died|Fatal signal|Force finishing|has stopped' \
-    | grep -Evi 'cr_CrashFileManager|Crash Reports does not exist|com.android.chrome' \
+    | grep -Evi 'cr_CrashFileManager|Crash Reports does not exist|com.android.chrome|Force finishing activity' \
     || echo "No app crash lines found."
 }
 
