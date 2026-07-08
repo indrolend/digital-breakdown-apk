@@ -44,6 +44,7 @@ if [ "$MODE" = "logs" ] || [ "$MODE" = "all" ]; then
       \( -name "root-probe-*" \
       -o -name "lg-q710-interrogation-*" \
       -o -name "lg-download-mode-probe-*" \
+      -o -name "lg-probe-*" \
       -o -name "postboot-status-*" \) \
       -mtime +7 \
       -print
