@@ -95,7 +95,7 @@ $result = [ordered]@{
     screenshot    = "skipped"
     evidenceDir   = $EvidenceDir
 }
-$validResultStates = @("pass", "fail", "skipped")
+$validResultStates = @("pass", "fail", "skipped", "pending")
 $nonStatusKeys = @("package", "timestamp", "evidenceDir")
 
 # ---------------------------------------------------------------------------

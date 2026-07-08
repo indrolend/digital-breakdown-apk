@@ -34,9 +34,9 @@
     Skip the Termux gh download step (use if APK is already on the phone).
 
 .PARAMETER EvidenceOnly
-    Skip download/pull/install/launch and only capture evidence.
+    Preferred parameter name. Skips download/pull/install/launch and only captures evidence.
     Deprecated compatibility alias: -SkipInstall
-    (Alias behavior follows EvidenceOnly, which is broader than the legacy name.)
+    (Alias now follows EvidenceOnly behavior, which is broader than the legacy name.)
 
 .PARAMETER LocalApkPath
     Provide a local APK path to skip both Termux download and adb pull.

@@ -332,9 +332,9 @@ function global:DbApkDemo {
     .PARAMETER Package   Android package name.
     .PARAMETER OutName   Output APK filename (default: app-debug.apk).
     .PARAMETER SkipDownload  Skip Termux gh download (use if APK already on phone).
-    .PARAMETER EvidenceOnly  Skip download/pull/install/launch; capture evidence only.
-    .PARAMETER SkipInstall   Deprecated compatibility alias for EvidenceOnly.
-                             Note: alias behavior follows EvidenceOnly (broader than legacy name).
+    .PARAMETER EvidenceOnly  Preferred parameter name. Skips download/pull/install/launch and captures evidence only.
+    .PARAMETER SkipInstall   Deprecated compatibility alias kept for older commands.
+                             Note: alias now follows EvidenceOnly behavior (broader than the legacy name implied).
     #>
     param(
         [Parameter(Mandatory)][string]$RunId,
