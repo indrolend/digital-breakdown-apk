@@ -19,6 +19,7 @@ echo "== Capacitor sync =="
 npx cap sync android
 
 echo "== Gradle build =="
+chmod +x android/gradlew
 cd android
 ./gradlew assembleDebug
 
