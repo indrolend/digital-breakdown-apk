@@ -16,6 +16,7 @@ SCREEN_BEFORE_FILE="$LOG_DIR/screen-$STAMP-before-input.png"
 RESULT_FILE="$LOG_DIR/result-$STAMP.json"
 INPUT_TAP_DELAY="${INPUT_TAP_DELAY:-1}"
 INPUT_SWIPE_DELAY="${INPUT_SWIPE_DELAY:-2}"
+PLACEHOLDER_SCREEN_PNG_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6pYJ0AAAAASUVORK5CYII='
 
 BUILD_RESULT="fail"
 INSTALL_RESULT="fail"
@@ -61,7 +62,7 @@ initialize_artifacts() {
 
   if command -v base64 >/dev/null 2>&1; then
     # 1x1 transparent PNG placeholder so failed runs still leave a screen-*.png artifact behind.
-    printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6pYJ0AAAAASUVORK5CYII=' | base64 -d > "$SCREEN_FILE"
+    printf '%s' "$PLACEHOLDER_SCREEN_PNG_BASE64" | base64 -d > "$SCREEN_FILE"
     cp "$SCREEN_FILE" "$SCREEN_BEFORE_FILE"
   else
     : > "$SCREEN_FILE"
@@ -164,10 +165,14 @@ screenshot_native() {
 probe_input() {
   local size width height mid_x mid_y drag_x
   echo "== Probe input =="
+  if ! adb shell pidof "$APP_ID" >/dev/null 2>&1; then
+    echo "Probe skipped: $APP_ID is not running" | tee -a "$STATUS_FILE"
+    return 1
+  fi
   size="$(adb shell wm size 2>/dev/null | tr -d '\r' | grep -Eo '[0-9]+x[0-9]+' | head -1 || true)"
   width="${size%x*}"
   height="${size#*x}"
-  if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+  if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]] || [ "$width" -le 100 ] || [ "$height" -le 100 ] || [ "$width" -ge 10000 ] || [ "$height" -ge 10000 ]; then
     width=1280
     height=720
   fi
