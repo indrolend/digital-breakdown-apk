@@ -36,6 +36,7 @@
 .PARAMETER EvidenceOnly
     Skip download/pull/install/launch and only capture evidence.
     Deprecated compatibility alias: -SkipInstall
+    (Alias behavior follows EvidenceOnly, which is broader than the legacy name.)
 
 .PARAMETER LocalApkPath
     Provide a local APK path to skip both Termux download and adb pull.
@@ -121,6 +122,8 @@ $result = [ordered]@{
     evidenceDir  = $EvidenceDir
     timestamp    = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
 }
+$validResultStates = @("pass", "fail", "skipped", "pending")
+$nonStatusKeys = @("apkPath", "package", "runId", "artifactName", "evidenceDir", "timestamp")
 
 function Save-Result {
     $result | ConvertTo-Json -Depth 3 | Set-Content -Encoding UTF8 (Join-Path $EvidenceDir "result.json")
@@ -429,8 +432,8 @@ Write-Host ""
 $result | ConvertTo-Json | Write-Host
 
 $failures = @($result.Keys | Where-Object {
-    $result[$_] -notin @("pass", "skipped", "pending") -and
-    $_ -notin @("apkPath", "package", "runId", "artifactName", "evidenceDir", "timestamp")
+    ($_ -notin $nonStatusKeys) -and
+    (($result[$_] -notin $validResultStates) -or ($result[$_] -eq "fail"))
 })
 if ($failures.Count -gt 0) {
     Write-Host ""

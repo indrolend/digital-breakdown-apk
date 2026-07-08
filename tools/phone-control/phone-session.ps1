@@ -334,6 +334,7 @@ function global:DbApkDemo {
     .PARAMETER SkipDownload  Skip Termux gh download (use if APK already on phone).
     .PARAMETER EvidenceOnly  Skip download/pull/install/launch; capture evidence only.
     .PARAMETER SkipInstall   Deprecated compatibility alias for EvidenceOnly.
+                             Note: alias behavior follows EvidenceOnly (broader than legacy name).
     #>
     param(
         [Parameter(Mandatory)][string]$RunId,

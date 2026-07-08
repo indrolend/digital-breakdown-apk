@@ -95,6 +95,8 @@ $result = [ordered]@{
     screenshot    = "skipped"
     evidenceDir   = $EvidenceDir
 }
+$validResultStates = @("pass", "fail", "skipped")
+$nonStatusKeys = @("package", "timestamp", "evidenceDir")
 
 # ---------------------------------------------------------------------------
 # Logcat capture
@@ -191,7 +193,16 @@ Write-Host "=== Evidence capture complete ==="
 Write-Host "  Folder: $EvidenceDir"
 
 # Return overall pass/fail
-$failures = @($result.Keys | Where-Object { $result[$_] -eq "fail" })
+$invalidStates = @($result.Keys | Where-Object {
+    ($_ -notin $nonStatusKeys) -and ($result[$_] -notin $validResultStates)
+})
+$failures = @($result.Keys | Where-Object {
+    ($_ -notin $nonStatusKeys) -and ($result[$_] -eq "fail")
+})
+if ($invalidStates.Count -gt 0) {
+    Write-Host "[warn] Invalid result states: $($invalidStates -join ', ')"
+    exit 1
+}
 if ($failures.Count -gt 0) {
     Write-Host "[warn] Some checks failed: $($failures -join ', ')"
     exit 1
