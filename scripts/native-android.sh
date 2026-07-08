@@ -16,7 +16,7 @@ SCREEN_BEFORE_FILE="$LOG_DIR/screen-$STAMP-before-input.png"
 RESULT_FILE="$LOG_DIR/result-$STAMP.json"
 INPUT_TAP_DELAY="${INPUT_TAP_DELAY:-1}"
 INPUT_SWIPE_DELAY="${INPUT_SWIPE_DELAY:-2}"
-# 1x1 transparent PNG placeholder for runs that fail before a real screenshot can be captured.
+# Base64 for a 1x1 transparent PNG fallback artifact when a run fails before a real screenshot is captured.
 PLACEHOLDER_SCREEN_PNG_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6pYJ0AAAAASUVORK5CYII='
 
 BUILD_RESULT="fail"
@@ -185,16 +185,12 @@ valid_display_size() {
   local width="$1"
   local height="$2"
 
-  case "$width" in
-    *[!0-9]* | "")
-      return 1
-      ;;
-  esac
-  case "$height" in
-    *[!0-9]* | "")
-      return 1
-      ;;
-  esac
+  if ! printf '%s\n' "$width" | grep -Eq '^[0-9]+$'; then
+    return 1
+  fi
+  if ! printf '%s\n' "$height" | grep -Eq '^[0-9]+$'; then
+    return 1
+  fi
   if [ "$width" -le 100 ] || [ "$height" -le 100 ]; then
     return 1
   fi
