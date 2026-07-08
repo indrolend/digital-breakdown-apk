@@ -1,0 +1,231 @@
+#include "Renderer.hpp"
+
+#include <GLES2/gl2.h>
+#include <android/log.h>
+#include <cmath>
+#include <cstring>
+
+namespace {
+constexpr float ROOM_WIDTH = 30.0f;
+constexpr float ROOM_DEPTH = 42.0f;
+
+const char* VERT_SRC =
+    "attribute vec3 aPos;\n"
+    "uniform mat4 uMvp;\n"
+    "void main() { gl_Position = uMvp * vec4(aPos, 1.0); }\n";
+
+const char* FRAG_SRC =
+    "precision mediump float;\n"
+    "uniform vec4 uColor;\n"
+    "void main() { gl_FragColor = uColor; }\n";
+
+void ident(float* m) {
+    std::memset(m, 0, sizeof(float) * 16);
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+}
+
+void multiply(float* out, const float* a, const float* b) {
+    float r[16]{};
+    for (int c = 0; c < 4; ++c) {
+        for (int row = 0; row < 4; ++row) {
+            r[c * 4 + row] =
+                a[0 * 4 + row] * b[c * 4 + 0] +
+                a[1 * 4 + row] * b[c * 4 + 1] +
+                a[2 * 4 + row] * b[c * 4 + 2] +
+                a[3 * 4 + row] * b[c * 4 + 3];
+        }
+    }
+    std::memcpy(out, r, sizeof(r));
+}
+
+void perspective(float* m, float fovy, float aspect, float nearZ, float farZ) {
+    std::memset(m, 0, sizeof(float) * 16);
+    const float f = 1.0f / std::tan(fovy * 0.5f);
+    m[0] = f / aspect;
+    m[5] = f;
+    m[10] = (farZ + nearZ) / (nearZ - farZ);
+    m[11] = -1.0f;
+    m[14] = (2.0f * farZ * nearZ) / (nearZ - farZ);
+}
+
+Vec3 cross(const Vec3& a, const Vec3& b) {
+    return {
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    };
+}
+
+float dot(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+void lookAt(float* m, Vec3 eye, Vec3 center, Vec3 up) {
+    const Vec3 f = normalized(center - eye);
+    const Vec3 s = normalized(cross(f, up));
+    const Vec3 u = cross(s, f);
+    ident(m);
+    m[0] = s.x; m[4] = s.y; m[8] = s.z;
+    m[1] = u.x; m[5] = u.y; m[9] = u.z;
+    m[2] = -f.x; m[6] = -f.y; m[10] = -f.z;
+    m[12] = -dot(s, eye);
+    m[13] = -dot(u, eye);
+    m[14] = dot(f, eye);
+}
+
+void modelBox(float* m, const Vec3& pos, const Vec3& scale, float yaw) {
+    ident(m);
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
+    m[0] = c * scale.x;
+    m[1] = 0.0f;
+    m[2] = -s * scale.x;
+    m[4] = 0.0f;
+    m[5] = scale.y;
+    m[6] = 0.0f;
+    m[8] = s * scale.z;
+    m[9] = 0.0f;
+    m[10] = c * scale.z;
+    m[12] = pos.x;
+    m[13] = pos.y;
+    m[14] = pos.z;
+}
+
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+    GLint ok = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512]{};
+        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+        __android_log_print(ANDROID_LOG_ERROR, "DBNATIVE", "shader compile failed: %s", log);
+        glDeleteShader(shader);
+        return 0;
+    }
+    return shader;
+}
+}
+
+bool Renderer::initProgram() {
+    const GLuint vs = compileShader(GL_VERTEX_SHADER, VERT_SRC);
+    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, FRAG_SRC);
+    if (!vs || !fs) return false;
+
+    program_ = glCreateProgram();
+    glAttachShader(program_, vs);
+    glAttachShader(program_, fs);
+    glBindAttribLocation(program_, 0, "aPos");
+    glLinkProgram(program_);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok = 0;
+    glGetProgramiv(program_, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[512]{};
+        glGetProgramInfoLog(program_, sizeof(log), nullptr, log);
+        __android_log_print(ANDROID_LOG_ERROR, "DBNATIVE", "program link failed: %s", log);
+        return false;
+    }
+
+    aPos_ = glGetAttribLocation(program_, "aPos");
+    uMvp_ = glGetUniformLocation(program_, "uMvp");
+    uColor_ = glGetUniformLocation(program_, "uColor");
+
+    const float cube[] = {
+        -0.5f,-0.5f,-0.5f, 0.5f,-0.5f,-0.5f, 0.5f,0.5f,-0.5f, -0.5f,-0.5f,-0.5f, 0.5f,0.5f,-0.5f, -0.5f,0.5f,-0.5f,
+        -0.5f,-0.5f, 0.5f, 0.5f,0.5f, 0.5f, 0.5f,-0.5f, 0.5f, -0.5f,-0.5f,0.5f, -0.5f,0.5f,0.5f, 0.5f,0.5f,0.5f,
+        -0.5f,-0.5f,-0.5f, -0.5f,0.5f,-0.5f, -0.5f,0.5f,0.5f, -0.5f,-0.5f,-0.5f, -0.5f,0.5f,0.5f, -0.5f,-0.5f,0.5f,
+        0.5f,-0.5f,-0.5f, 0.5f,-0.5f,0.5f, 0.5f,0.5f,0.5f, 0.5f,-0.5f,-0.5f, 0.5f,0.5f,0.5f, 0.5f,0.5f,-0.5f,
+        -0.5f,0.5f,-0.5f, 0.5f,0.5f,-0.5f, 0.5f,0.5f,0.5f, -0.5f,0.5f,-0.5f, 0.5f,0.5f,0.5f, -0.5f,0.5f,0.5f,
+        -0.5f,-0.5f,-0.5f, 0.5f,-0.5f,0.5f, 0.5f,-0.5f,-0.5f, -0.5f,-0.5f,-0.5f, -0.5f,-0.5f,0.5f, 0.5f,-0.5f,0.5f
+    };
+    glGenBuffers(1, &vbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+    return true;
+}
+
+void Renderer::surfaceCreated() {
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glClearColor(0.02f, 0.04f, 0.02f, 1.0f);
+    initProgram();
+}
+
+void Renderer::surfaceChanged(int width, int height) {
+    width_ = width > 0 ? width : 1;
+    height_ = height > 0 ? height : 1;
+    glViewport(0, 0, width_, height_);
+}
+
+void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
+    if (!program_) return;
+    float model[16];
+    float mvp[16];
+    modelBox(model, pos, scale, yaw);
+    multiply(mvp, viewProj, model);
+    glUseProgram(program_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
+    glUniform4fv(uColor_, 1, color);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+void Renderer::drawGround(const float* viewProj) {
+    const float groundColor[4] = {0.02f, 0.12f, 0.035f, 1.0f};
+    drawBox(viewProj, {0.0f, -0.04f, 0.0f}, {ROOM_WIDTH, 0.06f, ROOM_DEPTH}, 0.0f, groundColor);
+
+    const float wallColor[4] = {0.03f, 0.22f, 0.06f, 1.0f};
+    drawBox(viewProj, {0.0f, 3.5f, -ROOM_DEPTH * 0.5f}, {ROOM_WIDTH, 7.0f, 0.16f}, 0.0f, wallColor);
+    drawBox(viewProj, {-ROOM_WIDTH * 0.5f, 3.5f, 0.0f}, {0.16f, 7.0f, ROOM_DEPTH}, 0.0f, wallColor);
+    drawBox(viewProj, {ROOM_WIDTH * 0.5f, 3.5f, 0.0f}, {0.16f, 7.0f, ROOM_DEPTH}, 0.0f, wallColor);
+}
+
+void Renderer::draw(const GameState& state) {
+    const float pulse = 0.5f + 0.5f * std::sin(state.time * 2.0f);
+    glClearColor(0.01f, 0.025f + pulse * 0.02f, 0.015f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    float proj[16];
+    float view[16];
+    float viewProj[16];
+    perspective(proj, 62.0f * DB_PI / 180.0f, static_cast<float>(width_) / static_cast<float>(height_), 0.05f, 90.0f);
+    const Vec3 look = state.camera.firstPerson ? state.camera.pos + state.camera.forward * 10.0f : state.player.pos + state.camera.forward * 4.0f + Vec3{0.0f, 0.55f, 0.0f};
+    lookAt(view, state.camera.pos, look, {0.0f, 1.0f, 0.0f});
+    multiply(viewProj, proj, view);
+
+    drawGround(viewProj);
+
+    const float phoneBody[4] = {0.06f, 0.09f, 0.06f, 1.0f};
+    const float phoneScreen[4] = {0.33f, 1.0f, 0.45f, 1.0f};
+    if (!state.camera.firstPerson) {
+        drawBox(viewProj, state.player.pos + Vec3{0.0f, 0.34f, 0.0f}, {0.85f, 1.35f, 0.16f}, state.player.yaw, phoneBody);
+        drawBox(viewProj, state.player.pos + Vec3{0.0f, 0.35f, -0.10f}, {0.62f, 0.92f, 0.035f}, state.player.yaw, phoneScreen);
+    }
+
+    const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
+    const float soulColor[4] = {0.70f, 1.0f, 0.78f, 1.0f};
+    for (const auto& target : state.targets) {
+        if (!target.alive) continue;
+        const float* color = target.slurpable ? soulColor : targetColor;
+        const float wobble = 1.0f + std::sin(state.time * 7.0f + target.phase) * 0.04f;
+        drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.65f * target.scale * wobble, 1.25f * target.scale, 0.42f * target.scale * wobble}, 0.0f, color);
+    }
+
+    for (const auto& capture : state.captures) {
+        const float filledColor[4] = {0.95f, 0.95f, 1.0f, 1.0f};
+        const float openColor[4] = {0.18f, 0.34f, 1.0f, 1.0f};
+        drawBox(viewProj, capture.pos + Vec3{0.0f, 0.08f, 0.0f}, {1.8f, 0.12f, 1.8f}, 0.0f, capture.filled ? filledColor : openColor);
+    }
+
+    const float bulletColor[4] = {1.0f, 0.92f, 0.45f, 1.0f};
+    for (const auto& bullet : state.bullets) {
+        if (!bullet.alive) continue;
+        drawBox(viewProj, bullet.pos, {0.28f, 0.28f, 0.28f}, state.time * 8.0f, bulletColor);
+    }
+}
