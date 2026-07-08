@@ -194,10 +194,10 @@ valid_display_size() {
   if ! printf '%s\n' "$height" | grep -Eq '^[0-9]+$'; then
     return 1
   fi
-  if [ "$width" -le "$MIN_DISPLAY_DIM" ] || [ "$height" -le "$MIN_DISPLAY_DIM" ]; then
+  if [ "$width" -lt "$MIN_DISPLAY_DIM" ] || [ "$height" -lt "$MIN_DISPLAY_DIM" ]; then
     return 1
   fi
-  if [ "$width" -ge "$MAX_DISPLAY_DIM" ] || [ "$height" -ge "$MAX_DISPLAY_DIM" ]; then
+  if [ "$width" -gt "$MAX_DISPLAY_DIM" ] || [ "$height" -gt "$MAX_DISPLAY_DIM" ]; then
     return 1
   fi
   return 0
