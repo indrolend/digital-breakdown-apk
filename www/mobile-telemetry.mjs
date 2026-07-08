@@ -87,6 +87,7 @@ function startHeartbeat() {
   let frames = 0;
   let worst = 0;
   let first = false;
+  let reportStart = performance.now();
 
   function tick() {
     const now = performance.now();
@@ -100,8 +101,8 @@ function startHeartbeat() {
       emit("first_frame", { source: "heartbeat", frame_ms: Math.round(dt) });
     }
 
-    if (now - START_MS >= 3000 && frames > 0) {
-      const elapsed = now - START_MS;
+    if (now - reportStart >= 3000 && frames > 0) {
+      const elapsed = now - reportStart;
       const fps = Math.round((frames * 1000) / elapsed);
       const avg = Math.round(elapsed / frames);
 
@@ -114,6 +115,7 @@ function startHeartbeat() {
 
       frames = 0;
       worst = 0;
+      reportStart = now;
     }
 
     requestAnimationFrame(tick);
