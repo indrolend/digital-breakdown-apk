@@ -28,7 +28,9 @@
     "lg:download-note": "./scripts/run-cycle.sh download-note",
     "lg:probe:verbose": "./scripts/probe-lg.sh adb --verbose",
     "lg:fastboot:verbose": "./scripts/probe-lg.sh fastboot --verbose",
-    "checkpoint": "./scripts/checkpoint.sh"
+    "checkpoint": "./scripts/checkpoint.sh",
+    "android:mirror": "./scripts/mirror-android.sh",
+    "android:demo-cycle": "./scripts/build-android.sh && ./scripts/install-android.sh && ./scripts/mirror-android.sh"
   },
   "keywords": [],
   "author": "",
