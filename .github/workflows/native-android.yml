@@ -1,0 +1,67 @@
+name: Native Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native-android/**'
+      - '.github/workflows/native-android.yml'
+      - 'scripts/native-android.sh'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native-android/**'
+      - '.github/workflows/native-android.yml'
+      - 'scripts/native-android.sh'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  build-native-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+
+      - name: Write local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
+
+      - name: Build native debug APK
+        run: |
+          ./android/gradlew -p native-android assembleDebug --stacktrace
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifact
+          cp native-android/app/build/outputs/apk/debug/app-debug.apk artifact/digital-breakdown-native-debug.apk
+          git rev-parse HEAD > artifact/commit-sha.txt
+          cat > artifact/build-info.txt <<EOF
+          app_id=com.indrolend.digitalbreakdown.native
+          variant=debug
+          abi=armeabi-v7a
+          workflow=${{ github.workflow }}
+          run_id=${{ github.run_id }}
+          sha=${{ github.sha }}
+          EOF
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digital-breakdown-native-debug-apk
+          path: artifact/
+          retention-days: 14
