@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install APK from stable phone path with optional Windows pull.
+    Install APK from stable phone path with optional host pull.
 #>
 
 param(
@@ -13,6 +13,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-DbHostTemp {
+    return [System.IO.Path]::GetTempPath()
+}
 
 function Get-AdbExe {
     if ($env:DB_ADB_PATH -and (Test-Path $env:DB_ADB_PATH)) { return $env:DB_ADB_PATH }
@@ -47,13 +51,13 @@ if ($exists.ExitCode -ne 0 -or ($exists.Output -join "`n") -match "No such file"
 
 if (-not $SkipPull) {
     if (-not $LocalPath) {
-        $LocalPath = Join-Path $env:TEMP ("db-control-" + (Split-Path $DevicePath -Leaf))
+        $LocalPath = Join-Path (Get-DbHostTemp) ("db-control-" + (Split-Path $DevicePath -Leaf))
     }
     $pull = Invoke-Adb pull $DevicePath $LocalPath
     if ($pull.ExitCode -ne 0) {
         Write-Host "[warn] adb pull failed; continuing with phone-side install."
     } else {
-        Write-Host "[ok] Optional local mirror: $LocalPath"
+        Write-Host "[ok] Optional host mirror: $LocalPath"
     }
 }
 
