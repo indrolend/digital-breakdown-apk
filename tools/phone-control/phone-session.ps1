@@ -49,7 +49,9 @@ function Write-DbStatus {
 
 function Quote-Sh {
     param([Parameter(Mandatory)][string]$Text)
-    return "'" + $Text.Replace("'", "'\"'\"'") + "'"
+    $sq = [string][char]39
+    $dq = [string][char]34
+    return $sq + $Text.Replace($sq, $sq + $dq + $sq + $dq + $sq) + $sq
 }
 
 # ---------------------------------------------------------------------------
