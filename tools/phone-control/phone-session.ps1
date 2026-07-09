@@ -11,24 +11,12 @@
         . ./tools/phone-control/phone-session.ps1
 
     Config is persisted to the host user home as .db-phone-config.ps1 so you
-    only need to supply your ADB path once.
-
-.EXAMPLE
-    # First-time or any session
-    . ./tools/phone-control/phone-session.ps1
-
-    # Show Termux terminal interactively
-    OpenTermux
-
-    # Run a Termux command
-    PhoneCmd "db-menu"
-
-    # Full APK demo (requires db-apk-demo.ps1 in same directory)
-    DbApkDemo -RunId 28961104004 -ArtifactName digital-breakdown-native-debug-apk -Package com.indrolend.digitalbreakdown.native
+    only need to supply host paths once.
 #>
 
 $ErrorActionPreference = "Stop"
 $script:PhoneSessionDir = $PSScriptRoot
+$script:DbQuiet = ($env:DB_PHONE_QUIET -eq "1")
 
 # ---------------------------------------------------------------------------
 # Host compatibility helpers
@@ -54,6 +42,11 @@ function Add-DbPathEntry {
     }
 }
 
+function Write-DbStatus {
+    param([string]$Message)
+    if (-not $script:DbQuiet) { Write-Host $Message }
+}
+
 # ---------------------------------------------------------------------------
 # Config persistence
 # ---------------------------------------------------------------------------
@@ -68,18 +61,16 @@ function Read-PhoneConfig {
 
 function Save-PhoneConfig {
     param(
-        [string]$AdbPath,
-        [string]$ScrcpyPath = ""
+        [string]$AdbPath = $env:DB_ADB_PATH,
+        [string]$ScrcpyPath = $env:DB_SCRCPY_PATH,
+        [string]$SshKeyPath = $env:DB_TERMUX_SSH_KEY
     )
-    $lines = @(
-        "# Digital Breakdown phone-control config - auto-generated",
-        "`$env:DB_ADB_PATH = '$AdbPath'"
-    )
-    if ($ScrcpyPath) {
-        $lines += "`$env:DB_SCRCPY_PATH = '$ScrcpyPath'"
-    }
+    $lines = @("# Digital Breakdown phone-control config - auto-generated")
+    if ($AdbPath) { $lines += "`$env:DB_ADB_PATH = '$AdbPath'" }
+    if ($ScrcpyPath) { $lines += "`$env:DB_SCRCPY_PATH = '$ScrcpyPath'" }
+    if ($SshKeyPath) { $lines += "`$env:DB_TERMUX_SSH_KEY = '$SshKeyPath'" }
     $lines | Set-Content -Encoding UTF8 $script:ConfigPath
-    Write-Host "[config] Saved to $script:ConfigPath"
+    Write-DbStatus "[config] Saved to $script:ConfigPath"
 }
 
 Read-PhoneConfig
@@ -91,16 +82,13 @@ Read-PhoneConfig
 $script:AdbExe = $null
 
 function Find-Adb {
-    # 1. Already known from config
     if ($env:DB_ADB_PATH -and (Test-Path $env:DB_ADB_PATH)) {
         return $env:DB_ADB_PATH
     }
 
-    # 2. On PATH (preferred on macOS/Linux/Homebrew and also works on Windows)
     $onPath = Get-Command adb -ErrorAction SilentlyContinue
     if ($onPath) { return $onPath.Source }
 
-    # 3. Common host install/download locations
     $hostHome = Get-DbHostHome
     $downloads = Get-DbHostDownloads
     $localAppData = $env:LOCALAPPDATA
@@ -126,15 +114,6 @@ function Find-Adb {
         if ($c -and (Test-Path $c)) { return $c }
     }
 
-    # 4. Conservative search under the user's home/downloads. Keep this bounded.
-    $searchRoots = @($downloads, (Join-Path $hostHome "Library/Android/sdk/platform-tools"), $localAppData) | Where-Object { $_ -and (Test-Path $_) }
-    foreach ($root in $searchRoots) {
-        $found = Get-ChildItem -Path $root -Filter adb* -Recurse -ErrorAction SilentlyContinue |
-                 Where-Object { $_.Name -eq "adb" -or $_.Name -eq "adb.exe" } |
-                 Select-Object -First 1
-        if ($found) { return $found.FullName }
-    }
-
     return $null
 }
 
@@ -144,8 +123,7 @@ function Require-Adb {
     $found = Find-Adb
     if ($found) {
         $script:AdbExe = $found
-        Write-Host "[adb] Found: $found"
-        # Persist for next session if not already saved
+        Write-DbStatus "[adb] Found: $found"
         if (-not $env:DB_ADB_PATH) {
             $env:DB_ADB_PATH = $found
             Save-PhoneConfig -AdbPath $found
@@ -192,15 +170,6 @@ function Find-Scrcpy {
         "C:\scrcpy\scrcpy.exe"
     )
     foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
-
-    $searchRoots = @($downloads) | Where-Object { $_ -and (Test-Path $_) }
-    foreach ($root in $searchRoots) {
-        $found = Get-ChildItem -Path $root -Filter scrcpy* -Recurse -ErrorAction SilentlyContinue |
-                 Where-Object { $_.Name -eq "scrcpy" -or $_.Name -eq "scrcpy.exe" } |
-                 Select-Object -First 1
-        if ($found) { return $found.FullName }
-    }
-
     return $null
 }
 
@@ -226,7 +195,7 @@ function Assert-DeviceConnected {
         Write-Host "  3. Run: adb devices"
         throw "No device connected."
     }
-    Write-Host "[adb] Device: $device"
+    Write-DbStatus "[adb] Device: $device"
     return $device
 }
 
@@ -243,14 +212,12 @@ function Get-TermuxUser {
     $deviceId = Get-AttachedDevice
     if (-not $deviceId) { return $null }
 
-    # Read user from file written by bootstrap script
     $raw = & $adb shell "cat /sdcard/Download/db-control/termux-user.txt 2>/dev/null || cat /sdcard/Download/termux-user.txt 2>/dev/null" 2>$null
     if ($raw -and $raw -notmatch "No such file|is a directory") {
         $script:TermuxUser = $raw.Trim()
         return $script:TermuxUser
     }
 
-    # Fallback: ask adb who owns the Termux home
     $stat = & $adb shell "stat -c '%U' /data/data/com.termux/files/home 2>/dev/null" 2>$null
     if ($stat -and $stat -notmatch "No such file") {
         $script:TermuxUser = $stat.Trim()
@@ -260,24 +227,100 @@ function Get-TermuxUser {
     Write-Host "[phone] Could not read Termux username automatically."
     Write-Host "  Run the bootstrap on the phone first:"
     Write-Host "    PhoneCmd 'bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh'"
-    Write-Host "  Or set manually:"
     $u = Read-Host "  Enter Termux username (e.g. u0_a234)"
-    if ($u) {
-        $script:TermuxUser = $u.Trim()
-    }
+    if ($u) { $script:TermuxUser = $u.Trim() }
     return $script:TermuxUser
 }
 
 # ---------------------------------------------------------------------------
-# SSH forwarding
+# SSH forwarding and credential helpers
 # ---------------------------------------------------------------------------
 
 function Start-SshForward {
+    param([switch]$Quiet)
     $adb = Require-Adb
     Assert-DeviceConnected | Out-Null
-    Write-Host "[adb] Forwarding tcp:8022 -> tcp:8022 ..."
+    if (-not $Quiet) { Write-DbStatus "[adb] Forwarding tcp:8022 -> tcp:8022 ..." }
     & $adb forward tcp:8022 tcp:8022 | Out-Null
-    Write-Host "[ssh] Forward active. Connect with: ssh -p 8022 USER@127.0.0.1"
+    if (-not $Quiet) { Write-DbStatus "[ssh] Forward active. Connect with: ssh -p 8022 USER@127.0.0.1" }
+}
+
+function Get-TermuxSshArgs {
+    $args = @("-p", "8022", "-o", "StrictHostKeyChecking=no")
+    if ($env:DB_TERMUX_SSH_KEY -and (Test-Path $env:DB_TERMUX_SSH_KEY)) {
+        $args += @("-i", $env:DB_TERMUX_SSH_KEY, "-o", "IdentitiesOnly=yes")
+    }
+    return $args
+}
+
+function Invoke-TermuxSsh {
+    param(
+        [Parameter(Mandatory)][string]$Cmd,
+        [switch]$Quiet
+    )
+    $user = Get-TermuxUser
+    if (-not $user) { throw "Termux user unknown." }
+    Start-SshForward -Quiet:$Quiet
+    $sshArgs = @(Get-TermuxSshArgs) + @("$user@127.0.0.1", $Cmd)
+    & ssh @sshArgs
+}
+
+function global:SetupTermuxSshKey {
+    <#
+    .SYNOPSIS Creates or installs a host SSH key for passwordless Termux SSH.
+    #>
+    param([string]$KeyPath = (Join-Path (Join-Path (Get-DbHostHome) ".ssh") "db_termux_lg_stylo4"))
+
+    $user = Get-TermuxUser
+    if (-not $user) { throw "Termux user unknown." }
+    Start-SshForward
+
+    $sshDir = Split-Path $KeyPath
+    if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Force -Path $sshDir | Out-Null }
+
+    if (-not (Test-Path $KeyPath)) {
+        Write-Host "[ssh] Creating key: $KeyPath"
+        & ssh-keygen -t ed25519 -f $KeyPath -N "" | Out-Host
+    }
+
+    $pub = "$KeyPath.pub"
+    if (-not (Test-Path $pub)) { throw "Public key missing: $pub" }
+
+    Write-Host "[ssh] Installing public key into Termux. You may need the Termux password once."
+    $pubText = Get-Content $pub -Raw
+    $installCmd = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && grep -qxF '$($pubText.Trim())' ~/.ssh/authorized_keys || echo '$($pubText.Trim())' >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys"
+    $sshArgs = @("-p", "8022", "-o", "StrictHostKeyChecking=no", "$user@127.0.0.1", $installCmd)
+    & ssh @sshArgs
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install SSH key in Termux." }
+
+    $env:DB_TERMUX_SSH_KEY = $KeyPath
+    Save-PhoneConfig -SshKeyPath $KeyPath
+
+    Write-Host "[ssh] Testing key login ..."
+    $testArgs = @(Get-TermuxSshArgs) + @("$user@127.0.0.1", "echo ssh_key_ok")
+    & ssh @testArgs
+}
+
+function global:TermuxGhTokenLogin {
+    <#
+    .SYNOPSIS Logs Termux gh into GitHub using a hidden token prompt.
+    .DESCRIPTION Does not store the token in the repo or /sdcard. gh stores its own auth config in Termux home.
+    #>
+    $user = Get-TermuxUser
+    if (-not $user) { throw "Termux user unknown." }
+    Start-SshForward -Quiet
+
+    $secure = Read-Host "Paste GitHub token for Termux gh" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        if (-not $token) { throw "Empty token." }
+        $sshArgs = @(Get-TermuxSshArgs) + @("$user@127.0.0.1", "rm -f ~/.config/gh/hosts.yml; gh auth login --with-token >/dev/null && gh auth status")
+        $token | & ssh @sshArgs
+    } finally {
+        if ($bstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        Remove-Variable token -ErrorAction SilentlyContinue
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -285,9 +328,6 @@ function Start-SshForward {
 # ---------------------------------------------------------------------------
 
 function global:OpenTermux {
-    <#
-    .SYNOPSIS Opens the Termux app on the phone.
-    #>
     $adb = Require-Adb
     Assert-DeviceConnected | Out-Null
     & $adb shell "am start -n com.termux/.HomeActivity" | Out-Null
@@ -295,64 +335,40 @@ function global:OpenTermux {
 }
 
 function global:Phone {
-    <#
-    .SYNOPSIS Opens an SSH session into Termux.
-    .EXAMPLE Phone
-    #>
     $user = Get-TermuxUser
     if (-not $user) { throw "Termux user unknown. Run Get-TermuxUser." }
-    Start-SshForward
+    Start-SshForward -Quiet
     Write-Host "[ssh] Connecting as $user ..."
-    ssh -p 8022 "$user@127.0.0.1"
+    $sshArgs = @(Get-TermuxSshArgs) + @("$user@127.0.0.1")
+    ssh @sshArgs
 }
 
 function global:PhoneCmd {
-    <#
-    .SYNOPSIS Runs a single command in Termux over SSH.
-    .PARAMETER Cmd Command string to execute.
-    .EXAMPLE PhoneCmd "db-menu"
-    #>
-    param([Parameter(Mandatory)][string]$Cmd)
-    $user = Get-TermuxUser
-    if (-not $user) { throw "Termux user unknown." }
-    Start-SshForward
-    ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" "$Cmd"
+    param(
+        [Parameter(Mandatory)][string]$Cmd,
+        [switch]$Quiet
+    )
+    Invoke-TermuxSsh -Cmd $Cmd -Quiet:($Quiet -or $script:DbQuiet)
 }
 
 function global:DbMenu {
-    <#
-    .SYNOPSIS Opens the db-menu inside Termux over SSH.
-    #>
-    PhoneCmd "db-menu"
+    PhoneCmd "db-menu" -Quiet
 }
 
 function global:PhoneClipSet {
-    <#
-    .SYNOPSIS Sets the Android clipboard via Termux.
-    .PARAMETER Text Text to put on the clipboard.
-    #>
     param([Parameter(Mandatory)][string]$Text)
     $user = Get-TermuxUser
     if (-not $user) { throw "Termux user unknown." }
-    Start-SshForward
-    # Pipe text to db-clip-set; avoid shell injection by piping stdin
-    $Text | ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" "db-clip-set"
+    Start-SshForward -Quiet
+    $sshArgs = @(Get-TermuxSshArgs) + @("$user@127.0.0.1", "db-clip-set")
+    $Text | ssh @sshArgs
 }
 
 function global:PhoneClipGet {
-    <#
-    .SYNOPSIS Reads the Android clipboard from Termux.
-    #>
-    $user = Get-TermuxUser
-    if (-not $user) { throw "Termux user unknown." }
-    Start-SshForward
-    ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" "db-clip-get"
+    PhoneCmd "db-clip-get" -Quiet
 }
 
 function global:StartScrcpy {
-    <#
-    .SYNOPSIS Starts a scrcpy mirror of the phone screen.
-    #>
     Assert-DeviceConnected | Out-Null
     $exe = Find-Scrcpy
     if (-not $exe) {
@@ -365,18 +381,6 @@ function global:StartScrcpy {
 }
 
 function global:DbApkDemo {
-    <#
-    .SYNOPSIS Full APK demo: download artifact -> install -> launch -> phone evidence.
-    .PARAMETER RunId     GitHub Actions run ID.
-    .PARAMETER ArtifactName  Name of the artifact to download.
-    .PARAMETER Package   Android package name.
-    .PARAMETER OutName   Output APK filename on phone (default: current.apk).
-    .PARAMETER SkipDownload  Skip Termux gh download (use if APK already on phone).
-    .PARAMETER EvidenceOnly  Preferred parameter name. Skips download/pull/install/launch and captures evidence only.
-    .PARAMETER SkipInstall   Deprecated compatibility alias kept for older commands.
-                             Note: alias now follows EvidenceOnly behavior (broader than the legacy name implied).
-    .PARAMETER PullEvidenceToWindows Legacy-compatible host evidence mirror flag.
-    #>
     param(
         [Parameter(Mandatory)][string]$RunId,
         [Parameter(Mandatory)][string]$ArtifactName,
@@ -392,9 +396,7 @@ function global:DbApkDemo {
         [int]$KeepEvidenceCount = 10
     )
     $demoScript = Join-Path $script:PhoneSessionDir "db-apk-demo.ps1"
-    if (-not (Test-Path $demoScript)) {
-        throw "db-apk-demo.ps1 not found at $demoScript"
-    }
+    if (-not (Test-Path $demoScript)) { throw "db-apk-demo.ps1 not found at $demoScript" }
     & $demoScript `
         -RunId $RunId `
         -ArtifactName $ArtifactName `
@@ -410,21 +412,13 @@ function global:DbApkDemo {
 }
 
 function global:DbApkInstall {
-    <#
-    .SYNOPSIS Install APK from phone stable path.
-    .PARAMETER DevicePath  Path on device, default /sdcard/Download/db-control/apks/current.apk
-    .PARAMETER LocalPath   Optional host mirror path.
-    .PARAMETER Package     Android package name.
-    #>
     param(
         [string]$DevicePath = "/sdcard/Download/db-control/apks/current.apk",
         [string]$LocalPath = "",
         [string]$Package = ""
     )
     $installScript = Join-Path $script:PhoneSessionDir "db-apk-install.ps1"
-    if (-not (Test-Path $installScript)) {
-        throw "db-apk-install.ps1 not found at $installScript"
-    }
+    if (-not (Test-Path $installScript)) { throw "db-apk-install.ps1 not found at $installScript" }
     & $installScript -DevicePath $DevicePath -LocalPath $LocalPath -Package $Package
 }
 
@@ -438,30 +432,25 @@ Write-Host "=== Digital Breakdown Phone Session ==="
 try {
     $adbExe = Require-Adb
     $script:AdbExe = $adbExe
-
-    # Add ADB directory to PATH for this session
-    $adbDir = Split-Path $adbExe
-    Add-DbPathEntry -Path $adbDir
+    Add-DbPathEntry -Path (Split-Path $adbExe)
 
     $device = Get-AttachedDevice
     if ($device) {
         Write-Host "[adb] Device connected: $device"
-        Start-SshForward
+        Start-SshForward -Quiet
         $user = Get-TermuxUser
-        if ($user) {
-            Write-Host "[ssh] Termux user: $user"
+        if ($user) { Write-Host "[ssh] Termux user: $user" }
+        if ($env:DB_TERMUX_SSH_KEY -and (Test-Path $env:DB_TERMUX_SSH_KEY)) {
+            Write-Host "[ssh] Key configured: $env:DB_TERMUX_SSH_KEY"
+        } else {
+            Write-Host "[ssh] Password auth active. Run: SetupTermuxSshKey"
         }
     } else {
         Write-Host "[adb] No device connected. Connect phone and run: Assert-DeviceConnected"
     }
 
     $scrcpy = Find-Scrcpy
-    if ($scrcpy) {
-        Write-Host "[scrcpy] Found: $scrcpy"
-    } else {
-        Write-Host "[scrcpy] Not found (optional)."
-    }
-
+    if ($scrcpy) { Write-Host "[scrcpy] Found: $scrcpy" } else { Write-Host "[scrcpy] Not found (optional)." }
 } catch {
     Write-Host "[warn] Session init: $_"
 }
@@ -471,6 +460,8 @@ Write-Host "Loaded commands:"
 Write-Host "  OpenTermux           - Open Termux app on phone"
 Write-Host "  Phone                - SSH into Termux"
 Write-Host "  PhoneCmd CMD         - Run command in Termux over SSH"
+Write-Host "  SetupTermuxSshKey    - Configure passwordless Termux SSH"
+Write-Host "  TermuxGhTokenLogin   - Hidden GitHub token login for gh in Termux"
 Write-Host "  DbMenu               - Open db-menu in Termux"
 Write-Host "  PhoneClipSet TEXT    - Set Android clipboard"
 Write-Host "  PhoneClipGet         - Read Android clipboard"
