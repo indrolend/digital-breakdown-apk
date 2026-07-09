@@ -78,6 +78,28 @@ $result = [ordered]@{
 
 function Add-ResultError { param([string]$Message); if ($Message) { $result.errorSummary = @($result.errorSummary + $Message) } }
 
+$script:DemoStepIndex = 0
+$script:DemoStepTotal = 12
+function Step-Demo {
+    param([Parameter(Mandatory)][string]$Status)
+    $script:DemoStepIndex++
+    if ($script:DemoStepIndex -gt $script:DemoStepTotal) { $script:DemoStepIndex = $script:DemoStepTotal }
+    $pct = [Math]::Min(99, [Math]::Max(1, [int](($script:DemoStepIndex / $script:DemoStepTotal) * 100)))
+    Write-Progress -Activity "DbApkDemo" -Status "[$script:DemoStepIndex/$script:DemoStepTotal] $Status" -PercentComplete $pct
+    Write-Host "[demo] [$script:DemoStepIndex/$script:DemoStepTotal] $Status"
+}
+
+function Set-DemoStatus {
+    param([Parameter(Mandatory)][string]$Status)
+    $pct = [Math]::Min(99, [Math]::Max(1, [int](($script:DemoStepIndex / $script:DemoStepTotal) * 100)))
+    Write-Progress -Activity "DbApkDemo" -Status "[$script:DemoStepIndex/$script:DemoStepTotal] $Status" -PercentComplete $pct
+    Write-Host "[demo] ... $Status"
+}
+
+function Complete-DemoProgress {
+    Write-Progress -Activity "DbApkDemo" -Completed
+}
+
 function Get-AdbExe {
     if ($env:DB_ADB_PATH -and (Test-Path $env:DB_ADB_PATH)) { return $env:DB_ADB_PATH }
     $onPath = Get-Command adb -ErrorAction SilentlyContinue
@@ -202,33 +224,42 @@ try {
     Write-Host "[phone evidence] $PhoneEvidenceLatest"
     if ($ShouldPullEvidence) { Write-Host "[host mirror] $HostEvidenceLatest" }
 
+    Step-Demo "Checking ADB device"
     $adb = Get-AdbExe
     $dev = Invoke-Adb devices
     $deviceLines = $dev.Output | Select-String "device$"
     if (-not $deviceLines) { throw "No authorized ADB device connected." }
     $result["adb"] = "pass"
 
+    Step-Demo "Preparing phone folders"
     Ensure-PhoneLayout
     $archiveStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+    Step-Demo "Archiving and clearing previous evidence"
     if ($ArchivePreviousEvidence) { Archive-LatestEvidence -ArchiveStamp $archiveStamp }
     if ($CleanBeforeRun -or $ArchivePreviousEvidence) { Clear-LatestEvidence }
 
+    Step-Demo "Writing pending run markers"
     Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/install.txt" -Lines @("[pending] install not run yet")
     Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/launch.txt" -Lines @("[pending] launch not run yet")
 
     if ($EvidenceOnly) {
+        Step-Demo "Evidence-only mode: skipping download, install, and launch"
         $result["download"] = "skipped"; $result["pull"] = "skipped"; $result["install"] = "skipped"; $result["launch"] = "skipped"
         $result["logcatCleared"] = if ($CleanBeforeRun) { "pass" } else { "skipped" }
     } elseif ($LocalApkPath) {
+        Step-Demo "Pushing local APK to phone"
         if (-not (Test-Path $LocalApkPath)) { throw "Local APK not found at: $LocalApkPath" }
         $push = Invoke-Adb push $LocalApkPath $PhoneApkPath
         if ($push.ExitCode -ne 0) { throw "Failed to push local APK to phone path: $PhoneApkPath" }
         $result["download"] = "skipped"; $result["pull"] = "skipped"; $result["apkPathWindows"] = $LocalApkPath; $result["apkPathHost"] = $LocalApkPath
     } elseif ($SkipDownload) {
+        Step-Demo "Checking existing phone APK"
         $exists = Invoke-Adb shell "ls '$PhoneApkPath' 2>/dev/null"
         if ($exists.ExitCode -ne 0 -or ($exists.Output -join "`n") -match "No such file") { throw "APK not found on phone at: $PhoneApkPath" }
         $result["download"] = "skipped"
     } else {
+        Step-Demo "Checking Termux SSH and GitHub auth"
         $sessionScript = Join-Path $ScriptDir "phone-session.ps1"
         if ((Test-Path $sessionScript) -and (-not (Get-Command Get-TermuxUser -ErrorAction SilentlyContinue))) { . $sessionScript }
         $user = $null
@@ -243,6 +274,8 @@ try {
             $ghStatus = Invoke-TermuxSsh -User $user -Cmd "gh auth status >/dev/null 2>&1"
             if ($ghStatus.ExitCode -eq 0) { $result["ghAuth"] = "pass" } else { $result["ghAuth"] = "fail"; throw "gh auth is not active in Termux." }
 
+            Step-Demo "Downloading APK artifact on phone"
+            Set-DemoStatus "Termux download command is running; this can take a moment"
             $downloadCmd = "db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run $RunId --artifact $ArtifactName --out $PhoneApkPath --force"
             $downloadOut = Invoke-TermuxSsh -User $user -Cmd $downloadCmd
             if ($downloadOut.ExitCode -ne 0) { Add-ResultError (($downloadOut.Output | Out-String).Trim()); throw "Termux artifact download failed." }
@@ -255,12 +288,15 @@ try {
     }
 
     if (-not $EvidenceOnly) {
+        Step-Demo "Clearing logcat if requested"
         if ($CleanBeforeRun) {
             $clear = Invoke-Adb logcat -c
             $result["logcatCleared"] = if ($clear.ExitCode -eq 0) { "pass" } else { "warning" }
             if ($clear.ExitCode -ne 0) { Add-ResultError "adb logcat -c returned non-zero." }
         } else { $result["logcatCleared"] = "skipped" }
 
+        Step-Demo "Installing APK on phone"
+        Set-DemoStatus "adb install is running"
         $install = Invoke-Adb shell pm install -r "$PhoneApkPath"
         $installLines = @($install.Output | ForEach-Object { "$_" })
         if (-not $installLines) { $installLines = @("[warn] install command produced no output") }
@@ -268,6 +304,7 @@ try {
 
         if ($install.ExitCode -ne 0 -and ($installLines -join "`n") -match "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
             if ($Package) {
+                Set-DemoStatus "Install signature mismatch; uninstalling and retrying"
                 $null = Invoke-Adb uninstall $Package
                 $install = Invoke-Adb shell pm install -r "$PhoneApkPath"
                 $installLines = @($install.Output | ForEach-Object { "$_" })
@@ -278,6 +315,7 @@ try {
 
         if ($install.ExitCode -eq 0 -or (($installLines -join "`n") -match "Success")) { $result["install"] = "pass" } else { $result["install"] = "fail"; $result["launch"] = "skipped"; Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/launch.txt" -Lines @("[skipped] Launch skipped because install failed.") }
 
+        Step-Demo "Launching APK"
         if ($result["install"] -eq "pass") {
             $launch = Invoke-AdbArgs -AdbArgs @("shell", "monkey", "-p", $Package, "-c", "android.intent.category.LAUNCHER", "1")
             $launchLines = @($launch.Output | ForEach-Object { "$_" })
@@ -291,8 +329,11 @@ try {
         Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/launch.txt" -Lines @("[skipped] EvidenceOnly mode requested.")
     }
 
+    Step-Demo "Capturing evidence"
+    Set-DemoStatus "logcat and screenshot capture are running"
     Capture-Evidence
 
+    Step-Demo "Mirroring evidence to host"
     if ($ShouldPullEvidence) {
         New-Item -ItemType Directory -Force -Path $HostEvidenceLatest | Out-Null
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $HostEvidenceLatest "*")
@@ -315,6 +356,7 @@ try {
     }
     $result.timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
     Save-Result
+    Complete-DemoProgress
 }
 
 Write-Host ""
