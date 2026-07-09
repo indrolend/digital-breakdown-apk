@@ -243,7 +243,7 @@ try {
             $ghStatus = Invoke-TermuxSsh -User $user -Cmd "gh auth status >/dev/null 2>&1"
             if ($ghStatus.ExitCode -eq 0) { $result["ghAuth"] = "pass" } else { $result["ghAuth"] = "fail"; throw "gh auth is not active in Termux." }
 
-            $downloadCmd = "db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run $RunId --artifact $ArtifactName --out $PhoneApkPath"
+            $downloadCmd = "db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run $RunId --artifact $ArtifactName --out $PhoneApkPath --force"
             $downloadOut = Invoke-TermuxSsh -User $user -Cmd $downloadCmd
             if ($downloadOut.ExitCode -ne 0) { Add-ResultError (($downloadOut.Output | Out-String).Trim()); throw "Termux artifact download failed." }
             $result["download"] = "pass"
