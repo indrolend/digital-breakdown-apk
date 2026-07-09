@@ -47,6 +47,11 @@ function Write-DbStatus {
     if (-not $script:DbQuiet) { Write-Host $Message }
 }
 
+function Quote-Sh {
+    param([Parameter(Mandatory)][string]$Text)
+    return "'" + $Text.Replace("'", "'\"'\"'") + "'"
+}
+
 # ---------------------------------------------------------------------------
 # Config persistence
 # ---------------------------------------------------------------------------
@@ -369,6 +374,17 @@ function global:PhoneClipGet {
 }
 
 function global:StartScrcpy {
+    <#
+    .SYNOPSIS Starts scrcpy in a separate terminal by default so the current shell stays usable.
+    .PARAMETER CurrentTerminal Run scrcpy in the current PowerShell terminal.
+    .PARAMETER Detached Launch without a terminal window when supported.
+    #>
+    param(
+        [switch]$CurrentTerminal,
+        [switch]$Detached,
+        [int]$MaxSize = 1024
+    )
+
     Assert-DeviceConnected | Out-Null
     $exe = Find-Scrcpy
     if (-not $exe) {
@@ -376,8 +392,54 @@ function global:StartScrcpy {
         Write-Host "  Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath '/path/to/scrcpy'"
         return
     }
-    Write-Host "[scrcpy] Starting with: $exe"
-    Start-Process $exe -ArgumentList "--stay-awake", "--max-size", "1024"
+
+    $argList = @("--stay-awake", "--max-size", "$MaxSize")
+
+    if ($CurrentTerminal) {
+        Write-Host "[scrcpy] Running in current terminal: $exe"
+        & $exe @argList
+        return
+    }
+
+    if ($Detached) {
+        Write-Host "[scrcpy] Starting detached: $exe"
+        Start-Process -FilePath $exe -ArgumentList $argList | Out-Null
+        return
+    }
+
+    if ($IsMacOS) {
+        $cmd = "cd " + (Quote-Sh (Get-Location).Path) + "; " + (Quote-Sh $exe) + " --stay-awake --max-size $MaxSize; echo; echo '[scrcpy] exited. You can close this window.'"
+        $osa = @(
+            "tell application \"Terminal\"",
+            "activate",
+            "do script " + ('"' + $cmd.Replace('\\', '\\\\').Replace('"', '\"') + '"'),
+            "end tell"
+        )
+        Write-Host "[scrcpy] Opening separate macOS Terminal window."
+        & osascript -e $osa[0] -e $osa[1] -e $osa[2] -e $osa[3] | Out-Null
+        return
+    }
+
+    if ($IsWindows) {
+        $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
+        $shell = if ($pwsh) { $pwsh.Source } else { "powershell.exe" }
+        $cmd = "& '$exe' --stay-awake --max-size $MaxSize; Write-Host ''; Read-Host '[scrcpy] exited. Press Enter to close'"
+        Write-Host "[scrcpy] Opening separate PowerShell window."
+        Start-Process -FilePath $shell -ArgumentList @("-NoExit", "-Command", $cmd) | Out-Null
+        return
+    }
+
+    $terminal = Get-Command x-terminal-emulator -ErrorAction SilentlyContinue
+    if (-not $terminal) { $terminal = Get-Command gnome-terminal -ErrorAction SilentlyContinue }
+    if (-not $terminal) { $terminal = Get-Command konsole -ErrorAction SilentlyContinue }
+    if ($terminal) {
+        $cmd = (Quote-Sh $exe) + " --stay-awake --max-size $MaxSize; echo; read -r -p '[scrcpy] exited. Press Enter to close.'"
+        Write-Host "[scrcpy] Opening separate terminal window."
+        Start-Process -FilePath $terminal.Source -ArgumentList @("-e", "bash", "-lc", $cmd) | Out-Null
+    } else {
+        Write-Host "[scrcpy] No terminal launcher found; starting detached."
+        Start-Process -FilePath $exe -ArgumentList $argList | Out-Null
+    }
 }
 
 function global:DbApkDemo {
@@ -465,7 +527,9 @@ Write-Host "  TermuxGhTokenLogin   - Hidden GitHub token login for gh in Termux"
 Write-Host "  DbMenu               - Open db-menu in Termux"
 Write-Host "  PhoneClipSet TEXT    - Set Android clipboard"
 Write-Host "  PhoneClipGet         - Read Android clipboard"
-Write-Host "  StartScrcpy          - Start screen mirror"
+Write-Host "  StartScrcpy          - Start screen mirror in separate terminal"
+Write-Host "  StartScrcpy -Detached - Start screen mirror detached/no terminal"
+Write-Host "  StartScrcpy -CurrentTerminal - Start screen mirror here"
 Write-Host "  DbApkDemo ...        - Full phone-first APK + evidence run"
 Write-Host "  DbApkInstall ...     - Install APK from phone stable path"
 Write-Host ""
