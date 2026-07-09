@@ -8,14 +8,14 @@
     and loads helper commands into the current PowerShell session.
 
     Dot-source this file to load the helpers:
-        . .\tools\phone-control\phone-session.ps1
+        . ./tools/phone-control/phone-session.ps1
 
-    Config is persisted to $env:USERPROFILE\.db-phone-config.ps1 so you only
-    need to supply your ADB path once.
+    Config is persisted to the host user home as .db-phone-config.ps1 so you
+    only need to supply your ADB path once.
 
 .EXAMPLE
     # First-time or any session
-    . .\tools\phone-control\phone-session.ps1
+    . ./tools/phone-control/phone-session.ps1
 
     # Show Termux terminal interactively
     OpenTermux
@@ -31,10 +31,34 @@ $ErrorActionPreference = "Stop"
 $script:PhoneSessionDir = $PSScriptRoot
 
 # ---------------------------------------------------------------------------
+# Host compatibility helpers
+# ---------------------------------------------------------------------------
+
+function Get-DbHostHome {
+    if ($env:USERPROFILE) { return $env:USERPROFILE }
+    if ($HOME) { return $HOME }
+    return [Environment]::GetFolderPath("UserProfile")
+}
+
+function Get-DbHostDownloads {
+    return (Join-Path (Get-DbHostHome) "Downloads")
+}
+
+function Add-DbPathEntry {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not $Path) { return }
+    $sep = [IO.Path]::PathSeparator
+    $parts = @($env:PATH -split [regex]::Escape([string]$sep) | Where-Object { $_ })
+    if ($parts -notcontains $Path) {
+        $env:PATH = "$Path$sep$env:PATH"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Config persistence
 # ---------------------------------------------------------------------------
 
-$script:ConfigPath = Join-Path $env:USERPROFILE ".db-phone-config.ps1"
+$script:ConfigPath = Join-Path (Get-DbHostHome) ".db-phone-config.ps1"
 
 function Read-PhoneConfig {
     if (Test-Path $script:ConfigPath) {
@@ -72,29 +96,41 @@ function Find-Adb {
         return $env:DB_ADB_PATH
     }
 
-    # 2. On PATH
+    # 2. On PATH (preferred on macOS/Linux/Homebrew and also works on Windows)
     $onPath = Get-Command adb -ErrorAction SilentlyContinue
     if ($onPath) { return $onPath.Source }
 
-    # 3. Common download/install locations
+    # 3. Common host install/download locations
+    $hostHome = Get-DbHostHome
+    $downloads = Get-DbHostDownloads
+    $localAppData = $env:LOCALAPPDATA
     $candidates = @(
-        "$env:USERPROFILE\Downloads\platform-tools-latest-windows\platform-tools\adb.exe",
-        "$env:USERPROFILE\Downloads\platform-tools\adb.exe",
-        "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe",
+        (Join-Path $downloads "platform-tools-latest-windows/platform-tools/adb.exe"),
+        (Join-Path $downloads "platform-tools/adb.exe"),
+        (Join-Path $downloads "platform-tools/adb"),
+        (Join-Path $hostHome "Library/Android/sdk/platform-tools/adb"),
+        "/opt/homebrew/bin/adb",
+        "/usr/local/bin/adb",
         "C:\Android\platform-tools\adb.exe",
         "C:\Program Files\Android\platform-tools\adb.exe",
-        "C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe",
-        "${env:ProgramFiles(x86)}\Android\android-sdk\platform-tools\adb.exe"
+        "C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe"
     )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
+    if ($localAppData) {
+        $candidates += (Join-Path $localAppData "Android/Sdk/platform-tools/adb.exe")
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} "Android/android-sdk/platform-tools/adb.exe")
     }
 
-    # 4. Glob search under Downloads and LOCALAPPDATA
-    $searchRoots = @($env:USERPROFILE, "$env:USERPROFILE\Downloads", $env:LOCALAPPDATA)
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+
+    # 4. Conservative search under the user's home/downloads. Keep this bounded.
+    $searchRoots = @($downloads, (Join-Path $hostHome "Library/Android/sdk/platform-tools"), $localAppData) | Where-Object { $_ -and (Test-Path $_) }
     foreach ($root in $searchRoots) {
-        if (-not (Test-Path $root)) { continue }
-        $found = Get-ChildItem -Path $root -Filter adb.exe -Recurse -ErrorAction SilentlyContinue |
+        $found = Get-ChildItem -Path $root -Filter adb* -Recurse -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -eq "adb" -or $_.Name -eq "adb.exe" } |
                  Select-Object -First 1
         if ($found) { return $found.FullName }
     }
@@ -119,10 +155,11 @@ function Require-Adb {
 
     Write-Host ""
     Write-Host "[adb] ADB not found automatically."
-    Write-Host "  Download platform-tools from:"
-    Write-Host "  https://developer.android.com/tools/releases/platform-tools"
+    Write-Host "  Install Android platform-tools or set DB_ADB_PATH."
+    Write-Host "  macOS/Homebrew: brew install android-platform-tools"
+    Write-Host "  Windows: download platform-tools from https://developer.android.com/tools/releases/platform-tools"
     Write-Host ""
-    $userPath = Read-Host "Paste the full path to adb.exe (or press Enter to skip)"
+    $userPath = Read-Host "Paste the full path to adb/adb.exe (or press Enter to skip)"
     if ($userPath -and (Test-Path $userPath)) {
         $script:AdbExe = $userPath
         $env:DB_ADB_PATH = $userPath
@@ -145,18 +182,21 @@ function Find-Scrcpy {
     $onPath = Get-Command scrcpy -ErrorAction SilentlyContinue
     if ($onPath) { return $onPath.Source }
 
+    $downloads = Get-DbHostDownloads
     $candidates = @(
-        "$env:USERPROFILE\Downloads\scrcpy-win64-v3.2\scrcpy.exe",
-        "$env:USERPROFILE\Downloads\scrcpy-win64\scrcpy.exe",
-        "$env:USERPROFILE\Downloads\scrcpy\scrcpy.exe",
+        (Join-Path $downloads "scrcpy-win64-v3.2/scrcpy.exe"),
+        (Join-Path $downloads "scrcpy-win64/scrcpy.exe"),
+        (Join-Path $downloads "scrcpy/scrcpy.exe"),
+        "/opt/homebrew/bin/scrcpy",
+        "/usr/local/bin/scrcpy",
         "C:\scrcpy\scrcpy.exe"
     )
-    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+    foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
 
-    $searchRoots = @("$env:USERPROFILE\Downloads")
+    $searchRoots = @($downloads) | Where-Object { $_ -and (Test-Path $_) }
     foreach ($root in $searchRoots) {
-        if (-not (Test-Path $root)) { continue }
-        $found = Get-ChildItem -Path $root -Filter scrcpy.exe -Recurse -ErrorAction SilentlyContinue |
+        $found = Get-ChildItem -Path $root -Filter scrcpy* -Recurse -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -eq "scrcpy" -or $_.Name -eq "scrcpy.exe" } |
                  Select-Object -First 1
         if ($found) { return $found.FullName }
     }
@@ -316,8 +356,8 @@ function global:StartScrcpy {
     Assert-DeviceConnected | Out-Null
     $exe = Find-Scrcpy
     if (-not $exe) {
-        Write-Host "[scrcpy] Not found. Download from https://github.com/Genymobile/scrcpy/releases"
-        Write-Host "  Then save path with: Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath C:\path\to\scrcpy.exe"
+        Write-Host "[scrcpy] Not found. Install scrcpy or save its path with:"
+        Write-Host "  Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath '/path/to/scrcpy'"
         return
     }
     Write-Host "[scrcpy] Starting with: $exe"
@@ -335,6 +375,7 @@ function global:DbApkDemo {
     .PARAMETER EvidenceOnly  Preferred parameter name. Skips download/pull/install/launch and captures evidence only.
     .PARAMETER SkipInstall   Deprecated compatibility alias kept for older commands.
                              Note: alias now follows EvidenceOnly behavior (broader than the legacy name implied).
+    .PARAMETER PullEvidenceToWindows Legacy-compatible host evidence mirror flag.
     #>
     param(
         [Parameter(Mandatory)][string]$RunId,
@@ -372,7 +413,7 @@ function global:DbApkInstall {
     <#
     .SYNOPSIS Install APK from phone stable path.
     .PARAMETER DevicePath  Path on device, default /sdcard/Download/db-control/apks/current.apk
-    .PARAMETER LocalPath   Optional Windows mirror path.
+    .PARAMETER LocalPath   Optional host mirror path.
     .PARAMETER Package     Android package name.
     #>
     param(
@@ -400,9 +441,7 @@ try {
 
     # Add ADB directory to PATH for this session
     $adbDir = Split-Path $adbExe
-    if ($env:PATH -notlike "*$adbDir*") {
-        $env:PATH = "$adbDir;$env:PATH"
-    }
+    Add-DbPathEntry -Path $adbDir
 
     $device = Get-AttachedDevice
     if ($device) {
