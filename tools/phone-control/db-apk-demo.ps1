@@ -196,7 +196,7 @@ function Capture-Evidence {
     $evidenceScript = Join-Path $ScriptDir "db-apk-evidence.ps1"
     if (-not (Test-Path $evidenceScript)) { $result["evidence"] = "fail"; Add-ResultError "db-apk-evidence.ps1 not found."; return }
     $evArgs = @("-Package", $Package, "-PhoneEvidenceDir", $PhoneEvidenceLatest)
-    if ($ShouldPullEvidence) { $evArgs += @("-PullEvidenceToWindows", "-HostEvidenceDir", $HostEvidenceLatest) }
+    if ($ShouldPullEvidence) { $evArgs += @("-PullEvidenceToWindows", "-WindowsEvidenceDir", $HostEvidenceLatest) }
     & $evidenceScript @evArgs
     $evExit = $LASTEXITCODE
     $tmpJson = Join-Path (Get-DbHostTemp) ("db-control-evidence-result-" + [guid]::NewGuid().ToString() + ".json")
