@@ -106,6 +106,12 @@ function Invoke-Adb {
     [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
 }
 
+function Invoke-AdbArgs {
+    param([Parameter(Mandatory)][string[]]$AdbArgs)
+    $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
+    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+}
+
 function Write-PhoneTextFile {
     param(
         [Parameter(Mandatory)][string]$PhonePath,
@@ -158,12 +164,9 @@ function Archive-LatestEvidence {
     if (-not ($hasFiles.Output | Out-String).Trim()) { return }
 
     $archiveDir = "$PhoneEvidenceArchive/$ArchiveStamp"
-    $mk = Invoke-Adb shell "mkdir -p '$archiveDir'"
-    if ($mk.ExitCode -eq 0) {
-        $move = Invoke-Adb shell "cp -a '$PhoneEvidenceLatest'/.' '$archiveDir' && rm -rf '$PhoneEvidenceLatest'/*"
-        if ($move.ExitCode -ne 0) {
-            Add-ResultError "Could not archive latest evidence on phone."
-        }
+    $archive = Invoke-Adb shell "mkdir -p '$archiveDir' && cp -R '$PhoneEvidenceLatest'/.' '$archiveDir'/ 2>/dev/null && rm -rf '$PhoneEvidenceLatest'/*"
+    if ($archive.ExitCode -ne 0) {
+        Add-ResultError "Could not archive latest evidence on phone. Continuing with clean run."
     }
 
     if ($KeepEvidenceCount -gt 0) {
@@ -192,16 +195,16 @@ function Capture-Evidence {
         return
     }
 
-    $args = @(
+    $evArgs = @(
         "-Package", $Package,
         "-PhoneEvidenceDir", $PhoneEvidenceLatest
     )
 
     if ($ShouldPullEvidence) {
-        $args += @("-PullEvidenceToWindows", "-WindowsEvidenceDir", $HostEvidenceLatest)
+        $evArgs += @("-PullEvidenceToWindows", "-HostEvidenceDir", $HostEvidenceLatest)
     }
 
-    & $evidenceScript @args
+    & $evidenceScript @evArgs
     $evExit = $LASTEXITCODE
 
     $tmpJson = Join-Path (Get-DbHostTemp) ("db-control-evidence-result-" + [guid]::NewGuid().ToString() + ".json")
@@ -213,6 +216,9 @@ function Capture-Evidence {
             $result["dbnativeLogs"] = if ($ev.dbnativeLogs) { $ev.dbnativeLogs } else { "warning" }
             $result["crashScan"] = if ($ev.crashScan) { $ev.crashScan } else { "warning" }
             $result["screenshot"] = if ($ev.screenshot) { $ev.screenshot } else { "warning" }
+            if ($ev.errorSummary) {
+                foreach ($err in @($ev.errorSummary)) { Add-ResultError $err }
+            }
         } catch {
             $result["evidence"] = "fail"
             Add-ResultError "Could not parse evidence result.json."
@@ -257,7 +263,7 @@ try {
         Clear-LatestEvidence
     }
 
-    # Placeholder files are always present
+    # Placeholder files are always present.
     Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/install.txt" -Lines @("[pending] install not run yet")
     Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/launch.txt" -Lines @("[pending] launch not run yet")
 
@@ -297,7 +303,7 @@ try {
             if ($user) {
                 Start-SshForward
                 $sshTest = ssh -p 8022 -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$user@127.0.0.1" "echo ssh_ok" 2>&1
-                if ($sshTest -match "ssh_ok") {
+                if ($LASTEXITCODE -eq 0 -and $sshTest -match "ssh_ok") {
                     $result["ssh"] = "pass"
                 } else {
                     $result["ssh"] = "fail"
@@ -308,8 +314,8 @@ try {
                 throw "Could not determine Termux username."
             }
 
-            $ghStatus = ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" "gh auth status 2>&1" 2>&1
-            if ($ghStatus -match "Logged in") {
+            $ghStatus = ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" "gh auth status >/dev/null 2>&1"
+            if ($LASTEXITCODE -eq 0) {
                 $result["ghAuth"] = "pass"
             } else {
                 $result["ghAuth"] = "fail"
@@ -317,8 +323,9 @@ try {
             }
 
             $downloadCmd = "db-apk-artifact-download --repo indrolend/digital-breakdown-apk --run $RunId --artifact $ArtifactName --out $PhoneApkPath"
-            ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" $downloadCmd
+            $downloadOut = ssh -p 8022 -o StrictHostKeyChecking=no "$user@127.0.0.1" $downloadCmd 2>&1
             if ($LASTEXITCODE -ne 0) {
+                Add-ResultError (($downloadOut | Out-String).Trim())
                 throw "Termux artifact download failed."
             }
             $result["download"] = "pass"
@@ -364,7 +371,8 @@ try {
         }
 
         if ($result["install"] -eq "pass") {
-            $launch = Invoke-Adb shell monkey -p $Package 1
+            # Pass -p through an explicit string array so PowerShell never treats it as a script parameter.
+            $launch = Invoke-AdbArgs -AdbArgs @("shell", "monkey", "-p", $Package, "-c", "android.intent.category.LAUNCHER", "1")
             $launchLines = @($launch.Output | ForEach-Object { "$_" })
             if (-not $launchLines) { $launchLines = @("[warn] launch command produced no output") }
             Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/launch.txt" -Lines $launchLines
@@ -402,7 +410,7 @@ try {
     }
     if ($result["evidence"] -eq "pending") { $result["evidence"] = "fail" }
 } finally {
-    # Normalize any unset/pending statuses before writing final result
+    # Normalize any unset/pending statuses before writing final result.
     foreach ($key in @("adb", "ssh", "ghAuth", "download", "pull", "install", "launch", "evidence", "dbnativeLogs", "crashScan", "screenshot", "logcatCleared")) {
         if (-not $result.Contains($key)) { $result[$key] = "warning" }
         if ($result[$key] -eq "pending") { $result[$key] = "warning" }
