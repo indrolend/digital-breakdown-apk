@@ -411,14 +411,15 @@ function global:StartScrcpy {
 
     if ($IsMacOS) {
         $cmd = "cd " + (Quote-Sh (Get-Location).Path) + "; " + (Quote-Sh $exe) + " --stay-awake --max-size $MaxSize; echo; echo '[scrcpy] exited. You can close this window.'"
-        $osa = @(
-            "tell application \"Terminal\"",
-            "activate",
-            "do script " + ('"' + $cmd.Replace('\\', '\\\\').Replace('"', '\"') + '"'),
-            "end tell"
-        )
+        $escapedCmd = $cmd.Replace("\", "\\").Replace("`"", "\`"")
+        $appleScript = @"
+tell application ""Terminal""
+activate
+do script "$escapedCmd"
+end tell
+"@
         Write-Host "[scrcpy] Opening separate macOS Terminal window."
-        & osascript -e $osa[0] -e $osa[1] -e $osa[2] -e $osa[3] | Out-Null
+        $appleScript | osascript | Out-Null
         return
     }
 
