@@ -8,6 +8,8 @@ param(
     [Parameter(Mandatory)][string]$Package,
     [string]$PhoneEvidenceDir = "/sdcard/Download/db-control/evidence/latest",
     [string]$WindowsEvidenceDir = "",
+    [string]$HostEvidenceDir = "",
+    [Alias("PullEvidenceToHost")]
     [switch]$PullEvidenceToWindows,
     [string]$ScreenshotDevice = "/sdcard/Download/db-control/evidence/latest/screen.png",
     [switch]$SkipScreenshot,
@@ -16,22 +18,43 @@ param(
 
 $ErrorActionPreference = "Stop"
 $adb = $null
-$statusValues = @("pass", "fail", "skipped", "warning")
+$statusValues = @("pass", "fail", "skipped", "warning", "pending")
 
-$result = [ordered]@{
-    adb           = "pending"
-    package       = $Package
-    timestamp     = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-    logcat        = "skipped"
-    dbnativeLogs  = "skipped"
-    crashScan     = "skipped"
-    screenshot    = "skipped"
-    evidenceDir   = $PhoneEvidenceDir
-    errorSummary  = @()
+function Get-DbHostHome {
+    if ($env:USERPROFILE) { return $env:USERPROFILE }
+    if ($HOME) { return $HOME }
+    return [Environment]::GetFolderPath("UserProfile")
 }
 
-if (-not $WindowsEvidenceDir) {
-    $WindowsEvidenceDir = Join-Path $env:USERPROFILE "Downloads\db-control\evidence-latest"
+function Get-DbHostDownloads {
+    return (Join-Path (Get-DbHostHome) "Downloads")
+}
+
+function Get-DbHostTemp {
+    return [System.IO.Path]::GetTempPath()
+}
+
+if (-not $HostEvidenceDir -and $WindowsEvidenceDir) {
+    $HostEvidenceDir = $WindowsEvidenceDir
+}
+if (-not $HostEvidenceDir) {
+    $HostEvidenceDir = Join-Path (Join-Path (Get-DbHostDownloads) "db-control") "evidence-latest"
+}
+# Keep the legacy variable populated for old callers and result readers.
+$WindowsEvidenceDir = $HostEvidenceDir
+
+$result = [ordered]@{
+    adb                 = "pending"
+    package             = $Package
+    timestamp           = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+    logcat              = "skipped"
+    dbnativeLogs        = "skipped"
+    crashScan           = "skipped"
+    screenshot          = "skipped"
+    evidenceDir         = $PhoneEvidenceDir
+    evidencePathHost    = if ($PullEvidenceToWindows) { $HostEvidenceDir } else { "" }
+    evidencePathWindows = if ($PullEvidenceToWindows) { $WindowsEvidenceDir } else { "" }
+    errorSummary        = @()
 }
 
 function Add-ResultError {
@@ -59,7 +82,7 @@ function Write-PhoneTextFile {
         [Parameter(Mandatory)][string]$PhonePath,
         [Parameter(Mandatory)][string[]]$Lines
     )
-    $tmp = Join-Path $env:TEMP ("db-control-" + [guid]::NewGuid().ToString() + ".txt")
+    $tmp = Join-Path (Get-DbHostTemp) ("db-control-" + [guid]::NewGuid().ToString() + ".txt")
     try {
         $Lines | Set-Content -Encoding UTF8 $tmp
         $push = Invoke-Adb push $tmp $PhonePath
@@ -154,11 +177,11 @@ try {
     }
 
     if ($PullEvidenceToWindows) {
-        New-Item -ItemType Directory -Force -Path $WindowsEvidenceDir | Out-Null
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $WindowsEvidenceDir "*")
-        $pull = Invoke-Adb pull "$PhoneEvidenceDir/." $WindowsEvidenceDir
+        New-Item -ItemType Directory -Force -Path $HostEvidenceDir | Out-Null
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $HostEvidenceDir "*")
+        $pull = Invoke-Adb pull "$PhoneEvidenceDir/." $HostEvidenceDir
         if ($pull.ExitCode -ne 0) {
-            Add-ResultError "Failed to mirror evidence to Windows."
+            Add-ResultError "Failed to mirror evidence to host."
         }
     }
 
