@@ -19,10 +19,6 @@ ok()  { echo "[ok] $*"; }
 warn(){ echo "[warn] $*"; }
 fail(){ echo "[fail] $*"; return 1; }
 
-# ---------------------------------------------------------------------------
-# Storage access check
-# ---------------------------------------------------------------------------
-
 check_storage() {
     log "Checking shared storage access ..."
     if [ ! -d "$SDCARD_DOWNLOAD" ]; then
@@ -35,31 +31,20 @@ check_storage() {
     ok "Shared storage accessible."
 }
 
-# ---------------------------------------------------------------------------
-# Repair termux-user.txt (may have been created as a directory)
-# ---------------------------------------------------------------------------
-
 repair_user_file() {
     log "Checking $TERMUX_USER_FILE ..."
     if [ -d "$TERMUX_USER_FILE" ]; then
-        warn "termux-user.txt is a directory — removing and recreating as a file."
+        warn "termux-user.txt is a directory; removing and recreating as a file."
         rm -rf "$TERMUX_USER_FILE"
     fi
-    # Write current username
     whoami > "$TERMUX_USER_FILE"
     ok "Wrote Termux username '$(cat "$TERMUX_USER_FILE")' to $TERMUX_USER_FILE"
 }
-
-# ---------------------------------------------------------------------------
-# Package installation
-# ---------------------------------------------------------------------------
 
 install_packages() {
     log "Updating package index ..."
     pkg update -y 2>/dev/null || warn "pkg update had non-zero exit (may be harmless)."
 
-    # Map package name -> representative command to check for installation.
-    # termux-api provides termux-clipboard-get (not a binary named termux-api).
     local check_cmd
     declare -A pkg_cmd=(
         [git]=git
@@ -75,11 +60,10 @@ install_packages() {
             ok "$pkg already installed."
         else
             log "Installing $pkg ..."
-            pkg install -y "$pkg" || warn "Failed to install $pkg — you may need to install it manually."
+            pkg install -y "$pkg" || warn "Failed to install $pkg; you may need to install it manually."
         fi
     done
 
-    # gh (GitHub CLI) requires separate repo
     if command -v gh >/dev/null 2>&1; then
         ok "gh (GitHub CLI) already installed."
     else
@@ -87,14 +71,10 @@ install_packages() {
         pkg install -y gh 2>/dev/null || {
             warn "pkg gh not available directly."
             warn "Try: pkg install gh  (after: pkg update)"
-            warn "Or install manually: https://github.com/cli/cli/releases"
+            warn "Or install manually from GitHub CLI releases."
         }
     fi
 }
-
-# ---------------------------------------------------------------------------
-# sshd
-# ---------------------------------------------------------------------------
 
 ensure_sshd() {
     log "Checking sshd ..."
@@ -110,16 +90,8 @@ ensure_sshd() {
     fi
 }
 
-# ---------------------------------------------------------------------------
-# db-control directory
-# ---------------------------------------------------------------------------
-
 ensure_db_home() {
-    mkdir -p "$DB_HOME"
-    mkdir -p "$APK_DIR"
-    mkdir -p "$EVIDENCE_DIR/latest"
-    mkdir -p "$EVIDENCE_DIR/archive"
-    mkdir -p "$TOOLS_DIR"
+    mkdir -p "$DB_HOME" "$APK_DIR" "$EVIDENCE_DIR/latest" "$EVIDENCE_DIR/archive" "$TOOLS_DIR"
     ok "Directories ready: $DB_HOME  $APK_DIR  $EVIDENCE_DIR  $TOOLS_DIR"
 }
 
@@ -130,35 +102,114 @@ persist_bootstrap_copy() {
     ok "Bootstrap copy ready at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-menu
-# ---------------------------------------------------------------------------
-
 write_db_menu() {
     local target="$TERMUX_BIN/db-menu"
     cat > "$target" << 'MENU_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-menu — Digital Breakdown terminal menu
+# db-menu - Digital Breakdown terminal menu
+
+set +e
 
 DB_HOME="/sdcard/Download/db-control"
 SDCARD_DOWNLOAD="/sdcard/Download"
 APK_DIR="$DB_HOME/apks"
+EVIDENCE_LATEST="$DB_HOME/evidence/latest"
+PACKAGE="com.indrolend.digitalbreakdown.native"
+REPO="indrolend/digital-breakdown-apk"
+DEFAULT_ARTIFACT="digital-breakdown-native-debug-apk"
+DEFAULT_RUN="28961104004"
+LAST_ACTION=""
+
+pause_footer() {
+    echo ""
+    echo "Enter = back to menu"
+    echo "r = repeat last action"
+    echo "l = print latest logs"
+    echo "s = capture screenshot"
+    echo "e = print latest result.json"
+    echo "x = restart sshd"
+    echo "q = quit"
+    read -r -p "Choose: " footer_choice
+    case "$footer_choice" in
+        r|R) if [ -n "$LAST_ACTION" ]; then "$LAST_ACTION"; pause_footer; fi ;;
+        l|L) print_latest_logs; pause_footer ;;
+        s|S) capture_screenshot_hint; pause_footer ;;
+        e|E) print_result_json; pause_footer ;;
+        x|X) restart_sshd; pause_footer ;;
+        q|Q) exit 0 ;;
+        *) return 0 ;;
+    esac
+}
+
+run_action() {
+    LAST_ACTION="$1"
+    "$1"
+    pause_footer
+}
+
+print_result_json() {
+    echo ""
+    echo "=== Latest result.json ==="
+    if [ -f "$EVIDENCE_LATEST/result.json" ]; then
+        if command -v jq >/dev/null 2>&1; then
+            jq . "$EVIDENCE_LATEST/result.json" || cat "$EVIDENCE_LATEST/result.json"
+        else
+            cat "$EVIDENCE_LATEST/result.json"
+        fi
+    else
+        echo "No result.json at $EVIDENCE_LATEST/result.json"
+    fi
+}
+
+print_latest_logs() {
+    echo ""
+    echo "=== Latest DBNATIVE logs ==="
+    if [ -f "$EVIDENCE_LATEST/logcat-dbnative.txt" ]; then
+        tail -60 "$EVIDENCE_LATEST/logcat-dbnative.txt"
+    else
+        echo "No logcat-dbnative.txt found."
+    fi
+    echo ""
+    echo "=== Latest crash scan ==="
+    if [ -f "$EVIDENCE_LATEST/logcat-crashes.txt" ]; then
+        tail -100 "$EVIDENCE_LATEST/logcat-crashes.txt"
+    else
+        echo "No logcat-crashes.txt found."
+    fi
+}
+
+capture_screenshot_hint() {
+    echo ""
+    echo "=== Screenshot ==="
+    echo "Screenshots are captured over ADB from the host side:"
+    echo "  adb shell screencap -p $EVIDENCE_LATEST/screen.png"
+    echo "Or run the host PowerShell evidence/demo scripts."
+}
+
+restart_sshd() {
+    echo ""
+    echo "=== Restart sshd ==="
+    pkill sshd >/dev/null 2>&1 || true
+    sshd && echo "[ok] sshd started on port 8022" || echo "[warn] sshd failed"
+}
 
 show_status() {
     echo ""
-    echo "=== Status ==="
-    echo "Host:    $(hostname)"
-    echo "User:    $(whoami)"
-    echo "Date:    $(date)"
+    echo "=== Status Dashboard ==="
+    echo "Phone host: $(hostname)"
+    echo "Termux user: $(whoami)"
+    echo "Date: $(date)"
+    echo "DB_HOME: $DB_HOME"
+    echo "APK: $APK_DIR/current.apk"
+    echo "Evidence: $EVIDENCE_LATEST"
     echo ""
 
-    # ADB (from phone perspective)
     echo "--- Termux packages ---"
-    for cmd in git curl jq gh ssh nano termux-clipboard-get; do
+    for cmd in git curl jq gh ssh sshd nano termux-clipboard-get; do
         if command -v "$cmd" >/dev/null 2>&1; then
             echo "  [ok] $cmd"
         else
-            echo "  [--] $cmd (not installed)"
+            echo "  [--] $cmd"
         fi
     done
 
@@ -167,172 +218,153 @@ show_status() {
     if pgrep -x sshd >/dev/null 2>&1; then
         echo "  [ok] sshd running (port 8022)"
     else
-        echo "  [--] sshd not running  ->  run: sshd"
+        echo "  [--] sshd not running"
     fi
 
     echo ""
     echo "--- GitHub auth ---"
     if command -v gh >/dev/null 2>&1; then
-        if gh auth status >/dev/null 2>&1; then
-            echo "  [ok] gh auth active"
-        else
-            echo "  [--] gh not authenticated  ->  run: gh auth login"
-        fi
+        gh auth status >/dev/null 2>&1 && echo "  [ok] gh auth active" || echo "  [--] gh not authenticated"
     else
-        echo "  [--] gh not installed  ->  pkg install gh"
+        echo "  [--] gh not installed"
     fi
 
     echo ""
     echo "--- Shared storage ---"
-    if [ -d "$SDCARD_DOWNLOAD" ]; then
-        echo "  [ok] /sdcard/Download accessible"
-    else
-        echo "  [--] /sdcard/Download not accessible  ->  termux-setup-storage"
-    fi
+    [ -d "$SDCARD_DOWNLOAD" ] && echo "  [ok] /sdcard/Download accessible" || echo "  [--] /sdcard/Download not accessible"
 
     echo ""
-    echo "--- APK files in $APK_DIR ---"
-    if [ -d "$APK_DIR" ]; then
-        ls -lh "$APK_DIR" 2>/dev/null || echo "  (empty)"
-    else
-        echo "  (directory does not exist)"
-    fi
+    echo "--- APK files ---"
+    ls -lh "$APK_DIR" 2>/dev/null || echo "  (none)"
+
+    echo ""
+    echo "--- Latest result ---"
+    [ -f "$EVIDENCE_LATEST/result.json" ] && cat "$EVIDENCE_LATEST/result.json" || echo "  (no result.json yet)"
 }
 
-menu_apk() {
-    while true; do
-        echo ""
-        echo "=== APK / Demo Tools ==="
-        echo "  1) Download latest native debug artifact from PR/run"
-        echo "  2) List APKs in $APK_DIR"
-        echo "  3) Launch native package"
-        echo "  4) Capture screenshot"
-        echo "  5) Capture logcat evidence"
-        echo "  6) Full smoke test: download -> (pull/install on Windows)"
-        echo "  7) Clean old APK/evidence files (dry-run)"
-        echo "  8) Clean old APK/evidence files (confirm)"
-        echo "  b) Back"
-        echo ""
-        read -r -p "Choose: " apk_choice
-        case "$apk_choice" in
-            1)
-                read -r -p "GitHub run ID: " run_id
-                read -r -p "Artifact name [digital-breakdown-native-debug-apk]: " art_name
-                art_name="${art_name:-digital-breakdown-native-debug-apk}"
-                read -r -p "Output filename [current.apk]: " out_name
-                out_name="${out_name:-current.apk}"
-                db-apk-artifact-download \
-                    --repo indrolend/digital-breakdown-apk \
-                    --run "$run_id" \
-                    --artifact "$art_name" \
-                    --out "$APK_DIR/$out_name" || true
-                ;;
-            2)
-                echo "APKs in $APK_DIR:"
-                ls -lh "$APK_DIR" 2>/dev/null || echo "(none)"
-                ;;
-            3)
-                echo "Launch is handled via ADB from the Windows side."
-                echo "  Run: DbApkInstall or DbApkDemo from phone-session.ps1"
-                ;;
-            4)
-                echo "Screenshot is captured from the Windows side via:"
-                echo "  adb shell screencap -p /sdcard/Download/db-control/evidence/latest/screen.png"
-                echo "  adb pull /sdcard/Download/db-control/evidence/latest/screen.png"
-                ;;
-            5)
-                echo "Logcat evidence is captured from the Windows side via:"
-                echo "  . .\\tools\\phone-control\\db-apk-evidence.ps1"
-                ;;
-            6)
-                echo "To run the full smoke test, on Windows run:"
-                echo "  . .\\tools\\phone-control\\phone-session.ps1"
-                echo "  DbApkDemo -RunId <id> -ArtifactName <name> -Package <pkg>"
-                ;;
-            7)
-                db-cleanup --dry-run || true
-                ;;
-            8)
-                db-cleanup || true
-                ;;
-            b|B) break ;;
-            *) echo "Unknown choice." ;;
-        esac
-    done
+apk_download() {
+    echo ""
+    echo "=== APK Download / Artifact ==="
+    read -r -p "GitHub run ID [$DEFAULT_RUN]: " run_id
+    run_id="${run_id:-$DEFAULT_RUN}"
+    read -r -p "Artifact name [$DEFAULT_ARTIFACT]: " art_name
+    art_name="${art_name:-$DEFAULT_ARTIFACT}"
+    read -r -p "Output path [$APK_DIR/current.apk]: " out_path
+    out_path="${out_path:-$APK_DIR/current.apk}"
+    db-apk-artifact-download --repo "$REPO" --run "$run_id" --artifact "$art_name" --out "$out_path" --force
 }
 
-menu_repo() {
-    while true; do
-        echo ""
-        echo "=== Repo / GitHub ==="
-        echo "  1) gh auth status"
-        echo "  2) List open PRs"
-        echo "  3) List recent workflow runs"
-        echo "  4) List open issues"
-        echo "  b) Back"
-        echo ""
-        read -r -p "Choose: " r_choice
-        case "$r_choice" in
-            1) gh auth status || true ;;
-            2) gh pr list --repo indrolend/digital-breakdown-apk 2>/dev/null || echo "gh not authenticated." ;;
-            3) gh run list --repo indrolend/digital-breakdown-apk --limit 10 2>/dev/null || echo "gh not authenticated." ;;
-            4) gh issue list --repo indrolend/digital-breakdown-apk 2>/dev/null || echo "gh not authenticated." ;;
-            b|B) break ;;
-            *) echo "Unknown choice." ;;
-        esac
-    done
+install_launch_hint() {
+    echo ""
+    echo "=== Install / Launch ==="
+    echo "Install and launch run from the host side through ADB."
+    echo "From Windows PowerShell or Mac/Linux pwsh:"
+    echo "  . ./tools/phone-control/phone-session.ps1"
+    echo "  DbApkInstall -DevicePath $APK_DIR/current.apk -Package $PACKAGE"
+    echo ""
+    echo "Full scripted run:"
+    echo "  DbApkDemo -RunId $DEFAULT_RUN -ArtifactName $DEFAULT_ARTIFACT -Package $PACKAGE -OutName current.apk -CleanBeforeRun"
 }
 
-menu_cleanup() {
-    while true; do
-        echo ""
-        echo "=== Cleanup / Waste Management ==="
-        echo "  1) Dry-run cleanup (preview)"
-        echo "  2) Run cleanup (confirm each category)"
-        echo "  b) Back"
-        echo ""
-        read -r -p "Choose: " c_choice
-        case "$c_choice" in
-            1) db-cleanup --dry-run || true ;;
-            2) db-cleanup || true ;;
-            b|B) break ;;
-            *) echo "Unknown choice." ;;
-        esac
-    done
+evidence_hint() {
+    echo ""
+    echo "=== Evidence / Logs ==="
+    print_result_json
+    print_latest_logs
+    echo ""
+    echo "To recapture bounded evidence from the host side:"
+    echo "  . ./tools/phone-control/phone-session.ps1"
+    echo "  DbApkDemo -RunId 0 -ArtifactName unused -Package $PACKAGE -EvidenceOnly -CleanBeforeRun"
 }
 
-# Main loop
+full_demo_hint() {
+    echo ""
+    echo "=== Full Demo Sequence ==="
+    echo "This sequence requires host ADB for install, launch, logcat, and screenshot."
+    echo "From Windows PowerShell or Mac/Linux pwsh:"
+    echo "  . ./tools/phone-control/phone-session.ps1"
+    echo "  DbApkDemo -RunId $DEFAULT_RUN -ArtifactName $DEFAULT_ARTIFACT -Package $PACKAGE -OutName current.apk -CleanBeforeRun -ArchivePreviousEvidence"
+    echo ""
+    echo "Termux can perform the artifact download step now:"
+    echo "  db-apk-artifact-download --repo $REPO --run $DEFAULT_RUN --artifact $DEFAULT_ARTIFACT --out $APK_DIR/current.apk --force"
+}
+
+github_tools() {
+    echo ""
+    echo "=== GitHub / PR Tools ==="
+    echo "1) gh auth status"
+    echo "2) gh auth login"
+    echo "3) List open PRs"
+    echo "4) List recent workflow runs"
+    echo "5) View PR #5"
+    read -r -p "Choose: " g_choice
+    case "$g_choice" in
+        1) gh auth status || true ;;
+        2) gh auth login || true ;;
+        3) gh pr list --repo "$REPO" || true ;;
+        4) gh run list --repo "$REPO" --limit 10 || true ;;
+        5) gh pr view 5 --repo "$REPO" || true ;;
+        *) echo "Unknown choice." ;;
+    esac
+}
+
+cleanup_storage() {
+    echo ""
+    echo "=== Cleanup / Storage ==="
+    echo "1) Dry-run cleanup"
+    echo "2) Run cleanup with prompts"
+    echo "3) Show db-control size"
+    read -r -p "Choose: " c_choice
+    case "$c_choice" in
+        1) db-cleanup --dry-run || true ;;
+        2) db-cleanup || true ;;
+        3) du -sh "$DB_HOME" 2>/dev/null || true; find "$DB_HOME" -maxdepth 3 -type f -printf "%s %p\n" 2>/dev/null | sort -nr | head -20 || true ;;
+        *) echo "Unknown choice." ;;
+    esac
+}
+
+settings_paths() {
+    echo ""
+    echo "=== Settings / Paths ==="
+    echo "Repo: $REPO"
+    echo "Package: $PACKAGE"
+    echo "DB_HOME: $DB_HOME"
+    echo "APK_DIR: $APK_DIR"
+    echo "Current APK: $APK_DIR/current.apk"
+    echo "Evidence latest: $EVIDENCE_LATEST"
+    echo "Evidence archive: $DB_HOME/evidence/archive"
+    echo "Tools: $DB_HOME/tools"
+    echo "Termux bin: /data/data/com.termux/files/usr/bin"
+    echo "Termux user file: $DB_HOME/termux-user.txt"
+}
+
 while true; do
     echo ""
     echo "====================================="
     echo " Digital Breakdown - Phone Menu"
     echo "====================================="
-    echo "  1) Status overview"
-    echo "  2) APK / Demo Tools"
-    echo "  3) Repo / GitHub"
-    echo "  4) Clipboard"
-    echo "  5) Cleanup / Waste management"
-    echo "  6) Start / restart sshd"
-    echo "  7) gh auth login"
+    echo "  1) Status dashboard"
+    echo "  2) APK download/artifact"
+    echo "  3) Install/launch"
+    echo "  4) Evidence/logs"
+    echo "  5) Full demo sequence"
+    echo "  6) GitHub/PR tools"
+    echo "  7) Server/SSH controls"
+    echo "  8) Cleanup/storage"
+    echo "  9) Settings/paths"
     echo "  q) Quit"
     echo ""
     read -r -p "Choose: " choice
     case "$choice" in
-        1) show_status ;;
-        2) menu_apk ;;
-        3) menu_repo ;;
-        4)
-            echo "  a) Get clipboard  b) Set clipboard"
-            read -r -p "Choose: " clip_choice
-            case "$clip_choice" in
-                a) db-clip-get || true ;;
-                b) read -r -p "Text to set: " clip_text; echo "$clip_text" | db-clip-set || true ;;
-                *) echo "Unknown choice." ;;
-            esac
-            ;;
-        5) menu_cleanup ;;
-        6) sshd && echo "[ok] sshd started." || echo "[warn] sshd failed." ;;
-        7) gh auth login ;;
+        1) run_action show_status ;;
+        2) run_action apk_download ;;
+        3) run_action install_launch_hint ;;
+        4) run_action evidence_hint ;;
+        5) run_action full_demo_hint ;;
+        6) run_action github_tools ;;
+        7) run_action restart_sshd ;;
+        8) run_action cleanup_storage ;;
+        9) run_action settings_paths ;;
         q|Q) echo "Bye."; exit 0 ;;
         *) echo "Unknown choice." ;;
     esac
@@ -342,16 +374,12 @@ MENU_EOF
     ok "db-menu installed at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-apk-artifact-download
-# ---------------------------------------------------------------------------
-
 write_db_apk_download() {
     local target="$TERMUX_BIN/db-apk-artifact-download"
     cat > "$target" << 'DLEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-apk-artifact-download — Download a GitHub Actions artifact via gh CLI.
-# Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH]
+# db-apk-artifact-download - Download a GitHub Actions artifact via gh CLI.
+# Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH] [--force]
 
 set -euo pipefail
 
@@ -373,7 +401,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$RUN_ID" || -z "$ARTIFACT_NAME" ]]; then
-    echo "Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH]"
+    echo "Usage: db-apk-artifact-download --repo REPO --run RUN_ID --artifact NAME [--out PATH] [--force]"
+    exit 1
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+    echo "[fail] gh not installed. Run: pkg install gh"
     exit 1
 fi
 
@@ -383,7 +416,6 @@ if ! gh auth status >/dev/null 2>&1; then
     exit 1
 fi
 
-# Destination directory
 OUT_DIR="$(dirname "$OUT_PATH")"
 mkdir -p "$OUT_DIR"
 
@@ -399,12 +431,8 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "[download] Fetching artifact '$ARTIFACT_NAME' from run $RUN_ID ..."
-gh run download "$RUN_ID" \
-    --repo "$REPO" \
-    --name "$ARTIFACT_NAME" \
-    --dir "$TMP_DIR"
+gh run download "$RUN_ID" --repo "$REPO" --name "$ARTIFACT_NAME" --dir "$TMP_DIR"
 
-# Find the APK inside the downloaded directory
 APK_FILE="$(find "$TMP_DIR" -name '*.apk' | head -1)"
 if [[ -z "$APK_FILE" ]]; then
     echo "[fail] No APK found in downloaded artifact."
@@ -421,15 +449,11 @@ DLEOF
     ok "db-apk-artifact-download installed at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-gh-settings
-# ---------------------------------------------------------------------------
-
 write_db_gh_settings() {
     local target="$TERMUX_BIN/db-gh-settings"
     cat > "$target" << 'GHEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-gh-settings — Check and configure GitHub CLI auth.
+# db-gh-settings - Check and configure GitHub CLI auth.
 echo "=== GitHub CLI Status ==="
 if command -v gh >/dev/null 2>&1; then
     gh auth status || echo "Not authenticated. Run: gh auth login"
@@ -441,15 +465,11 @@ GHEOF
     ok "db-gh-settings installed at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-workflows
-# ---------------------------------------------------------------------------
-
 write_db_workflows() {
     local target="$TERMUX_BIN/db-workflows"
     cat > "$target" << 'WFEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-workflows — List recent GitHub Actions workflow runs.
+# db-workflows - List recent GitHub Actions workflow runs.
 set -euo pipefail
 REPO="${1:-indrolend/digital-breakdown-apk}"
 echo "=== Recent workflow runs for $REPO ==="
@@ -459,15 +479,11 @@ WFEOF
     ok "db-workflows installed at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-clip-set / db-clip-get
-# ---------------------------------------------------------------------------
-
 write_db_clip() {
     local set_target="$TERMUX_BIN/db-clip-set"
     cat > "$set_target" << 'CLIPSET'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-clip-set — Set Android clipboard. Reads from stdin or first argument.
+# db-clip-set - Set Android clipboard. Reads from stdin or first argument.
 CLIP_FILE="/sdcard/Download/db-control/.clipboard"
 mkdir -p "$(dirname "$CLIP_FILE")"
 
@@ -491,7 +507,7 @@ CLIPSET
     local get_target="$TERMUX_BIN/db-clip-get"
     cat > "$get_target" << 'CLIPGET'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-clip-get — Get Android clipboard.
+# db-clip-get - Get Android clipboard.
 CLIP_FILE="/sdcard/Download/db-control/.clipboard"
 
 if command -v termux-clipboard-get >/dev/null 2>&1; then
@@ -508,22 +524,12 @@ CLIPGET
     ok "db-clip-get installed at $get_target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-cleanup
-# ---------------------------------------------------------------------------
-
 write_db_cleanup() {
     local target="$TERMUX_BIN/db-cleanup"
     cat > "$target" << 'CLEANEOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-cleanup — Cleanup generated project-control files.
+# db-cleanup - Cleanup generated project-control files.
 # Usage: db-cleanup [--dry-run]
-#
-# Rules:
-#   - Never deletes GitHub auth.
-#   - Never deletes broad Downloads contents.
-#   - Only deletes known generated/project-control paths.
-#   - --dry-run previews without deleting.
 
 set -euo pipefail
 
@@ -532,6 +538,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then DRY_RUN=1; fi
 
 DB_CONTROL="/sdcard/Download/db-control"
 APK_DIR="$DB_CONTROL/apks"
+EVIDENCE_ARCHIVE="$DB_CONTROL/evidence/archive"
 CLIP_FILE="$DB_CONTROL/.clipboard"
 
 log_would() { echo "[would delete] $*"; }
@@ -540,6 +547,10 @@ log_skip() { echo "[skip] $*"; }
 
 safe_remove() {
     local path="$1"
+    case "$path" in
+        /sdcard/Download/db-control/*|/sdcard/Download/termux-control-bootstrap*.sh) ;;
+        *) echo "[skip] unsafe path: $path"; return 0 ;;
+    esac
     if [[ -e "$path" || -d "$path" ]]; then
         if [[ $DRY_RUN -eq 1 ]]; then
             log_would "$path"
@@ -555,7 +566,8 @@ safe_remove() {
     fi
 }
 
-echo "=== Cleanup Preview ===" && [[ $DRY_RUN -eq 1 ]] && echo "(dry-run — nothing will be deleted)"
+echo "=== Cleanup Preview ==="
+[[ $DRY_RUN -eq 1 ]] && echo "(dry-run; nothing will be deleted)"
 
 echo ""
 echo "--- Clipboard temp file ---"
@@ -564,7 +576,6 @@ safe_remove "$CLIP_FILE"
 echo ""
 echo "--- APK artifacts in $APK_DIR ---"
 if [[ -d "$APK_DIR" ]]; then
-    # Keep the newest APK, offer to remove older ones
     mapfile -t apks < <(ls -t "$APK_DIR"/*.apk 2>/dev/null || true)
     if [[ ${#apks[@]} -gt 1 ]]; then
         echo "Newest: ${apks[0]} (keeping)"
@@ -572,7 +583,21 @@ if [[ -d "$APK_DIR" ]]; then
             safe_remove "$apk"
         done
     else
-        echo "(0 or 1 APK present — nothing to remove)"
+        echo "(0 or 1 APK present; nothing to remove)"
+    fi
+fi
+
+echo ""
+echo "--- Evidence archives in $EVIDENCE_ARCHIVE ---"
+if [[ -d "$EVIDENCE_ARCHIVE" ]]; then
+    mapfile -t archives < <(ls -1dt "$EVIDENCE_ARCHIVE"/* 2>/dev/null || true)
+    if [[ ${#archives[@]} -gt 10 ]]; then
+        echo "Keeping newest 10 archives."
+        for archive in "${archives[@]:10}"; do
+            safe_remove "$archive"
+        done
+    else
+        echo "(10 or fewer archives present; nothing to remove)"
     fi
 fi
 
@@ -589,16 +614,12 @@ CLEANEOF
     ok "db-cleanup installed at $target"
 }
 
-# ---------------------------------------------------------------------------
-# Utility script: db-pr2 (quick PR#2 smoke test helper)
-# ---------------------------------------------------------------------------
-
 write_db_pr2() {
     local target="$TERMUX_BIN/db-pr2"
     cat > "$target" << 'PR2EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# db-pr2 — Quick helper for PR#2 native debug APK smoke test.
-# Downloads the latest native debug artifact and places it in /sdcard/Download/db-control/apks/.
+# db-pr2 - Quick helper for native debug APK smoke test.
+# Downloads a native debug artifact and places it at /sdcard/Download/db-control/apks/current.apk.
 
 set -euo pipefail
 
@@ -606,7 +627,7 @@ REPO="indrolend/digital-breakdown-apk"
 ARTIFACT="digital-breakdown-native-debug-apk"
 OUT="/sdcard/Download/db-control/apks/current.apk"
 
-echo "=== PR#2 native debug APK download ==="
+echo "=== Native debug APK download ==="
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "[fail] gh not installed. Run: pkg install gh"
@@ -628,26 +649,18 @@ if [[ -z "$RUN_ID" ]]; then
     exit 0
 fi
 
-db-apk-artifact-download \
-    --repo "$REPO" \
-    --run "$RUN_ID" \
-    --artifact "$ARTIFACT" \
-    --out "$OUT"
+db-apk-artifact-download --repo "$REPO" --run "$RUN_ID" --artifact "$ARTIFACT" --out "$OUT"
 
 echo ""
 echo "APK ready at: $OUT"
 echo ""
-echo "On Windows, now run:"
-echo "  . .\\tools\\phone-control\\phone-session.ps1"
+echo "From the host PowerShell session, run:"
+echo "  . ./tools/phone-control/phone-session.ps1"
 echo "  DbApkInstall -DevicePath /sdcard/Download/db-control/apks/current.apk -Package com.indrolend.digitalbreakdown.native"
 PR2EOF
     chmod +x "$target"
     ok "db-pr2 installed at $target"
 }
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 log "Starting Digital Breakdown Termux bootstrap ..."
 log "Script: $0"
@@ -674,7 +687,7 @@ echo ""
 echo "Installed utilities:"
 echo "  db-menu                    - Main terminal menu"
 echo "  db-apk-artifact-download   - Download GitHub Actions artifact"
-echo "  db-pr2                     - Quick PR#2 smoke test helper"
+echo "  db-pr2                     - Quick smoke test helper"
 echo "  db-gh-settings             - GitHub auth status"
 echo "  db-workflows               - List recent workflow runs"
 echo "  db-clip-set / db-clip-get  - Clipboard bridge"
@@ -683,7 +696,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Authenticate GitHub CLI:  gh auth login"
 echo "  2. Start SSH daemon:         sshd  (already started above)"
-echo "  3. From Windows:             . .\\tools\\phone-control\\phone-session.ps1"
+echo "  3. From host PowerShell:     . ./tools/phone-control/phone-session.ps1"
 echo "  4. Open menu:                DbMenu   (or: db-menu)"
 echo ""
 echo "Termux user: $(whoami)"
