@@ -77,6 +77,12 @@ function Invoke-Adb {
     [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
 }
 
+function Invoke-AdbArgs {
+    param([Parameter(Mandatory)][string[]]$AdbArgs)
+    $out = & { $ErrorActionPreference = 'Continue'; & $adb @AdbArgs 2>&1 }
+    [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
+}
+
 function Write-PhoneTextFile {
     param(
         [Parameter(Mandatory)][string]$PhonePath,
@@ -161,7 +167,8 @@ try {
     }
 
     if (-not $SkipScreenshot) {
-        $shot = Invoke-Adb shell screencap -p $ScreenshotDevice
+        # Pass -p through an explicit string array so PowerShell never treats it as a script parameter.
+        $shot = Invoke-AdbArgs -AdbArgs @("shell", "screencap", "-p", $ScreenshotDevice)
         if ($shot.ExitCode -eq 0) {
             $check = Invoke-Adb shell "ls '$ScreenshotDevice' 2>/dev/null"
             if ($check.ExitCode -eq 0) {
