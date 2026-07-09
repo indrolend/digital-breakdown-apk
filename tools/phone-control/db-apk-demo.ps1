@@ -10,7 +10,8 @@
         evidence/latest/
         evidence/archive/YYYYMMDD-HHMMSS/
 
-    Windows acts as controller and optional evidence mirror only.
+    The host computer, Windows or macOS, acts as controller and optional
+    evidence mirror only.
 #>
 
 param(
@@ -23,6 +24,7 @@ param(
     [Alias("SkipInstall")]
     [switch]$EvidenceOnly,
     [string]$LocalApkPath = "",
+    [Alias("PullEvidenceToHost")]
     [switch]$PullEvidenceToWindows,
     [switch]$NoPullEvidence,
     [switch]$ArchivePreviousEvidence,
@@ -34,13 +36,27 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 $adb = $null
 
+function Get-DbHostHome {
+    if ($env:USERPROFILE) { return $env:USERPROFILE }
+    if ($HOME) { return $HOME }
+    return [Environment]::GetFolderPath("UserProfile")
+}
+
+function Get-DbHostDownloads {
+    return (Join-Path (Get-DbHostHome) "Downloads")
+}
+
+function Get-DbHostTemp {
+    return [System.IO.Path]::GetTempPath()
+}
+
 $PhoneRoot = "/sdcard/Download/db-control"
 $PhoneApkPath = "$DeviceApkDir/$OutName"
 $PhoneEvidenceRoot = "$PhoneRoot/evidence"
 $PhoneEvidenceLatest = "$PhoneEvidenceRoot/latest"
 $PhoneEvidenceArchive = "$PhoneEvidenceRoot/archive"
-$WindowsControlRoot = Join-Path $env:USERPROFILE "Downloads\db-control"
-$WindowsEvidenceLatest = Join-Path $WindowsControlRoot "evidence-latest"
+$HostControlRoot = Join-Path (Get-DbHostDownloads) "db-control"
+$HostEvidenceLatest = Join-Path $HostControlRoot "evidence-latest"
 $ShouldPullEvidence = $PullEvidenceToWindows -and (-not $NoPullEvidence)
 
 $statusValues = @("pass", "fail", "skipped", "warning", "pending")
@@ -58,8 +74,10 @@ $result = [ordered]@{
     screenshot          = "skipped"
     apkPathPhone        = $PhoneApkPath
     apkPathWindows      = ""
+    apkPathHost         = ""
     evidencePathPhone   = $PhoneEvidenceLatest
-    evidencePathWindows = if ($ShouldPullEvidence) { $WindowsEvidenceLatest } else { "" }
+    evidencePathWindows = if ($ShouldPullEvidence) { $HostEvidenceLatest } else { "" }
+    evidencePathHost    = if ($ShouldPullEvidence) { $HostEvidenceLatest } else { "" }
     package             = $Package
     runId               = $RunId
     artifactName        = $ArtifactName
@@ -93,7 +111,7 @@ function Write-PhoneTextFile {
         [Parameter(Mandatory)][string]$PhonePath,
         [Parameter(Mandatory)][string[]]$Lines
     )
-    $tmp = Join-Path $env:TEMP ("db-control-" + [guid]::NewGuid().ToString() + ".txt")
+    $tmp = Join-Path (Get-DbHostTemp) ("db-control-" + [guid]::NewGuid().ToString() + ".txt")
     try {
         $Lines | Set-Content -Encoding UTF8 $tmp
         $push = Invoke-Adb push $tmp $PhonePath
@@ -110,8 +128,8 @@ function Save-Result {
         $json = $result | ConvertTo-Json -Depth 5
         Write-PhoneTextFile -PhonePath "$PhoneEvidenceLatest/result.json" -Lines @($json)
         if ($ShouldPullEvidence) {
-            New-Item -ItemType Directory -Force -Path $WindowsEvidenceLatest | Out-Null
-            $null = Invoke-Adb pull "$PhoneEvidenceLatest/result.json" (Join-Path $WindowsEvidenceLatest "result.json")
+            New-Item -ItemType Directory -Force -Path $HostEvidenceLatest | Out-Null
+            $null = Invoke-Adb pull "$PhoneEvidenceLatest/result.json" (Join-Path $HostEvidenceLatest "result.json")
         }
     } catch {
         Write-Host "[warn] Could not write result.json to phone: $_"
@@ -180,13 +198,13 @@ function Capture-Evidence {
     )
 
     if ($ShouldPullEvidence) {
-        $args += @("-PullEvidenceToWindows", "-WindowsEvidenceDir", $WindowsEvidenceLatest)
+        $args += @("-PullEvidenceToWindows", "-WindowsEvidenceDir", $HostEvidenceLatest)
     }
 
     & $evidenceScript @args
     $evExit = $LASTEXITCODE
 
-    $tmpJson = Join-Path $env:TEMP ("db-control-evidence-result-" + [guid]::NewGuid().ToString() + ".json")
+    $tmpJson = Join-Path (Get-DbHostTemp) ("db-control-evidence-result-" + [guid]::NewGuid().ToString() + ".json")
     $pull = Invoke-Adb pull "$PhoneEvidenceLatest/result.json" $tmpJson
     if ($pull.ExitCode -eq 0 -and (Test-Path $tmpJson)) {
         try {
@@ -218,7 +236,7 @@ try {
     Write-Host "[phone apk] $PhoneApkPath"
     Write-Host "[phone evidence] $PhoneEvidenceLatest"
     if ($ShouldPullEvidence) {
-        Write-Host "[windows mirror] $WindowsEvidenceLatest"
+        Write-Host "[host mirror] $HostEvidenceLatest"
     }
 
     $adb = Get-AdbExe
@@ -260,6 +278,7 @@ try {
         $result["download"] = "skipped"
         $result["pull"] = "skipped"
         $result["apkPathWindows"] = $LocalApkPath
+        $result["apkPathHost"] = $LocalApkPath
     } elseif ($SkipDownload) {
         $exists = Invoke-Adb shell "ls '$PhoneApkPath' 2>/dev/null"
         if ($exists.ExitCode -ne 0 -or ($exists.Output -join "`n") -match "No such file") {
@@ -362,12 +381,13 @@ try {
     Capture-Evidence
 
     if ($ShouldPullEvidence) {
-        New-Item -ItemType Directory -Force -Path $WindowsEvidenceLatest | Out-Null
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $WindowsEvidenceLatest "*")
-        $pullLatest = Invoke-Adb pull "$PhoneEvidenceLatest/." $WindowsEvidenceLatest
+        New-Item -ItemType Directory -Force -Path $HostEvidenceLatest | Out-Null
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $HostEvidenceLatest "*")
+        $pullLatest = Invoke-Adb pull "$PhoneEvidenceLatest/." $HostEvidenceLatest
         if ($pullLatest.ExitCode -ne 0) {
             $result["evidencePathWindows"] = ""
-            Add-ResultError "Failed to mirror latest evidence to Windows."
+            $result["evidencePathHost"] = ""
+            Add-ResultError "Failed to mirror latest evidence to host."
         }
     }
 
@@ -396,7 +416,7 @@ Write-Host ""
 Write-Host "=== Demo Run Complete ==="
 Write-Host "[phone evidence] $PhoneEvidenceLatest"
 if ($ShouldPullEvidence) {
-    Write-Host "[windows mirror] $WindowsEvidenceLatest"
+    Write-Host "[host mirror] $HostEvidenceLatest"
 }
 Write-Host ($result | ConvertTo-Json -Depth 5)
 
