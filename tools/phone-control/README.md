@@ -1,145 +1,60 @@
-# Digital Breakdown — Phone-Control Workflow
+# Digital Breakdown - Phone-Control Workflow
 
-> Phone-side transparency, minimal Windows setup, traceable utilities.
+Phone-side transparency, host-compatible control, traceable runtime evidence.
 
----
+## Architecture contract
 
-## Quick Start
-
-### One-command session start (Windows)
-
-```powershell
-. .\tools\phone-control\phone-session.ps1
+```text
+GitHub = code source of truth
+Phone = runtime/evidence source of truth
+Host computer = controller + optional evidence mirror
 ```
 
-This will:
-1. Find ADB (searches common paths, prompts once if needed, saves config).
-2. Check the connected device.
-3. Forward SSH port 8022.
-4. Detect Termux username.
-5. Load helper commands into your PowerShell session.
+The stable phone root is always:
 
-### Windows PowerShell 5.1 parse check
-
-Before running on a new machine, validate parser compatibility:
-
-```powershell
-Get-ChildItem .\tools\phone-control\*.ps1 | ForEach-Object {
-  $errors = $null
-  $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $_.FullName -Raw), [ref]$errors)
-  if ($errors) {
-    Write-Host "Parse failed: $($_.Name)"
-    $errors
-    exit 1
-  }
-  Write-Host "Parsed: $($_.Name)"
-}
+```text
+/sdcard/Download/db-control/
+  apks/
+    current.apk
+  evidence/
+    latest/
+      result.json
+      install.txt
+      launch.txt
+      logcat-full.txt
+      logcat-filtered.txt
+      logcat-dbnative.txt
+      logcat-crashes.txt
+      screen.png
+    archive/
+      YYYYMMDD-HHMMSS/
+  tools/
 ```
 
-### First-time phone bootstrap
+The APK stable path is:
 
-Copy and run in Termux (or use `adb push` / `adb shell`):
-
-```bash
-bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
+```text
+/sdcard/Download/db-control/apks/current.apk
 ```
 
-If the file is not on the phone yet, push it from Windows:
+The latest evidence stable path is:
 
-```powershell
-adb shell mkdir -p /sdcard/Download/db-control/tools
-adb push .\tools\phone-control\termux-control-bootstrap.sh /sdcard/Download/db-control/tools/
+```text
+/sdcard/Download/db-control/evidence/latest/
 ```
 
-Then run:
+## Compatibility contract
 
-```powershell
-PhoneCmd "bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh"
-```
+- PowerShell scripts must run under Windows PowerShell 5.1 and PowerShell 7+ on macOS.
+- Host paths are built with PowerShell path helpers, not hardcoded Windows separators.
+- Host home resolves from `USERPROFILE`, `HOME`, or the .NET user profile fallback.
+- Host temp resolves from `[System.IO.Path]::GetTempPath()`.
+- Host PATH edits use `[IO.Path]::PathSeparator`.
+- Phone paths remain literal Android paths under `/sdcard/Download/db-control`.
+- Termux utilities say `host side`, not `Windows side`, unless a command is truly Windows-only.
+- `-PullEvidenceToWindows` remains supported as a legacy-compatible flag. The concept is now `host evidence mirror`.
 
----
-
-## New-Machine Setup
-
-### What the Windows machine needs
-
-- **ADB** (Android Debug Bridge) — part of Android Platform Tools.
-  - Download: <https://developer.android.com/tools/releases/platform-tools>
-  - `phone-session.ps1` searches common paths and saves the location to
-    `$env:USERPROFILE\.db-phone-config.ps1` — you only need to provide it once.
-- **SSH client** — built into Windows 10/11 (`ssh.exe`).
-- **Optional:** `scrcpy` for visual screen mirroring.
-  - Download: <https://github.com/Genymobile/scrcpy/releases>
-  - `phone-session.ps1` searches common paths automatically.
-
-### What the Windows machine does NOT need
-
-- Repo clone (scripts can be copied individually)
-- GitHub auth / `gh` CLI
-- Node.js, Gradle, Android Studio
-- Long-lived project state
-
-### ADB path persistence
-
-On first run, `phone-session.ps1` prompts for the ADB path and saves it:
-
-```
-$env:USERPROFILE\.db-phone-config.ps1
-```
-
-Delete that file to reset.
-
----
-
-## Phone / Termux Setup
-
-### Prerequisites installed by bootstrap
-
-| Tool | Purpose |
-|------|---------|
-| `git` | Version control |
-| `curl` | HTTP requests |
-| `jq` | JSON processing |
-| `openssh` | SSH server (`sshd`) |
-| `nano` | Text editor |
-| `termux-api` | Android clipboard bridge |
-| `gh` | GitHub CLI (artifact downloads, PR/issue listing) |
-
-### Verify GitHub auth
-
-```bash
-gh auth status
-# If not authenticated:
-gh auth login
-```
-
-### Verify SSH is running
-
-```bash
-pgrep -x sshd && echo "sshd running" || sshd
-```
-
----
-
-## Helper Commands (loaded by phone-session.ps1)
-
-| Command | Description |
-|---------|-------------|
-| `OpenTermux` | Open Termux app on phone via ADB intent |
-| `Phone` | Open interactive SSH session into Termux |
-| `PhoneCmd "cmd"` | Run a single command in Termux over SSH |
-| `DbMenu` | Open the `db-menu` interactive terminal menu |
-| `PhoneClipSet "text"` | Set Android clipboard |
-| `PhoneClipGet` | Read Android clipboard |
-| `StartScrcpy` | Start screen mirror |
-| `DbApkDemo ...` | Full APK download/install/evidence run |
-| `DbApkInstall ...` | Pull + install APK from phone shared storage |
-
----
-
-## APK Demo Workflow
-
-### Full run (Termux downloads artifact, Windows installs)
+## Quick start - Windows host
 
 ```powershell
 . .\tools\phone-control\phone-session.ps1
@@ -149,31 +64,156 @@ DbApkDemo `
   -ArtifactName digital-breakdown-native-debug-apk `
   -Package com.indrolend.digitalbreakdown.native `
   -OutName current.apk `
-  -PullEvidenceToWindows `
-  -CleanBeforeRun
+  -CleanBeforeRun `
+  -ArchivePreviousEvidence
+```
+
+Optional host mirror:
+
+```powershell
+DbApkDemo `
+  -RunId 28961104004 `
+  -ArtifactName digital-breakdown-native-debug-apk `
+  -Package com.indrolend.digitalbreakdown.native `
+  -OutName current.apk `
+  -PullEvidenceToWindows
+```
+
+## Quick start - macOS host
+
+Install host tools:
+
+```bash
+brew install android-platform-tools
+brew install --cask powershell || brew install powershell
+```
+
+Run the same PowerShell workflow:
+
+```bash
+pwsh
+```
+
+```powershell
+. ./tools/phone-control/phone-session.ps1
+
+DbApkDemo `
+  -RunId 28961104004 `
+  -ArtifactName digital-breakdown-native-debug-apk `
+  -Package com.indrolend.digitalbreakdown.native `
+  -OutName current.apk `
+  -CleanBeforeRun `
+  -ArchivePreviousEvidence
+```
+
+ADB must show the phone as authorized:
+
+```bash
+adb devices
+```
+
+## First-time phone bootstrap
+
+Push the bootstrap script from the host if needed:
+
+```bash
+adb shell mkdir -p /sdcard/Download/db-control/tools
+adb push tools/phone-control/termux-control-bootstrap.sh /sdcard/Download/db-control/tools/
+adb shell monkey -p com.termux 1
+```
+
+Then run in Termux:
+
+```bash
+bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
+```
+
+The bootstrap installs or checks:
+
+| Tool | Purpose |
+|------|---------|
+| `git` | Version control |
+| `curl` | HTTP requests |
+| `jq` | JSON processing |
+| `openssh` | SSH server (`sshd`) |
+| `nano` | Text editor |
+| `termux-api` | Android clipboard bridge |
+| `gh` | GitHub CLI for artifact downloads and PR/run inspection |
+
+Verify GitHub auth in Termux:
+
+```bash
+gh auth status
+# If needed:
+gh auth login
+```
+
+Verify SSH in Termux:
+
+```bash
+pgrep -x sshd && echo "sshd running" || sshd
+```
+
+## Host session helpers
+
+Dot-source `phone-session.ps1` from Windows PowerShell or macOS `pwsh`:
+
+```powershell
+. ./tools/phone-control/phone-session.ps1
+```
+
+Loaded commands:
+
+| Command | Description |
+|---------|-------------|
+| `OpenTermux` | Open Termux app on phone via ADB |
+| `Phone` | Open interactive SSH session into Termux |
+| `PhoneCmd "cmd"` | Run a single command in Termux over SSH |
+| `DbMenu` | Open the `db-menu` interactive terminal menu |
+| `PhoneClipSet "text"` | Set Android clipboard |
+| `PhoneClipGet` | Read Android clipboard |
+| `StartScrcpy` | Start screen mirror |
+| `DbApkDemo ...` | Full APK download/install/evidence run |
+| `DbApkInstall ...` | Install APK from phone stable path |
+
+## APK demo workflow
+
+Full run:
+
+```powershell
+DbApkDemo `
+  -RunId 28961104004 `
+  -ArtifactName digital-breakdown-native-debug-apk `
+  -Package com.indrolend.digitalbreakdown.native `
+  -OutName current.apk `
+  -CleanBeforeRun `
+  -ArchivePreviousEvidence
 ```
 
 This runs:
-1. SSH -> Termux: `db-apk-artifact-download` writes to phone stable APK path.
-2. `adb shell pm install -r` installs from phone path.
-3. `adb shell monkey` launches the app.
-4. `adb logcat -c` (optional via `-CleanBeforeRun`) clears stale logs.
-5. `adb logcat -d -v time` captures bounded logs.
-6. `adb shell screencap` captures a screenshot to phone evidence path.
-7. Evidence written to `/sdcard/Download/db-control/evidence/latest/`.
-8. Optional Windows mirror with `-PullEvidenceToWindows` to `Downloads\db-control\evidence-latest\`.
 
-### Termux-only fallback (APK already downloaded)
+1. SSH to Termux.
+2. `db-apk-artifact-download` writes to `/sdcard/Download/db-control/apks/current.apk`.
+3. `adb shell pm install -r` installs from the phone path.
+4. `adb shell monkey` launches the app.
+5. Optional `adb logcat -c` clears stale logs with `-CleanBeforeRun`.
+6. `adb logcat -d -v time` captures bounded logs.
+7. `adb shell screencap` captures a screenshot.
+8. Evidence is written to `/sdcard/Download/db-control/evidence/latest/`.
+9. Optional host mirror is pulled when `-PullEvidenceToWindows` is used.
+
+Termux-only artifact download:
 
 ```bash
 db-apk-artifact-download \
   --repo indrolend/digital-breakdown-apk \
   --run 28961104004 \
   --artifact digital-breakdown-native-debug-apk \
-  --out /sdcard/Download/db-control/apks/current.apk
+  --out /sdcard/Download/db-control/apks/current.apk \
+  --force
 ```
 
-Then from Windows:
+Install an already-downloaded APK from the host:
 
 ```powershell
 DbApkInstall `
@@ -181,7 +221,7 @@ DbApkInstall `
   -Package com.indrolend.digitalbreakdown.native
 ```
 
-### Skip download (APK already on phone)
+Skip download if the APK is already on the phone:
 
 ```powershell
 DbApkDemo `
@@ -192,48 +232,42 @@ DbApkDemo `
   -SkipDownload
 ```
 
-### Local APK (no phone download needed)
-
-```powershell
-DbApkDemo -RunId 0 -ArtifactName unused `
-  -Package com.indrolend.digitalbreakdown.native `
-  -LocalApkPath "$env:USERPROFILE\Downloads\current.apk"
-```
-
-### Evidence-only (app already installed)
+Evidence-only capture:
 
 ```powershell
 DbApkDemo `
   -RunId 0 `
   -ArtifactName unused `
   -Package com.indrolend.digitalbreakdown.native `
-  -OutName current.apk `
-  -EvidenceOnly
+  -EvidenceOnly `
+  -CleanBeforeRun
 ```
 
-Deprecated compatibility alias: `-SkipInstall` maps to the same behavior as `-EvidenceOnly` (broader than the legacy alias name).
+Deprecated compatibility alias: `-SkipInstall` maps to `-EvidenceOnly`.
 
-### Evidence output structure (phone source of truth)
+## Evidence output
 
-```
+Phone source of truth:
+
+```text
 /sdcard/Download/db-control/evidence/latest/
-  install.txt           # adb install output
-  launch.txt            # monkey launch output
-  logcat-full.txt       # Full logcat dump
-  logcat-filtered.txt   # DBNATIVE + crash-related lines
-  logcat-dbnative.txt   # DBNATIVE lines only (if found)
-  logcat-crashes.txt    # Crash/fatal lines (if found)
-  screen.png            # Device screenshot
-  result.json           # Pass/fail summary
+  install.txt
+  launch.txt
+  logcat-full.txt
+  logcat-filtered.txt
+  logcat-dbnative.txt
+  logcat-crashes.txt
+  screen.png
+  result.json
 ```
 
-Archived snapshots (optional with `-ArchivePreviousEvidence`) are kept at:
+Archived snapshots:
 
-```
+```text
 /sdcard/Download/db-control/evidence/archive/YYYYMMDD-HHMMSS/
 ```
 
-`result.json` shape:
+Core `result.json` fields:
 
 ```json
 {
@@ -241,7 +275,6 @@ Archived snapshots (optional with `-ArchivePreviousEvidence`) are kept at:
   "ssh": "pass|fail|warning|skipped",
   "ghAuth": "pass|fail|warning|skipped",
   "download": "pass|fail|warning|skipped",
-  "pull": "pass|fail|warning|skipped",
   "install": "pass|fail|warning|skipped",
   "launch": "pass|fail|warning|skipped",
   "evidence": "pass|fail|warning|skipped",
@@ -249,123 +282,117 @@ Archived snapshots (optional with `-ArchivePreviousEvidence`) are kept at:
   "crashScan": "pass|fail|warning|skipped",
   "screenshot": "pass|fail|warning|skipped",
   "apkPathPhone": "/sdcard/Download/db-control/apks/current.apk",
-  "apkPathWindows": "optional",
   "evidencePathPhone": "/sdcard/Download/db-control/evidence/latest",
-  "evidencePathWindows": "optional",
+  "evidencePathHost": "optional host mirror path",
   "package": "com.indrolend.digitalbreakdown.native",
   "runId": "28961104004",
   "artifactName": "digital-breakdown-native-debug-apk",
-  "timestamp": "ISO-8601",
-  "logcatCleared": "pass|fail|warning|skipped",
-  "errorSummary": []
+  "timestamp": "ISO-8601"
 }
 ```
 
----
+## Terminal menu (`db-menu`)
 
-## Terminal Menu (db-menu)
+Run from Termux or via `DbMenu` from the host session:
 
-Run from Termux or via `DbMenu` from Windows:
-
-```
+```text
 =====================================
  Digital Breakdown - Phone Menu
 =====================================
-  1) Status overview
-  2) APK / Demo Tools
-  3) Repo / GitHub
-  4) Clipboard
-  5) Cleanup / Waste management
-  6) Start / restart sshd
-  7) gh auth login
+  1) Status dashboard
+  2) APK download/artifact
+  3) Install/launch
+  4) Evidence/logs
+  5) Full demo sequence
+  6) GitHub/PR tools
+  7) Server/SSH controls
+  8) Cleanup/storage
+  9) Settings/paths
   q) Quit
 ```
 
-APK / Demo Tools submenu:
+After each action, the footer supports:
 
-```
-=== APK / Demo Tools ===
-  1) Download latest native debug artifact from PR/run
-  2) List APKs in /sdcard/Download/db-control/apks
-  3) Launch native package  (Windows-side)
-  4) Capture screenshot     (Windows-side)
-  5) Capture logcat evidence (Windows-side)
-  6) Full smoke test: download -> (pull/install on Windows)
-  7) Clean old APK/evidence files (dry-run)
-  8) Clean old APK/evidence files (confirm)
-  b) Back
+```text
+Enter = back to menu
+r = repeat last action
+l = print latest logs
+s = capture screenshot
+e = print latest result.json
+x = restart sshd
+q = quit
 ```
 
----
+## Clipboard bridge
 
-## Clipboard Bridge
-
-### With Termux:API installed (real Android clipboard)
+With Termux:API:
 
 ```bash
 echo "hello" | db-clip-set
 db-clip-get
 ```
 
-### Without Termux:API (file fallback)
+Without Termux:API, clipboard fallback is stored at:
 
-Clipboard is saved to `/sdcard/Download/db-control/.clipboard`.
+```text
+/sdcard/Download/db-control/.clipboard
+```
 
-### From Windows
+From the host session:
 
 ```powershell
-PhoneClipSet "some text"    # Sends text to phone clipboard
-PhoneClipGet                # Reads phone clipboard
+PhoneClipSet "some text"
+PhoneClipGet
 ```
 
----
+## Cleanup
 
-## Waste Management
-
-### Phone-side cleanup
+Phone-side cleanup:
 
 ```bash
-db-cleanup --dry-run    # Preview what would be deleted
-db-cleanup              # Interactive cleanup with confirmation per item
+db-cleanup --dry-run
+db-cleanup
 ```
 
-Or from the menu: `5) Cleanup / Waste management`.
+Rules:
 
-**Rules:**
 - Never deletes GitHub auth.
 - Never deletes broad `/sdcard/Download` contents.
-- Only deletes known paths:
-  - `/sdcard/Download/db-control/.clipboard`
-  - Old APKs in `/sdcard/Download/db-control/apks/` (keeps newest)
-  - Stale bootstrap copies in `/sdcard/Download/`
+- Deletes only known generated/project-control paths.
+- Keeps the newest APK by default.
+- Keeps recent evidence archives by default.
 
-### Windows-side cleanup
+Optional host mirror folder defaults to:
 
-Optional mirror folder is `Downloads\db-control\evidence-latest\`.
-Default flow keeps evidence authoritative on phone.
+```text
+~/Downloads/db-control/evidence-latest/
+```
 
----
+on macOS/Linux PowerShell, or the equivalent Downloads path on Windows.
 
-## What Lives Where
+## What lives where
 
 | Item | Location |
 |------|----------|
 | GitHub auth | Phone / Termux (`~/.config/gh/`) |
 | `git`, `gh`, `jq`, etc. | Phone / Termux |
 | Project utility scripts | Phone / Termux (`/data/data/com.termux/files/usr/bin/`) |
-| APK artifacts | Phone (`/sdcard/Download/db-control/apks/current.apk`) |
-| Temp/state files (excluding `apks/` and `evidence/`) | Phone (`/sdcard/Download/db-control/`) |
-| ADB path config | Windows (`$env:USERPROFILE\.db-phone-config.ps1`) |
-| Evidence/logs (authoritative) | Phone (`/sdcard/Download/db-control/evidence/latest/`) |
-| Evidence mirror (optional) | Windows (`$env:USERPROFILE\Downloads\db-control\evidence-latest\`) |
+| APK artifact | Phone (`/sdcard/Download/db-control/apks/current.apk`) |
+| Runtime evidence | Phone (`/sdcard/Download/db-control/evidence/latest/`) |
+| Evidence mirror | Optional host Downloads path |
+| ADB path config | Host user home (`.db-phone-config.ps1`) |
 
----
-
-## Known Recovery Paths
+## Recovery paths
 
 ### ADB not found
 
-`phone-session.ps1` will prompt for the path. Or set manually:
+Install platform-tools or set the path manually:
+
+```powershell
+$env:DB_ADB_PATH = "/path/to/adb"
+```
+
+Windows example:
 
 ```powershell
 $env:DB_ADB_PATH = "C:\path\to\adb.exe"
@@ -373,17 +400,17 @@ $env:DB_ADB_PATH = "C:\path\to\adb.exe"
 
 ### Device not authorized
 
-On the phone: check for a USB debugging authorization dialog.
+On the phone, accept the USB debugging authorization dialog.
 
 ```powershell
 adb kill-server
 adb start-server
-adb devices   # Accept prompt on phone
+adb devices
 ```
 
 ### Termux user file is a directory
 
-The bootstrap script detects and repairs this:
+The bootstrap detects and repairs this:
 
 ```bash
 bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
@@ -395,33 +422,38 @@ bash /sdcard/Download/db-control/tools/termux-control-bootstrap.sh
 sshd
 ```
 
-Or from the menu: `6) Start / restart sshd`.
+Or from the menu:
+
+```text
+7) Server/SSH controls
+```
 
 ### UTF-8 BOM warning in Termux
 
-> `line 1: #!/data/data/com.termux/files/usr/bin/bash: No such file or directory`
-
-This is a BOM artifact. The scripts in this repo are saved without BOM (UTF-8 without BOM, LF line endings). If you copy-paste a script and see this warning, re-save without BOM.
+If Termux shows a shebang warning after copy-paste, re-save the script as UTF-8 without BOM and LF line endings. The repo scripts should remain BOM-free.
 
 ### scrcpy not found
 
-`phone-session.ps1` searches common paths. Set manually:
+`phone-session.ps1` searches PATH first. Set manually if needed:
 
 ```powershell
-Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath "C:\path\to\scrcpy.exe"
+Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath "/path/to/scrcpy"
 ```
 
 ### SSH connection refused
 
 1. Ensure `sshd` is running in Termux.
 2. Re-run ADB forward:
-   ```powershell
-   adb forward tcp:8022 tcp:8022
-   ```
+
+```powershell
+adb forward tcp:8022 tcp:8022
+```
+
 3. Confirm username:
-   ```powershell
-   Get-TermuxUser
-   ```
+
+```powershell
+Get-TermuxUser
+```
 
 ### gh not authenticated
 
@@ -429,18 +461,16 @@ Save-PhoneConfig -AdbPath (Find-Adb) -ScrcpyPath "C:\path\to\scrcpy.exe"
 gh auth login
 ```
 
-Choose browser authentication if no browser is available on the phone: use device flow.
+Choose device/browser authentication as needed.
 
----
-
-## File Reference
+## File reference
 
 | File | Side | Purpose |
 |------|------|---------|
-| `phone-session.ps1` | Windows | Session launcher, ADB discovery, SSH forward, helper commands |
+| `phone-session.ps1` | Host | Session launcher, ADB discovery, SSH forward, helper commands |
 | `termux-control-bootstrap.sh` | Phone | Install packages, create utility scripts, start sshd |
-| `db-apk-artifact-download.sh` | Phone | Standalone artifact downloader (also installed as `db-apk-artifact-download`) |
-| `db-apk-demo.ps1` | Windows | Full demo orchestrator |
-| `db-apk-install.ps1` | Windows | Pull + install APK helper |
-| `db-apk-evidence.ps1` | Windows | Logcat + screenshot evidence capture |
-| `README.md` | — | This document |
+| `db-apk-artifact-download.sh` | Phone | Standalone artifact downloader |
+| `db-apk-demo.ps1` | Host | Full demo orchestrator |
+| `db-apk-install.ps1` | Host | Optional host pull + phone-path install helper |
+| `db-apk-evidence.ps1` | Host | Bounded logcat + screenshot evidence capture |
+| `README.md` | Host/Phone | Workflow reference |
