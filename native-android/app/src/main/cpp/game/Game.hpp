@@ -21,6 +21,11 @@ struct InputState {
     bool shootPressed = false;
     bool cameraTogglePressed = false;
 
+    float touchMoveX = 0.0f;
+    float touchMoveZ = 0.0f;
+    bool touchSprint = false;
+    bool touchPrimaryHeld = false;
+
     float touchX = 0.0f;
     float touchY = 0.0f;
     float lastTouchX = 0.0f;
@@ -105,6 +110,18 @@ public:
     void update(float dt);
     void setKey(int keyCode, bool down);
     void setTouch(int action, float x, float y, int pointerCount);
+    void setTouchControls(
+        float moveX,
+        float moveZ,
+        float lookDeltaX,
+        float lookDeltaY,
+        bool vacuumHeld,
+        bool sprintHeld,
+        bool jumpPressed,
+        bool meleePressed,
+        bool shootPressed,
+        bool cameraTogglePressed
+    );
 
     const GameState& state() const { return state_; }
 
