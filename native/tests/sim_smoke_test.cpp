@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 
+#include "../core/controller_input.hpp"
 #include "../core/input_intent.hpp"
 #include "../core/render_state.hpp"
 #include "../core/sim_constants.hpp"
@@ -67,6 +68,40 @@ int main() {
     step(world, jump, constants, 1);
     ok &= expect(!world.player.grounded, "jump leaves ground");
     ok &= expect(world.player.battery < constants.batteryMax, "jump costs battery");
+
+    db::ControllerSnapshot pad;
+    db::ControllerMapperState padState;
+    pad.connected = true;
+    pad.axes[db::ControllerAxis_LeftX] = 0.75f;
+    pad.axes[db::ControllerAxis_LeftY] = -0.80f;
+    pad.axes[db::ControllerAxis_RightX] = 0.50f;
+    pad.axes[db::ControllerAxis_RightY] = -0.50f;
+    pad.axes[db::ControllerAxis_LeftTrigger] = 0.70f;
+    pad.axes[db::ControllerAxis_RightTrigger] = 0.80f;
+    pad.buttons[db::ControllerButton_South] = true;
+    pad.buttons[db::ControllerButton_West] = true;
+    pad.buttons[db::ControllerButton_North] = true;
+    pad.buttons[db::ControllerButton_Back] = true;
+    pad.buttons[db::ControllerButton_LeftBumper] = true;
+
+    db::InputIntent mapped = db::mapControllerToInputIntent(pad, padState);
+    ok &= expect(mapped.moveX > 0.0f, "controller left stick maps to moveX");
+    ok &= expect(mapped.moveZ > 0.0f, "controller left stick maps forward to positive moveZ");
+    ok &= expect(mapped.lookX > 0.0f, "controller right stick maps to lookX");
+    ok &= expect(mapped.lookY < 0.0f, "controller right stick maps to lookY");
+    ok &= expect(mapped.vacuum, "controller left trigger maps to vacuum");
+    ok &= expect(mapped.discharge, "controller right trigger maps to discharge");
+    ok &= expect(mapped.attack, "controller west face button maps to melee attack");
+    ok &= expect(mapped.sprint, "controller left bumper maps to sprint");
+    ok &= expect(mapped.jump, "controller south face button pulses jump");
+    ok &= expect(mapped.switchMode, "controller north face button pulses switch mode");
+    ok &= expect(mapped.toggleCamera, "controller back button pulses camera toggle");
+
+    db::InputIntent held = db::mapControllerToInputIntent(pad, padState);
+    ok &= expect(!held.jump, "held controller south button does not repeat jump pulse");
+    ok &= expect(!held.switchMode, "held controller north button does not repeat switch pulse");
+    ok &= expect(!held.toggleCamera, "held controller back button does not repeat camera pulse");
+    ok &= expect(held.vacuum && held.attack && held.sprint && held.discharge, "held controller continuous actions remain active");
 
     db::resetWorld(world, constants);
     world.player.pos.x = -8.0f;
