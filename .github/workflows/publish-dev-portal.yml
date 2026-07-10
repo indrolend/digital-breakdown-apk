@@ -42,8 +42,38 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
           echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
 
+      - name: Prepare persistent APK signing
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/digital-breakdown-release.jks"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+            echo "apk=native-android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+          else
+            echo "Persistent signing is not configured; publishing a debug-signed APK."
+            echo "variant=debug" >> "$GITHUB_OUTPUT"
+            echo "apk=native-android/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build native Android APK
-        run: ./android/gradlew -p native-android assembleDebug --stacktrace
+        shell: bash
+        run: |
+          if [ "${{ steps.signing.outputs.variant }}" = "release" ]; then
+            ./android/gradlew -p native-android assembleRelease --stacktrace
+          else
+            ./android/gradlew -p native-android assembleDebug --stacktrace
+          fi
 
       - name: Build downloadable outputs
         shell: bash
@@ -51,12 +81,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
-          cp native-android/app/build/outputs/apk/debug/app-debug.apk \
-            dist/DigitalBreakdown-Android.apk
+          cp "${{ steps.signing.outputs.apk }}" dist/DigitalBreakdown-Android.apk
 
           python3 tools/make_research_packet.py
-          cp dist/digital-breakdown-runtime-research.zip \
-            dist/DigitalBreakdown-Research.zip
+          cp dist/digital-breakdown-runtime-research.zip dist/DigitalBreakdown-Research.zip
 
           python3 - <<'PY'
           from pathlib import Path
@@ -76,6 +104,8 @@ jobs:
 
       - name: Generate build manifest
         shell: bash
+        env:
+          ANDROID_VARIANT: ${{ steps.signing.outputs.variant }}
         run: |
           python3 - <<'PY'
           import hashlib
@@ -86,15 +116,18 @@ jobs:
 
           def file_info(path):
               p = Path(path)
-              digest = hashlib.sha256(p.read_bytes()).hexdigest()
               return {
                   "available": True,
                   "filename": p.name,
                   "size": p.stat().st_size,
-                  "sha256": digest,
+                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
               }
 
           sha = os.environ["GITHUB_SHA"]
+          android = file_info("dist/DigitalBreakdown-Android.apk")
+          android["variant"] = os.environ.get("ANDROID_VARIANT", "debug")
+          android["stableSigning"] = android["variant"] == "release"
+
           manifest = {
               "schemaVersion": 1,
               "repository": os.environ["GITHUB_REPOSITORY"],
@@ -104,7 +137,7 @@ jobs:
               "builtAt": datetime.now(timezone.utc).isoformat(),
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "runId": os.environ["GITHUB_RUN_ID"],
-              "android": file_info("dist/DigitalBreakdown-Android.apk"),
+              "android": android,
               "web": {
                   **file_info("dist/DigitalBreakdown-Web.zip"),
                   "playPath": "./play/"
@@ -194,4 +227,4 @@ jobs:
           gh release edit latest-dev \
             --repo "$PORTAL_REPOSITORY" \
             --title "Latest Development Build · ${GITHUB_SHA::7}" \
-            --notes "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} on $(date -u +'%Y-%m-%d %H:%M UTC')."
+            --notes "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} on $(date -u +'%Y-%m-%d %H:%M UTC'). Android variant: ${{ steps.signing.outputs.variant }}."
