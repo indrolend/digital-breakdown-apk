@@ -5,7 +5,7 @@
 #include "Math.hpp"
 
 constexpr int TARGET_COUNT = 12;
-constexpr int CAPTURE_COUNT = 3;
+constexpr int CAPTURE_COUNT = 5;
 constexpr int BULLET_COUNT = 8;
 
 struct InputState {
