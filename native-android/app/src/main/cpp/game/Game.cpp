@@ -157,6 +157,31 @@ void Game::setTouch(int action, float x, float y, int pointerCount) {
     }
 }
 
+void Game::setTouchControls(
+    float moveX,
+    float moveZ,
+    float lookDeltaX,
+    float lookDeltaY,
+    bool vacuumHeld,
+    bool sprintHeld,
+    bool jumpPressed,
+    bool meleePressed,
+    bool shootPressed,
+    bool cameraTogglePressed
+) {
+    InputState& input = state_.input;
+    input.touchMoveX = clampf(moveX, -1.0f, 1.0f);
+    input.touchMoveZ = clampf(moveZ, -1.0f, 1.0f);
+    input.lookDeltaX += lookDeltaX;
+    input.lookDeltaY += lookDeltaY;
+    input.touchPrimaryHeld = vacuumHeld;
+    input.touchSprint = sprintHeld;
+    if (jumpPressed) input.jumpPressed = true;
+    if (meleePressed) input.meleePressed = true;
+    if (shootPressed) input.shootPressed = true;
+    if (cameraTogglePressed) input.cameraTogglePressed = true;
+}
+
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt;
@@ -193,7 +218,7 @@ void Game::updateInputActions(float dt) {
     s.meleeCooldown = std::max(0.0f, s.meleeCooldown - dt);
     s.meleePose = std::max(0.0f, s.meleePose - dt * 5.5f);
 
-    s.vacuum.active = input.primaryHeld && s.player.battery > 1.0f;
+    s.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && s.player.battery > 1.0f;
 }
 
 Vec3 Game::cameraForwardFlat() const {
@@ -268,8 +293,11 @@ void Game::updatePlayer(float dt) {
 
     float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f);
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f);
+    forwardAxis = clampf(forwardAxis + input.touchMoveZ, -1.0f, 1.0f);
+    strafeAxis = clampf(strafeAxis + input.touchMoveX, -1.0f, 1.0f);
+
     const bool moving = std::abs(forwardAxis) > 0.001f || std::abs(strafeAxis) > 0.001f;
-    const bool running = input.sprint && moving && !state_.vacuum.active && player.battery > 5.0f;
+    const bool running = (input.sprint || input.touchSprint) && moving && !state_.vacuum.active && player.battery > 5.0f;
 
     const float power = batteryPower(player);
     const float airControl = player.grounded ? 1.0f : AIR_ACCEL_MULT;
