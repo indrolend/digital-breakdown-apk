@@ -73,6 +73,35 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onTouch(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_indrolend_digitalbreakdown_NativeBridge_onTouchControls(
+    JNIEnv*,
+    jclass,
+    jfloat moveX,
+    jfloat moveZ,
+    jfloat lookDeltaX,
+    jfloat lookDeltaY,
+    jboolean vacuumHeld,
+    jboolean sprintHeld,
+    jboolean jumpPressed,
+    jboolean meleePressed,
+    jboolean shootPressed,
+    jboolean cameraTogglePressed
+) {
+    gGame.setTouchControls(
+        moveX,
+        moveZ,
+        lookDeltaX,
+        lookDeltaY,
+        vacuumHeld == JNI_TRUE,
+        sprintHeld == JNI_TRUE,
+        jumpPressed == JNI_TRUE,
+        meleePressed == JNI_TRUE,
+        shootPressed == JNI_TRUE,
+        cameraTogglePressed == JNI_TRUE
+    );
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint keyCode, jboolean down) {
     gGame.setKey(keyCode, down == JNI_TRUE);
 }
