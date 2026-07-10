@@ -1,0 +1,27 @@
+name: Build Research Packet
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - name: Build current-source research packet
+        run: python3 tools/make_research_packet.py
+
+      - name: Upload packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: digital-breakdown-runtime-research-${{ github.sha }}
+          path: dist/digital-breakdown-runtime-research.zip
+          if-no-files-found: error
+          retention-days: 30
