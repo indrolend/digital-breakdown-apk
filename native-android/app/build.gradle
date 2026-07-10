@@ -23,6 +23,30 @@ android {
         }
     }
 
+    def ciKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+    def ciKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+    def ciKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+    def ciKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+    def hasCiSigning = ciKeystorePath && ciKeystorePassword && ciKeyAlias && ciKeyPassword
+
+    if (hasCiSigning) {
+        signingConfigs {
+            ciRelease {
+                storeFile file(ciKeystorePath)
+                storePassword ciKeystorePassword
+                keyAlias ciKeyAlias
+                keyPassword ciKeyPassword
+            }
+        }
+
+        buildTypes {
+            release {
+                signingConfig signingConfigs.ciRelease
+                minifyEnabled false
+            }
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path 'src/main/cpp/CMakeLists.txt'
