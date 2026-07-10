@@ -47,7 +47,7 @@ constexpr float MELEE_RADIUS = 1.15f;
 constexpr float MELEE_COOLDOWN = 0.28f;
 constexpr float MELEE_DAMAGE = 1.0f;
 constexpr float BULLET_SPEED = 14.0f;
-constexpr float BULLET_LIFE = 1.7f;
+constexpr float BULLET_LIFE = 3.0f;
 constexpr int MAX_STORED_SOULS = 5;
 
 constexpr int KEY_W = 51;
@@ -107,7 +107,11 @@ void Game::resetRoom() {
     }
 
     const Vec3 captureSpots[CAPTURE_COUNT] = {
-        {-8.0f, GROUND_Y, -17.0f}, {8.0f, GROUND_Y, -17.0f}, {0.0f, GROUND_Y, -5.0f}
+        {-8.0f, 3.6f, -20.35f},
+        {-4.0f, 2.45f, -20.35f},
+        {0.0f, 3.6f, -20.35f},
+        {4.0f, 2.45f, -20.35f},
+        {8.0f, 3.6f, -20.35f}
     };
     for (int i = 0; i < CAPTURE_COUNT; ++i) {
         state_.captures[i] = CapturePointState{};
@@ -469,6 +473,27 @@ void Game::updateBullets(float dt) {
             bullet.alive = false;
             continue;
         }
+
+        // The web game completes rooms by shooting stored souls into five
+        // wall-mounted goals. Goals get first claim on a projectile so a target
+        // standing in front of the wall cannot steal a valid slot hit.
+        for (auto& capture : state_.captures) {
+            if (capture.filled) continue;
+            const Vec3 delta = bullet.pos - capture.pos;
+            if (std::abs(delta.x) < 0.9f &&
+                std::abs(delta.y) < 0.9f &&
+                std::abs(delta.z) < 0.75f) {
+                capture.filled = true;
+                state_.player.battery = std::min(
+                    BATTERY_MAX,
+                    state_.player.battery + BATTERY_CAPTURE_GAIN
+                );
+                bullet.alive = false;
+                break;
+            }
+        }
+        if (!bullet.alive) continue;
+
         for (auto& target : state_.targets) {
             if (!target.alive) continue;
             if (distXZ(bullet.pos, target.pos) < 0.85f && std::abs(bullet.pos.y - target.pos.y) < 1.6f) {
@@ -485,17 +510,8 @@ void Game::updateBullets(float dt) {
 void Game::updateCaptures(float dt) {
     (void)dt;
     int filled = 0;
-    for (auto& capture : state_.captures) {
-        if (capture.filled) {
-            filled += 1;
-            continue;
-        }
-        if (state_.player.souls > 0 && distXZ(state_.player.pos, capture.pos) < 1.75f) {
-            capture.filled = true;
-            state_.player.souls -= 1;
-            state_.player.battery = std::min(BATTERY_MAX, state_.player.battery + BATTERY_CAPTURE_GAIN);
-            filled += 1;
-        }
+    for (const auto& capture : state_.captures) {
+        if (capture.filled) filled += 1;
     }
     if (!state_.roomClear && filled >= CAPTURE_COUNT) {
         state_.roomClear = true;
