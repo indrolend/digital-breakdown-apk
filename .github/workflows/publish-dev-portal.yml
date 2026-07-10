@@ -1,0 +1,197 @@
+name: Publish Dev Portal
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'native-android/**'
+      - 'www/**'
+      - 'tools/make_research_packet.py'
+      - 'research/**'
+      - '.github/workflows/publish-dev-portal.yml'
+
+permissions:
+  contents: read
+
+env:
+  PORTAL_REPOSITORY: indrolend/Digital-breakdown-dev
+  PORTAL_TOKEN: ${{ secrets.DEV_PORTAL_TOKEN }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out authoritative game source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+          echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
+
+      - name: Build native Android APK
+        run: ./android/gradlew -p native-android assembleDebug --stacktrace
+
+      - name: Build downloadable outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          cp native-android/app/build/outputs/apk/debug/app-debug.apk \
+            dist/DigitalBreakdown-Android.apk
+
+          python3 tools/make_research_packet.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output dist/DigitalBreakdown-Research.zip
+
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          source = Path('www')
+          output = Path('dist/DigitalBreakdown-Web.zip')
+          with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
+              for path in sorted(source.rglob('*')):
+                  if path.is_file():
+                      archive.write(path, path.relative_to(source))
+          PY
+
+          sha256sum dist/DigitalBreakdown-Android.apk > dist/DigitalBreakdown-Android.apk.sha256
+          sha256sum dist/DigitalBreakdown-Web.zip > dist/DigitalBreakdown-Web.zip.sha256
+          sha256sum dist/DigitalBreakdown-Research.zip > dist/DigitalBreakdown-Research.zip.sha256
+
+      - name: Generate build manifest
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def file_info(path):
+              p = Path(path)
+              digest = hashlib.sha256(p.read_bytes()).hexdigest()
+              return {
+                  "available": True,
+                  "filename": p.name,
+                  "size": p.stat().st_size,
+                  "sha256": digest,
+              }
+
+          sha = os.environ["GITHUB_SHA"]
+          manifest = {
+              "schemaVersion": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "branch": os.environ.get("GITHUB_REF_NAME", "main"),
+              "commit": sha,
+              "shortCommit": sha[:7],
+              "builtAt": datetime.now(timezone.utc).isoformat(),
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "runId": os.environ["GITHUB_RUN_ID"],
+              "android": file_info("dist/DigitalBreakdown-Android.apk"),
+              "web": {
+                  **file_info("dist/DigitalBreakdown-Web.zip"),
+                  "playPath": "./play/"
+              },
+              "research": file_info("dist/DigitalBreakdown-Research.zip"),
+          }
+          Path("dist/build-info.json").write_text(
+              json.dumps(manifest, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload source-repository artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digital-breakdown-dev-${{ github.sha }}
+          path: dist/
+          retention-days: 14
+
+      - name: Check portal publishing credential
+        id: portal-token
+        shell: bash
+        run: |
+          if [ -n "$PORTAL_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "DEV_PORTAL_TOKEN is not configured; build artifact was created but the portal was not updated."
+          fi
+
+      - name: Check out dev portal
+        if: steps.portal-token.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PORTAL_REPOSITORY }}
+          token: ${{ env.PORTAL_TOKEN }}
+          path: portal
+
+      - name: Update live web demo and manifest
+        if: steps.portal-token.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf portal/play
+          mkdir -p portal/play
+          cp -a www/. portal/play/
+          cp dist/build-info.json portal/build-info.json
+
+          cd portal
+          git config user.name "digital-breakdown-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add play build-info.json
+
+          if git diff --cached --quiet; then
+            echo "Portal content is already current."
+          else
+            git commit -m "Publish game build ${GITHUB_SHA::7}"
+            git push origin HEAD:main
+          fi
+
+      - name: Publish rolling download release
+        if: steps.portal-token.outputs.available == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.PORTAL_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view latest-dev --repo "$PORTAL_REPOSITORY" >/dev/null 2>&1; then
+            gh release create latest-dev \
+              --repo "$PORTAL_REPOSITORY" \
+              --title "Latest Development Build" \
+              --notes "Rolling personal development build. Exact source revision is recorded in build-info.json."
+          fi
+
+          gh release upload latest-dev \
+            dist/DigitalBreakdown-Android.apk \
+            dist/DigitalBreakdown-Android.apk.sha256 \
+            dist/DigitalBreakdown-Web.zip \
+            dist/DigitalBreakdown-Web.zip.sha256 \
+            dist/DigitalBreakdown-Research.zip \
+            dist/DigitalBreakdown-Research.zip.sha256 \
+            dist/build-info.json \
+            --repo "$PORTAL_REPOSITORY" \
+            --clobber
+
+          gh release edit latest-dev \
+            --repo "$PORTAL_REPOSITORY" \
+            --title "Latest Development Build · ${GITHUB_SHA::7}" \
+            --notes "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} on $(date -u +'%Y-%m-%d %H:%M UTC')."
