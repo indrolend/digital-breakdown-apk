@@ -54,9 +54,9 @@ jobs:
           cp native-android/app/build/outputs/apk/debug/app-debug.apk \
             dist/DigitalBreakdown-Android.apk
 
-          python3 tools/make_research_packet.py \
-            --repo-root "$GITHUB_WORKSPACE" \
-            --output dist/DigitalBreakdown-Research.zip
+          python3 tools/make_research_packet.py
+          cp dist/digital-breakdown-runtime-research.zip \
+            dist/DigitalBreakdown-Research.zip
 
           python3 - <<'PY'
           from pathlib import Path
