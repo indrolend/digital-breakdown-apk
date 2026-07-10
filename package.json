@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "menu": "bash ./scripts/dev-menu.sh",
     "build:web": "esbuild ./www/android-entry.mjs --bundle --platform=browser --format=iife --target=chrome61 --outfile=./www/android-bundle.js --log-level=info",
     "cap:sync": "cap sync android",
     "android:build:mac": "./scripts/build-android.sh",
