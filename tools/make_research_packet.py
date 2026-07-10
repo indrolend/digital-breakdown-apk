@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import shutil
@@ -9,9 +10,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "dist" / "research-packet"
-ZIP = ROOT / "dist" / "digital-breakdown-runtime-research.zip"
+DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 
 EXPLICIT_FILES = [
     "package.json",
@@ -41,76 +40,76 @@ TREE_RULES = [
 IMPORT_RE = re.compile(r'(?:import\s+(?:[^\"\'()]+?\s+from\s+)?|export\s+[^\"\'()]+?\s+from\s+|import\s*\()\s*[\"\']([^\"\']+)[\"\']')
 
 
-def git(*args: str) -> str:
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build a focused Digital Breakdown research packet.")
+    parser.add_argument("--repo-root", type=Path, default=DEFAULT_ROOT)
+    parser.add_argument("--output", type=Path, default=DEFAULT_ROOT / "dist" / "digital-breakdown-runtime-research.zip")
+    return parser.parse_args()
+
+
+def git(root: Path, *args: str) -> str:
     try:
-        return subprocess.check_output(["git", "-C", str(ROOT), *args], text=True).strip()
+        return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
     except Exception:
         return ""
 
 
-def copy_file(rel: str) -> None:
-    src = ROOT / rel
-    if not src.is_file():
-        return
-    dst = OUT / rel
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-
-
-def copy_tree(rel: str, allowed_suffixes: set[str]) -> None:
-    base = ROOT / rel
-    if not base.exists():
-        return
-    for src in base.rglob("*"):
-        if src.is_file() and src.suffix.lower() in allowed_suffixes:
-            copy_file(src.relative_to(ROOT).as_posix())
-
-
-def resolve_local_import(from_rel: str, spec: str) -> str | None:
-    if not spec.startswith("."):
-        return None
-    base = (Path(from_rel).parent / spec)
-    candidates = [
-        base,
-        Path(f"{base}.mjs"),
-        Path(f"{base}.js"),
-        Path(f"{base}.json"),
-        base / "index.mjs",
-        base / "index.js",
-    ]
-    for candidate in candidates:
-        if (ROOT / candidate).is_file():
-            return candidate.as_posix()
-    return None
-
-
-def collect_js(rel: str, visited: set[str]) -> None:
-    if rel in visited:
-        return
-    src = ROOT / rel
-    if not src.is_file():
-        return
-    visited.add(rel)
-    copy_file(rel)
-    text = src.read_text(encoding="utf-8-sig", errors="replace")
-    for match in IMPORT_RE.finditer(text):
-        resolved = resolve_local_import(rel, match.group(1))
-        if resolved:
-            collect_js(resolved, visited)
-
-
 def main() -> int:
-    if not (ROOT / ".git").exists():
-        print(f"ERROR: {ROOT} is not a Git checkout", file=sys.stderr)
+    args = parse_args()
+    root = args.repo_root.resolve()
+    output_zip = args.output.resolve()
+    output_dir = output_zip.parent / f".{output_zip.stem}-contents"
+
+    if not (root / ".git").exists():
+        print(f"ERROR: {root} is not a Git checkout", file=sys.stderr)
         return 2
 
-    shutil.rmtree(OUT, ignore_errors=True)
-    ZIP.parent.mkdir(parents=True, exist_ok=True)
-    OUT.mkdir(parents=True, exist_ok=True)
+    def copy_file(rel: str) -> None:
+        src = root / rel
+        if not src.is_file():
+            return
+        dst = output_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    def copy_tree(rel: str, allowed_suffixes: set[str]) -> None:
+        base = root / rel
+        if not base.exists():
+            return
+        for src in base.rglob("*"):
+            if src.is_file() and src.suffix.lower() in allowed_suffixes:
+                copy_file(src.relative_to(root).as_posix())
+
+    def resolve_local_import(from_rel: str, spec: str) -> str | None:
+        if not spec.startswith("."):
+            return None
+        base = Path(from_rel).parent / spec
+        candidates = [base, Path(f"{base}.mjs"), Path(f"{base}.js"), Path(f"{base}.json"), base / "index.mjs", base / "index.js"]
+        for candidate in candidates:
+            if (root / candidate).is_file():
+                return candidate.as_posix()
+        return None
+
+    def collect_js(rel: str, visited: set[str]) -> None:
+        if rel in visited:
+            return
+        src = root / rel
+        if not src.is_file():
+            return
+        visited.add(rel)
+        copy_file(rel)
+        text = src.read_text(encoding="utf-8-sig", errors="replace")
+        for match in IMPORT_RE.finditer(text):
+            resolved = resolve_local_import(rel, match.group(1))
+            if resolved:
+                collect_js(resolved, visited)
+
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_zip.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for rel in EXPLICIT_FILES:
         copy_file(rel)
-
     for rel, suffixes in TREE_RULES:
         copy_tree(rel, suffixes)
 
@@ -120,24 +119,25 @@ def main() -> int:
 
     metadata = {
         "repository": "indrolend/digital-breakdown-apk",
-        "commit": git("rev-parse", "HEAD"),
-        "branch": git("branch", "--show-current"),
-        "status": git("status", "--short"),
-        "recentCommits": git("log", "-8", "--oneline", "--decorate").splitlines(),
+        "commit": git(root, "rev-parse", "HEAD"),
+        "branch": git(root, "branch", "--show-current"),
+        "status": git(root, "status", "--short"),
+        "recentCommits": git(root, "log", "-8", "--oneline", "--decorate").splitlines(),
     }
-    (OUT / "SNAPSHOT.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (output_dir / "SNAPSHOT.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
-    manifest = sorted(p.relative_to(OUT).as_posix() for p in OUT.rglob("*") if p.is_file())
-    (OUT / "MANIFEST.txt").write_text("\n".join(manifest) + "\n", encoding="utf-8")
+    manifest = sorted(p.relative_to(output_dir).as_posix() for p in output_dir.rglob("*") if p.is_file())
+    (output_dir / "MANIFEST.txt").write_text("\n".join(manifest) + "\n", encoding="utf-8")
 
-    if ZIP.exists():
-        ZIP.unlink()
-    with zipfile.ZipFile(ZIP, "w", zipfile.ZIP_DEFLATED) as archive:
-        for src in sorted(OUT.rglob("*")):
+    if output_zip.exists():
+        output_zip.unlink()
+    with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        for src in sorted(output_dir.rglob("*")):
             if src.is_file():
-                archive.write(src, src.relative_to(OUT))
+                archive.write(src, src.relative_to(output_dir))
 
-    print(ZIP)
+    shutil.rmtree(output_dir, ignore_errors=True)
+    print(output_zip)
     return 0
 
 
