@@ -7,18 +7,19 @@ constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
 constexpr float GROUND_Y = 0.55f;
 
-constexpr float WALK_ACCEL = 8.0f;
-constexpr float RUN_ACCEL = 18.0f;
-constexpr float WALK_MAX_SPEED = 7.1f;
-constexpr float RUN_MAX_SPEED = 11.8f;
+// Movement values are ported from Data-game-chicken-animation-split-pass7(4).
+constexpr float WALK_ACCEL = 16.0f;
+constexpr float RUN_ACCEL = 42.0f;
+constexpr float WALK_MAX_SPEED = 18.0f;
+constexpr float RUN_MAX_SPEED = 42.0f;
 constexpr float GROUND_FRICTION = 0.88f;
 constexpr float AIR_FRICTION = 0.985f;
-constexpr float AIR_ACCEL_MULT = 0.52f;
-constexpr float AIR_MAX_SPEED_MULT = 0.9f;
-constexpr float GRAVITY = 24.0f;
-constexpr float JUMP_SPEED = 9.2f;
-constexpr float AIR_JUMP_SPEED = 8.4f;
-constexpr float COYOTE_TIME = 0.09f;
+constexpr float AIR_ACCEL_MULT = 0.62f;
+constexpr float AIR_MAX_SPEED_MULT = 1.08f;
+constexpr float GRAVITY = 14.0f;
+constexpr float JUMP_SPEED = 4.5f;
+constexpr float AIR_JUMP_SPEED = 4.25f;
+constexpr float COYOTE_TIME = 0.12f;
 constexpr float JUMP_BUFFER = 0.12f;
 constexpr float LANDING_MOMENTUM_BOOST = 1.04f;
 
