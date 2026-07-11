@@ -220,7 +220,7 @@ void Renderer::draw(const GameState& state) {
     for (const auto& capture : state.captures) {
         const float filledColor[4] = {0.95f, 0.95f, 1.0f, 1.0f};
         const float openColor[4] = {0.18f, 0.34f, 1.0f, 1.0f};
-        drawBox(viewProj, capture.pos + Vec3{0.0f, 0.08f, 0.0f}, {1.8f, 0.12f, 1.8f}, 0.0f, capture.filled ? filledColor : openColor);
+        drawBox(viewProj, capture.pos, {1.55f, 1.55f, 0.18f}, 0.0f, capture.filled ? filledColor : openColor);
     }
 
     const float bulletColor[4] = {1.0f, 0.92f, 0.45f, 1.0f};
