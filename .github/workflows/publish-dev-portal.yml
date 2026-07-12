@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'native-android/**'
+      - 'native-web/**'
       - 'www/**'
       - 'tools/make_research_packet.py'
       - 'research/**'
@@ -42,6 +43,12 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
           echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
 
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.73'
+          actions-cache-folder: emsdk-cache
+
       - name: Prepare persistent APK signing
         id: signing
         shell: bash
@@ -75,13 +82,29 @@ jobs:
             ./android/gradlew -p native-android assembleDebug --stacktrace
           fi
 
+      - name: Build native WebAssembly runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          emcmake cmake \
+            -S native-android/app/src/main/cpp \
+            -B build/native-web \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDIGITAL_BREAKDOWN_SOURCE_COMMIT="$GITHUB_SHA"
+          cmake --build build/native-web --parallel
+          mkdir -p dist/native-web
+          cp native-web/index.html dist/native-web/index.html
+          cp build/native-web/digital-breakdown.js dist/native-web/digital-breakdown.js
+          cp build/native-web/digital-breakdown.wasm dist/native-web/digital-breakdown.wasm
+          printf '%s\n' "$GITHUB_SHA" > dist/native-web/source-commit.txt
+
       - name: Build downloadable outputs
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-
+          mkdir -p dist/reference
           cp "${{ steps.signing.outputs.apk }}" dist/DigitalBreakdown-Android.apk
+          cp -a www/. dist/reference/
 
           python3 tools/make_research_packet.py
           cp dist/digital-breakdown-runtime-research.zip dist/DigitalBreakdown-Research.zip
@@ -90,16 +113,20 @@ jobs:
           from pathlib import Path
           from zipfile import ZIP_DEFLATED, ZipFile
 
-          source = Path('www')
-          output = Path('dist/DigitalBreakdown-Web.zip')
-          with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
-              for path in sorted(source.rglob('*')):
-                  if path.is_file():
-                      archive.write(path, path.relative_to(source))
+          def zip_tree(source, output):
+              source = Path(source)
+              with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
+                  for path in sorted(source.rglob('*')):
+                      if path.is_file():
+                          archive.write(path, path.relative_to(source))
+
+          zip_tree('dist/native-web', 'dist/DigitalBreakdown-Native-Web.zip')
+          zip_tree('dist/reference', 'dist/DigitalBreakdown-Reference-Web.zip')
           PY
 
           sha256sum dist/DigitalBreakdown-Android.apk > dist/DigitalBreakdown-Android.apk.sha256
-          sha256sum dist/DigitalBreakdown-Web.zip > dist/DigitalBreakdown-Web.zip.sha256
+          sha256sum dist/DigitalBreakdown-Native-Web.zip > dist/DigitalBreakdown-Native-Web.zip.sha256
+          sha256sum dist/DigitalBreakdown-Reference-Web.zip > dist/DigitalBreakdown-Reference-Web.zip.sha256
           sha256sum dist/DigitalBreakdown-Research.zip > dist/DigitalBreakdown-Research.zip.sha256
 
       - name: Generate build manifest
@@ -129,7 +156,7 @@ jobs:
           android["stableSigning"] = android["variant"] == "release"
 
           manifest = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "repository": os.environ["GITHUB_REPOSITORY"],
               "branch": os.environ.get("GITHUB_REF_NAME", "main"),
               "commit": sha,
@@ -137,17 +164,21 @@ jobs:
               "builtAt": datetime.now(timezone.utc).isoformat(),
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "runId": os.environ["GITHUB_RUN_ID"],
+              "sourceMessage": "Android APK and native WebAssembly runtime were built from the same native commit.",
               "android": android,
               "web": {
-                  **file_info("dist/DigitalBreakdown-Web.zip"),
+                  **file_info("dist/DigitalBreakdown-Native-Web.zip"),
+                  "runtime": "native-cpp-wasm",
                   "playPath": "./play/"
+              },
+              "reference": {
+                  **file_info("dist/DigitalBreakdown-Reference-Web.zip"),
+                  "runtime": "javascript-reference",
+                  "playPath": "./reference/"
               },
               "research": file_info("dist/DigitalBreakdown-Research.zip"),
           }
-          Path("dist/build-info.json").write_text(
-              json.dumps(manifest, indent=2) + "\n",
-              encoding="utf-8",
-          )
+          Path("dist/build-info.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           PY
 
       - name: Upload source-repository artifact
@@ -176,25 +207,26 @@ jobs:
           token: ${{ env.PORTAL_TOKEN }}
           path: portal
 
-      - name: Update live web demo and manifest
+      - name: Update native web build, reference build, and manifest
         if: steps.portal-token.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf portal/play
-          mkdir -p portal/play
-          cp -a www/. portal/play/
+          rm -rf portal/play portal/reference
+          mkdir -p portal/play portal/reference
+          cp -a dist/native-web/. portal/play/
+          cp -a dist/reference/. portal/reference/
           cp dist/build-info.json portal/build-info.json
 
           cd portal
           git config user.name "digital-breakdown-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add play build-info.json
+          git add play reference build-info.json
 
           if git diff --cached --quiet; then
             echo "Portal content is already current."
           else
-            git commit -m "Publish game build ${GITHUB_SHA::7}"
+            git commit -m "Publish native and reference builds ${GITHUB_SHA::7}"
             git push origin HEAD:main
           fi
 
@@ -216,8 +248,10 @@ jobs:
           gh release upload latest-dev \
             dist/DigitalBreakdown-Android.apk \
             dist/DigitalBreakdown-Android.apk.sha256 \
-            dist/DigitalBreakdown-Web.zip \
-            dist/DigitalBreakdown-Web.zip.sha256 \
+            dist/DigitalBreakdown-Native-Web.zip \
+            dist/DigitalBreakdown-Native-Web.zip.sha256 \
+            dist/DigitalBreakdown-Reference-Web.zip \
+            dist/DigitalBreakdown-Reference-Web.zip.sha256 \
             dist/DigitalBreakdown-Research.zip \
             dist/DigitalBreakdown-Research.zip.sha256 \
             dist/build-info.json \
@@ -227,4 +261,4 @@ jobs:
           gh release edit latest-dev \
             --repo "$PORTAL_REPOSITORY" \
             --title "Latest Development Build · ${GITHUB_SHA::7}" \
-            --notes "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} on $(date -u +'%Y-%m-%d %H:%M UTC'). Android variant: ${{ steps.signing.outputs.variant }}."
+            --notes "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA} on $(date -u +'%Y-%m-%d %H:%M UTC'). Android and native WebAssembly share this commit. Android variant: ${{ steps.signing.outputs.variant }}."
