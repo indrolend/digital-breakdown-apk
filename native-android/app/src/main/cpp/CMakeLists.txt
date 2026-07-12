@@ -7,6 +7,38 @@ set(DB_SHARED_SOURCES
     render/Renderer.cpp
 )
 
+set(DB_SOURCE_COMMIT "unknown")
+if(DEFINED DIGITAL_BREAKDOWN_SOURCE_COMMIT AND NOT DIGITAL_BREAKDOWN_SOURCE_COMMIT STREQUAL "")
+    set(DB_SOURCE_COMMIT "${DIGITAL_BREAKDOWN_SOURCE_COMMIT}")
+elseif(DEFINED ENV{GITHUB_SHA} AND NOT "$ENV{GITHUB_SHA}" STREQUAL "")
+    set(DB_SOURCE_COMMIT "$ENV{GITHUB_SHA}")
+else()
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        get_filename_component(DB_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${DB_REPOSITORY_ROOT}" rev-parse --short HEAD
+            OUTPUT_VARIABLE DB_GIT_COMMIT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        if(NOT DB_GIT_COMMIT STREQUAL "")
+            set(DB_SOURCE_COMMIT "${DB_GIT_COMMIT}")
+            execute_process(
+                COMMAND "${GIT_EXECUTABLE}" -C "${DB_REPOSITORY_ROOT}" status --porcelain
+                OUTPUT_VARIABLE DB_GIT_DIRTY
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(NOT DB_GIT_DIRTY STREQUAL "")
+                string(APPEND DB_SOURCE_COMMIT "-dirty")
+            endif()
+        endif()
+    endif()
+endif()
+
+message(STATUS "Digital Breakdown native source: ${DB_SOURCE_COMMIT}")
+
 if(EMSCRIPTEN)
     add_executable(
         digitalbreakdown
@@ -23,14 +55,11 @@ if(EMSCRIPTEN)
     )
 
     target_compile_features(digitalbreakdown PRIVATE cxx_std_17)
-
-    if(DEFINED DIGITAL_BREAKDOWN_SOURCE_COMMIT)
-        target_compile_definitions(
-            digitalbreakdown
-            PRIVATE
-            DIGITAL_BREAKDOWN_SOURCE_COMMIT="${DIGITAL_BREAKDOWN_SOURCE_COMMIT}"
-        )
-    endif()
+    target_compile_definitions(
+        digitalbreakdown
+        PRIVATE
+        DIGITAL_BREAKDOWN_SOURCE_COMMIT="${DB_SOURCE_COMMIT}"
+    )
 
     set_target_properties(
         digitalbreakdown
@@ -70,6 +99,11 @@ else()
     )
 
     target_compile_features(digitalbreakdown PRIVATE cxx_std_17)
+    target_compile_definitions(
+        digitalbreakdown
+        PRIVATE
+        DIGITAL_BREAKDOWN_SOURCE_COMMIT="${DB_SOURCE_COMMIT}"
+    )
 
     target_link_libraries(
         digitalbreakdown
