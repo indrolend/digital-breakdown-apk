@@ -5,6 +5,10 @@
 #include "game/Game.hpp"
 #include "render/Renderer.hpp"
 
+#ifndef DIGITAL_BREAKDOWN_SOURCE_COMMIT
+#define DIGITAL_BREAKDOWN_SOURCE_COMMIT "unknown"
+#endif
+
 namespace {
 Game gGame;
 Renderer gRenderer;
@@ -24,7 +28,12 @@ void logLine(const char* msg) {
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv*, jclass) {
-    logLine("surface created");
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        "DBNATIVE",
+        "surface created native_source=%s",
+        DIGITAL_BREAKDOWN_SOURCE_COMMIT
+    );
     gGame.reset();
     gRenderer.surfaceCreated();
     gLastFrame = std::chrono::steady_clock::now();
