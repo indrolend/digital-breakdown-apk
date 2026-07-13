@@ -13,7 +13,8 @@ enum class SoulState : unsigned char {
     Attracted,
     Latched,
     Ingesting,
-    Recoiling
+    Recoiling,
+    Revolving
 };
 
 struct InputState {
