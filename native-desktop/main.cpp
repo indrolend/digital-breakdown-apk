@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 constexpr int KEY_W_ANDROID = 51;
@@ -103,9 +104,18 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
 void errorCallback(int code, const char* description) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, description ? description : "unknown");
 }
+
+bool hasArg(int argc, char** argv, const char* expected) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], expected) == 0) return true;
+    }
+    return false;
+}
 }
 
-int main() {
+int main(int argc, char** argv) {
+    const bool smokeTest = hasArg(argc, argv, "--smoke-test");
+
     glfwSetErrorCallback(errorCallback);
     if (!glfwInit()) {
         std::fprintf(stderr, "Digital Breakdown: GLFW initialization failed.\n");
@@ -115,8 +125,15 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 0);
+    if (smokeTest) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Digital Breakdown - Native Desktop", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(
+        smokeTest ? 64 : 1280,
+        smokeTest ? 64 : 720,
+        "Digital Breakdown - Native Desktop",
+        nullptr,
+        nullptr
+    );
     if (!window) {
         glfwTerminate();
         std::fprintf(stderr, "Digital Breakdown: window creation failed.\n");
@@ -130,15 +147,35 @@ int main() {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+    glfwSwapInterval(smokeTest ? 0 : 1);
+    if (!smokeTest) glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     int framebufferWidth = 1;
     int framebufferHeight = 1;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
+
+    if (smokeTest) {
+        for (int i = 0; i < 8; ++i) {
+            glfwPollEvents();
+            host.game.update(1.0f / 60.0f);
+            host.renderer.draw(host.game.state());
+            glfwSwapBuffers(window);
+        }
+        const GameState& state = host.game.state();
+        std::printf(
+            "SMOKE_TEST_OK frame=%d room=%d battery=%.2f targets=%d\n",
+            state.frame,
+            state.roomIndex,
+            state.player.battery,
+            TARGET_COUNT
+        );
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 0;
+    }
 
     std::printf("Digital Breakdown native desktop host running.\n");
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
