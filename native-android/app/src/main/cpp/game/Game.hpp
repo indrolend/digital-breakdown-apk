@@ -4,9 +4,17 @@
 
 #include "Math.hpp"
 
-constexpr int TARGET_COUNT = 12;
+constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 5;
-constexpr int BULLET_COUNT = 8;
+constexpr int BULLET_COUNT = 30;
+
+enum class SoulState : unsigned char {
+    Free,
+    Attracted,
+    Latched,
+    Ingesting,
+    Recoiling
+};
 
 struct InputState {
     bool forward = false;
@@ -62,18 +70,26 @@ struct VacuumState {
     bool active = false;
     float power = 0.0f;
     float pose = 0.0f;
+    float fieldStrength = 0.0f;
+    float coneTightness = 0.0f;
     int target = -1;
 };
 
 struct TargetState {
     Vec3 pos;
     Vec3 vel;
+    Vec3 latchPoint;
     bool alive = false;
     bool slurpable = false;
-    float armor = 1.0f;
+    float armor = 2.0f;
+    float health = 1.0f;
     float capture = 0.0f;
+    float ingestProgress = 0.0f;
+    float recoilTime = 0.0f;
+    float respawnTimer = 0.0f;
     float scale = 1.0f;
     float phase = 0.0f;
+    SoulState soulState = SoulState::Free;
 };
 
 struct CapturePointState {
@@ -142,6 +158,9 @@ private:
     void startAirJump();
     void triggerMelee();
     void shootStoredSoul();
+    void releaseSoul(int index);
+    void captureSoul(int index);
+    void respawnTarget(int index);
     void clampRoom(Vec3& pos);
     Vec3 cameraForwardFlat() const;
     Vec3 cameraRightFlat() const;
