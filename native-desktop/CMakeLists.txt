@@ -8,6 +8,7 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     glfw
@@ -45,6 +46,8 @@ target_link_libraries(
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)
+    set_property(TARGET DigitalBreakdown PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
     target_compile_options(DigitalBreakdown PRIVATE -Wall -Wextra -Wpedantic)
 endif()
