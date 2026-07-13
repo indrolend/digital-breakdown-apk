@@ -2,7 +2,11 @@
 param(
     [ValidateSet('Debug','Release')]
     [string]$Configuration = 'Debug',
-    [switch]$Reconfigure
+    [ValidateSet('x64','Win32')]
+    [string]$Architecture = 'x64',
+    [switch]$Reconfigure,
+    [switch]$BuildOnly,
+    [switch]$SmokeTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,7 +47,7 @@ if ($Reconfigure -and (Test-Path $BuildDir)) {
 }
 
 Write-Host '[1/3] Configure native desktop host' -ForegroundColor Cyan
-& $CMake -S $SourceDir -B $BuildDir -A Win32 *> $BuildLog
+& $CMake -S $SourceDir -B $BuildDir -A $Architecture *> $BuildLog
 if ($LASTEXITCODE -ne 0) {
     Get-Content $BuildLog -Tail 30 -ErrorAction SilentlyContinue
     throw "Desktop configure failed. See $BuildLog"
@@ -74,11 +78,25 @@ $BuildId = if ($Dirty) { "$Commit-dirty" } else { $Commit }
 [pscustomobject]@{
     shortCommit = $BuildId
     configuration = $Configuration
+    architecture = $Architecture
     executable = $Executable
     builtAt = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -Path $StatePath -Encoding UTF8
 
-Write-Host '[3/3] Launch native desktop host' -ForegroundColor Cyan
-Start-Process -FilePath $Executable -WorkingDirectory $RepoRoot
-Write-Host "SUCCESS  Desktop $BuildId launched" -ForegroundColor Green
+if ($SmokeTest) {
+    Write-Host '[3/3] Run native smoke test' -ForegroundColor Cyan
+    & $Executable --smoke-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "Desktop smoke test failed with code $LASTEXITCODE."
+    }
+    Write-Host "SUCCESS  Desktop $BuildId smoke test passed" -ForegroundColor Green
+} elseif ($BuildOnly) {
+    Write-Host '[3/3] Build complete' -ForegroundColor Cyan
+    Write-Host "SUCCESS  Desktop $BuildId built" -ForegroundColor Green
+} else {
+    Write-Host '[3/3] Launch native desktop host' -ForegroundColor Cyan
+    Start-Process -FilePath $Executable -WorkingDirectory $RepoRoot
+    Write-Host "SUCCESS  Desktop $BuildId launched" -ForegroundColor Green
+}
+
 Write-Output $BuildId
