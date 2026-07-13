@@ -21,7 +21,6 @@ set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/c
 
 add_executable(
     DigitalBreakdown
-    WIN32
     main.cpp
     DesktopRenderer.cpp
     "${DB_SHARED_ROOT}/game/Game.cpp"
