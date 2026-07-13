@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 
+# Set the runtime before dependencies are configured so DigitalBreakdown and
+# statically linked libraries such as GLFW agree on /MT versus /MD.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 project(DigitalBreakdownDesktop LANGUAGES CXX)
 
 include(FetchContent)
@@ -46,8 +52,6 @@ target_link_libraries(
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)
-    set_property(TARGET DigitalBreakdown PROPERTY
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
     target_compile_options(DigitalBreakdown PRIVATE -Wall -Wextra -Wpedantic)
 endif()
