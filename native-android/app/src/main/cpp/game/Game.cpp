@@ -1,5 +1,6 @@
 #include "Game.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -7,7 +8,6 @@ constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
 constexpr float GROUND_Y = 0.55f;
 
-// Movement values are ported from Data-game-chicken-animation-split-pass7(4).
 constexpr float WALK_ACCEL = 16.0f;
 constexpr float RUN_ACCEL = 42.0f;
 constexpr float WALK_MAX_SPEED = 18.0f;
@@ -31,25 +31,30 @@ constexpr float BATTERY_SPRINT_DRAIN = 3.0f;
 constexpr float BATTERY_AIR_DRAIN = 0.9f;
 constexpr float BATTERY_VACUUM_DRAIN = 1.35f;
 constexpr float BATTERY_JUMP_COST = 4.5f;
-constexpr float BATTERY_DOUBLE_JUMP_COST = 6.5f;
-constexpr float BATTERY_MELEE_COST = 6.0f;
-constexpr float BATTERY_CAPTURE_GAIN = 6.0f;
+constexpr float BATTERY_DOUBLE_JUMP_COST = 6.0f;
+constexpr float BATTERY_MELEE_COST = 4.0f;
+constexpr float BATTERY_CAPTURE_GAIN = 18.0f;
 
 constexpr float VACUUM_MOVE_MULT = 0.35f;
 constexpr float VACUUM_CHARGE_SPEED = 3.5f;
 constexpr float VACUUM_DECAY_SPEED = 6.0f;
-constexpr float VACUUM_RANGE = 15.5f;
-constexpr float VACUUM_LATCH_RADIUS = 1.75f;
-constexpr float VACUUM_CAPTURE_TIME = 0.72f;
-constexpr float VACUUM_PULL = 13.5f;
+constexpr float SOUL_ATTRACTION_RANGE = 15.5f;
+constexpr float SOUL_ATTRACTION_CONE_DOT = 0.10f;
+constexpr float SOUL_LATCH_DISTANCE = 0.48f;
+constexpr float SOUL_SEAL_DISTANCE = 0.14f;
+constexpr float SOUL_RECOIL_DURATION = 0.55f;
+constexpr float SOUL_CAPTURE_COMMIT_PHASE = 0.92f;
+constexpr float SOUL_CAPTURE_DECAY = 0.75f;
 
-constexpr float MELEE_RANGE = 2.35f;
-constexpr float MELEE_RADIUS = 1.15f;
-constexpr float MELEE_COOLDOWN = 0.28f;
+constexpr float MELEE_RANGE = 2.85f;
+constexpr float MELEE_RADIUS = 0.88f;
+constexpr float MELEE_COOLDOWN = 0.34f;
 constexpr float MELEE_DAMAGE = 1.0f;
-constexpr float BULLET_SPEED = 14.0f;
-constexpr float BULLET_LIFE = 3.0f;
-constexpr int MAX_STORED_SOULS = 5;
+constexpr float BULLET_SPEED = 25.0f;
+constexpr float BULLET_GRAVITY = 11.5f;
+constexpr float BULLET_LIFE = 3.25f;
+constexpr int MAX_STORED_SOULS = 30;
+constexpr int ACTIVE_HUMAN_TARGET = 5;
 
 constexpr int KEY_W = 51;
 constexpr int KEY_A = 29;
@@ -76,6 +81,20 @@ float distXZ(const Vec3& a, const Vec3& b) {
     const float dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
 }
+
+float dot3(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float smooth01(float value) {
+    const float t = clampf(value, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+float deterministic01(int index, int room, float salt) {
+    const float n = std::sin(static_cast<float>(index) * 12.9898f + static_cast<float>(room) * 78.233f + salt) * 43758.5453f;
+    return n - std::floor(n);
+}
 }
 
 void Game::reset() {
@@ -84,27 +103,35 @@ void Game::reset() {
 }
 
 void Game::resetRoom() {
+    const int roomIndex = state_.roomIndex;
     state_.roomClear = false;
     state_.player = PlayerState{};
     state_.camera = CameraState{};
     state_.vacuum = VacuumState{};
-
-    const Vec3 spots[TARGET_COUNT] = {
-        {-8.0f, GROUND_Y, -12.0f}, {8.0f, GROUND_Y, -13.0f}, {-9.0f, GROUND_Y, 0.0f},
-        {9.0f, GROUND_Y, -1.0f}, {0.0f, GROUND_Y, -17.0f}, {-4.5f, GROUND_Y, -6.0f},
-        {4.5f, GROUND_Y, -7.5f}, {-11.0f, GROUND_Y, 8.0f}, {11.0f, GROUND_Y, 7.5f},
-        {-3.0f, GROUND_Y, 13.0f}, {3.0f, GROUND_Y, 13.0f}, {0.0f, GROUND_Y, -2.0f}
-    };
+    state_.roomIndex = roomIndex;
 
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& target = state_.targets[i];
         target = TargetState{};
-        target.pos = spots[i];
-        target.alive = i < 8;
+        const int column = i % 6;
+        const int row = i / 6;
+        target.pos = {
+            -10.0f + static_cast<float>(column) * 4.0f,
+            GROUND_Y,
+            -14.0f + static_cast<float>(row) * 5.0f
+        };
+        target.pos.x += (deterministic01(i, roomIndex, 1.0f) - 0.5f) * 1.5f;
+        target.pos.z += (deterministic01(i, roomIndex, 2.0f) - 0.5f) * 1.5f;
+        target.alive = i < ACTIVE_HUMAN_TARGET;
         target.slurpable = false;
-        target.armor = (i == 4) ? 2.0f : 1.0f;
-        target.scale = (i == 4) ? 1.55f : 1.0f;
+        target.armor = 2.0f;
+        target.health = 1.0f;
+        target.scale = 1.0f;
         target.phase = static_cast<float>(i) * 0.77f;
+        target.soulState = SoulState::Free;
+        if (!target.alive) {
+            target.respawnTimer = 1.45f + deterministic01(i, roomIndex, 3.0f) * 0.9f;
+        }
     }
 
     const Vec3 captureSpots[CAPTURE_COUNT] = {
@@ -124,13 +151,11 @@ void Game::resetRoom() {
 
 void Game::setKey(int keyCode, bool down) {
     InputState& input = state_.input;
-
     if (keyCode == KEY_W) input.forward = down;
     if (keyCode == KEY_S) input.back = down;
     if (keyCode == KEY_A) input.left = down;
     if (keyCode == KEY_D) input.right = down;
     if (keyCode == KEY_SHIFT_LEFT || keyCode == KEY_SHIFT_RIGHT) input.sprint = down;
-
     if (keyCode == KEY_SPACE) {
         if (down && !input.jumpHeld) input.jumpPressed = true;
         input.jumpHeld = down;
@@ -143,7 +168,6 @@ void Game::setKey(int keyCode, bool down) {
 void Game::setTouch(int action, float x, float y, int pointerCount) {
     (void)pointerCount;
     InputState& input = state_.input;
-
     if (action == TOUCH_DOWN) {
         input.touching = true;
         input.primaryHeld = true;
@@ -191,7 +215,6 @@ void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt;
     state_.frame += 1;
-
     updateInputActions(dt);
     updateCamera(dt);
     updatePlayer(dt);
@@ -203,13 +226,9 @@ void Game::update(float dt) {
 
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
-    GameState& s = state_;
-
-    if (input.cameraTogglePressed) {
-        s.camera.firstPerson = !s.camera.firstPerson;
-    }
+    if (input.cameraTogglePressed) state_.camera.firstPerson = !state_.camera.firstPerson;
     if (input.jumpPressed) {
-        s.player.jumpBufferTimer = JUMP_BUFFER;
+        state_.player.jumpBufferTimer = JUMP_BUFFER;
         tryJump();
     }
     if (input.meleePressed) triggerMelee();
@@ -220,10 +239,10 @@ void Game::updateInputActions(float dt) {
     input.meleePressed = false;
     input.shootPressed = false;
 
-    s.meleeCooldown = std::max(0.0f, s.meleeCooldown - dt);
-    s.meleePose = std::max(0.0f, s.meleePose - dt * 5.5f);
-
-    s.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && s.player.battery > 1.0f;
+    state_.meleeCooldown = std::max(0.0f, state_.meleeCooldown - dt);
+    state_.meleePose = std::max(0.0f, state_.meleePose - dt * 5.5f);
+    state_.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && state_.player.battery > 1.0f;
+    if (state_.player.souls >= MAX_STORED_SOULS) state_.vacuum.active = false;
 }
 
 Vec3 Game::cameraForwardFlat() const {
@@ -238,7 +257,6 @@ void Game::updateCamera(float dt) {
     InputState& input = state_.input;
     CameraState& camera = state_.camera;
     const PlayerState& player = state_.player;
-
     camera.yaw -= input.lookDeltaX * 0.0065f;
     camera.pitch = clampf(camera.pitch - input.lookDeltaY * 0.0045f, -0.85f, 0.85f);
     input.lookDeltaX = 0.0f;
@@ -246,27 +264,20 @@ void Game::updateCamera(float dt) {
 
     const float cp = std::cos(camera.pitch);
     camera.forward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
-
     if (camera.firstPerson) {
         camera.pos = player.pos + Vec3{0.0f, 0.72f, 0.0f} + camera.forward * 0.18f;
         return;
     }
-
     const Vec3 desired = player.pos - camera.forward * 3.0f + Vec3{0.0f, 1.1f, 0.0f};
     const float t = clampf(dt * 8.0f, 0.0f, 1.0f);
-    camera.pos.x += (desired.x - camera.pos.x) * t;
-    camera.pos.y += (desired.y - camera.pos.y) * t;
-    camera.pos.z += (desired.z - camera.pos.z) * t;
+    camera.pos += (desired - camera.pos) * t;
     camera.pos.y = std::max(camera.pos.y, GROUND_Y + 0.8f);
 }
 
 void Game::tryJump() {
     PlayerState& player = state_.player;
-    if (player.grounded || player.coyoteTimer > 0.0f) {
-        startGroundJump();
-    } else if (player.airJumpsRemaining > 0 && player.battery >= BATTERY_DOUBLE_JUMP_COST) {
-        startAirJump();
-    }
+    if (player.grounded || player.coyoteTimer > 0.0f) startGroundJump();
+    else if (player.airJumpsRemaining > 0 && player.battery >= BATTERY_DOUBLE_JUMP_COST) startAirJump();
 }
 
 void Game::startGroundJump() {
@@ -291,7 +302,6 @@ void Game::startAirJump() {
 void Game::updatePlayer(float dt) {
     InputState& input = state_.input;
     PlayerState& player = state_.player;
-
     if (player.jumpBufferTimer > 0.0f) player.jumpBufferTimer = std::max(0.0f, player.jumpBufferTimer - dt);
     if (player.grounded) player.coyoteTimer = COYOTE_TIME;
     else player.coyoteTimer = std::max(0.0f, player.coyoteTimer - dt);
@@ -303,25 +313,19 @@ void Game::updatePlayer(float dt) {
 
     const bool moving = std::abs(forwardAxis) > 0.001f || std::abs(strafeAxis) > 0.001f;
     const bool running = (input.sprint || input.touchSprint) && moving && !state_.vacuum.active && player.battery > 5.0f;
-
     const float power = batteryPower(player);
-    const float airControl = player.grounded ? 1.0f : AIR_ACCEL_MULT;
-    const float airSpeed = player.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
-    const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
-    const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
+    const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * (player.grounded ? 1.0f : AIR_ACCEL_MULT);
+    const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * (player.grounded ? 1.0f : AIR_MAX_SPEED_MULT);
     const float vacuumSlow = 1.0f - state_.vacuum.pose * (1.0f - VACUUM_MOVE_MULT);
 
-    Vec3 move{0.0f, 0.0f, 0.0f};
-    const Vec3 forward = cameraForwardFlat();
-    const Vec3 right = cameraRightFlat();
-    move += forward * forwardAxis;
-    move += right * strafeAxis;
+    Vec3 move{};
+    move += cameraForwardFlat() * forwardAxis;
+    move += cameraRightFlat() * strafeAxis;
     if (lengthSq(move) > 0.0001f) {
         move = normalized(move);
         player.vel += move * (accel * vacuumSlow * dt);
         player.targetYaw = std::atan2(-move.x, -move.z);
     }
-
     limitHorizontal(player.vel, maxSpeed * vacuumSlow);
 
     if (!player.grounded) {
@@ -336,14 +340,11 @@ void Game::updatePlayer(float dt) {
             if (horizontalLength(player.vel) > 1.2f) player.vel *= LANDING_MOMENTUM_BOOST;
         }
     }
-
     if (player.grounded && player.jumpBufferTimer > 0.0f) startGroundJump();
 
     player.pos += player.vel * dt;
     clampRoom(player.pos);
-
-    const float friction = player.grounded ? GROUND_FRICTION : AIR_FRICTION;
-    player.vel *= std::pow(friction, dt * 60.0f);
+    player.vel *= std::pow(player.grounded ? GROUND_FRICTION : AIR_FRICTION, dt * 60.0f);
     player.yaw = approachAngle(player.yaw, player.targetYaw, dt * 10.0f);
 
     float drain = 0.0f;
@@ -356,54 +357,96 @@ void Game::updatePlayer(float dt) {
 }
 
 void Game::triggerMelee() {
-    GameState& s = state_;
-    PlayerState& player = s.player;
-    if (s.meleeCooldown > 0.0f || player.battery < BATTERY_MELEE_COST) return;
-    player.battery -= BATTERY_MELEE_COST;
-    s.meleeCooldown = MELEE_COOLDOWN;
-    s.meleePose = 1.0f;
-
+    if (state_.meleeCooldown > 0.0f || state_.player.battery < BATTERY_MELEE_COST) return;
+    state_.player.battery -= BATTERY_MELEE_COST;
+    state_.meleeCooldown = MELEE_COOLDOWN;
+    state_.meleePose = 1.0f;
     const Vec3 forward = cameraForwardFlat();
-    for (auto& target : s.targets) {
-        if (!target.alive) continue;
-        const Vec3 toTarget = target.pos - player.pos;
+    for (auto& target : state_.targets) {
+        if (!target.alive || target.soulState == SoulState::Revolving) continue;
+        const Vec3 toTarget = target.pos - state_.player.pos;
         const float forwardDist = toTarget.x * forward.x + toTarget.z * forward.z;
-        const float sideSq = (toTarget.x * toTarget.x + toTarget.z * toTarget.z) - forwardDist * forwardDist;
+        const float sideSq = toTarget.x * toTarget.x + toTarget.z * toTarget.z - forwardDist * forwardDist;
         if (forwardDist > 0.0f && forwardDist < MELEE_RANGE && sideSq < MELEE_RADIUS * MELEE_RADIUS) {
             target.armor -= MELEE_DAMAGE;
             target.vel += forward * 4.2f;
             target.vel.y = 1.2f;
-            if (target.armor <= 0.0f) target.slurpable = true;
+            if (target.armor <= 0.0f) {
+                target.armor = 0.0f;
+                target.slurpable = true;
+                target.soulState = SoulState::Free;
+            }
         }
     }
 }
 
 void Game::shootStoredSoul() {
-    GameState& s = state_;
-    if (s.player.souls <= 0) return;
-    for (auto& bullet : s.bullets) {
+    if (state_.player.souls <= 0 || state_.player.battery < 7.0f) return;
+    for (auto& bullet : state_.bullets) {
         if (bullet.alive) continue;
         bullet.alive = true;
         bullet.life = BULLET_LIFE;
-        bullet.pos = s.player.pos + Vec3{0.0f, 0.75f, 0.0f} + s.camera.forward * 0.75f;
-        bullet.vel = s.camera.forward * BULLET_SPEED;
-        s.player.souls -= 1;
-        s.vacuum.active = false;
+        bullet.pos = state_.player.pos + Vec3{0.0f, 0.75f, 0.0f} + state_.camera.forward * 0.75f;
+        bullet.vel = state_.camera.forward * BULLET_SPEED;
+        state_.player.souls -= 1;
+        state_.player.battery -= 7.0f;
+        state_.vacuum.active = false;
         return;
     }
 }
 
+void Game::respawnTarget(int index) {
+    TargetState& target = state_.targets[index];
+    const float angle = deterministic01(index, state_.roomIndex, state_.time + 4.0f) * DB_PI * 2.0f;
+    const float radius = 8.0f + deterministic01(index, state_.roomIndex, state_.time + 5.0f) * 7.0f;
+    target = TargetState{};
+    target.pos = {std::cos(angle) * radius, GROUND_Y, std::sin(angle) * radius};
+    clampRoom(target.pos);
+    target.alive = true;
+    target.armor = 2.0f;
+    target.health = 1.0f;
+    target.phase = static_cast<float>(index) * 0.77f;
+}
+
 void Game::updateTargets(float dt) {
+    int active = 0;
+    for (const auto& target : state_.targets) if (target.alive) ++active;
+
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& target = state_.targets[i];
-        if (!target.alive) continue;
+        if (!target.alive) {
+            if (active < ACTIVE_HUMAN_TARGET) {
+                target.respawnTimer -= dt;
+                if (target.respawnTimer <= 0.0f) {
+                    respawnTarget(i);
+                    ++active;
+                }
+            }
+            continue;
+        }
 
         target.phase += dt;
+        if (target.soulState == SoulState::Revolving) continue;
+        if (target.soulState == SoulState::Recoiling) {
+            target.recoilTime -= dt;
+            target.vel.y -= 5.5f * dt;
+            target.pos += target.vel * dt;
+            target.vel.x *= std::max(0.0f, 1.0f - 3.5f * dt);
+            target.vel.z *= std::max(0.0f, 1.0f - 3.5f * dt);
+            if (target.pos.y <= GROUND_Y) {
+                target.pos.y = GROUND_Y;
+                target.vel.y = 0.0f;
+            }
+            clampRoom(target.pos);
+            if (target.recoilTime <= 0.0f) target.soulState = SoulState::Free;
+            continue;
+        }
+        if (target.soulState == SoulState::Attracted || target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting) continue;
+
         if (!target.slurpable) {
             target.vel.x += std::sin(target.phase * 0.7f + static_cast<float>(i)) * 0.55f * dt;
             target.vel.z += std::cos(target.phase * 0.55f + static_cast<float>(i)) * 0.55f * dt;
         }
-
         target.vel.y -= GRAVITY * 0.35f * dt;
         target.pos += target.vel * dt;
         if (target.pos.y <= GROUND_Y) {
@@ -415,53 +458,122 @@ void Game::updateTargets(float dt) {
     }
 }
 
+void Game::releaseSoul(int index) {
+    TargetState& target = state_.targets[index];
+    if (target.ingestProgress >= SOUL_CAPTURE_COMMIT_PHASE) {
+        captureSoul(index);
+        return;
+    }
+    Vec3 recoil = normalized(target.pos - (state_.player.pos + Vec3{0.0f, 0.72f, 0.0f}));
+    if (lengthSq(recoil) < 0.001f) recoil = {std::sin(state_.camera.yaw), 0.18f, std::cos(state_.camera.yaw)};
+    recoil = normalized(recoil);
+    const float strength = 4.5f + target.ingestProgress * 10.5f;
+    target.vel = {recoil.x * strength, 1.4f + target.ingestProgress * 2.2f, recoil.z * strength};
+    target.recoilTime = SOUL_RECOIL_DURATION;
+    target.capture = 0.0f;
+    target.ingestProgress = 0.0f;
+    target.soulState = SoulState::Recoiling;
+}
+
+void Game::captureSoul(int index) {
+    TargetState& target = state_.targets[index];
+    target.alive = false;
+    target.capture = 0.0f;
+    target.ingestProgress = 0.0f;
+    target.soulState = SoulState::Free;
+    target.respawnTimer = 1.45f + deterministic01(index, state_.roomIndex, state_.time) * 0.9f;
+    state_.player.souls = std::min(MAX_STORED_SOULS, state_.player.souls + 1);
+    state_.player.battery = std::min(BATTERY_MAX, state_.player.battery + BATTERY_CAPTURE_GAIN);
+}
+
 void Game::updateVacuum(float dt) {
-    GameState& s = state_;
-    s.vacuum.pose += ((s.vacuum.active ? 1.0f : 0.0f) - s.vacuum.pose) * clampf(dt * 10.0f, 0.0f, 1.0f);
-    if (s.vacuum.active) s.vacuum.power = clampf(s.vacuum.power + VACUUM_CHARGE_SPEED * dt, 0.0f, 1.0f);
-    else s.vacuum.power = clampf(s.vacuum.power - VACUUM_DECAY_SPEED * dt, 0.0f, 1.0f);
+    VacuumState& vacuum = state_.vacuum;
+    vacuum.pose += ((vacuum.active ? 1.0f : 0.0f) - vacuum.pose) * clampf(dt * 10.0f, 0.0f, 1.0f);
+    vacuum.power = clampf(vacuum.power + (vacuum.active ? VACUUM_CHARGE_SPEED : -VACUUM_DECAY_SPEED) * dt, 0.0f, 1.0f);
+    vacuum.fieldStrength += ((vacuum.active ? 1.0f : 0.0f) - vacuum.fieldStrength) * clampf(dt * 5.0f, 0.0f, 1.0f);
 
-    s.vacuum.target = -1;
-    if (!s.vacuum.active || s.vacuum.power < 0.32f || s.player.souls >= MAX_STORED_SOULS) return;
+    const bool attractionActive = vacuum.active && vacuum.power > 0.32f && state_.player.souls < MAX_STORED_SOULS;
+    const Vec3 pullPoint = state_.camera.firstPerson
+        ? state_.camera.pos - state_.camera.forward * 0.85f
+        : state_.player.pos + Vec3{0.0f, 0.72f, 0.0f} + state_.camera.forward * 0.35f;
 
-    const Vec3 pullPoint = s.player.pos + Vec3{0.0f, 0.72f, 0.0f} + s.camera.forward * 0.35f;
-    float bestScore = 99999.0f;
+    int offered = -1;
+    float offeredScore = 99999.0f;
     for (int i = 0; i < TARGET_COUNT; ++i) {
-        TargetState& target = s.targets[i];
+        TargetState& target = state_.targets[i];
         if (!target.alive || !target.slurpable) continue;
-        Vec3 toPull = pullPoint - target.pos;
-        const float d = length(toPull);
-        if (d > VACUUM_RANGE) continue;
-        const Vec3 dirToTarget = normalized(target.pos - pullPoint);
-        const float facing = dirToTarget.x * s.camera.forward.x + dirToTarget.y * s.camera.forward.y + dirToTarget.z * s.camera.forward.z;
-        if (facing < -0.25f) continue;
-        const float score = d - (d < VACUUM_LATCH_RADIUS ? 3.5f : 0.0f);
-        if (score < bestScore) {
-            bestScore = score;
-            s.vacuum.target = i;
+        if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting) {
+            offered = i;
+            break;
+        }
+        if (!attractionActive || (target.soulState != SoulState::Free && target.soulState != SoulState::Attracted)) continue;
+        const Vec3 fromCamera = target.pos - state_.camera.pos;
+        const float distance = length(fromCamera);
+        if (distance > SOUL_ATTRACTION_RANGE || distance <= 0.001f) continue;
+        const float facing = dot3(normalized(fromCamera), state_.camera.forward);
+        if (facing < SOUL_ATTRACTION_CONE_DOT) continue;
+        const float score = distance - (distance <= SOUL_LATCH_DISTANCE ? 3.5f : 0.0f);
+        if (score < offeredScore) {
+            offeredScore = score;
+            offered = i;
         }
     }
 
-    if (s.vacuum.target < 0) return;
-    TargetState& target = s.targets[s.vacuum.target];
-    Vec3 toPull = pullPoint - target.pos;
-    const float d = std::max(length(toPull), 0.001f);
-    const Vec3 dir = toPull * (1.0f / d);
-    const float close = 1.0f - clampf(d / VACUUM_RANGE, 0.0f, 1.0f);
-    const float speed = VACUUM_PULL * s.vacuum.power * (0.45f + close * 1.4f);
-    target.pos += dir * std::min(d, speed * dt);
-    target.vel = {0.0f, 0.0f, 0.0f};
+    vacuum.target = offered;
+    vacuum.coneTightness += (((offered >= 0 && attractionActive) ? 1.0f : 0.0f) - vacuum.coneTightness) * clampf(dt * 4.0f, 0.0f, 1.0f);
 
-    if (d < VACUUM_LATCH_RADIUS) {
-        target.capture += dt / VACUUM_CAPTURE_TIME;
-        if (target.capture >= 1.0f) {
-            target.alive = false;
-            target.capture = 0.0f;
-            s.player.souls = std::min(MAX_STORED_SOULS, s.player.souls + 1);
-            s.player.battery = std::min(BATTERY_MAX, s.player.battery + 3.0f);
+    for (int i = 0; i < TARGET_COUNT; ++i) {
+        TargetState& target = state_.targets[i];
+        if (!target.alive || !target.slurpable || target.soulState == SoulState::Recoiling) continue;
+
+        const bool ownsOffer = attractionActive && i == offered;
+        if (!ownsOffer) {
+            if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting) releaseSoul(i);
+            else if (target.soulState == SoulState::Attracted) target.soulState = SoulState::Free;
+            if (target.soulState == SoulState::Free) {
+                target.ingestProgress = std::max(0.0f, target.ingestProgress - dt * SOUL_CAPTURE_DECAY);
+                target.capture = target.ingestProgress;
+            }
+            continue;
         }
-    } else {
-        target.capture = std::max(0.0f, target.capture - dt * 1.5f);
+
+        Vec3 toPull = pullPoint - target.pos;
+        const float distance = std::max(length(toPull), 0.001f);
+        const Vec3 direction = toPull * (1.0f / distance);
+
+        if (target.soulState == SoulState::Free) target.soulState = SoulState::Attracted;
+        if (target.soulState == SoulState::Attracted) {
+            const float proximity = 1.0f - clampf(distance / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
+            const float speed = vacuum.power * (3.2f + smooth01(proximity) * 5.8f + (distance <= SOUL_LATCH_DISTANCE ? 8.5f : 0.0f));
+            target.pos += direction * std::min(distance, speed * dt);
+            target.vel = {};
+            if (distance <= SOUL_LATCH_DISTANCE) {
+                target.soulState = SoulState::Latched;
+                target.latchPoint = pullPoint;
+            }
+            continue;
+        }
+
+        target.latchPoint = pullPoint;
+        Vec3 toSeal = target.latchPoint - target.pos;
+        const float sealDistance = length(toSeal);
+        const float phase = clampf(target.ingestProgress, 0.0f, 1.0f);
+        const float sealEase = smooth01(clampf((phase - 0.08f) / 0.24f, 0.0f, 1.0f));
+        const float pressureEase = smooth01(clampf((phase - 0.32f) / 0.46f, 0.0f, 1.0f));
+        const float popEase = smooth01(clampf((phase - 0.78f) / 0.22f, 0.0f, 1.0f));
+        const float latchSpeed = 7.0f + sealEase * 5.0f + popEase * 14.0f;
+        if (sealDistance > 0.001f) target.pos += normalized(toSeal) * std::min(sealDistance, latchSpeed * dt);
+        target.vel = {};
+
+        const bool sealed = sealDistance <= SOUL_SEAL_DISTANCE;
+        target.soulState = sealed ? SoulState::Ingesting : SoulState::Latched;
+        if (sealed) {
+            const float phaseRate = vacuum.power * (0.38f + sealEase * 0.55f + pressureEase * 0.85f + popEase * 2.25f);
+            target.ingestProgress = clampf(target.ingestProgress + dt * phaseRate, 0.0f, 1.0f);
+            target.health -= 0.028f * vacuum.power * dt;
+        }
+        target.capture = target.ingestProgress;
+        if (target.ingestProgress >= SOUL_CAPTURE_COMMIT_PHASE || target.health <= 0.0f) captureSoul(i);
     }
 }
 
@@ -469,37 +581,31 @@ void Game::updateBullets(float dt) {
     for (auto& bullet : state_.bullets) {
         if (!bullet.alive) continue;
         bullet.life -= dt;
+        bullet.vel.y -= BULLET_GRAVITY * dt;
+        const Vec3 previous = bullet.pos;
         bullet.pos += bullet.vel * dt;
-        if (bullet.life <= 0.0f || std::abs(bullet.pos.x) > ROOM_WIDTH || std::abs(bullet.pos.z) > ROOM_DEPTH) {
+        (void)previous;
+        if (bullet.life <= 0.0f || std::abs(bullet.pos.x) > ROOM_WIDTH * 1.25f || std::abs(bullet.pos.z) > ROOM_DEPTH * 1.25f || bullet.pos.y < -4.0f) {
             bullet.alive = false;
             continue;
         }
-
-        // The web game completes rooms by shooting stored souls into five
-        // wall-mounted goals. Goals get first claim on a projectile so a target
-        // standing in front of the wall cannot steal a valid slot hit.
         for (auto& capture : state_.captures) {
             if (capture.filled) continue;
             const Vec3 delta = bullet.pos - capture.pos;
-            if (std::abs(delta.x) < 0.9f &&
-                std::abs(delta.y) < 0.9f &&
-                std::abs(delta.z) < 0.75f) {
+            if (std::abs(delta.x) < 0.9f && std::abs(delta.y) < 0.9f && std::abs(delta.z) < 0.75f) {
                 capture.filled = true;
-                state_.player.battery = std::min(
-                    BATTERY_MAX,
-                    state_.player.battery + BATTERY_CAPTURE_GAIN
-                );
+                state_.player.battery = std::min(BATTERY_MAX, state_.player.battery + 6.0f);
                 bullet.alive = false;
                 break;
             }
         }
         if (!bullet.alive) continue;
-
         for (auto& target : state_.targets) {
             if (!target.alive) continue;
             if (distXZ(bullet.pos, target.pos) < 0.85f && std::abs(bullet.pos.y - target.pos.y) < 1.6f) {
-                target.slurpable = true;
                 target.armor = 0.0f;
+                target.slurpable = true;
+                target.soulState = SoulState::Free;
                 target.vel += normalized(target.pos - state_.player.pos) * 3.5f;
                 bullet.alive = false;
                 break;
@@ -511,9 +617,7 @@ void Game::updateBullets(float dt) {
 void Game::updateCaptures(float dt) {
     (void)dt;
     int filled = 0;
-    for (const auto& capture : state_.captures) {
-        if (capture.filled) filled += 1;
-    }
+    for (const auto& capture : state_.captures) if (capture.filled) ++filled;
     if (!state_.roomClear && filled >= CAPTURE_COUNT) {
         state_.roomClear = true;
         state_.roomIndex += 1;
