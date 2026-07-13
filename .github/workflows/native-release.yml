@@ -8,6 +8,8 @@ on:
       - 'native-desktop/**'
       - 'native-android/**'
       - 'tools/desktop/**'
+      - 'tools/release/**'
+      - 'tools/dbdev.ps1'
       - '.github/workflows/native-release.yml'
 
 permissions:
@@ -19,7 +21,7 @@ concurrency:
 
 jobs:
   windows:
-    name: Build Windows
+    name: Build and test Windows
     runs-on: windows-latest
 
     steps:
@@ -31,6 +33,24 @@ jobs:
 
       - name: Build desktop release
         run: cmake --build build/desktop-release --config Release --parallel
+
+      - name: Locate and smoke-test executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            'build/desktop-release/bin/Release/DigitalBreakdown.exe',
+            'build/desktop-release/bin/DigitalBreakdown.exe'
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
+
+          $output = & $exe --smoke-test 2>&1
+          $output | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "Desktop smoke test exited with $LASTEXITCODE." }
+          if (($output -join "`n") -notmatch 'SMOKE_TEST_OK') {
+            throw 'Desktop smoke test did not produce its success marker.'
+          }
 
       - name: Package Windows build
         shell: pwsh
@@ -52,6 +72,7 @@ jobs:
             shortCommit = '${{ github.sha }}'.Substring(0, 7)
             platform = 'windows-x64'
             configuration = 'Release'
+            portable = $true
             workflow = '${{ github.workflow }}'
             runId = '${{ github.run_id }}'
             builtAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -68,8 +89,14 @@ jobs:
           retention-days: 30
 
   android:
-    name: Build Android
+    name: Build and inspect Android
     runs-on: ubuntu-latest
+
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Checkout source
@@ -90,20 +117,56 @@ jobs:
       - name: Write Android SDK path
         run: echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
 
-      - name: Build native APK
-        run: ./android/gradlew -p native-android assembleDebug --stacktrace
+      - name: Configure signing and build variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" && -n "${ANDROID_KEYSTORE_PASSWORD}" && -n "${ANDROID_KEY_ALIAS}" && -n "${ANDROID_KEY_PASSWORD}" ]]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/digital-breakdown.keystore"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/digital-breakdown.keystore" >> "$GITHUB_ENV"
+            echo "ANDROID_BUILD_VARIANT=release" >> "$GITHUB_ENV"
+            echo "Android release signing is configured."
+          else
+            echo "ANDROID_BUILD_VARIANT=debug" >> "$GITHUB_ENV"
+            echo "Android signing secrets are absent; publishing a debug test APK."
+          fi
 
-      - name: Package Android build
+      - name: Build native APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$ANDROID_BUILD_VARIANT" == "release" ]]; then
+            ./android/gradlew -p native-android assembleRelease --stacktrace
+          else
+            ./android/gradlew -p native-android assembleDebug --stacktrace
+          fi
+
+      - name: Package and inspect Android build
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp native-android/app/build/outputs/apk/debug/app-debug.apk dist/DigitalBreakdown-Android.apk
+
+          if [[ "$ANDROID_BUILD_VARIANT" == "release" ]]; then
+            APK="native-android/app/build/outputs/apk/release/app-release.apk"
+          else
+            APK="native-android/app/build/outputs/apk/debug/app-debug.apk"
+          fi
+
+          test -f "$APK"
+          unzip -l "$APK" > dist/apk-contents.txt
+          grep -q 'lib/armeabi-v7a/libdigitalbreakdown.so' dist/apk-contents.txt
+          grep -q 'AndroidManifest.xml' dist/apk-contents.txt
+
+          cp "$APK" dist/DigitalBreakdown-Android.apk
+          printf '%s\n' "$ANDROID_BUILD_VARIANT" > dist/android-variant.txt
           cat > dist/android-build-info.json <<EOF
           {
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${GITHUB_SHA::7}",
             "platform": "android-armeabi-v7a",
-            "configuration": "Debug",
+            "configuration": "${ANDROID_BUILD_VARIANT}",
+            "signed": $([[ "$ANDROID_BUILD_VARIANT" == "release" ]] && echo true || echo false),
             "applicationId": "com.indrolend.digitalbreakdown.native",
             "workflow": "${GITHUB_WORKFLOW}",
             "runId": "${GITHUB_RUN_ID}"
@@ -117,6 +180,8 @@ jobs:
           path: |
             dist/DigitalBreakdown-Android.apk
             dist/android-build-info.json
+            dist/android-variant.txt
+            dist/apk-contents.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -147,13 +212,14 @@ jobs:
           WINDOWS_SHA=$(sha256sum DigitalBreakdown-Windows.zip | awk '{print $1}')
           ANDROID_SHA=$(sha256sum DigitalBreakdown-Android.apk | awk '{print $1}')
           SHORT_SHA="${GITHUB_SHA::7}"
+          ANDROID_VARIANT=$(cat android-variant.txt)
           RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
 
           sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk > checksums.txt
 
           cat > build-manifest.json <<EOF
           {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${SHORT_SHA}",
             "channel": "latest-native",
@@ -162,12 +228,15 @@ jobs:
             "windows": {
               "available": true,
               "architecture": "x64",
+              "configuration": "Release",
+              "portable": true,
               "url": "${RELEASE_BASE}/DigitalBreakdown-Windows.zip",
               "sha256": "${WINDOWS_SHA}"
             },
             "android": {
               "available": true,
               "architecture": "armeabi-v7a",
+              "configuration": "${ANDROID_VARIANT}",
               "applicationId": "com.indrolend.digitalbreakdown.native",
               "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk",
               "sha256": "${ANDROID_SHA}"
@@ -185,6 +254,7 @@ jobs:
             release/build-manifest.json
             release/checksums.txt
             release/android-build-info.json
+            release/apk-contents.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -195,6 +265,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/latest-native" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest-native" \
+              -f sha="${GITHUB_SHA}" \
+              -F force=true >/dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref='refs/tags/latest-native' \
+              -f sha="${GITHUB_SHA}" >/dev/null
+          fi
+
           if gh release view latest-native --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit latest-native \
               --repo "$GITHUB_REPOSITORY" \
