@@ -258,8 +258,9 @@ internal sealed class DevForm : Form
         {
             busy = false;
             SetButtonsEnabled(true);
-            await RefreshStatusAsync();
         }
+
+        await RefreshStatusAsync();
     }
 
     private Task<CommandResult> InvokeDbdevAsync(string command)
