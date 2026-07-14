@@ -1,72 +1,46 @@
-# Digital Breakdown native parity contract
+﻿# Digital Breakdown Native Parity
 
-## Authoritative browser implementation
+## Authoritative Browser Reference
 
-The only authoritative browser source for native parity is:
+The authoritative browser implementation is committed inside this repository:
 
-`reference/browser-pass7/index_module.mjs`
+reference/browser-pass7/index_module.mjs
 
-The authoritative source repository is:
+Do not use any files under:
 
-`https://github.com/indrolend/digitalbreakdownreference`
+www/runtimes/
 
-Before analysis, run:
+as behavioral references.
 
-`powershell -ExecutionPolicy Bypass -File tools/ai/sync-browser-reference.ps1`
+Those are historical implementations only.
 
-On non-Windows shells, run:
+## Goal
 
-`git clone --depth 1 https://github.com/indrolend/digitalbreakdownreference.git reference/browser-pass7`
+Translate the browser runtime into shared native C++ while preserving observable behavior.
 
-Do not use these older files as behavioral specifications:
+Do not redesign mechanics.
 
-- `www/runtimes/stylo-v2.3-sticks.mjs`
-- `www/runtimes/stylo-v2.mjs`
-- any other browser prototype under `www/`
+## Rules
 
-They may be inspected for historical context only.
-
-## Native destination
-
-Shared gameplay code:
-
-`native-android/app/src/main/cpp/game/`
-
-Desktop renderer:
-
-`native-desktop/`
-
-Android renderer:
-
-`native-android/app/src/main/cpp/`
-
-## Translation rules
-
-1. Translate observable behavior from the authoritative Pass 7 source.
-2. Preserve constants, state transitions, coordinate conventions, and update order.
-3. Inspect complete function bodies and all transitive dependencies before editing.
-4. Do not redesign mechanics.
-5. Do not introduce behavior based on older runtimes.
-6. Keep gameplay behavior shared between Windows and Android.
-7. Work only on the explicitly requested subsystem.
-8. Do not claim parity merely because code compiles.
-9. Do not embed a WebView, JavaScript runtime, or Three.js into the finished native game.
-10. If the reference sync fails, stop and report the failure instead of substituting an older runtime.
+- Preserve constants.
+- Preserve update order.
+- Preserve state transitions.
+- Preserve coordinate conventions.
+- Preserve input semantics.
+- Preserve observable behavior.
+- Only modify the requested subsystem.
+- Do not touch unrelated gameplay.
+- Gameplay simulation should remain shared between desktop and Android.
+- Do not embed JavaScript or Three.js into the native runtime.
 
 ## Validation
 
-Run:
+Before editing, verify that:
 
-`powershell -ExecutionPolicy Bypass -File tools/dbdev.ps1 desktop-build`
+reference/browser-pass7/index_module.mjs
 
-Then run:
+exists.
 
-`powershell -ExecutionPolicy Bypass -File tools/dbdev.ps1 desktop-smoke`
+Inspect the browser implementation before changing native code.
 
-Report:
-
-- exact browser functions inspected
-- constants and state fields translated
-- files changed
-- build and test results
-- remaining approximations
+Do not substitute another runtime if this file exists.
