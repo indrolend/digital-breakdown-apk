@@ -18,12 +18,15 @@ $StatePath = Join-Path $StateRoot 'release-state.json'
 
 New-Item -ItemType Directory -Force -Path $StateRoot, $DownloadRoot, $ReleaseRoot | Out-Null
 
+function Write-ProgressEvent {
+    param([int]$Percent, [string]$Message)
+    Write-Output ("@@DBPROGRESS|{0}|{1}" -f ([Math]::Max(0, [Math]::Min(100, $Percent))), $Message)
+}
+
 function Get-Manifest {
     $uri = "$ManifestUrl?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
     $manifest = Invoke-RestMethod -UseBasicParsing -Uri $uri -TimeoutSec 20
-    if (-not $manifest.commit -or -not $manifest.shortCommit) {
-        throw 'Release manifest is missing commit identity.'
-    }
+    if (-not $manifest.commit -or -not $manifest.shortCommit) { throw 'Release manifest is missing commit identity.' }
     return $manifest
 }
 
@@ -31,19 +34,28 @@ function Get-VerifiedFile {
     param(
         [Parameter(Mandatory)] [string]$Url,
         [Parameter(Mandatory)] [string]$ExpectedSha256,
-        [Parameter(Mandatory)] [string]$Destination
+        [Parameter(Mandatory)] [string]$Destination,
+        [Parameter(Mandatory)] [int]$StartPercent,
+        [Parameter(Mandatory)] [int]$EndPercent,
+        [Parameter(Mandatory)] [string]$Label
     )
 
     $expected = $ExpectedSha256.ToLowerInvariant()
     if ((Test-Path $Destination) -and -not $Force) {
+        Write-ProgressEvent $StartPercent "Verifying cached $Label"
         $existing = (Get-FileHash $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($existing -eq $expected) { return $Destination }
+        if ($existing -eq $expected) {
+            Write-ProgressEvent $EndPercent "$Label already downloaded and verified"
+            return $Destination
+        }
     }
 
+    Write-ProgressEvent $StartPercent "Downloading $Label"
     $temp = "$Destination.download"
     Remove-Item $temp -Force -ErrorAction SilentlyContinue
     Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $temp -TimeoutSec 180
 
+    Write-ProgressEvent ([Math]::Max($StartPercent, $EndPercent - 5)) "Verifying $Label checksum"
     $actual = (Get-FileHash $temp -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $expected) {
         Remove-Item $temp -Force -ErrorAction SilentlyContinue
@@ -51,12 +63,12 @@ function Get-VerifiedFile {
     }
 
     Move-Item $temp $Destination -Force
+    Write-ProgressEvent $EndPercent "$Label downloaded and verified"
     return $Destination
 }
 
 function Save-State {
     param([object]$Manifest, [hashtable]$Installed)
-
     [pscustomobject]@{
         schemaVersion = 1
         commit = [string]$Manifest.commit
@@ -67,15 +79,18 @@ function Save-State {
     } | ConvertTo-Json -Depth 8 | Set-Content -Path $StatePath -Encoding UTF8
 }
 
+Write-ProgressEvent 4 'Checking latest native release'
 $manifest = Get-Manifest
+Write-ProgressEvent 14 "Release $($manifest.shortCommit) found"
 $installed = @{}
 
 if ($Platform -in @('Windows','All')) {
     if (-not $manifest.windows.available) { throw 'Windows release is not available.' }
 
     $zip = Join-Path $DownloadRoot "DigitalBreakdown-Windows-$($manifest.shortCommit).zip"
-    Get-VerifiedFile -Url ([string]$manifest.windows.url) -ExpectedSha256 ([string]$manifest.windows.sha256) -Destination $zip | Out-Null
+    Get-VerifiedFile -Url ([string]$manifest.windows.url) -ExpectedSha256 ([string]$manifest.windows.sha256) -Destination $zip -StartPercent 20 -EndPercent 58 -Label 'Windows release' | Out-Null
 
+    Write-ProgressEvent 65 'Preparing Windows release files'
     $target = Join-Path $ReleaseRoot "$($manifest.shortCommit)\windows"
     $exe = Join-Path $target 'DigitalBreakdown.exe'
     if ($Force -or -not (Test-Path $exe)) {
@@ -93,6 +108,7 @@ if ($Platform -in @('Windows','All')) {
         Remove-Item $tempTarget -Recurse -Force -ErrorAction SilentlyContinue
         $exe = Join-Path $target 'DigitalBreakdown.exe'
     }
+    Write-ProgressEvent 82 'Windows release ready'
 
     $installed.windows = [pscustomobject]@{
         path = $exe
@@ -100,6 +116,7 @@ if ($Platform -in @('Windows','All')) {
     }
 
     if ($Launch) {
+        Write-ProgressEvent 92 'Launching latest Windows release'
         Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe)
     }
 }
@@ -108,7 +125,9 @@ if ($Platform -in @('Android','All')) {
     if (-not $manifest.android.available) { throw 'Android release is not available.' }
 
     $apk = Join-Path $DownloadRoot "DigitalBreakdown-Android-$($manifest.shortCommit).apk"
-    Get-VerifiedFile -Url ([string]$manifest.android.url) -ExpectedSha256 ([string]$manifest.android.sha256) -Destination $apk | Out-Null
+    $start = if ($Platform -eq 'All') { 60 } else { 20 }
+    $end = if ($Platform -eq 'All') { 88 } else { 86 }
+    Get-VerifiedFile -Url ([string]$manifest.android.url) -ExpectedSha256 ([string]$manifest.android.sha256) -Destination $apk -StartPercent $start -EndPercent $end -Label 'Android release' | Out-Null
 
     $installed.android = [pscustomobject]@{
         path = $apk
@@ -117,7 +136,9 @@ if ($Platform -in @('Android','All')) {
     }
 }
 
+Write-ProgressEvent 96 'Saving release state'
 Save-State -Manifest $manifest -Installed $installed
+Write-ProgressEvent 100 $(if ($Launch) { 'Latest release launched' } else { 'Release download complete' })
 
 [pscustomobject]@{
     commit = [string]$manifest.commit
