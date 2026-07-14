@@ -15,6 +15,8 @@ internal sealed class DevForm : Form
     private readonly Label androidLabel = new Label();
     private readonly Label releaseLabel = new Label();
     private readonly Label operationLabel = new Label();
+    private readonly Label percentLabel = new Label();
+    private readonly ProgressBar progressBar = new ProgressBar();
     private readonly TextBox outputBox = new TextBox();
     private readonly Panel advancedPanel = new Panel();
     private readonly Button advancedToggle = new Button();
@@ -27,15 +29,15 @@ internal sealed class DevForm : Form
 
         Text = "Digital Breakdown Dev";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(620, 690);
-        MinimumSize = new Size(620, 690);
+        ClientSize = new Size(620, 742);
+        MinimumSize = new Size(620, 742);
         BackColor = Color.FromArgb(9, 14, 11);
         ForeColor = Color.FromArgb(166, 255, 186);
         Font = new Font("Consolas", 10.0f, FontStyle.Regular);
         FormBorderStyle = FormBorderStyle.Sizable;
 
         BuildUi();
-        Shown += async delegate { await RefreshStatusAsync(); };
+        Shown += async delegate { await RefreshStatusAsync(false); };
     }
 
     private void BuildUi()
@@ -77,32 +79,50 @@ internal sealed class DevForm : Form
         statusPanel.Controls.Add(releaseLabel);
 
         var runDesktop = MakePrimaryButton("RUN LOCAL DESKTOP", 238);
-        runDesktop.Click += async delegate { await RunCommandAsync("desktop-run", "Building and launching local desktop..."); };
+        runDesktop.Click += async delegate { await RunCommandAsync("desktop-run", "Starting local desktop workflow..."); };
         Controls.Add(runDesktop);
 
         var testAndroid = MakePrimaryButton("TEST ON STYLO 4", 302);
-        testAndroid.Click += async delegate { await RunCommandAsync("android-stream", "Building, installing, and streaming Android..."); };
+        testAndroid.Click += async delegate { await RunCommandAsync("android-stream", "Starting Stylo 4 workflow..."); };
         Controls.Add(testAndroid);
 
         var runRelease = MakePrimaryButton("RUN LATEST RELEASE", 366);
-        runRelease.Click += async delegate { await RunCommandAsync("release-windows", "Downloading and launching verified release..."); };
+        runRelease.Click += async delegate { await RunCommandAsync("release-windows", "Checking latest published release..."); };
         Controls.Add(runRelease);
 
         operationLabel.Text = "READY";
         operationLabel.AutoSize = false;
         operationLabel.TextAlign = ContentAlignment.MiddleLeft;
-        operationLabel.Location = new Point(24, 431);
-        operationLabel.Size = new Size(570, 28);
+        operationLabel.Location = new Point(24, 428);
+        operationLabel.Size = new Size(500, 28);
         operationLabel.ForeColor = Color.FromArgb(110, 175, 125);
         operationLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         Controls.Add(operationLabel);
+
+        percentLabel.Text = "0%";
+        percentLabel.AutoSize = false;
+        percentLabel.TextAlign = ContentAlignment.MiddleRight;
+        percentLabel.Location = new Point(524, 428);
+        percentLabel.Size = new Size(70, 28);
+        percentLabel.ForeColor = ForeColor;
+        percentLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        Controls.Add(percentLabel);
+
+        progressBar.Location = new Point(24, 460);
+        progressBar.Size = new Size(570, 22);
+        progressBar.Minimum = 0;
+        progressBar.Maximum = 100;
+        progressBar.Value = 0;
+        progressBar.Style = ProgressBarStyle.Continuous;
+        progressBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        Controls.Add(progressBar);
 
         advancedToggle.Text = "ADVANCED +";
         advancedToggle.FlatStyle = FlatStyle.Flat;
         advancedToggle.FlatAppearance.BorderColor = Color.FromArgb(72, 125, 82);
         advancedToggle.BackColor = BackColor;
         advancedToggle.ForeColor = ForeColor;
-        advancedToggle.Location = new Point(24, 468);
+        advancedToggle.Location = new Point(24, 498);
         advancedToggle.Size = new Size(570, 36);
         advancedToggle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         advancedToggle.Click += delegate
@@ -112,15 +132,15 @@ internal sealed class DevForm : Form
         };
         Controls.Add(advancedToggle);
 
-        advancedPanel.Location = new Point(24, 512);
+        advancedPanel.Location = new Point(24, 542);
         advancedPanel.Size = new Size(570, 55);
         advancedPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         advancedPanel.Visible = false;
         Controls.Add(advancedPanel);
 
-        AddAdvancedButton("REFRESH", 0, async delegate { await RefreshStatusAsync(); });
+        AddAdvancedButton("REFRESH", 0, async delegate { await RefreshStatusAsync(false); });
         AddAdvancedButton("SYNC", 114, async delegate { await RunCommandAsync("sync", "Syncing GitHub main..."); });
-        AddAdvancedButton("DIAGNOSTICS", 228, async delegate { await RunCommandAsync("diagnostics", "Collecting diagnostics..."); });
+        AddAdvancedButton("DOCTOR", 228, async delegate { await RunCommandAsync("doctor", "Inspecting development environment..."); });
         AddAdvancedButton("OPEN LOGS", 342, delegate { OpenLogs(); return Task.CompletedTask; });
         AddAdvancedButton("ACTIONS", 456, delegate { OpenUrl("https://github.com/indrolend/digital-breakdown-apk/actions/workflows/native-release.yml"); return Task.CompletedTask; });
 
@@ -131,8 +151,8 @@ internal sealed class DevForm : Form
         outputBox.ForeColor = Color.FromArgb(138, 215, 154);
         outputBox.BorderStyle = BorderStyle.FixedSingle;
         outputBox.Font = new Font("Consolas", 9.0f);
-        outputBox.Location = new Point(24, 578);
-        outputBox.Size = new Size(570, 86);
+        outputBox.Location = new Point(24, 608);
+        outputBox.Size = new Size(570, 108);
         outputBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         Controls.Add(outputBox);
     }
@@ -181,7 +201,7 @@ internal sealed class DevForm : Form
         advancedPanel.Controls.Add(button);
     }
 
-    private async Task RefreshStatusAsync()
+    private async Task RefreshStatusAsync(bool preserveOutput)
     {
         if (busy) return;
         if (repoRoot == null || !File.Exists(dbdevPath))
@@ -194,10 +214,10 @@ internal sealed class DevForm : Form
             return;
         }
 
-        var result = await InvokeDbdevAsync("status");
-        outputBox.Text = result.Output;
+        var result = await InvokeDbdevAsync("status", null);
+        if (!preserveOutput) outputBox.Text = result.Output;
         ParseStatus(result.Output);
-        operationLabel.Text = result.ExitCode == 0 ? "READY" : "STATUS FAILED";
+        if (!preserveOutput) operationLabel.Text = result.ExitCode == 0 ? "READY" : "STATUS FAILED";
     }
 
     private void ParseStatus(string output)
@@ -227,7 +247,7 @@ internal sealed class DevForm : Form
         return null;
     }
 
-    private async Task RunCommandAsync(string command, string progress)
+    private async Task RunCommandAsync(string command, string initialMessage)
     {
         if (busy) return;
         if (repoRoot == null || !File.Exists(dbdevPath))
@@ -238,20 +258,25 @@ internal sealed class DevForm : Form
 
         busy = true;
         SetButtonsEnabled(false);
-        operationLabel.Text = progress;
         outputBox.Clear();
+        SetProgress(0, initialMessage);
 
         try
         {
-            var result = await InvokeDbdevAsync(command);
-            outputBox.Text = result.Output;
-            operationLabel.Text = result.ExitCode == 0 ? "SUCCESS" : "FAILED — SEE OUTPUT";
-            if (result.ExitCode != 0)
+            var result = await InvokeDbdevAsync(command, ProcessLiveLine);
+            if (result.ExitCode == 0)
+            {
+                SetProgress(100, "SUCCESS");
+            }
+            else
+            {
+                operationLabel.Text = "FAILED — SEE OUTPUT";
                 MessageBox.Show(this, result.Output, "Operation failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
         catch (Exception ex)
         {
-            outputBox.Text = ex.ToString();
+            AppendOutputLine(ex.ToString());
             operationLabel.Text = "FAILED — SEE OUTPUT";
         }
         finally
@@ -260,10 +285,50 @@ internal sealed class DevForm : Form
             SetButtonsEnabled(true);
         }
 
-        await RefreshStatusAsync();
+        await RefreshStatusAsync(true);
     }
 
-    private Task<CommandResult> InvokeDbdevAsync(string command)
+    private void ProcessLiveLine(string line)
+    {
+        if (string.IsNullOrEmpty(line)) return;
+        if (line.StartsWith("@@DBPROGRESS|", StringComparison.Ordinal))
+        {
+            string[] parts = line.Split(new[] { '|' }, 3);
+            int percent;
+            if (parts.Length == 3 && int.TryParse(parts[1], out percent))
+                SetProgress(percent, parts[2]);
+            return;
+        }
+        AppendOutputLine(line);
+    }
+
+    private void SetProgress(int percent, string message)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action<int, string>(SetProgress), percent, message);
+            return;
+        }
+        int bounded = Math.Max(0, Math.Min(100, percent));
+        progressBar.Value = bounded;
+        percentLabel.Text = bounded.ToString() + "%";
+        operationLabel.Text = message;
+    }
+
+    private void AppendOutputLine(string line)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action<string>(AppendOutputLine), line);
+            return;
+        }
+        if (outputBox.TextLength > 0) outputBox.AppendText(Environment.NewLine);
+        outputBox.AppendText(line);
+        outputBox.SelectionStart = outputBox.TextLength;
+        outputBox.ScrollToCaret();
+    }
+
+    private Task<CommandResult> InvokeDbdevAsync(string command, Action<string> onLine)
     {
         return Task.Run(delegate
         {
@@ -279,13 +344,35 @@ internal sealed class DevForm : Form
             };
 
             var sb = new StringBuilder();
+            object sync = new object();
             using (var process = new Process { StartInfo = psi })
             {
+                DataReceivedEventHandler handler = delegate(object sender, DataReceivedEventArgs args)
+                {
+                    if (args.Data == null) return;
+                    bool progressLine = args.Data.StartsWith("@@DBPROGRESS|", StringComparison.Ordinal);
+                    if (!progressLine)
+                    {
+                        lock (sync)
+                        {
+                            if (sb.Length > 0) sb.AppendLine();
+                            sb.Append(args.Data);
+                        }
+                    }
+                    if (onLine != null) onLine(args.Data);
+                };
+
+                process.OutputDataReceived += handler;
+                process.ErrorDataReceived += handler;
                 process.Start();
-                sb.Append(process.StandardOutput.ReadToEnd());
-                sb.Append(process.StandardError.ReadToEnd());
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
                 process.WaitForExit();
-                return new CommandResult(process.ExitCode, sb.ToString().Trim());
+                process.WaitForExit();
+
+                string output;
+                lock (sync) output = sb.ToString().Trim();
+                return new CommandResult(process.ExitCode, output);
             }
         });
     }
