@@ -19,6 +19,7 @@ $StateRoot = Join-Path $env:LOCALAPPDATA 'DigitalBreakdownDev'
 $StatePath = Join-Path $StateRoot 'desktop-build.json'
 $LogDir = Join-Path $StateRoot 'logs'
 $BuildLog = Join-Path $LogDir 'last-desktop-build.log'
+$CMakeBootstrap = Join-Path $RepoRoot 'tools\bootstrap\ensure-cmake.ps1'
 
 New-Item -ItemType Directory -Force -Path $BuildDir, $StateRoot, $LogDir | Out-Null
 
@@ -26,20 +27,56 @@ function Resolve-CMake {
     $command = Get-Command cmake -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
 
+    $portable = Join-Path $env:LOCALAPPDATA 'DigitalBreakdownDev\tools\cmake-3.31.6\bin\cmake.exe'
+    if (Test-Path $portable) { return $portable }
+
     $candidates = @(
         "$env:ProgramFiles\CMake\bin\cmake.exe",
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-    )
+        "${env:ProgramFiles(x86)}\CMake\bin\cmake.exe"
+    ) | Where-Object { $_ -and (Test-Path $_) }
 
-    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($candidates.Count -gt 0) { return $candidates[0] }
+
+    $visualStudioRoots = @(
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio'),
+        $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio' })
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    foreach ($root in $visualStudioRoots) {
+        $matches = Get-ChildItem -Path $root -Filter cmake.exe -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'CommonExtensions[\\/]Microsoft[\\/]CMake[\\/]CMake[\\/]bin[\\/]cmake\.exe$' } |
+            Select-Object -First 1
+        if ($matches) { return $matches.FullName }
+    }
+
+    return $null
 }
 
 $CMake = Resolve-CMake
 if (-not $CMake) {
-    throw 'CMake was not found. Install CMake or the Visual Studio C++ CMake tools.'
+    if (-not (Test-Path $CMakeBootstrap)) {
+        throw 'CMake was not found and the portable CMake bootstrap script is missing.'
+    }
+
+    $bootstrapOutput = @(& $CMakeBootstrap)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Portable CMake setup failed.'
+    }
+
+    $CMake = $bootstrapOutput |
+        Where-Object { $_ -is [string] -and $_ -match 'cmake\.exe$' -and (Test-Path $_) } |
+        Select-Object -Last 1
+
+    if (-not $CMake) {
+        $CMake = Resolve-CMake
+    }
 }
+
+if (-not $CMake -or -not (Test-Path $CMake)) {
+    throw 'CMake could not be resolved after automatic setup.'
+}
+
+Write-Host "Using CMake: $CMake" -ForegroundColor DarkGray
 
 if ($Reconfigure -and (Test-Path $BuildDir)) {
     Remove-Item $BuildDir -Recurse -Force
