@@ -1,0 +1,16 @@
+Digital Breakdown JavaScript Reference
+
+Variant: Pass 7 - Lab/Phone Only
+Source: Copy of Data-game-chicken-animation-split-pass7.zip
+
+Removed:
+- Chicken avatar model, textures, animation split and controls
+- City room identity and retexturing
+- Ant enemy presentation and unused ant asset files
+- Obsolete JavaScript snapshots not loaded by index.html
+
+Preserved:
+- Original lab room presentation
+- Phone player avatar
+- Human enemies
+- Gameplay, room looping, combat, vacuum, battery, goals, audio and UI
