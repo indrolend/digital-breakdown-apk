@@ -142,6 +142,15 @@ struct PlayerDebugState {
     float supportY = 0.08f;
     float localZ = 0.0f;
     float horizontalSpeed = 0.0f;
+    float cameraYaw = 0.0f;
+    float cameraPitch = 0.0f;
+    int cameraMode = 0;
+    float phoneYaw = 0.0f;
+    float phonePitch = 0.0f;
+    float phoneRoll = 0.0f;
+    float phoneLift = 0.0f;
+    float phoneForward = 0.0f;
+    float phoneSide = 0.0f;
     int colliderCount = 0;
 };
 
