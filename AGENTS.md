@@ -6,9 +6,17 @@ The only authoritative browser source for native parity is:
 
 `reference/browser-pass7/index_module.mjs`
 
-The reference is pinned as a Git submodule to:
+The authoritative source repository is:
 
 `https://github.com/indrolend/digitalbreakdownreference`
+
+Before analysis, run:
+
+`powershell -ExecutionPolicy Bypass -File tools/ai/sync-browser-reference.ps1`
+
+On non-Windows shells, run:
+
+`git clone --depth 1 https://github.com/indrolend/digitalbreakdownreference.git reference/browser-pass7`
 
 Do not use these older files as behavioral specifications:
 
@@ -43,7 +51,7 @@ Android renderer:
 7. Work only on the explicitly requested subsystem.
 8. Do not claim parity merely because code compiles.
 9. Do not embed a WebView, JavaScript runtime, or Three.js into the finished native game.
-10. Initialize the submodule before analysis with `git submodule update --init --recursive`.
+10. If the reference sync fails, stop and report the failure instead of substituting an older runtime.
 
 ## Validation
 
