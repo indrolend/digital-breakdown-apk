@@ -99,10 +99,10 @@ void DesktopRenderer::draw(const GameState& state) const {
     if (!state.camera.firstPerson) {
         const Vec3 forward={-std::sin(state.player.yaw),0,-std::cos(state.player.yaw)};
         const Vec3 right={std::cos(state.player.yaw),0,-std::sin(state.player.yaw)};
-        Vec3 phonePos=state.player.pos + Vec3{0,0.34f+state.phonePose.lift,0} + forward*state.phonePose.forward + right*state.phonePose.side;
+        Vec3 phonePos=state.player.pos + Vec3{0,state.phonePose.lift,0} + forward*state.phonePose.forward + right*state.phonePose.side;
         const float phoneYaw=state.player.yaw+state.phonePose.yaw;
-        drawBox(phonePos,{0.85f,1.35f,0.16f},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.04f,0.05f,0.05f);
-        drawBox(phonePos+forward*0.095f,{0.62f,0.92f,0.035f},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.16f,0.92f,0.35f);
+        drawBox(phonePos,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.04f,0.05f,0.05f);
+        drawBox(phonePos+forward*PHONE_SCREEN_Z_OFFSET,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.16f,0.92f,0.35f);
     }
 
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;

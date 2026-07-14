@@ -206,11 +206,11 @@ void Renderer::draw(const GameState& state) {
     if (!state.camera.firstPerson) {
         const Vec3 forward{-std::sin(state.player.yaw), 0.0f, -std::cos(state.player.yaw)};
         const Vec3 right{std::cos(state.player.yaw), 0.0f, -std::sin(state.player.yaw)};
-        const Vec3 phonePos = state.player.pos + Vec3{0.0f, 0.34f + state.phonePose.lift, 0.0f}
+        const Vec3 phonePos = state.player.pos + Vec3{0.0f, state.phonePose.lift, 0.0f}
             + forward * state.phonePose.forward + right * state.phonePose.side;
         const float phoneYaw = state.player.yaw + state.phonePose.yaw;
-        drawBox(viewProj, phonePos, {0.85f, 1.35f, 0.16f}, phoneYaw, phoneBody);
-        drawBox(viewProj, phonePos + forward * 0.095f, {0.62f, 0.92f, 0.035f}, phoneYaw, phoneScreen);
+        drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH, PHONE_BODY_HEIGHT, PHONE_BODY_DEPTH}, phoneYaw, phoneBody);
+        drawBox(viewProj, phonePos + forward * PHONE_SCREEN_Z_OFFSET, {PHONE_SCREEN_WIDTH, PHONE_SCREEN_HEIGHT, PHONE_SCREEN_DEPTH}, phoneYaw, phoneScreen);
     }
 
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};

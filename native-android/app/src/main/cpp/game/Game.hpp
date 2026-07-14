@@ -8,6 +8,14 @@ constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 5;
 constexpr int BULLET_COUNT = 30;
 constexpr int ROOM_COLLIDER_COUNT = 15;
+constexpr float PHONE_MODEL_HEIGHT = 0.16f;
+constexpr float PHONE_BODY_WIDTH = 0.08f;
+constexpr float PHONE_BODY_HEIGHT = PHONE_MODEL_HEIGHT;
+constexpr float PHONE_BODY_DEPTH = 0.012f;
+constexpr float PHONE_SCREEN_WIDTH = 0.07f;
+constexpr float PHONE_SCREEN_HEIGHT = 0.125f;
+constexpr float PHONE_SCREEN_DEPTH = 0.002f;
+constexpr float PHONE_SCREEN_Z_OFFSET = 0.007f;
 
 enum class SoulState : unsigned char {
     Free,
