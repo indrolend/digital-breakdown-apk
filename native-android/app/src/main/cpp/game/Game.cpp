@@ -390,8 +390,8 @@ void Game::updatePlayer(float dt) {
     else if (p.pos.x > maxX) { p.pos.x = maxX; if (p.vel.x > 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
     const float friction = p.grounded ? GROUND_FRICTION : AIR_FRICTION;
     p.vel *= std::pow(friction, dt * 60.0f);
-    if (lengthSq(move) > 0.01f) p.targetYaw = std::atan2(-move.x, -move.z);
-    p.yaw = approachAngle(p.yaw, p.targetYaw, dt * 12.0f);
+    p.targetYaw = state_.camera.yaw;
+    p.yaw = state_.camera.yaw;
     updatePhoneGait(dt, running);
     state_.debug.supportY = supportAfter;
     state_.debug.localZ = wrapZ(p.pos.z);
