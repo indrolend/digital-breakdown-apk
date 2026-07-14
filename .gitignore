@@ -1,5 +1,8 @@
 ﻿node_modules/
 
+/build/
+/DigitalBreakdownDev.exe
+
 android/.gradle/
 android/build/
 android/app/build/
