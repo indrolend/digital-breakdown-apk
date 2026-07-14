@@ -189,6 +189,7 @@ public:
     void update(float dt);
     void setKey(int keyCode, bool down);
     void setTouch(int action, float x, float y, int pointerCount);
+    void clearInputState();
     void setTouchControls(
         float moveX,
         float moveZ,
@@ -236,6 +237,7 @@ private:
     void resolvePlayerObstacleCollisions();
     void applyWallClimb(float dt);
     void updateRoomTopology(float previousZ, float currentZ);
+    float getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const;
     void constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const;
     bool isInsideDoorAperture(const Vec3& position, float pad = 0.0f) const;
     void clampRoom(Vec3& pos);

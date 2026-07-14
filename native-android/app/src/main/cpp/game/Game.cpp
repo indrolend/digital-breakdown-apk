@@ -35,6 +35,12 @@ constexpr float WALL_CLIMB_MAX_HEIGHT = 1.25f;
 constexpr float WALL_CLIMB_PUSH_DOT = -0.18f;
 constexpr float CEILING_CLEARANCE = 0.42f;
 constexpr float PLAYER_CEILING_BODY_CLEARANCE = 0.42f;
+constexpr float PLAYER_COLLISION_RADIUS = 0.34f;
+constexpr float PLAYER_SUPPORT_RADIUS = 0.34f;
+constexpr float WALL_CLIMB_RADIUS = 0.34f;
+constexpr float CAMERA_COLLISION_RADIUS = 0.42f;
+constexpr float CAMERA_COLLISION_BACKOFF = 0.16f;
+
 
 constexpr float VACUUM_MOVE_MULT = 0.35f;
 constexpr float VACUUM_CHARGE_SPEED = 3.5f;
@@ -190,6 +196,24 @@ void Game::setKey(int keyCode, bool down) {
     if (keyCode == KEY_C && down) input.cameraTogglePressed = true;
 }
 
+void Game::clearInputState() {
+    InputState& input = state_.input;
+    input.forward = false;
+    input.back = false;
+    input.left = false;
+    input.right = false;
+    input.sprint = false;
+    input.jumpHeld = false;
+    input.primaryHeld = false;
+    input.touchPrimaryHeld = false;
+    input.touchSprint = false;
+    input.touchMoveX = 0.0f;
+    input.touchMoveZ = 0.0f;
+    input.lookDeltaX = 0.0f;
+    input.lookDeltaY = 0.0f;
+    input.touching = false;
+}
+
 void Game::setTouch(int action, float x, float y, int pointerCount) {
     (void)pointerCount;
     InputState& input = state_.input;
@@ -259,7 +283,7 @@ float Game::getPlayerCeilingLimit() const {
 
 float Game::getPlayerSupportY(float x, float z) const {
     float supportY = GROUND_Y;
-    const float radius = 0.34f;
+    const float radius = PLAYER_SUPPORT_RADIUS;
     const float localZ = wrapZ(z);
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
@@ -271,7 +295,7 @@ float Game::getPlayerSupportY(float x, float z) const {
 
 void Game::resolvePlayerObstacleCollisions() {
     PlayerState& player = state_.player;
-    const float radius = 0.34f;
+    const float radius = PLAYER_COLLISION_RADIUS;
     const float tileOriginZ = getRoomTileOriginZ(getRoomTileIndex(player.pos.z));
     float localPlayerZ = player.pos.z - tileOriginZ;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
@@ -303,7 +327,7 @@ void Game::applyWallClimb(float dt) {
     Vec3 intent = cameraForwardFlat() * forwardAxis + cameraRightFlat() * strafeAxis;
     intent = normalized(intent);
     Vec3 normal{}; float topY = 0.0f; bool contact = false;
-    const float radius = 0.34f, climbGap = 0.08f, localZ = wrapZ(p.pos.z);
+    const float radius = WALL_CLIMB_RADIUS, climbGap = 0.08f, localZ = wrapZ(p.pos.z);
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     const float minZ = -ROOM_DEPTH * 0.5f + 0.8f, maxZ = ROOM_DEPTH * 0.5f - 0.72f;
     if (p.pos.x <= minX + climbGap) { normal = {1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
@@ -447,15 +471,83 @@ void Game::updatePhoneGait(float dt, bool running) {
     g.side = (mirroredCone * PHONE_GAIT_SIDE_OFFSET + oloidLoop * PHONE_GAIT_OLOID_MEANDER * transferEase) * energy;
 }
 
+float Game::getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const {
+    float tMin = 0.0f;
+    float tMax = 1.0f;
+    const float origins[3] = {from.x, from.y, from.z};
+    const float deltas[3] = {to.x - from.x, to.y - from.y, to.z - from.z};
+    const float mins[3] = {box.minX - pad, box.bottomY - pad, box.minZ - pad};
+    const float maxs[3] = {box.maxX + pad, box.topY + pad, box.maxZ + pad};
+    for (int axis = 0; axis < 3; ++axis) {
+        if (std::abs(deltas[axis]) < 0.00001f) {
+            if (origins[axis] < mins[axis] || origins[axis] > maxs[axis]) return -1.0f;
+            continue;
+        }
+        const float inv = 1.0f / deltas[axis];
+        float a = (mins[axis] - origins[axis]) * inv;
+        float b = (maxs[axis] - origins[axis]) * inv;
+        if (a > b) std::swap(a, b);
+        tMin = std::max(tMin, a);
+        tMax = std::min(tMax, b);
+        if (tMin > tMax) return -1.0f;
+    }
+    return clampf(tMin, 0.0f, 1.0f);
+}
+
 void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const {
-    (void)lookBase;
-    desired.x = clampf(desired.x, -ROOM_WIDTH * 0.5f + 0.22f, ROOM_WIDTH * 0.5f - 0.22f);
-    const float tileOrigin = getRoomTileOriginZ(getRoomTileIndex(desired.z));
-    const float localZ = wrapZ(desired.z);
-    const bool nearSeam = std::abs(std::abs(localZ) - ROOM_DEPTH * 0.5f) < 0.62f;
-    Vec3 local = desired; local.z = localZ;
-    if (!nearSeam || !isInsideDoorAperture(local, 0.18f))
-        desired.z = tileOrigin + clampf(localZ, -ROOM_DEPTH * 0.5f + 0.22f, ROOM_DEPTH * 0.5f - 0.22f);
+    Vec3 start = lookBase;
+    start.y += 0.58f;
+    const Vec3 end = desired;
+    const float localStartZ = wrapZ(start.z);
+    const float localEndZ = localStartZ + (end.z - start.z);
+    const Vec3 localStart{start.x, start.y, localStartZ};
+    const Vec3 localEnd{end.x, end.y, localEndZ};
+
+    float nearestT = 1.0f;
+    for (int i = 0; i < state_.debug.colliderCount; ++i) {
+        const float t = getSegmentAabbHitT(localStart, localEnd, state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
+        if (t >= 0.0f && t < nearestT) nearestT = t;
+    }
+
+    const float doorX0 = -2.1f;
+    const float doorX1 = 2.1f;
+    const float wallPad = 0.3f;
+    const auto makeBounds = [](float minX, float maxX, float minZ, float maxZ, float bottomY, float topY) {
+        RoomCollider c{};
+        c.minX = minX; c.maxX = maxX; c.minZ = minZ; c.maxZ = maxZ; c.bottomY = bottomY; c.topY = topY;
+        return c;
+    };
+    const RoomCollider roomBounds[] = {
+        makeBounds(-ROOM_WIDTH * 0.5f - 0.3f, -ROOM_WIDTH * 0.5f + 0.5f, -ROOM_DEPTH * 0.5f, ROOM_DEPTH * 0.5f, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds( ROOM_WIDTH * 0.5f - 0.5f,  ROOM_WIDTH * 0.5f + 0.3f, -ROOM_DEPTH * 0.5f, ROOM_DEPTH * 0.5f, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds(-ROOM_WIDTH * 0.5f, doorX0, -ROOM_DEPTH * 0.5f - wallPad, -ROOM_DEPTH * 0.5f + 0.5f, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds(doorX1, ROOM_WIDTH * 0.5f, -ROOM_DEPTH * 0.5f - wallPad, -ROOM_DEPTH * 0.5f + 0.5f, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds(doorX0, doorX1, -ROOM_DEPTH * 0.5f - wallPad, -ROOM_DEPTH * 0.5f + 0.5f, 3.72f, ROOM_WALL_HEIGHT),
+        makeBounds(-ROOM_WIDTH * 0.5f, doorX0, ROOM_DEPTH * 0.5f - 0.5f, ROOM_DEPTH * 0.5f + wallPad, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds(doorX1, ROOM_WIDTH * 0.5f, ROOM_DEPTH * 0.5f - 0.5f, ROOM_DEPTH * 0.5f + wallPad, GROUND_Y, ROOM_WALL_HEIGHT),
+        makeBounds(doorX0, doorX1, ROOM_DEPTH * 0.5f - 0.5f, ROOM_DEPTH * 0.5f + wallPad, 3.72f, ROOM_WALL_HEIGHT)
+    };
+    for (const RoomCollider& c : roomBounds) {
+        const float t = getSegmentAabbHitT(localStart, localEnd, c, CAMERA_COLLISION_RADIUS * 0.8f);
+        if (t >= 0.0f && t < nearestT) nearestT = t;
+    }
+
+    if (nearestT < 1.0f) {
+        const Vec3 segment = end - start;
+        const float dist = length(segment);
+        const float safeT = dist > 0.001f ? std::max(0.0f, nearestT - CAMERA_COLLISION_BACKOFF / dist) : 0.0f;
+        desired = start + segment * safeT;
+    }
+
+    desired.x = clampf(desired.x, -ROOM_WIDTH * 0.5f + CAMERA_COLLISION_RADIUS, ROOM_WIDTH * 0.5f - CAMERA_COLLISION_RADIUS);
+    const float desiredTileOriginZ = getRoomTileOriginZ(getRoomTileIndex(desired.z));
+    const float desiredLocalZ = wrapZ(desired.z);
+    const bool nearDoorSeam = std::abs(std::abs(desiredLocalZ) - ROOM_DEPTH * 0.5f) < CAMERA_COLLISION_RADIUS * 2.8f;
+    Vec3 desiredInLocal = desired; desiredInLocal.z = desiredLocalZ;
+    const bool desiredInDoorAperture = isInsideDoorAperture(desiredInLocal, CAMERA_COLLISION_RADIUS * 0.8f);
+    if (!nearDoorSeam || !desiredInDoorAperture) {
+        desired.z = desiredTileOriginZ + clampf(desiredLocalZ, -ROOM_DEPTH * 0.5f + CAMERA_COLLISION_RADIUS, ROOM_DEPTH * 0.5f - CAMERA_COLLISION_RADIUS);
+    }
     desired.y = clampf(desired.y, GROUND_Y + 0.65f, ROOM_WALL_HEIGHT - 0.45f);
 }
 

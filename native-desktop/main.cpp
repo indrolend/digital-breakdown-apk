@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 
 namespace {
 constexpr int KEY_W_ANDROID = 51;
@@ -29,6 +30,7 @@ struct HostState {
     double lastMouseY = 0.0;
     bool haveMouse = false;
     bool mouseCaptured = true;
+    bool focused = true;
 };
 
 int androidKeyForGlfw(int key) {
@@ -51,15 +53,25 @@ HostState* stateFor(GLFWwindow* window) {
     return static_cast<HostState*>(glfwGetWindowUserPointer(window));
 }
 
+void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
+    host.mouseCaptured = captured;
+    host.haveMouse = false;
+    host.lookX = 0.0;
+    host.lookY = 0.0;
+    glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (captured) {
+        glfwGetCursorPos(window, &host.lastMouseX, &host.lastMouseY);
+        host.haveMouse = true;
+    }
+}
+
 void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (host->mouseCaptured) {
-            host->mouseCaptured = false;
-            host->haveMouse = false;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            setMouseCaptured(window, *host, false);
         } else {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
@@ -67,9 +79,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     }
 
     if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
-        host->mouseCaptured = !host->mouseCaptured;
-        host->haveMouse = false;
-        glfwSetInputMode(window, GLFW_CURSOR, host->mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        setMouseCaptured(window, *host, !host->mouseCaptured);
         return;
     }
 
@@ -101,6 +111,28 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
     if (host) host->renderer.resize(width, height);
 }
 
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
+    HostState* host = stateFor(window);
+    if (!host || button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS) return;
+    if (!host->mouseCaptured) {
+        setMouseCaptured(window, *host, true);
+    }
+}
+
+void windowFocusCallback(GLFWwindow* window, int focused) {
+    HostState* host = stateFor(window);
+    if (!host) return;
+    host->focused = focused == GLFW_TRUE;
+    host->game.clearInputState();
+    if (!host->focused) {
+        setMouseCaptured(window, *host, false);
+    } else {
+        host->lookX = 0.0;
+        host->lookY = 0.0;
+        host->haveMouse = false;
+    }
+}
+
 void errorCallback(int code, const char* description) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, description ? description : "unknown");
 }
@@ -110,6 +142,73 @@ bool hasArg(int argc, char** argv, const char* expected) {
         if (std::strcmp(argv[i], expected) == 0) return true;
     }
     return false;
+}
+
+bool near(float a, float b, float eps = 0.025f) {
+    return std::abs(a - b) <= eps;
+}
+
+int runParityProximityTest() {
+    Game game;
+    game.reset();
+    GameState& s = const_cast<GameState&>(game.state());
+    bool ok = true;
+
+    const float playerRadius = 0.34f;
+    const float cameraRadius = 0.42f;
+    const float minWallX = -30.0f * 0.5f + 1.1f;
+    const float maxWallX =  30.0f * 0.5f - 1.1f;
+
+    s.player.pos = {minWallX - 0.25f, 0.08f, 0.0f};
+    s.player.vel = {-4.0f, 0.0f, 0.0f};
+    game.update(1.0f / 60.0f);
+    ok &= near(s.player.pos.x, minWallX);
+    std::printf("PARITY left_wall_stop x=%.3f expected=%.3f\n", s.player.pos.x, minWallX);
+
+    s.player.pos = {maxWallX + 0.25f, 0.08f, 0.0f};
+    s.player.vel = {4.0f, 0.0f, 0.0f};
+    game.update(1.0f / 60.0f);
+    ok &= near(s.player.pos.x, maxWallX);
+    std::printf("PARITY right_wall_stop x=%.3f expected=%.3f\n", s.player.pos.x, maxWallX);
+
+    const RoomCollider& c = s.roomColliders[0];
+    s.player.grounded = true;
+    s.player.pos = {c.minX - playerRadius + 0.10f, 0.08f, (c.minZ + c.maxZ) * 0.5f};
+    s.player.vel = {2.0f, 0.0f, 0.0f};
+    game.update(1.0f / 60.0f);
+    ok &= near(s.player.pos.x, c.minX - playerRadius);
+    std::printf("PARITY obstacle_face_stop x=%.3f expected=%.3f radius=%.2f\n", s.player.pos.x, c.minX - playerRadius, playerRadius);
+
+    s.player.pos = {c.minX - playerRadius + 0.10f, 0.08f, c.minZ - playerRadius + 0.12f};
+    s.player.vel = {2.0f, 0.0f, 2.0f};
+    game.update(1.0f / 60.0f);
+    const bool cornerResolved = s.player.pos.x <= c.minX - playerRadius + 0.025f || s.player.pos.z <= c.minZ - playerRadius + 0.025f;
+    ok &= cornerResolved;
+    std::printf("PARITY obstacle_corner x=%.3f z=%.3f limits=(%.3f,%.3f)\n", s.player.pos.x, s.player.pos.z, c.minX - playerRadius, c.minZ - playerRadius);
+
+    s.player.pos = {(c.minX + c.maxX) * 0.5f, c.topY + 0.08f, (c.minZ + c.maxZ) * 0.5f};
+    s.player.vel = {0.0f, 0.0f, 0.0f};
+    s.player.grounded = true;
+    game.update(1.0f / 60.0f);
+    ok &= near(s.player.pos.y, c.topY + 0.08f);
+    std::printf("PARITY support_on_obstacle y=%.3f expected=%.3f support_radius=%.2f\n", s.player.pos.y, c.topY + 0.08f, playerRadius);
+
+    s.player.pos = {0.0f, 0.08f, 0.0f};
+    s.camera.firstPerson = false;
+    s.camera.yaw = 3.14159265f * 0.5f;
+    s.camera.pitch = 0.0f;
+    game.update(1.0f / 60.0f);
+    ok &= s.camera.pos.x >= minWallX - 3.0f && s.camera.pos.x <= 30.0f * 0.5f - cameraRadius + 0.001f;
+    std::printf("PARITY camera_open pos=(%.3f,%.3f,%.3f) radius=%.2f\n", s.camera.pos.x, s.camera.pos.y, s.camera.pos.z, cameraRadius);
+
+    s.player.pos = {maxWallX - 0.05f, 0.08f, 0.0f};
+    s.camera.yaw = 3.14159265f * 0.5f;
+    game.update(1.0f / 60.0f);
+    ok &= s.camera.pos.x <= 30.0f * 0.5f - cameraRadius + 0.001f;
+    std::printf("PARITY camera_wall_compress x=%.3f max=%.3f\n", s.camera.pos.x, 30.0f * 0.5f - cameraRadius);
+
+    std::printf("PARITY_PROXIMITY_%s\n", ok ? "OK" : "FAILED");
+    return ok ? 0 : 1;
 }
 
 int runSmokeTest() {
@@ -144,6 +243,9 @@ int main(int argc, char** argv) {
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
     }
+    if (hasArg(argc, argv, "--parity-proximity-test")) {
+        return runParityProximityTest();
+    }
 
     glfwSetErrorCallback(errorCallback);
     if (!glfwInit()) {
@@ -174,11 +276,13 @@ int main(int argc, char** argv) {
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetWindowFocusCallback(window, windowFocusCallback);
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    setMouseCaptured(window, host, true);
 
     int framebufferWidth = 1;
     int framebufferHeight = 1;
