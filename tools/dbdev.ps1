@@ -121,9 +121,7 @@ switch ($Command) {
     }
     'sync' {
         $git = Get-GitState
-        if ($git.Dirty) {
-            throw 'Local edits are present. Sync stopped without overwriting them.'
-        }
+        if ($git.Dirty) { throw 'Local edits are present. Sync stopped without overwriting them.' }
         Invoke-Checked git @('-C', $RepoRoot, 'fetch', 'origin', 'main', '--prune')
         Invoke-Checked git @('-C', $RepoRoot, 'checkout', 'main')
         Invoke-Checked git @('-C', $RepoRoot, 'pull', '--ff-only', 'origin', 'main')
@@ -161,9 +159,6 @@ switch ($Command) {
         if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
         & $AndroidDeployScript
         if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
-        $environment = Get-Environment
-        if (-not $environment.android.scrcpyAvailable) { throw 'SCRCPY_MISSING: scrcpy was not found.' }
-        Invoke-Checked $environment.android.scrcpyPath @('--window-title=Digital Breakdown')
     }
     'release-windows' { & $ReleaseScript -Platform Windows -Launch }
     'release-android' { & $ReleaseScript -Platform Android }
