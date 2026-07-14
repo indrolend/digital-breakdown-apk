@@ -138,6 +138,12 @@ void Game::resetRoom() {
     const int roomSeed = state_.roomSeed;
     state_.roomClear = false;
     state_.player = PlayerState{};
+    state_.player.pos = {0.0f, GROUND_Y, ROOM_START_Z};
+    state_.player.grounded = true;
+    state_.player.jumpVel = 0.0f;
+    state_.player.airJumpsRemaining = 1;
+    state_.player.coyoteTimer = 0.0f;
+    state_.player.jumpBufferTimer = 0.0f;
     state_.camera = CameraState{};
     state_.vacuum = VacuumState{};
     state_.phonePose = PhonePoseState{};
@@ -227,6 +233,9 @@ void Game::update(float dt) {
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
     if (input.cameraTogglePressed) state_.camera.firstPerson = !state_.camera.firstPerson;
+    state_.camera.yaw -= input.lookDeltaX * 0.003f;
+    state_.camera.pitch = clampf(state_.camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
+    input.lookDeltaX = input.lookDeltaY = 0.0f;
     if (input.jumpPressed) { state_.player.jumpBufferTimer = JUMP_BUFFER; tryJump(); }
     if (input.meleePressed) triggerMelee();
     if (input.shootPressed) shootStoredSoul();
@@ -294,18 +303,21 @@ void Game::applyWallClimb(float dt) {
     Vec3 intent = cameraForwardFlat() * forwardAxis + cameraRightFlat() * strafeAxis;
     intent = normalized(intent);
     Vec3 normal{}; float topY = 0.0f; bool contact = false;
-    const float radius = 0.34f, gap = 0.13f, localZ = wrapZ(p.pos.z);
+    const float radius = 0.34f, climbGap = 0.08f, localZ = wrapZ(p.pos.z);
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
-    if (p.pos.x <= minX + gap) { normal = {1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
-    else if (p.pos.x >= maxX - gap) { normal = {-1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
+    const float minZ = -ROOM_DEPTH * 0.5f + 0.8f, maxZ = ROOM_DEPTH * 0.5f - 0.72f;
+    if (p.pos.x <= minX + climbGap) { normal = {1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
+    else if (p.pos.x >= maxX - climbGap) { normal = {-1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
+    else if (localZ <= minZ + climbGap) { normal = {0,0,1}; topY = getPlayerCeilingLimit(); contact = true; }
+    else if (localZ >= maxZ - climbGap) { normal = {0,0,-1}; topY = getPlayerCeilingLimit(); contact = true; }
     for (int i = 0; !contact && i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
         const bool inZ = localZ > c.minZ - radius && localZ < c.maxZ + radius;
         const bool inX = p.pos.x > c.minX - radius && p.pos.x < c.maxX + radius;
-        if (inZ && std::abs(p.pos.x - (c.minX - radius)) < gap) { normal={-1,0,0}; topY=c.topY; contact=true; }
-        else if (inZ && std::abs(p.pos.x - (c.maxX + radius)) < gap) { normal={1,0,0}; topY=c.topY; contact=true; }
-        else if (inX && std::abs(localZ - (c.minZ - radius)) < gap) { normal={0,0,-1}; topY=c.topY; contact=true; }
-        else if (inX && std::abs(localZ - (c.maxZ + radius)) < gap) { normal={0,0,1}; topY=c.topY; contact=true; }
+        if (inZ && std::abs(p.pos.x - (c.minX - radius)) < climbGap + 0.05f) { normal={-1,0,0}; topY=c.topY; contact=true; }
+        else if (inZ && std::abs(p.pos.x - (c.maxX + radius)) < climbGap + 0.05f) { normal={1,0,0}; topY=c.topY; contact=true; }
+        else if (inX && std::abs(localZ - (c.minZ - radius)) < climbGap + 0.05f) { normal={0,0,-1}; topY=c.topY; contact=true; }
+        else if (inX && std::abs(localZ - (c.maxZ + radius)) < climbGap + 0.05f) { normal={0,0,1}; topY=c.topY; contact=true; }
     }
     if (!contact || dotXZ(intent, normal) >= WALL_CLIMB_PUSH_DOT) return;
     const float climbLimit = std::min(getPlayerCeilingLimit(), topY + GROUND_Y + WALL_CLIMB_MAX_HEIGHT);
@@ -384,6 +396,15 @@ void Game::updatePlayer(float dt) {
     state_.debug.supportY = supportAfter;
     state_.debug.localZ = wrapZ(p.pos.z);
     state_.debug.horizontalSpeed = horizontalLength(p.vel);
+    state_.debug.cameraYaw = state_.camera.yaw;
+    state_.debug.cameraPitch = state_.camera.pitch;
+    state_.debug.cameraMode = state_.camera.firstPerson ? 1 : 0;
+    state_.debug.phoneYaw = state_.phonePose.yaw;
+    state_.debug.phonePitch = state_.phonePose.pitch;
+    state_.debug.phoneRoll = state_.phonePose.roll;
+    state_.debug.phoneLift = state_.phonePose.lift;
+    state_.debug.phoneForward = state_.phonePose.forward;
+    state_.debug.phoneSide = state_.phonePose.side;
 }
 
 void Game::updatePhoneGait(float dt, bool running) {
@@ -440,12 +461,8 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
 
 void Game::updateCamera(float dt) {
     (void)dt;
-    InputState& input = state_.input;
     CameraState& camera = state_.camera;
     const PlayerState& player = state_.player;
-    camera.yaw -= input.lookDeltaX * 0.003f;
-    camera.pitch = clampf(camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
-    input.lookDeltaX = input.lookDeltaY = 0.0f;
     const float cp = std::cos(camera.pitch);
     camera.forward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
     if (camera.firstPerson) {
