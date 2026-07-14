@@ -3,6 +3,8 @@
 /build/
 /DigitalBreakdownDev.exe
 
+/reference/browser-pass7/
+
 android/.gradle/
 android/build/
 android/app/build/
