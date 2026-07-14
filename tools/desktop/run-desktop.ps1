@@ -24,6 +24,11 @@ $BuildEnvironmentPath = Join-Path $BuildDir 'db-build-environment.json'
 
 New-Item -ItemType Directory -Force -Path $StateRoot, $LogDir | Out-Null
 
+function Write-ProgressEvent {
+    param([int]$Percent, [string]$Message)
+    Write-Output ("@@DBPROGRESS|{0}|{1}" -f ([Math]::Max(0, [Math]::Min(100, $Percent))), $Message)
+}
+
 function Write-Stage {
     param([string]$Name, [string]$Status)
     Write-Host ("[{0}] {1}" -f $Status.ToUpperInvariant(), $Name) -ForegroundColor $(if ($Status -eq 'ok') { 'Green' } elseif ($Status -eq 'repair') { 'Yellow' } else { 'Cyan' })
@@ -37,9 +42,8 @@ function Remove-BuildCache {
     New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 }
 
-if (-not (Test-Path $EnvironmentResolver)) {
-    throw 'Development environment resolver is missing.'
-}
+Write-ProgressEvent 3 'Inspecting development environment'
+if (-not (Test-Path $EnvironmentResolver)) { throw 'Development environment resolver is missing.' }
 
 Write-Stage 'Inspect development environment' 'run'
 $environment = & $EnvironmentResolver -ProvisionCMake
@@ -51,6 +55,7 @@ if (-not $environment.compiler.available -or -not $environment.compiler.generato
 }
 Write-Stage ("CMake {0}" -f $environment.cmake.version) 'ok'
 Write-Stage ("Compiler {0}" -f $environment.compiler.generator) 'ok'
+Write-ProgressEvent 15 'Development tools ready'
 
 $expectedBuildEnvironment = [ordered]@{
     schemaVersion = 1
@@ -74,11 +79,10 @@ if (-not $Reconfigure -and (Test-Path $BuildEnvironmentPath)) {
             $existing.configuration -eq $expectedBuildEnvironment.configuration -and
             $existing.cmakePath -eq $expectedBuildEnvironment.cmakePath
         )
-    } catch {
-        $cacheCompatible = $false
-    }
+    } catch { $cacheCompatible = $false }
 }
 
+Write-ProgressEvent 22 'Checking desktop build cache'
 if ($Reconfigure -or ((Test-Path $BuildDir) -and -not $cacheCompatible)) {
     Remove-BuildCache
 } else {
@@ -90,9 +94,11 @@ function Invoke-Configure {
     return $LASTEXITCODE
 }
 
+Write-ProgressEvent 30 'Configuring native desktop build'
 Write-Stage 'Configure native desktop host' 'run'
 $configureCode = Invoke-Configure
 if ($configureCode -ne 0) {
+    Write-ProgressEvent 34 'Repairing configuration cache'
     Write-Stage 'Configure failed; performing one clean recovery attempt' 'repair'
     Remove-BuildCache
     $configureCode = Invoke-Configure
@@ -103,7 +109,9 @@ if ($configureCode -ne 0) {
 }
 $expectedJson | Set-Content -Path $BuildEnvironmentPath -Encoding UTF8
 Write-Stage 'Configure native desktop host' 'ok'
+Write-ProgressEvent 45 'Desktop build configured'
 
+Write-ProgressEvent 50 'Compiling native desktop game'
 Write-Stage 'Build native desktop host' 'run'
 & $environment.cmake.path --build $BuildDir --config $Configuration *>> $BuildLog
 if ($LASTEXITCODE -ne 0) {
@@ -111,6 +119,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "CPP_COMPILE_FAILED: See $BuildLog"
 }
 Write-Stage 'Build native desktop host' 'ok'
+Write-ProgressEvent 82 'Desktop compilation complete'
 
 $ExecutableCandidates = @(
     (Join-Path $BuildDir "bin\$Configuration\DigitalBreakdown.exe"),
@@ -118,10 +127,9 @@ $ExecutableCandidates = @(
     (Join-Path $BuildDir "$Configuration\DigitalBreakdown.exe")
 )
 $Executable = @($ExecutableCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
-if ($Executable.Count -eq 0) {
-    throw "DESKTOP_EXE_MISSING: Desktop executable was not produced under $BuildDir"
-}
+if ($Executable.Count -eq 0) { throw "DESKTOP_EXE_MISSING: Desktop executable was not produced under $BuildDir" }
 $ExecutablePath = $Executable[0]
+Write-ProgressEvent 88 'Verifying desktop executable'
 
 $Commit = (& git -C $RepoRoot rev-parse --short HEAD 2>$null).Trim()
 if (-not $Commit) { $Commit = 'unknown' }
@@ -139,18 +147,21 @@ $BuildId = if ($DirtyLines.Count -gt 0) { "$Commit-dirty" } else { $Commit }
 } | ConvertTo-Json | Set-Content -Path $StatePath -Encoding UTF8
 
 if ($SmokeTest) {
+    Write-ProgressEvent 92 'Running native smoke test'
     Write-Stage 'Run native smoke test' 'run'
     & $ExecutablePath --smoke-test
-    if ($LASTEXITCODE -ne 0) {
-        throw "DESKTOP_SMOKE_FAILED: code $LASTEXITCODE"
-    }
+    if ($LASTEXITCODE -ne 0) { throw "DESKTOP_SMOKE_FAILED: code $LASTEXITCODE" }
     Write-Stage "Desktop $BuildId smoke test" 'ok'
+    Write-ProgressEvent 100 'Desktop smoke test passed'
 } elseif ($BuildOnly) {
     Write-Stage "Desktop $BuildId build complete" 'ok'
+    Write-ProgressEvent 100 'Desktop build complete'
 } else {
+    Write-ProgressEvent 94 'Launching local desktop game'
     Write-Stage 'Launch native desktop host' 'run'
     Start-Process -FilePath $ExecutablePath -WorkingDirectory $RepoRoot
     Write-Stage "Desktop $BuildId launched" 'ok'
+    Write-ProgressEvent 100 'Local desktop game launched'
 }
 
 Write-Output $BuildId
