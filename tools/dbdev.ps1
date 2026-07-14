@@ -3,6 +3,8 @@ param(
     [ValidateSet(
         'ui',
         'status',
+        'doctor',
+        'repair',
         'sync',
         'desktop-build',
         'desktop-run',
@@ -24,6 +26,8 @@ $DesktopScript = Join-Path $RepoRoot 'tools\desktop\run-desktop.ps1'
 $ReleaseScript = Join-Path $RepoRoot 'tools\release\get-latest-native.ps1'
 $AndroidDeployScript = Join-Path $RepoRoot 'tools\device\deploy-local.ps1'
 $DevUiBuildScript = Join-Path $RepoRoot 'tools\dev-ui\build-dev-ui.ps1'
+$EnvironmentResolver = Join-Path $RepoRoot 'tools\environment\resolve-dev-environment.ps1'
+$EnvironmentRepair = Join-Path $RepoRoot 'tools\environment\repair-dev-environment.ps1'
 $DesktopExeCandidates = @(
     (Join-Path $RepoRoot 'build\desktop-debug\bin\Debug\DigitalBreakdown.exe'),
     (Join-Path $RepoRoot 'build\desktop-debug\bin\DigitalBreakdown.exe'),
@@ -56,7 +60,16 @@ function Get-GitState {
 }
 
 function Get-DesktopExe {
-    $DesktopExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $matches = @($DesktopExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
+    if ($matches.Count -gt 0) { return $matches[0] }
+    return $null
+}
+
+function Get-Environment {
+    param([switch]$ProvisionCMake)
+    if (-not (Test-Path $EnvironmentResolver)) { throw "Missing $EnvironmentResolver" }
+    if ($ProvisionCMake) { return & $EnvironmentResolver -ProvisionCMake }
+    return & $EnvironmentResolver
 }
 
 function Show-Status {
@@ -70,13 +83,26 @@ function Show-Status {
     $desktopExe = Get-DesktopExe
     Write-Host "Desktop    : $(if ($desktopExe) { $desktopExe } else { 'not built' })"
 
-    $adb = Get-Command adb -ErrorAction SilentlyContinue
-    if ($adb) {
-        $devices = @(& $adb.Source devices | Select-String '\sdevice$')
-        Write-Host "Android    : $(if ($devices.Count) { 'authorized device connected' } else { 'no authorized device' })"
-    } else {
-        Write-Host 'Android    : adb not found'
-    }
+    $environment = Get-Environment
+    Write-Host "Android    : $(if ($environment.android.authorizedDevice) { 'authorized device connected' } elseif ($environment.android.adbAvailable) { 'no authorized device' } else { 'adb not found' })"
+}
+
+function Show-Doctor {
+    $environment = Get-Environment
+    $gitState = Get-GitState
+    $desktopExe = Get-DesktopExe
+
+    Write-Host 'DIGITAL BREAKDOWN DOCTOR' -ForegroundColor Cyan
+    Write-Host ("{0,-18} {1}" -f 'Repository', $(if ($environment.repository.available) { 'ready' } else { 'missing' }))
+    Write-Host ("{0,-18} {1}" -f 'Git', $(if ($environment.git.available) { 'ready' } else { 'missing' }))
+    Write-Host ("{0,-18} {1}" -f 'CMake', $(if ($environment.cmake.available) { "$($environment.cmake.version) [$($environment.cmake.source)]" } else { 'missing; repairable' }))
+    Write-Host ("{0,-18} {1}" -f 'C++ compiler', $(if ($environment.compiler.available) { $environment.compiler.generator } else { 'missing; manual install required' }))
+    Write-Host ("{0,-18} {1}" -f 'Desktop build', $(if ($desktopExe) { 'ready' } else { 'not built' }))
+    Write-Host ("{0,-18} {1}" -f 'ADB', $(if ($environment.android.adbAvailable) { 'ready' } else { 'missing' }))
+    Write-Host ("{0,-18} {1}" -f 'Stylo 4', $(if ($environment.android.authorizedDevice) { 'authorized' } else { 'not authorized/connected' }))
+    Write-Host ("{0,-18} {1}" -f 'scrcpy', $(if ($environment.android.scrcpyAvailable) { 'ready' } else { 'missing' }))
+    Write-Host ("{0,-18} {1}" -f 'Java', $(if ($environment.android.javaAvailable) { 'ready' } else { 'missing' }))
+    Write-Host ("{0,-18} {1}" -f 'Working tree', $(if ($gitState.Dirty) { "$($gitState.DirtyCount) local changes" } else { 'clean' }))
 }
 
 switch ($Command) {
@@ -85,8 +111,13 @@ switch ($Command) {
         & $DevUiBuildScript -Launch
         if ($LASTEXITCODE -ne 0) { throw 'Developer UI build failed.' }
     }
-    'status' {
-        Show-Status
+    'status' { Show-Status }
+    'doctor' { Show-Doctor }
+    'repair' {
+        if (-not (Test-Path $EnvironmentRepair)) { throw "Missing $EnvironmentRepair" }
+        & $EnvironmentRepair -ClearDesktopCache
+        if ($LASTEXITCODE -ne 0) { throw 'Safe environment repair failed.' }
+        Show-Doctor
     }
     'sync' {
         $git = Get-GitState
@@ -130,26 +161,16 @@ switch ($Command) {
         if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
         & $AndroidDeployScript
         if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
-        $scrcpy = Get-Command scrcpy -ErrorAction SilentlyContinue
-        if (-not $scrcpy) { throw 'scrcpy was not found.' }
-        Invoke-Checked $scrcpy.Source @('--window-title=Digital Breakdown')
+        $environment = Get-Environment
+        if (-not $environment.android.scrcpyAvailable) { throw 'SCRCPY_MISSING: scrcpy was not found.' }
+        Invoke-Checked $environment.android.scrcpyPath @('--window-title=Digital Breakdown')
     }
-    'release-windows' {
-        & $ReleaseScript -Platform Windows -Launch
-    }
-    'release-android' {
-        & $ReleaseScript -Platform Android
-    }
-    'release-all' {
-        & $ReleaseScript -Platform All
-    }
+    'release-windows' { & $ReleaseScript -Platform Windows -Launch }
+    'release-android' { & $ReleaseScript -Platform Android }
+    'release-all' { & $ReleaseScript -Platform All }
     'diagnostics' {
         Show-Status
         Write-Host ''
-        Write-Host 'Tool availability:' -ForegroundColor Cyan
-        foreach ($name in 'git','cmake','adb','scrcpy','java') {
-            $tool = Get-Command $name -ErrorAction SilentlyContinue
-            Write-Host ("{0,-8} {1}" -f $name, $(if ($tool) { $tool.Source } else { 'missing' }))
-        }
+        Show-Doctor
     }
 }
