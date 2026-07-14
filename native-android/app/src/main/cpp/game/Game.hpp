@@ -7,6 +7,7 @@
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 5;
 constexpr int BULLET_COUNT = 30;
+constexpr int ROOM_COLLIDER_COUNT = 15;
 
 enum class SoulState : unsigned char {
     Free,
@@ -45,26 +46,27 @@ struct InputState {
 };
 
 struct PlayerState {
-    Vec3 pos {0.0f, 0.55f, 12.0f};
+    Vec3 pos {0.0f, 0.08f, 0.0f};
     Vec3 vel {0.0f, 0.0f, 0.0f};
     float jumpVel = 0.0f;
-    float yaw = DB_PI;
-    float targetYaw = DB_PI;
+    float yaw = 0.0f;
+    float targetYaw = 0.0f;
     bool grounded = true;
     float battery = 100.0f;
     int souls = 0;
     int airJumpsRemaining = 1;
-    float coyoteTimer = 0.0f;
+    float coyoteTimer = 0.12f;
     float jumpBufferTimer = 0.0f;
     bool alive = true;
 };
 
 struct CameraState {
-    float yaw = DB_PI;
-    float pitch = 0.28f;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
     bool firstPerson = false;
-    Vec3 pos {0.0f, 2.0f, 7.0f};
+    Vec3 pos {0.0f, 1.18f, 3.0f};
     Vec3 forward {0.0f, 0.0f, -1.0f};
+    Vec3 lookTarget {0.0f, 0.53f, 0.0f};
 };
 
 struct VacuumState {
@@ -105,6 +107,44 @@ struct BulletState {
     float life = 0.0f;
 };
 
+struct RoomCollider {
+    float minX = 0.0f;
+    float maxX = 0.0f;
+    float minZ = 0.0f;
+    float maxZ = 0.0f;
+    float bottomY = 0.0f;
+    float topY = 0.0f;
+    float width = 0.0f;
+    float depth = 0.0f;
+    float height = 0.0f;
+    Vec3 center;
+};
+
+struct RoomTopologyState {
+    int currentTileIndex = 0;
+    int previousTileIndex = 0;
+    bool advancing = false;
+};
+
+struct PhonePoseState {
+    float phase = 0.0f;
+    float rollEnergy = 0.0f;
+    float energy = 0.0f;
+    float pitch = 0.0f;
+    float roll = 0.0f;
+    float yaw = 0.0f;
+    float lift = 0.0f;
+    float forward = 0.0f;
+    float side = 0.0f;
+};
+
+struct PlayerDebugState {
+    float supportY = 0.08f;
+    float localZ = 0.0f;
+    float horizontalSpeed = 0.0f;
+    int colliderCount = 0;
+};
+
 struct GameState {
     InputState input;
     PlayerState player;
@@ -113,9 +153,14 @@ struct GameState {
     std::array<TargetState, TARGET_COUNT> targets;
     std::array<CapturePointState, CAPTURE_COUNT> captures;
     std::array<BulletState, BULLET_COUNT> bullets;
+    std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
+    RoomTopologyState topology;
+    PhonePoseState phonePose;
+    PlayerDebugState debug;
     float time = 0.0f;
     int frame = 0;
     int roomIndex = 1;
+    int roomSeed = 73452;
     bool roomClear = false;
     float meleeCooldown = 0.0f;
     float meleePose = 0.0f;
@@ -146,9 +191,11 @@ private:
     GameState state_;
 
     void resetRoom();
+    void buildRoomColliders();
     void updateInputActions(float dt);
     void updateCamera(float dt);
     void updatePlayer(float dt);
+    void updatePhoneGait(float dt, bool running);
     void updateTargets(float dt);
     void updateVacuum(float dt);
     void updateBullets(float dt);
@@ -162,6 +209,18 @@ private:
     void releaseSoul(int index);
     void captureSoul(int index);
     void respawnTarget(int index);
+
+    float seededRoomValue(int offset) const;
+    int getRoomTileIndex(float z) const;
+    float getRoomTileOriginZ(int tileIndex) const;
+    float wrapZ(float z) const;
+    float getPlayerCeilingLimit() const;
+    float getPlayerSupportY(float x, float z) const;
+    void resolvePlayerObstacleCollisions();
+    void applyWallClimb(float dt);
+    void updateRoomTopology(float previousZ, float currentZ);
+    void constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const;
+    bool isInsideDoorAperture(const Vec3& position, float pad = 0.0f) const;
     void clampRoom(Vec3& pos);
     Vec3 cameraForwardFlat() const;
     Vec3 cameraRightFlat() const;
