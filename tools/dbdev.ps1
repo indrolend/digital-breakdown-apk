@@ -1,6 +1,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet(
+        'ui',
         'status',
         'sync',
         'desktop-build',
@@ -22,6 +23,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $DesktopScript = Join-Path $RepoRoot 'tools\desktop\run-desktop.ps1'
 $ReleaseScript = Join-Path $RepoRoot 'tools\release\get-latest-native.ps1'
 $AndroidDeployScript = Join-Path $RepoRoot 'tools\device\deploy-local.ps1'
+$DevUiBuildScript = Join-Path $RepoRoot 'tools\dev-ui\build-dev-ui.ps1'
 $DesktopExeCandidates = @(
     (Join-Path $RepoRoot 'build\desktop-debug\bin\Debug\DigitalBreakdown.exe'),
     (Join-Path $RepoRoot 'build\desktop-debug\bin\DigitalBreakdown.exe'),
@@ -78,6 +80,11 @@ function Show-Status {
 }
 
 switch ($Command) {
+    'ui' {
+        if (-not (Test-Path $DevUiBuildScript)) { throw "Missing $DevUiBuildScript" }
+        & $DevUiBuildScript -Launch
+        if ($LASTEXITCODE -ne 0) { throw 'Developer UI build failed.' }
+    }
     'status' {
         Show-Status
     }
