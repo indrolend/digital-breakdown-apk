@@ -85,6 +85,38 @@ int main() {
     ok &= expect(near(diagonal.player.vel.x / diagSpeed, 0.7071f, 0.02f) && near(diagonal.player.vel.z / diagSpeed, -0.7071f, 0.02f), "diagonal movement normalizes combined camera forward/right intent");
 
     game.reset();
+    {
+        GameState& setup = const_cast<GameState&>(game.state());
+        TargetState& target = setup.targets[0];
+        target.alive = true;
+        target.slurpable = true;
+        target.pos = setup.player.pos + Vec3{0.0f, 0.5f, -0.30f};
+        target.health = 1.0f;
+        target.ingestProgress = 0.0f;
+        target.soulState = SoulState::Free;
+        setup.camera.forward = {0.0f, 0.0f, -1.0f};
+    }
+    game.setTouchControls(0, 0, 0, 0, true, false, false, false, false, false);
+    step(game, 20);
+    const GameState vacuumState = game.state();
+    ok &= expect(vacuumState.vacuum.power > 0.32f, "vacuum reaches Pass 7 attraction threshold");
+    ok &= expect(vacuumState.targets[0].soulState == SoulState::Latched || vacuumState.targets[0].soulState == SoulState::Ingesting, "near slurpable target enters latched or ingesting state");
+    ok &= expect(vacuumState.targets[0].vacuumPullAmount > 0.0f, "vacuum reaction amount is shared on target state");
+    ok &= expect(vacuumState.targets[0].captureCollapseAmount >= 0.0f, "capture collapse amount is deterministic on target state");
+
+    game.reset();
+    {
+        GameState& setup = const_cast<GameState&>(game.state());
+        TargetState& target = setup.targets[0];
+        target.alive = true;
+        target.slurpable = true;
+        target.soulMorph = 0.99f;
+        target.soulCubeAmount = 0.0f;
+    }
+    step(game, 2);
+    ok &= expect(game.state().targets[0].soulCubeAmount >= 0.995f, "soul cube visibility follows shared morph threshold");
+
+    game.reset();
     game.setTouchControls(0, 0, -0.75f / 0.003f, 0, false, false, false, false, false, true);
     step(game);
     const GameState firstPerson = game.state();

@@ -18,6 +18,28 @@ int main() {
     assert(morph.scale <= 0.001f);
     const HumanVisualPose brute = makeHumanVisualPose(0.0f, s.bruteScale, 0.0f, 0.0f, 0.0f, 0.0f, true);
     assert(brute.scale > 1.69f && brute.scale < 1.71f);
+    const HumanReactionVisual idleReaction = makeHumanReactionVisual(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, true);
+    const HumanVisualPose idlePose = makeHumanVisualPose(0.0f, 1.0f, 0.0f, idleReaction, true);
+    assert(std::fabs(idlePose.leftLegSwing) < 0.0001f);
+    assert(std::fabs(idlePose.rightLegSwing) < 0.0001f);
+    const HumanReactionVisual walkReaction = makeHumanReactionVisual(DB_PI * 0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, true);
+    const HumanVisualPose walkPose = makeHumanVisualPose(0.0f, 1.0f, 0.0f, walkReaction, true);
+    assert(walkPose.leftArmSwing < 0.0f);
+    assert(walkPose.rightArmSwing > 0.0f);
+    assert(walkPose.leftLegSwing > 0.0f);
+    assert(walkPose.rightLegSwing < 0.0f);
+    const HumanReactionVisual hitReaction = makeHumanReactionVisual(0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, true);
+    const HumanVisualPose hitPose = makeHumanVisualPose(0.0f, 1.0f, 0.0f, hitReaction, true);
+    assert(hitPose.torsoRoll < 0.0f);
+    assert(hitPose.hitLean > 0.07f);
+    const HumanReactionVisual vacuumReaction = makeHumanReactionVisual(0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.8f, 0.0f, true);
+    const HumanVisualPose vacuumPose = makeHumanVisualPose(0.0f, 1.0f, 0.0f, vacuumReaction, true);
+    assert(vacuumPose.vacuumLean > 0.99f);
+    assert(vacuumPose.collapse > 0.85f);
+    assert(vacuumPose.torsoPitch > 0.0f);
+    const HumanReactionVisual storedReaction = makeHumanReactionVisual(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, false);
+    const HumanVisualPose storedPose = makeHumanVisualPose(0.0f, 1.0f, 0.0f, storedReaction, true);
+    assert(storedPose.scale <= 0.001f);
     std::cout << "human visual spec ok\n";
     return 0;
 }

@@ -239,10 +239,11 @@ void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, cons
 void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, target.visualWalkPhase, time, target.hitFlash, target.soulMorph, aliveHuman);
+    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     if (pose.scale <= 0.001f) return;
 
     const float s = pose.scale;
+    const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
     const Vec3 root = target.pos + Vec3{0.0f, spec.rootGroundOffset + pose.rootBob, 0.0f};
     const float yaw = pose.yaw;
     const Vec3 forward{-std::sin(yaw), 0.0f, -std::cos(yaw)};
@@ -256,21 +257,21 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
     const float headY = spec.totalHeight * s - spec.headRadius * s;
     const float armY = torsoY + spec.torsoHeight * s * 0.18f;
 
-    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, pelvisY, 0.0f}, {spec.pelvisWidth * s, spec.pelvisHeight * s, spec.pelvisDepth * s}, yaw, color);
-    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, torsoY, 0.0f} + forward * (pose.hitLean * s), {spec.torsoWidth * s, spec.torsoHeight * s, spec.torsoDepth * s}, yaw + pose.torsoRoll, color);
+    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, pelvisY * collapseScale, 0.0f}, {spec.pelvisWidth * s, spec.pelvisHeight * s * collapseScale, spec.pelvisDepth * s}, yaw, color);
+    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, torsoY * collapseScale, 0.0f} + forward * ((pose.hitLean + pose.vacuumLean * 0.06f) * s), {spec.torsoWidth * s, spec.torsoHeight * s * collapseScale, spec.torsoDepth * s}, yaw + pose.torsoRoll, color);
     drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, headY, 0.0f} + forward * (pose.headPitch * 0.03f), {spec.headRadius * 2.0f * s, spec.headRadius * 2.0f * s, spec.headRadius * 2.0f * s}, yaw, color);
 
     for (int side : {-1, 1}) {
         const float armSwing = side < 0 ? pose.leftArmSwing : pose.rightArmSwing;
         const float legSwing = side < 0 ? pose.leftLegSwing : pose.rightLegSwing;
         const Vec3 shoulder = root + right * (side * spec.shoulderWidth * 0.5f * s) + Vec3{0.0f, armY, 0.0f};
-        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.06f * s) + Vec3{0.0f, -spec.upperArmLength * 0.5f * s, 0.0f}, {0.055f * s, spec.upperArmLength * s, 0.065f * s}, yaw, color);
-        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.11f * s) + Vec3{0.0f, -(spec.upperArmLength + spec.forearmLength * 0.5f) * s, 0.0f}, {0.052f * s, spec.forearmLength * s, 0.060f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.06f * s) + Vec3{0.0f, -spec.upperArmLength * 0.5f * s * collapseScale, 0.0f}, {0.055f * s, spec.upperArmLength * s * collapseScale, 0.065f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.11f * s) + Vec3{0.0f, -(spec.upperArmLength + spec.forearmLength * 0.5f) * s * collapseScale, 0.0f}, {0.052f * s, spec.forearmLength * s * collapseScale, 0.060f * s}, yaw, color);
         drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.14f * s) + Vec3{0.0f, -(spec.upperArmLength + spec.forearmLength) * s, 0.0f}, {spec.handSize * s, spec.handSize * s, spec.handSize * 0.75f * s}, yaw, color);
 
         const Vec3 hip = root + right * (side * spec.pelvisWidth * 0.28f * s);
-        drawRoundedEllipsoid(viewProj, hip + forward * (legSwing * 0.05f * s) + Vec3{0.0f, thighY, 0.0f}, {0.075f * s, spec.thighLength * s, 0.080f * s}, yaw, color);
-        drawRoundedEllipsoid(viewProj, hip - forward * (legSwing * 0.05f * s) + Vec3{0.0f, shinY, 0.0f}, {0.070f * s, spec.shinLength * s, 0.075f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, hip + forward * (legSwing * 0.05f * s) + Vec3{0.0f, thighY * collapseScale, 0.0f}, {0.075f * s, spec.thighLength * s * collapseScale, 0.080f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, hip - forward * (legSwing * 0.05f * s) + Vec3{0.0f, shinY * collapseScale, 0.0f}, {0.070f * s, spec.shinLength * s * collapseScale, 0.075f * s}, yaw, color);
         drawRoundedEllipsoid(viewProj, hip + forward * (spec.footLength * 0.25f * s + legSwing * 0.04f * s) + Vec3{0.0f, footY, 0.0f}, {0.075f * s, spec.footHeight * s, spec.footLength * s}, yaw, color);
     }
 }
@@ -317,9 +318,9 @@ void Renderer::draw(const GameState& state) {
     for (const auto& target : state.targets) {
         if (!target.alive) continue;
         const float* color = target.slurpable ? soulColor : targetColor;
-        if (target.slurpable && target.soulMorph >= 0.995f) {
+        if (target.slurpable && target.soulCubeAmount >= 0.995f) {
             const float wobble = 1.0f + std::sin(state.time * 7.0f + target.phase) * 0.04f;
-            drawRoundedEllipsoid(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * wobble, 0.52f * target.scale, 0.52f * target.scale * wobble}, state.time * 1.7f, color);
+            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * wobble, 0.52f * target.scale, 0.52f * target.scale * wobble}, state.time * 1.7f, color);
         } else {
             drawProceduralHuman(viewProj, target, state.time, color);
         }
