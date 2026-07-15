@@ -23,6 +23,7 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(glfw)
+find_package(OpenGL REQUIRED)
 
 set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/cpp")
 
@@ -47,7 +48,7 @@ target_link_libraries(
     DigitalBreakdown
     PRIVATE
     glfw
-    opengl32
+    OpenGL::GL
 )
 
 if(MSVC)
