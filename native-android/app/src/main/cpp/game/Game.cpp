@@ -119,6 +119,12 @@ void syncTargetReactionVisual(TargetState& target) {
         target.visibility > 0.5f
     );
 }
+
+void syncSoulVisual(TargetState& target, float time) {
+    target.soulVisual = makeSoulVisualState(
+        static_cast<int>(target.soulState), target.vacuumPullAmount, target.ingestProgress,
+        target.hitFlash, time, target.phase, target.alive && target.slurpable);
+}
 }
 
 void Game::reset() {
@@ -280,6 +286,14 @@ void Game::update(float dt) {
     updateCamera(dt);
     updateTargets(dt);
     updateVacuum(dt);
+    float contact = 0.0f;
+    for (auto& target : state_.targets) {
+        syncSoulVisual(target, state_.time);
+        if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting) {
+            contact = std::max(contact, target.ingestProgress > 0.0f ? target.ingestProgress : 0.25f);
+        }
+    }
+    state_.phoneVisual = makePhoneVisualState(state_.vacuum.pose, state_.vacuum.power, contact, state_.time, state_.camera.firstPerson);
     updateBullets(dt);
     updateCaptures(dt);
 }

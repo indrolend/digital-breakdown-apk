@@ -45,11 +45,17 @@ void lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
 }
 void cube() {
     glBegin(GL_QUADS);
+    glNormal3f(0,0,1);
     glVertex3f(-.5f,-.5f,.5f); glVertex3f(.5f,-.5f,.5f); glVertex3f(.5f,.5f,.5f); glVertex3f(-.5f,.5f,.5f);
+    glNormal3f(0,0,-1);
     glVertex3f(.5f,-.5f,-.5f); glVertex3f(-.5f,-.5f,-.5f); glVertex3f(-.5f,.5f,-.5f); glVertex3f(.5f,.5f,-.5f);
+    glNormal3f(-1,0,0);
     glVertex3f(-.5f,-.5f,-.5f); glVertex3f(-.5f,-.5f,.5f); glVertex3f(-.5f,.5f,.5f); glVertex3f(-.5f,.5f,-.5f);
+    glNormal3f(1,0,0);
     glVertex3f(.5f,-.5f,.5f); glVertex3f(.5f,-.5f,-.5f); glVertex3f(.5f,.5f,-.5f); glVertex3f(.5f,.5f,.5f);
+    glNormal3f(0,1,0);
     glVertex3f(-.5f,.5f,.5f); glVertex3f(.5f,.5f,.5f); glVertex3f(.5f,.5f,-.5f); glVertex3f(-.5f,.5f,-.5f);
+    glNormal3f(0,-1,0);
     glVertex3f(-.5f,-.5f,-.5f); glVertex3f(.5f,-.5f,-.5f); glVertex3f(.5f,-.5f,.5f); glVertex3f(-.5f,-.5f,.5f);
     glEnd();
 }
@@ -70,7 +76,8 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
         const float u = static_cast<float>(segment) / static_cast<float>(segments);
         const float theta = u * PI * 2.0f;
         const float cp = std::cos(phi);
-        glVertex3f(std::cos(theta) * cp * 0.5f, std::sin(phi) * 0.5f, std::sin(theta) * cp * 0.5f);
+        const float x=std::cos(theta)*cp, y=std::sin(phi), z=std::sin(theta)*cp;
+        glNormal3f(x,y,z); glVertex3f(x*0.5f,y*0.5f,z*0.5f);
     };
     glBegin(GL_TRIANGLES);
     for (int ring = 0; ring < rings; ++ring) {
@@ -164,18 +171,26 @@ void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
 }
 
 void DesktopRenderer::draw(const GameState& state) const {
-    glClearColor(0.031f,0.063f,0.094f,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_LIGHTING);
+    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_COLOR_MATERIAL);
+    const GLfloat ambient[]={0.30f,0.37f,0.40f,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
+    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};
+    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
+    const GLfloat fillDiffuse[]={0.20f,0.28f,0.35f,1.0f}, fillPos[]={-20.0f,25.0f,-30.0f,0.0f};
+    glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
+    glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     for (int tile=state.topology.currentTileIndex-1; tile<=state.topology.currentTileIndex+1; ++tile) drawRoomTile(state,tile);
 
     if (!state.camera.firstPerson) {
         const Vec3 forward={-std::sin(state.player.yaw),0,-std::cos(state.player.yaw)};
         const Vec3 right={std::cos(state.player.yaw),0,-std::sin(state.player.yaw)};
-        Vec3 phonePos=state.player.pos + Vec3{0,state.phonePose.lift,0} + forward*state.phonePose.forward + right*state.phonePose.side;
+        Vec3 phonePos=state.player.pos + Vec3{0,state.phonePose.lift+state.phoneVisual.actionLift,0} + forward*(state.phonePose.forward+state.phoneVisual.actionForward) + right*state.phonePose.side;
         const float phoneYaw=state.player.yaw+state.phonePose.yaw;
-        drawBox(phonePos,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.04f,0.05f,0.05f);
-        drawBox(phonePos+forward*PHONE_SCREEN_Z_OFFSET,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},state.phonePose.pitch,phoneYaw,state.phonePose.roll,0.16f,0.92f,0.35f);
+        const auto& pv=state.phoneVisual;
+        drawBox(phonePos,{PHONE_BODY_WIDTH*pv.bodyScale.x,PHONE_BODY_HEIGHT*pv.bodyScale.y,PHONE_BODY_DEPTH},state.phonePose.pitch+pv.pitch,phoneYaw,state.phonePose.roll+pv.roll,Pass7Visual::PhoneBody.r,Pass7Visual::PhoneBody.g,Pass7Visual::PhoneBody.b);
+        const float glow=std::min(1.0f,0.45f+pv.screenGlow*0.36f);
+        drawBox(phonePos+forward*(PHONE_SCREEN_Z_OFFSET+pv.screenOffset),{PHONE_SCREEN_WIDTH*pv.screenScale.x,PHONE_SCREEN_HEIGHT*pv.screenScale.y,PHONE_SCREEN_DEPTH},state.phonePose.pitch+pv.pitch,phoneYaw,state.phonePose.roll+pv.roll,Pass7Visual::PhoneEmission.r*glow,Pass7Visual::PhoneEmission.g*glow,Pass7Visual::PhoneEmission.b*glow);
     }
 
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
@@ -183,8 +198,13 @@ void DesktopRenderer::draw(const GameState& state) const {
         Vec3 p=target.pos; p.z=tileOrigin + (target.pos.z - std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
         target.pos = p;
         if (target.slurpable && target.soulCubeAmount >= 0.995f) {
-            const float wobble=1.0f+std::sin(state.time*7.0f+target.phase)*0.04f;
-            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*wobble,0.52f*target.scale,0.52f*target.scale*wobble},state.time*1.2f,state.time*1.7f,state.time*0.9f,0.70f,1.0f,0.78f);
+            const auto& sv=target.soulVisual;
+            if (!sv.visible) continue;
+            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*sv.scale.x,0.52f*target.scale*sv.scale.y,0.52f*target.scale*sv.scale.z},state.time*1.2f,state.time*1.7f,state.time*0.9f,sv.color.r,sv.color.g,sv.color.b);
+            glDisable(GL_LIGHTING);
+            const float shell=1.025f+sv.emission*0.012f;
+            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*sv.scale.x*shell,0.52f*target.scale*sv.scale.y*shell,0.52f*target.scale*sv.scale.z*shell},state.time*1.2f,state.time*1.7f,state.time*0.9f,Pass7Visual::SoulEmission.r*sv.emission,Pass7Visual::SoulEmission.g*std::min(1.0f,sv.emission),Pass7Visual::SoulEmission.b*std::min(1.0f,sv.emission));
+            glEnable(GL_LIGHTING);
         } else {
             drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
         }

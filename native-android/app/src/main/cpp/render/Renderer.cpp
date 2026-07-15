@@ -50,12 +50,20 @@ std::array<float, ROUNDED_VERTEX_COUNT * 3> makeLowPolySphereVertices() {
 const char* VERT_SRC =
     "attribute vec3 aPos;\n"
     "uniform mat4 uMvp;\n"
-    "void main() { gl_Position = uMvp * vec4(aPos, 1.0); }\n";
+    "varying float vLight;\n"
+    "void main() {\n"
+    "  vec3 n = normalize(aPos + vec3(0.0001));\n"
+    "  float sun = max(dot(n, normalize(vec3(0.42, 0.84, 0.35))), 0.0);\n"
+    "  float fill = max(dot(n, normalize(vec3(-0.46, 0.57, -0.68))), 0.0);\n"
+    "  vLight = clamp(0.48 + sun * 0.42 + fill * 0.10, 0.0, 1.0);\n"
+    "  gl_Position = uMvp * vec4(aPos, 1.0);\n"
+    "}\n";
 
 const char* FRAG_SRC =
     "precision mediump float;\n"
     "uniform vec4 uColor;\n"
-    "void main() { gl_FragColor = uColor; }\n";
+    "varying float vLight;\n"
+    "void main() { gl_FragColor = vec4(uColor.rgb * vLight, uColor.a); }\n";
 
 void ident(float* m) {
     std::memset(m, 0, sizeof(float) * 16);
@@ -277,18 +285,17 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
 }
 
 void Renderer::drawGround(const float* viewProj) {
-    const float groundColor[4] = {0.02f, 0.12f, 0.035f, 1.0f};
+    const float groundColor[4] = {Pass7Visual::Floor.r, Pass7Visual::Floor.g, Pass7Visual::Floor.b, 1.0f};
     drawBox(viewProj, {0.0f, -0.04f, 0.0f}, {ROOM_WIDTH, 0.06f, ROOM_DEPTH}, 0.0f, groundColor);
 
-    const float wallColor[4] = {0.03f, 0.22f, 0.06f, 1.0f};
+    const float wallColor[4] = {Pass7Visual::Wall.r, Pass7Visual::Wall.g, Pass7Visual::Wall.b, 1.0f};
     drawBox(viewProj, {0.0f, 3.5f, -ROOM_DEPTH * 0.5f}, {ROOM_WIDTH, 7.0f, 0.16f}, 0.0f, wallColor);
     drawBox(viewProj, {-ROOM_WIDTH * 0.5f, 3.5f, 0.0f}, {0.16f, 7.0f, ROOM_DEPTH}, 0.0f, wallColor);
     drawBox(viewProj, {ROOM_WIDTH * 0.5f, 3.5f, 0.0f}, {0.16f, 7.0f, ROOM_DEPTH}, 0.0f, wallColor);
 }
 
 void Renderer::draw(const GameState& state) {
-    const float pulse = 0.5f + 0.5f * std::sin(state.time * 2.0f);
-    glClearColor(0.01f, 0.025f + pulse * 0.02f, 0.015f, 1.0f);
+    glClearColor(Pass7Visual::Background.r, Pass7Visual::Background.g, Pass7Visual::Background.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float proj[16];
@@ -301,28 +308,31 @@ void Renderer::draw(const GameState& state) {
 
     drawGround(viewProj);
 
-    const float phoneBody[4] = {0.06f, 0.09f, 0.06f, 1.0f};
-    const float phoneScreen[4] = {0.33f, 1.0f, 0.45f, 1.0f};
-    if (!state.camera.firstPerson) {
+    const float phoneBody[4] = {Pass7Visual::PhoneBody.r, Pass7Visual::PhoneBody.g, Pass7Visual::PhoneBody.b, 1.0f};
+    const float screenBrightness = std::min(1.0f, 0.45f + state.phoneVisual.screenGlow * 0.36f);
+    const float phoneScreen[4] = {Pass7Visual::PhoneEmission.r * screenBrightness, Pass7Visual::PhoneEmission.g * screenBrightness, Pass7Visual::PhoneEmission.b * screenBrightness, 1.0f};
+    if (state.phoneVisual.visible) {
         const Vec3 forward{-std::sin(state.player.yaw), 0.0f, -std::cos(state.player.yaw)};
         const Vec3 right{std::cos(state.player.yaw), 0.0f, -std::sin(state.player.yaw)};
-        const Vec3 phonePos = state.player.pos + Vec3{0.0f, state.phonePose.lift, 0.0f}
-            + forward * state.phonePose.forward + right * state.phonePose.side;
+        const Vec3 phonePos = state.player.pos + Vec3{0.0f, state.phonePose.lift + state.phoneVisual.actionLift, 0.0f}
+            + forward * (state.phonePose.forward + state.phoneVisual.actionForward) + right * state.phonePose.side;
         const float phoneYaw = state.player.yaw + state.phonePose.yaw;
-        drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH, PHONE_BODY_HEIGHT, PHONE_BODY_DEPTH}, phoneYaw, phoneBody);
-        drawBox(viewProj, phonePos + forward * PHONE_SCREEN_Z_OFFSET, {PHONE_SCREEN_WIDTH, PHONE_SCREEN_HEIGHT, PHONE_SCREEN_DEPTH}, phoneYaw, phoneScreen);
+        drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH * state.phoneVisual.bodyScale.x, PHONE_BODY_HEIGHT * state.phoneVisual.bodyScale.y, PHONE_BODY_DEPTH}, phoneYaw + state.phoneVisual.roll, phoneBody);
+        drawBox(viewProj, phonePos + forward * (PHONE_SCREEN_Z_OFFSET + state.phoneVisual.screenOffset), {PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x, PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y, PHONE_SCREEN_DEPTH}, phoneYaw + state.phoneVisual.roll, phoneScreen);
     }
 
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
-    const float soulColor[4] = {0.70f, 1.0f, 0.78f, 1.0f};
     for (const auto& target : state.targets) {
         if (!target.alive) continue;
-        const float* color = target.slurpable ? soulColor : targetColor;
         if (target.slurpable && target.soulCubeAmount >= 0.995f) {
-            const float wobble = 1.0f + std::sin(state.time * 7.0f + target.phase) * 0.04f;
-            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * wobble, 0.52f * target.scale, 0.52f * target.scale * wobble}, state.time * 1.7f, color);
+            if (!target.soulVisual.visible) continue;
+            const float soulColor[4] = {target.soulVisual.color.r, target.soulVisual.color.g, target.soulVisual.color.b, 1.0f};
+            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * target.soulVisual.scale.x, 0.52f * target.scale * target.soulVisual.scale.y, 0.52f * target.scale * target.soulVisual.scale.z}, state.time * 1.7f, soulColor);
+            const float shell = 1.025f + target.soulVisual.emission * 0.012f;
+            const float glowColor[4] = {Pass7Visual::SoulEmission.r * target.soulVisual.emission, Pass7Visual::SoulEmission.g * std::min(1.0f, target.soulVisual.emission), Pass7Visual::SoulEmission.b * std::min(1.0f, target.soulVisual.emission), 1.0f};
+            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * target.soulVisual.scale.x * shell, 0.52f * target.scale * target.soulVisual.scale.y * shell, 0.52f * target.scale * target.soulVisual.scale.z * shell}, state.time * 1.7f, glowColor);
         } else {
-            drawProceduralHuman(viewProj, target, state.time, color);
+            drawProceduralHuman(viewProj, target, state.time, targetColor);
         }
     }
 

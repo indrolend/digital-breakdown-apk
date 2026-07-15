@@ -3,6 +3,7 @@
 #include <array>
 
 #include "HumanVisual.hpp"
+#include "VisualIdentity.hpp"
 #include "Math.hpp"
 
 constexpr int TARGET_COUNT = 32;
@@ -114,6 +115,7 @@ struct TargetState {
     HumanReactionVisual visualReaction;
     bool brute = false;
     SoulState soulState = SoulState::Free;
+    SoulVisualState soulVisual;
 };
 
 struct CapturePointState {
@@ -186,6 +188,7 @@ struct GameState {
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
     RoomTopologyState topology;
     PhonePoseState phonePose;
+    PhoneVisualState phoneVisual;
     PlayerDebugState debug;
     float time = 0.0f;
     int frame = 0;
