@@ -100,6 +100,10 @@ struct TargetState {
     float respawnTimer = 0.0f;
     float scale = 1.0f;
     float phase = 0.0f;
+    float visualYaw = 0.0f;
+    float visualWalkPhase = 0.0f;
+    float hitFlash = 0.0f;
+    float soulMorph = 0.0f;
     SoulState soulState = SoulState::Free;
 };
 

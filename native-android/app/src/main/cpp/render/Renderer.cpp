@@ -1,13 +1,51 @@
 #include "Renderer.hpp"
+#include "../game/HumanVisual.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
+#include <array>
 #include <cmath>
 #include <cstring>
 
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
+
+constexpr int ROUNDED_SEGMENTS = 7;
+constexpr int ROUNDED_RINGS = 5;
+constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * (ROUNDED_RINGS - 1) * 6;
+
+Vec3 lowPolySpherePoint(int ring, int segment) {
+    const float v = static_cast<float>(ring) / static_cast<float>(ROUNDED_RINGS);
+    const float phi = -DB_PI * 0.5f + v * DB_PI;
+    const float u = static_cast<float>(segment) / static_cast<float>(ROUNDED_SEGMENTS);
+    const float theta = u * DB_PI * 2.0f;
+    const float cp = std::cos(phi);
+    return {std::cos(theta) * cp * 0.5f, std::sin(phi) * 0.5f, std::sin(theta) * cp * 0.5f};
+}
+
+std::array<float, ROUNDED_VERTEX_COUNT * 3> makeLowPolySphereVertices() {
+    std::array<float, ROUNDED_VERTEX_COUNT * 3> vertices{};
+    int out = 0;
+    auto emit = [&](const Vec3& p) {
+        vertices[out++] = p.x;
+        vertices[out++] = p.y;
+        vertices[out++] = p.z;
+    };
+    for (int ring = 0; ring < ROUNDED_RINGS; ++ring) {
+        for (int seg = 0; seg < ROUNDED_SEGMENTS; ++seg) {
+            const int nextSeg = (seg + 1) % ROUNDED_SEGMENTS;
+            const Vec3 a = lowPolySpherePoint(ring, seg);
+            const Vec3 b = lowPolySpherePoint(ring + 1, seg);
+            const Vec3 c = lowPolySpherePoint(ring + 1, nextSeg);
+            const Vec3 d = lowPolySpherePoint(ring, nextSeg);
+            emit(a); emit(b); emit(c);
+            emit(a); emit(c); emit(d);
+        }
+    }
+    return vertices;
+}
+
 
 const char* VERT_SRC =
     "attribute vec3 aPos;\n"
@@ -145,6 +183,12 @@ bool Renderer::initProgram() {
     glGenBuffers(1, &vbo_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+
+    const auto rounded = makeLowPolySphereVertices();
+    roundedVertexCount_ = ROUNDED_VERTEX_COUNT;
+    glGenBuffers(1, &roundedVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, roundedVbo_);
+    glBufferData(GL_ARRAY_BUFFER, rounded.size() * sizeof(float), rounded.data(), GL_STATIC_DRAW);
     return true;
 }
 
@@ -174,6 +218,61 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
     glUniform4fv(uColor_, 1, color);
     glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
+    if (!program_ || !roundedVbo_ || roundedVertexCount_ <= 0) return;
+    float model[16];
+    float mvp[16];
+    modelBox(model, pos, scale, yaw);
+    multiply(mvp, viewProj, model);
+    glUseProgram(program_);
+    glBindBuffer(GL_ARRAY_BUFFER, roundedVbo_);
+    glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
+    glUniform4fv(uColor_, 1, color);
+    glDrawArrays(GL_TRIANGLES, 0, roundedVertexCount_);
+}
+
+
+void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]) {
+    const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
+    const bool aliveHuman = !target.slurpable;
+    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, target.visualWalkPhase, time, target.hitFlash, target.soulMorph, aliveHuman);
+    if (pose.scale <= 0.001f) return;
+
+    const float s = pose.scale;
+    const Vec3 root = target.pos + Vec3{0.0f, spec.rootGroundOffset + pose.rootBob, 0.0f};
+    const float yaw = pose.yaw;
+    const Vec3 forward{-std::sin(yaw), 0.0f, -std::cos(yaw)};
+    const Vec3 right{std::cos(yaw), 0.0f, -std::sin(yaw)};
+
+    const float footY = 0.03f * s;
+    const float shinY = footY + spec.footHeight * s * 0.5f + spec.shinLength * s * 0.5f;
+    const float thighY = footY + spec.footHeight * s + spec.shinLength * s + spec.thighLength * s * 0.5f;
+    const float pelvisY = footY + spec.footHeight * s + spec.shinLength * s + spec.thighLength * s + spec.pelvisHeight * s * 0.5f;
+    const float torsoY = pelvisY + (spec.pelvisHeight + spec.torsoHeight) * s * 0.5f;
+    const float headY = spec.totalHeight * s - spec.headRadius * s;
+    const float armY = torsoY + spec.torsoHeight * s * 0.18f;
+
+    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, pelvisY, 0.0f}, {spec.pelvisWidth * s, spec.pelvisHeight * s, spec.pelvisDepth * s}, yaw, color);
+    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, torsoY, 0.0f} + forward * (pose.hitLean * s), {spec.torsoWidth * s, spec.torsoHeight * s, spec.torsoDepth * s}, yaw + pose.torsoRoll, color);
+    drawRoundedEllipsoid(viewProj, root + Vec3{0.0f, headY, 0.0f} + forward * (pose.headPitch * 0.03f), {spec.headRadius * 2.0f * s, spec.headRadius * 2.0f * s, spec.headRadius * 2.0f * s}, yaw, color);
+
+    for (int side : {-1, 1}) {
+        const float armSwing = side < 0 ? pose.leftArmSwing : pose.rightArmSwing;
+        const float legSwing = side < 0 ? pose.leftLegSwing : pose.rightLegSwing;
+        const Vec3 shoulder = root + right * (side * spec.shoulderWidth * 0.5f * s) + Vec3{0.0f, armY, 0.0f};
+        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.06f * s) + Vec3{0.0f, -spec.upperArmLength * 0.5f * s, 0.0f}, {0.055f * s, spec.upperArmLength * s, 0.065f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.11f * s) + Vec3{0.0f, -(spec.upperArmLength + spec.forearmLength * 0.5f) * s, 0.0f}, {0.052f * s, spec.forearmLength * s, 0.060f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, shoulder + forward * (armSwing * 0.14f * s) + Vec3{0.0f, -(spec.upperArmLength + spec.forearmLength) * s, 0.0f}, {spec.handSize * s, spec.handSize * s, spec.handSize * 0.75f * s}, yaw, color);
+
+        const Vec3 hip = root + right * (side * spec.pelvisWidth * 0.28f * s);
+        drawRoundedEllipsoid(viewProj, hip + forward * (legSwing * 0.05f * s) + Vec3{0.0f, thighY, 0.0f}, {0.075f * s, spec.thighLength * s, 0.080f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, hip - forward * (legSwing * 0.05f * s) + Vec3{0.0f, shinY, 0.0f}, {0.070f * s, spec.shinLength * s, 0.075f * s}, yaw, color);
+        drawRoundedEllipsoid(viewProj, hip + forward * (spec.footLength * 0.25f * s + legSwing * 0.04f * s) + Vec3{0.0f, footY, 0.0f}, {0.075f * s, spec.footHeight * s, spec.footLength * s}, yaw, color);
+    }
 }
 
 void Renderer::drawGround(const float* viewProj) {
@@ -218,8 +317,12 @@ void Renderer::draw(const GameState& state) {
     for (const auto& target : state.targets) {
         if (!target.alive) continue;
         const float* color = target.slurpable ? soulColor : targetColor;
-        const float wobble = 1.0f + std::sin(state.time * 7.0f + target.phase) * 0.04f;
-        drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.65f * target.scale * wobble, 1.25f * target.scale, 0.42f * target.scale * wobble}, 0.0f, color);
+        if (target.slurpable && target.soulMorph >= 0.995f) {
+            const float wobble = 1.0f + std::sin(state.time * 7.0f + target.phase) * 0.04f;
+            drawRoundedEllipsoid(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * wobble, 0.52f * target.scale, 0.52f * target.scale * wobble}, state.time * 1.7f, color);
+        } else {
+            drawProceduralHuman(viewProj, target, state.time, color);
+        }
     }
 
     for (const auto& capture : state.captures) {

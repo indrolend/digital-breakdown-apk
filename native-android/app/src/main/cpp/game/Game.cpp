@@ -587,7 +587,7 @@ void Game::triggerMelee() {
     if (state_.meleeCooldown > 0) return;
     state_.meleeCooldown = MELEE_COOLDOWN; state_.meleePose = 1.0f;
     for (auto& t : state_.targets) if (t.alive && distXZ(t.pos, state_.player.pos) <= MELEE_RANGE) {
-        t.armor -= 1.0f; if (t.armor <= 0) { t.slurpable = true; t.soulState = SoulState::Free; }
+        t.armor -= 1.0f; t.hitFlash = 1.0f; if (t.armor <= 0) { t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
     }
 }
 void Game::shootStoredSoul() {
@@ -602,7 +602,7 @@ void Game::captureSoul(int index) {
     state_.targets[index].alive = false; state_.targets[index].respawnTimer = 2.0f; state_.player.souls++;
 }
 void Game::respawnTarget(int index) {
-    TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true; t.armor = 2.0f;
+    TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true; t.armor = 2.0f; t.scale = 1.0f;
     t.pos = {(seededRoomValue(500 + index) - 0.5f) * 20.0f, GROUND_Y, ROOM_MIN_SPAWN_Z + seededRoomValue(600 + index) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z)};
 }
 
@@ -610,8 +610,20 @@ void Game::updateTargets(float dt) {
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
         if (!t.alive) { if ((t.respawnTimer -= dt) <= 0 && i < ACTIVE_HUMAN_TARGET) respawnTarget(i); continue; }
-        if (!t.slurpable) {
-            t.phase += dt; t.pos.x += std::sin(t.phase * 0.7f) * dt * 0.18f; t.pos.z += std::cos(t.phase * 0.5f) * dt * 0.18f;
+        t.hitFlash = std::max(0.0f, t.hitFlash - 2.8f * dt);
+        if (t.slurpable) {
+            t.soulMorph = std::min(1.0f, t.soulMorph + dt / 0.72f);
+        } else {
+            t.soulMorph = 0.0f;
+            t.phase += dt;
+            const float dx = std::sin(t.phase * 0.7f) * dt * 0.18f;
+            const float dz = std::cos(t.phase * 0.5f) * dt * 0.18f;
+            t.pos.x += dx;
+            t.pos.z += dz;
+            if (std::fabs(dx) + std::fabs(dz) > 0.0001f) {
+                t.visualYaw = std::atan2(-dx, -dz);
+                t.visualWalkPhase += std::sqrt(dx * dx + dz * dz) * 7.5f;
+            }
             t.pos.z = getRoomTileOriginZ(state_.topology.currentTileIndex) + wrapZ(t.pos.z);
         }
     }
