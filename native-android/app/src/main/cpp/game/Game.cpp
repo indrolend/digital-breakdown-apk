@@ -47,7 +47,16 @@ constexpr float VACUUM_CHARGE_SPEED = 3.5f;
 constexpr float VACUUM_DECAY_SPEED = 6.0f;
 constexpr float SOUL_ATTRACTION_RANGE = 15.5f;
 constexpr float SOUL_LATCH_DISTANCE = 0.48f;
+constexpr float SOUL_SEAL_DISTANCE = 0.14f;
+constexpr float SOUL_CAPTURE_COMMIT_PHASE = 0.92f;
 constexpr float SOUL_CAPTURE_DECAY = 0.75f;
+constexpr float SOUL_MORPH_DURATION = 0.72f;
+constexpr float SOUL_ARMOR_NORMAL = 2.0f;
+constexpr float SOUL_ARMOR_BRUTE = 4.0f;
+constexpr float HUMAN_SCALE_BRUTE = 1.7f;
+constexpr float HUMAN_WALK_PHASE_PER_METER = 7.5f;
+constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
+constexpr float VACUUM_DAMAGE = 0.28f;
 
 constexpr float MELEE_RANGE = 2.85f;
 constexpr float MELEE_COOLDOWN = 0.34f;
@@ -94,6 +103,22 @@ float distXZ(const Vec3& a, const Vec3& b) {
     return std::sqrt(dx * dx + dz * dz);
 }
 float batteryPower(const PlayerState& p) { return clampf(p.battery / 18.0f, 0.35f, 1.0f); }
+float smooth01(float t) {
+    t = clampf(t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+void syncTargetReactionVisual(TargetState& target) {
+    target.visualReaction = makeHumanReactionVisual(
+        target.visualWalkPhase,
+        target.locomotionAmount,
+        target.hitFlash,
+        target.hitDirectionLocal,
+        target.vacuumPullAmount,
+        target.captureCollapseAmount,
+        target.soulMorph,
+        target.visibility > 0.5f
+    );
+}
 }
 
 void Game::reset() {
@@ -163,9 +188,14 @@ void Game::resetRoom() {
         target = TargetState{};
         target.pos = {-8.0f + static_cast<float>(i % 5) * 4.0f, GROUND_Y, -12.0f + static_cast<float>(i / 5) * 4.5f};
         target.alive = i < ACTIVE_HUMAN_TARGET;
-        target.armor = 2.0f;
+        target.brute = seededRoomValue(420 + i) < 0.18f;
+        target.armor = target.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
         target.health = 1.0f;
+        target.scale = target.brute ? HUMAN_SCALE_BRUTE : 1.0f;
         target.phase = static_cast<float>(i) * 0.77f;
+        target.visualWalkPhase = target.phase;
+        target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
+        syncTargetReactionVisual(target);
         if (!target.alive) target.respawnTimer = 1.45f + seededRoomValue(300 + i) * 0.9f;
     }
 
@@ -587,7 +617,12 @@ void Game::triggerMelee() {
     if (state_.meleeCooldown > 0) return;
     state_.meleeCooldown = MELEE_COOLDOWN; state_.meleePose = 1.0f;
     for (auto& t : state_.targets) if (t.alive && distXZ(t.pos, state_.player.pos) <= MELEE_RANGE) {
-        t.armor -= 1.0f; t.hitFlash = 1.0f; if (t.armor <= 0) { t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
+        const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
+        const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
+        t.armor -= 1.0f;
+        t.hitFlash = 1.0f;
+        t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
+        if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
     }
 }
 void Game::shootStoredSoul() {
@@ -599,20 +634,37 @@ void Game::shootStoredSoul() {
 void Game::releaseSoul(int index) { if (index >= 0 && index < TARGET_COUNT) state_.targets[index].soulState = SoulState::Recoiling; }
 void Game::captureSoul(int index) {
     if (index < 0 || index >= TARGET_COUNT) return;
-    state_.targets[index].alive = false; state_.targets[index].respawnTimer = 2.0f; state_.player.souls++;
+    TargetState& t = state_.targets[index];
+    t.alive = false;
+    t.visibility = 0.0f;
+    t.soulCubeAmount = 0.0f;
+    syncTargetReactionVisual(t);
+    t.respawnTimer = 2.0f;
+    state_.player.souls++;
 }
 void Game::respawnTarget(int index) {
-    TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true; t.armor = 2.0f; t.scale = 1.0f;
+    TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
+    t.brute = seededRoomValue(520 + index) < 0.18f;
+    t.armor = t.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
+    t.scale = t.brute ? HUMAN_SCALE_BRUTE : 1.0f;
+    t.health = 1.0f;
     t.pos = {(seededRoomValue(500 + index) - 0.5f) * 20.0f, GROUND_Y, ROOM_MIN_SPAWN_Z + seededRoomValue(600 + index) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z)};
+    t.visualYaw = seededRoomValue(540 + index) * DB_PI * 2.0f;
+    t.visualWalkPhase = seededRoomValue(560 + index) * DB_PI * 2.0f;
+    syncTargetReactionVisual(t);
 }
 
 void Game::updateTargets(float dt) {
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
         if (!t.alive) { if ((t.respawnTimer -= dt) <= 0 && i < ACTIVE_HUMAN_TARGET) respawnTarget(i); continue; }
-        t.hitFlash = std::max(0.0f, t.hitFlash - 2.8f * dt);
+        t.hitFlash = std::max(0.0f, t.hitFlash - TARGET_HITFLASH_DECAY_PER_FRAME);
+        t.visibility = 1.0f;
+        t.vacuumPullAmount = 0.0f;
+        t.captureCollapseAmount = clampf(t.ingestProgress, 0.0f, 1.0f);
         if (t.slurpable) {
-            t.soulMorph = std::min(1.0f, t.soulMorph + dt / 0.72f);
+            t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);
+            t.locomotionAmount = 0.0f;
         } else {
             t.soulMorph = 0.0f;
             t.phase += dt;
@@ -622,10 +674,15 @@ void Game::updateTargets(float dt) {
             t.pos.z += dz;
             if (std::fabs(dx) + std::fabs(dz) > 0.0001f) {
                 t.visualYaw = std::atan2(-dx, -dz);
-                t.visualWalkPhase += std::sqrt(dx * dx + dz * dz) * 7.5f;
+                t.visualWalkPhase += std::sqrt(dx * dx + dz * dz) * HUMAN_WALK_PHASE_PER_METER;
+                t.locomotionAmount = 1.0f;
+            } else {
+                t.locomotionAmount = 0.0f;
             }
             t.pos.z = getRoomTileOriginZ(state_.topology.currentTileIndex) + wrapZ(t.pos.z);
         }
+        t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
+        syncTargetReactionVisual(t);
     }
 }
 
@@ -634,7 +691,17 @@ void Game::updateVacuum(float dt) {
     v.power = clampf(v.power + (v.active ? VACUUM_CHARGE_SPEED : -VACUUM_DECAY_SPEED) * dt, 0, 1);
     v.pose += ((v.active ? 1.0f : 0.0f) - v.pose) * std::min(1.0f, dt * 8.0f);
     v.target = -1;
-    if (!v.active) return;
+    if (!v.active) {
+        for (auto& target : state_.targets) {
+            if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting || target.soulState == SoulState::Attracted) {
+                target.soulState = SoulState::Free;
+            }
+            target.ingestProgress = std::max(0.0f, target.ingestProgress - SOUL_CAPTURE_DECAY * dt);
+            target.captureCollapseAmount = clampf(target.ingestProgress, 0.0f, 1.0f);
+            syncTargetReactionVisual(target);
+        }
+        return;
+    }
     float best = SOUL_ATTRACTION_RANGE;
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i]; if (!t.alive || !t.slurpable) continue;
@@ -644,10 +711,31 @@ void Game::updateVacuum(float dt) {
     TargetState& t = state_.targets[v.target];
     Vec3 screen = state_.player.pos + state_.camera.forward * 0.2f + Vec3{0,0.5f,0};
     Vec3 delta = screen - t.pos; float d = length(delta);
-    if (d > 0.001f) t.pos += normalized(delta) * (dt * (3.0f + v.power * 8.0f));
-    if (d <= SOUL_LATCH_DISTANCE) { t.ingestProgress += dt * (1.4f + v.power); t.soulState = SoulState::Ingesting; }
-    else { t.ingestProgress = std::max(0.0f, t.ingestProgress - SOUL_CAPTURE_DECAY * dt); t.soulState = SoulState::Attracted; }
-    if (t.ingestProgress >= 1.0f) captureSoul(v.target);
+    const float soulMass = t.brute ? 1.45f : 1.0f;
+    const float proximity = 1.0f - clampf(d / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
+    const float closeEase = smooth01(proximity);
+    t.vacuumPullAmount = clampf(std::max(v.power, t.ingestProgress), 0.0f, 1.0f);
+    if (d > 0.001f) {
+        const float speed = v.power * (3.2f + closeEase * 5.8f) / soulMass;
+        t.pos += normalized(delta) * std::min(d, speed * dt);
+        t.visualYaw = std::atan2(-delta.x, -delta.z);
+    }
+    if (d <= SOUL_LATCH_DISTANCE) {
+        t.soulState = d <= SOUL_SEAL_DISTANCE ? SoulState::Ingesting : SoulState::Latched;
+        const float phase = clampf(t.ingestProgress, 0.0f, 1.0f);
+        const float sealEase = smooth01(clampf((phase - 0.08f) / (0.32f - 0.08f), 0.0f, 1.0f));
+        const float pressureEase = smooth01(clampf((phase - 0.32f) / (0.78f - 0.32f), 0.0f, 1.0f));
+        const float popEase = smooth01(clampf((phase - 0.78f) / (1.0f - 0.78f), 0.0f, 1.0f));
+        const float phaseRate = v.power * (0.38f + sealEase * 0.55f + pressureEase * 0.85f + popEase * 2.25f) / soulMass;
+        t.ingestProgress = clampf(t.ingestProgress + dt * phaseRate, 0.0f, 1.0f);
+        t.health -= VACUUM_DAMAGE * v.power * dt * 0.10f;
+    } else {
+        t.ingestProgress = std::max(0.0f, t.ingestProgress - SOUL_CAPTURE_DECAY * dt);
+        t.soulState = SoulState::Attracted;
+    }
+    t.captureCollapseAmount = clampf(t.ingestProgress, 0.0f, 1.0f);
+    syncTargetReactionVisual(t);
+    if (t.ingestProgress >= SOUL_CAPTURE_COMMIT_PHASE || t.health <= 0.0f) captureSoul(v.target);
 }
 
 void Game::updateBullets(float dt) {

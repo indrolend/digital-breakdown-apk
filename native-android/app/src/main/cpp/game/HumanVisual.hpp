@@ -68,6 +68,19 @@ struct HumanVisualPose {
     float rightLegSwing = 0.0f;
     float hitLean = 0.0f;
     float soulMorph = 0.0f;
+    float vacuumLean = 0.0f;
+    float collapse = 0.0f;
+};
+
+struct HumanReactionVisual {
+    float locomotionPhase = 0.0f;
+    float locomotionAmount = 0.0f;
+    float hitAmount = 0.0f;
+    float hitDirectionLocal = 0.0f;
+    float vacuumPullAmount = 0.0f;
+    float captureCollapseAmount = 0.0f;
+    float visibility = 1.0f;
+    float soulCubeAmount = 0.0f;
 };
 
 inline float smoothStep01(float x) {
@@ -75,28 +88,59 @@ inline float smoothStep01(float x) {
     return x * x * (3.0f - 2.0f * x);
 }
 
-inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float walkPhase, float time, float hitFlash, float soulMorphPhase, bool aliveHuman) {
+inline HumanReactionVisual makeHumanReactionVisual(
+    float walkPhase,
+    float locomotionAmount,
+    float hitFlash,
+    float hitDirectionLocal,
+    float vacuumPullAmount,
+    float captureProgress,
+    float soulMorphPhase,
+    bool humanVisible
+) {
+    HumanReactionVisual visual;
+    visual.locomotionPhase = walkPhase;
+    visual.locomotionAmount = clampf(locomotionAmount, 0.0f, 1.0f);
+    visual.hitAmount = clampf(hitFlash, 0.0f, 1.0f);
+    visual.hitDirectionLocal = clampf(hitDirectionLocal, -1.0f, 1.0f);
+    visual.vacuumPullAmount = clampf(vacuumPullAmount, 0.0f, 1.0f);
+    visual.captureCollapseAmount = smoothStep01(captureProgress);
+    visual.visibility = humanVisible ? 1.0f : 0.0f;
+    visual.soulCubeAmount = smoothStep01(soulMorphPhase);
+    return visual;
+}
+
+inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, const HumanReactionVisual& reaction, bool aliveHuman) {
     HumanVisualPose pose;
     pose.yaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
     pose.scale = scale;
-    pose.soulMorph = smoothStep01(soulMorphPhase);
+    pose.soulMorph = reaction.soulCubeAmount;
     pose.morphShrink = aliveHuman ? (1.0f - pose.soulMorph) : 1.0f;
-    const float stress = clampf(hitFlash * 0.18f + pose.soulMorph, 0.0f, 1.0f);
+    const float stress = clampf(reaction.hitAmount * 0.18f + pose.soulMorph, 0.0f, 1.0f);
     pose.scale *= (1.0f - stress * 0.25f) * std::max(0.0f, pose.morphShrink);
+    pose.scale *= reaction.visibility;
 
-    const float cadence = walkPhase;
+    const float cadence = reaction.locomotionPhase;
     const float stride = std::sin(cadence);
     const float counterStride = std::sin(cadence + DB_PI);
     const float idle = std::sin(time * 3.0f);
-    const float active = aliveHuman ? 1.0f : 0.0f;
+    const float active = aliveHuman ? reaction.locomotionAmount : 0.0f;
+    pose.collapse = reaction.captureCollapseAmount;
+    pose.vacuumLean = reaction.vacuumPullAmount;
     pose.rootBob = (0.012f * idle + 0.028f * std::abs(stride) * active) * pose.scale;
-    pose.torsoPitch = -0.04f * active + hitFlash * -0.16f;
-    pose.torsoRoll = stride * 0.055f * active + hitFlash * 0.18f;
-    pose.headPitch = 0.035f * idle - hitFlash * 0.12f;
-    pose.leftArmSwing = counterStride * 0.48f * active - 0.08f + hitFlash * 0.32f;
-    pose.rightArmSwing = stride * 0.48f * active - 0.08f - hitFlash * 0.32f;
-    pose.leftLegSwing = stride * 0.38f * active;
-    pose.rightLegSwing = counterStride * 0.38f * active;
-    pose.hitLean = hitFlash * 0.08f;
+    pose.torsoPitch = -0.04f * active - reaction.hitAmount * 0.16f - reaction.vacuumPullAmount * 0.20f + pose.collapse * 0.42f;
+    pose.torsoRoll = stride * 0.055f * active + reaction.hitDirectionLocal * reaction.hitAmount * 0.18f;
+    pose.headPitch = 0.035f * idle - reaction.hitAmount * 0.12f + pose.collapse * 0.24f;
+    const float armTrail = reaction.vacuumPullAmount * 0.28f + pose.collapse * 0.42f;
+    pose.leftArmSwing = counterStride * 0.46f * active - 0.08f + reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
+    pose.rightArmSwing = stride * 0.46f * active - 0.08f - reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
+    pose.leftLegSwing = stride * 0.36f * active - pose.collapse * 0.24f;
+    pose.rightLegSwing = counterStride * 0.36f * active - pose.collapse * 0.24f;
+    pose.hitLean = reaction.hitAmount * 0.08f;
     return pose;
+}
+
+inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float walkPhase, float time, float hitFlash, float soulMorphPhase, bool aliveHuman) {
+    const HumanReactionVisual reaction = makeHumanReactionVisual(walkPhase, aliveHuman ? 1.0f : 0.0f, hitFlash, 0.0f, 0.0f, 0.0f, soulMorphPhase, true);
+    return makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
 }

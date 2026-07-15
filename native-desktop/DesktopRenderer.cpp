@@ -87,9 +87,10 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, target.visualWalkPhase, time, target.hitFlash, target.soulMorph, aliveHuman);
+    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
+    const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
     const Vec3 root = target.pos + Vec3{0.0f, spec.rootGroundOffset + pose.rootBob, 0.0f};
     const float yaw = pose.yaw;
     const Vec3 forward{-std::sin(yaw),0,-std::cos(yaw)};
@@ -101,19 +102,19 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     const float torsoY=pelvisY+(spec.pelvisHeight+spec.torsoHeight)*s*0.5f;
     const float headY=spec.totalHeight*s-spec.headRadius*s;
     const float armY=torsoY+spec.torsoHeight*s*0.18f;
-    roundedEllipsoid(root+Vec3{0,pelvisY,0},{spec.pelvisWidth*s,spec.pelvisHeight*s,spec.pelvisDepth*s},0,yaw,0,r,g,b);
-    roundedEllipsoid(root+Vec3{0,torsoY,0}+forward*(pose.hitLean*s),{spec.torsoWidth*s,spec.torsoHeight*s,spec.torsoDepth*s},pose.torsoPitch,yaw,pose.torsoRoll,r,g,b);
+    roundedEllipsoid(root+Vec3{0,pelvisY*collapseScale,0},{spec.pelvisWidth*s,spec.pelvisHeight*s*collapseScale,spec.pelvisDepth*s},0,yaw,0,r,g,b);
+    roundedEllipsoid(root+Vec3{0,torsoY*collapseScale,0}+forward*((pose.hitLean + pose.vacuumLean * 0.06f)*s),{spec.torsoWidth*s,spec.torsoHeight*s*collapseScale,spec.torsoDepth*s},pose.torsoPitch,yaw,pose.torsoRoll,r,g,b);
     roundedEllipsoid(root+Vec3{0,headY,0}+forward*(pose.headPitch*0.03f),{spec.headRadius*2*s,spec.headRadius*2*s,spec.headRadius*2*s},pose.headPitch,yaw,0,r,g,b);
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;
         const float legSwing=side<0?pose.leftLegSwing:pose.rightLegSwing;
         const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY,0};
-        roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s,0},{0.055f*s,spec.upperArmLength*s,0.065f*s},armSwing,yaw,0,r,g,b);
-        roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s,0},{0.052f*s,spec.forearmLength*s,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
+        roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*collapseScale,0},{0.055f*s,spec.upperArmLength*s*collapseScale,0.065f*s},armSwing,yaw,0,r,g,b);
+        roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s*collapseScale,0},{0.052f*s,spec.forearmLength*s*collapseScale,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.14f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength)*s,0},{spec.handSize*s,spec.handSize*s,spec.handSize*0.75f*s},0,yaw,0,r,g,b);
         const Vec3 hip=root+right*(side*spec.pelvisWidth*0.28f*s);
-        roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY,0},{0.075f*s,spec.thighLength*s,0.080f*s},legSwing,yaw,0,r,g,b);
-        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY,0},{0.070f*s,spec.shinLength*s,0.075f*s},-legSwing*0.65f,yaw,0,r,g,b);
+        roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY*collapseScale,0},{0.075f*s,spec.thighLength*s*collapseScale,0.080f*s},legSwing,yaw,0,r,g,b);
+        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f,yaw,0,r,g,b);
         roundedEllipsoid(hip+forward*(spec.footLength*0.25f*s+legSwing*0.04f*s)+Vec3{0,footY,0},{0.075f*s,spec.footHeight*s,spec.footLength*s},0,yaw,0,r,g,b);
     }
 }
@@ -181,9 +182,9 @@ void DesktopRenderer::draw(const GameState& state) const {
     for (auto target:state.targets) if (target.alive) {
         Vec3 p=target.pos; p.z=tileOrigin + (target.pos.z - std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
         target.pos = p;
-        if (target.slurpable && target.soulMorph >= 0.995f) {
+        if (target.slurpable && target.soulCubeAmount >= 0.995f) {
             const float wobble=1.0f+std::sin(state.time*7.0f+target.phase)*0.04f;
-            roundedEllipsoid(p+Vec3{0,0.62f,0},{0.52f*wobble,0.52f,0.52f*wobble},0,state.time*1.7f,0,0.70f,1.0f,0.78f);
+            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*wobble,0.52f*target.scale,0.52f*target.scale*wobble},state.time*1.2f,state.time*1.7f,state.time*0.9f,0.70f,1.0f,0.78f);
         } else {
             drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
         }

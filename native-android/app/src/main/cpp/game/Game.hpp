@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include "HumanVisual.hpp"
 #include "Math.hpp"
 
 constexpr int TARGET_COUNT = 32;
@@ -102,8 +103,16 @@ struct TargetState {
     float phase = 0.0f;
     float visualYaw = 0.0f;
     float visualWalkPhase = 0.0f;
+    float locomotionAmount = 0.0f;
     float hitFlash = 0.0f;
+    float hitDirectionLocal = 0.0f;
+    float vacuumPullAmount = 0.0f;
+    float captureCollapseAmount = 0.0f;
+    float visibility = 1.0f;
+    float soulCubeAmount = 0.0f;
     float soulMorph = 0.0f;
+    HumanReactionVisual visualReaction;
+    bool brute = false;
     SoulState soulState = SoulState::Free;
 };
 
