@@ -147,7 +147,8 @@ void syncTargetReactionVisual(TargetState& target) {
 void syncSoulVisual(TargetState& target, float time) {
     target.soulVisual = makeSoulVisualState(
         static_cast<int>(target.soulState), target.vacuumPullAmount, target.ingestProgress,
-        target.hitFlash, time, target.phase, target.alive && target.slurpable);
+        target.hitFlash, time, target.phase, target.alive && target.slurpable,
+        target.soulMorph, target.floatOffset, target.spinSpeed);
 }
 }
 
@@ -225,6 +226,8 @@ void Game::resetRoom() {
         target.health = 1.0f;
         target.scale = target.brute ? HUMAN_SCALE_BRUTE : 1.0f;
         target.phase = static_cast<float>(i) * 0.77f;
+        target.floatOffset = seededRoomValue(430 + i) * DB_PI * 2.0f;
+        target.spinSpeed = 0.4f + seededRoomValue(435 + i) * 0.8f;
         target.visualWalkPhase = target.phase;
         target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
         target.attackCooldown = seededRoomValue(460 + i) * 0.5f;
@@ -760,7 +763,7 @@ int Game::applyMeleeHits() {
         t.armor -= visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f));
         t.hitFlash = 1.0f;
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
-        if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
+        if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; t.hitFlash=1.35f; }
         visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
     if(newHits>0){const float recoilScale=totalHits>1?0.35f:1.0f; state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale); state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale); visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
@@ -803,6 +806,8 @@ void Game::respawnTarget(int index) {
     t.pos = {(seededRoomValue(500 + index) - 0.5f) * 20.0f, GROUND_Y, ROOM_MIN_SPAWN_Z + seededRoomValue(600 + index) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z)};
     t.visualYaw = seededRoomValue(540 + index) * DB_PI * 2.0f;
     t.visualWalkPhase = seededRoomValue(560 + index) * DB_PI * 2.0f;
+    t.floatOffset=seededRoomValue(565+index)*DB_PI*2.0f;
+    t.spinSpeed=0.4f+seededRoomValue(570+index)*0.8f;
     t.attackCooldown=seededRoomValue(580+index)*0.5f;
     t.attackVariant=static_cast<int>(seededRoomValue(590+index)*4.0f)%4;
     chooseHumanWalkTarget(index);

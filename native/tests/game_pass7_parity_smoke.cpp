@@ -181,6 +181,17 @@ int main() {
     ok &= expect(game.state().targets[0].soulCubeAmount >= 0.995f, "soul cube visibility follows shared morph threshold");
 
     game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state()); TargetState& target=setup.targets[0];
+        target.alive=true; target.slurpable=true; target.soulMorph=0; target.hitFlash=1.35f;
+    }
+    step(game,6);
+    ok &= expect(game.state().targets[0].soulCubeAmount>0.001f && game.state().targets[0].soulCubeAmount<0.995f,
+        "soul cube instantiates during the human morph instead of popping in at the end");
+    ok &= expect(near(game.state().targets[0].soulVisual.scale.x,game.state().targets[0].soulVisual.scale.y,0.0001f),
+        "idle soul pulse remains uniformly cubic");
+
+    game.reset();
     game.setTouchControls(0, 0, -0.75f / 0.003f, 0, false, false, false, false, false, true);
     step(game);
     const GameState firstPerson = game.state();

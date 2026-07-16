@@ -22,10 +22,13 @@ int main() {
     assert(!makePhoneVisualState(1, 1, 0, 1, true).visible);
     assert(near(active.screenGlow, makePhoneVisualState(1, 1, 0.6f, 1, false).screenGlow));
 
-    const SoulVisualState freeSoul = makeSoulVisualState(0, 0, 0, 0, 1, 0, true);
+    const SoulVisualState freeSoul = makeSoulVisualState(0, 0, 0, 0, 1, 0, true, 1, 0.4f, 0.8f);
     assert(near(freeSoul.color.r, Pass7Visual::SoulBase.r));
+    assert(near(freeSoul.scale.x, freeSoul.scale.y) && near(freeSoul.scale.y, freeSoul.scale.z));
+    assert(near(freeSoul.rotationY, 0.8f) && std::fabs(freeSoul.verticalOffset) <= 0.18f);
+    assert(near(makeSoulVisualState(0,0,0,0,1,0,true,0.5f).morphScale,0.5f));
     const SoulVisualState attracted = makeSoulVisualState(1, 0.8f, 0, 0, 1, 0, true);
-    assert(attracted.pullAmount > 0.79f && attracted.scale.y > freeSoul.scale.y);
+    assert(attracted.pullAmount > 0.79f && near(attracted.scale.x, attracted.scale.y));
     const SoulVisualState latched = makeSoulVisualState(2, 1, 0.2f, 0, 1, 0, true);
     assert(latched.latchAmount == 1 && latched.emission > attracted.emission);
     const SoulVisualState ingesting = makeSoulVisualState(3, 1, 0.8f, 0, 1, 0, true);

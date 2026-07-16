@@ -93,7 +93,7 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
-    const bool aliveHuman = !target.slurpable;
+    const bool aliveHuman = !target.slurpable || target.soulCubeAmount < 0.995f;
     const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
@@ -235,16 +235,16 @@ void DesktopRenderer::draw(const GameState& state) const {
     for (auto target:state.targets) if (target.alive) {
         Vec3 p=target.pos; p.z=tileOrigin + (target.pos.z - std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
         target.pos = p;
-        if (target.slurpable && target.soulCubeAmount >= 0.995f) {
+        if (!target.slurpable || target.soulCubeAmount < 0.995f) {
+            drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
+        }
+        if (target.slurpable && target.soulCubeAmount > 0.001f) {
             const auto& sv=target.soulVisual;
             if (!sv.visible) continue;
-            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*sv.scale.x,0.52f*target.scale*sv.scale.y,0.52f*target.scale*sv.scale.z},state.time*1.2f,state.time*1.7f,state.time*0.9f,sv.color.r,sv.color.g,sv.color.b);
-            glDisable(GL_LIGHTING);
-            const float shell=1.025f+sv.emission*0.012f;
-            drawBox(p+Vec3{0,0.62f,0},{0.52f*target.scale*sv.scale.x*shell,0.52f*target.scale*sv.scale.y*shell,0.52f*target.scale*sv.scale.z*shell},state.time*1.2f,state.time*1.7f,state.time*0.9f,Pass7Visual::SoulEmission.r*sv.emission,Pass7Visual::SoulEmission.g*std::min(1.0f,sv.emission),Pass7Visual::SoulEmission.b*std::min(1.0f,sv.emission));
-            glEnable(GL_LIGHTING);
-        } else {
-            drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
+            const float cube=0.72f*0.78f*target.scale*sv.morphScale;
+            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+            drawBox(p+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,sv.color.r,sv.color.g,sv.color.b,0.68f);
+            glDepthMask(GL_TRUE); glDisable(GL_BLEND);
         }
     }
     for (const auto& capture:state.captures) {

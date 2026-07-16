@@ -53,6 +53,9 @@ struct SoulVisualState {
     float phase = 0.0f;
     Vec3 scale{1.0f, 1.0f, 1.0f};
     Vec3 deformation{0.0f, 0.0f, 0.0f};
+    float verticalOffset = 0.0f;
+    float rotationY = 0.0f;
+    float morphScale = 0.0f;
     bool visible = true;
 };
 
@@ -80,24 +83,25 @@ inline PhoneVisualState makePhoneVisualState(float vacuumPose, float vacuumPower
 }
 
 // soulState follows SoulState's Free, Attracted, Latched, Ingesting, Recoiling order.
-inline SoulVisualState makeSoulVisualState(int soulState, float vacuumPull, float ingest, float hit, float time, float seed, bool alive) {
+inline SoulVisualState makeSoulVisualState(int soulState, float vacuumPull, float ingest, float hit, float time, float seed, bool alive,
+    float morph = 1.0f, float floatOffset = 0.0f, float spinSpeed = 0.8f) {
     SoulVisualState visual;
     visual.hitAmount = std::max(0.0f, std::min(1.0f, hit));
     visual.pullAmount = soulState == 1 ? std::max(0.0f, std::min(1.0f, vacuumPull)) : 0.0f;
     visual.latchAmount = (soulState == 2 || soulState == 3) ? 1.0f : 0.0f;
     visual.ingestAmount = std::max(0.0f, std::min(1.0f, ingest));
     visual.phase = time * 7.0f + seed;
+    visual.verticalOffset = std::sin(time * 2.0f + floatOffset) * 0.18f;
+    visual.rotationY = time * spinSpeed;
+    visual.morphScale = visualSmooth01(morph);
     const float active = std::max(visual.pullAmount, std::max(visual.latchAmount * 0.72f, visual.ingestAmount));
     visual.elasticity = std::max(0.0f, std::min(1.0f, active + visual.hitAmount * 0.18f));
-    const float wave = std::sin(visual.phase) * 0.04f * (0.35f + visual.elasticity * 0.65f);
-    const float stretch = visual.pullAmount * 0.18f + visual.latchAmount * 0.12f;
-    const float squash = visual.ingestAmount * 0.42f;
-    visual.scale = {
-        std::max(0.12f, 1.0f - stretch * 0.45f - squash * 0.38f + wave),
-        std::max(0.12f, 1.0f + stretch - squash * 0.28f - wave * 0.5f),
-        std::max(0.12f, 1.0f - stretch * 0.45f - squash * 0.38f + wave)
-    };
-    visual.deformation = {wave, stretch, -squash};
+    const float baseBreath = 1.0f + std::sin(time * 3.0f + seed * 1.7f) * 0.035f;
+    const float readyPulse = 1.0f + std::sin(time * 18.0f + seed) * 0.055f;
+    const float hitPulse = 1.0f + visual.hitAmount * 0.16f;
+    const float uniformScale = baseBreath * readyPulse * hitPulse;
+    visual.scale = {uniformScale, uniformScale, uniformScale};
+    visual.deformation = {0.0f, 0.0f, 0.0f};
     visual.emission = std::max(0.0f, std::min(1.5f, 0.42f + visual.pullAmount * 0.18f + visual.latchAmount * 0.25f + visual.ingestAmount * 0.48f + visual.hitAmount * 0.38f));
     const float flash = visual.hitAmount;
     visual.color = {

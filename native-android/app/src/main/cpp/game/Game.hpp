@@ -102,6 +102,8 @@ struct TargetState {
     float respawnTimer = 0.0f;
     float scale = 1.0f;
     float phase = 0.0f;
+    float floatOffset = 0.0f;
+    float spinSpeed = 0.8f;
     float visualYaw = 0.0f;
     float visualWalkPhase = 0.0f;
     float locomotionAmount = 0.0f;

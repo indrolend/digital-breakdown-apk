@@ -278,7 +278,7 @@ void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, cons
 
 void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
-    const bool aliveHuman = !target.slurpable;
+    const bool aliveHuman = !target.slurpable || target.soulCubeAmount < 0.995f;
     const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     if (pose.scale <= 0.001f) return;
 
@@ -374,15 +374,16 @@ void Renderer::draw(const GameState& state) {
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
     for (const auto& target : state.targets) {
         if (!target.alive) continue;
-        if (target.slurpable && target.soulCubeAmount >= 0.995f) {
-            if (!target.soulVisual.visible) continue;
-            const float soulColor[4] = {target.soulVisual.color.r, target.soulVisual.color.g, target.soulVisual.color.b, 1.0f};
-            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * target.soulVisual.scale.x, 0.52f * target.scale * target.soulVisual.scale.y, 0.52f * target.scale * target.soulVisual.scale.z}, state.time * 1.7f, soulColor);
-            const float shell = 1.025f + target.soulVisual.emission * 0.012f;
-            const float glowColor[4] = {Pass7Visual::SoulEmission.r * target.soulVisual.emission, Pass7Visual::SoulEmission.g * std::min(1.0f, target.soulVisual.emission), Pass7Visual::SoulEmission.b * std::min(1.0f, target.soulVisual.emission), 1.0f};
-            drawBox(viewProj, target.pos + Vec3{0.0f, 0.62f, 0.0f}, {0.52f * target.scale * target.soulVisual.scale.x * shell, 0.52f * target.scale * target.soulVisual.scale.y * shell, 0.52f * target.scale * target.soulVisual.scale.z * shell}, state.time * 1.7f, glowColor);
-        } else {
+        if (!target.slurpable || target.soulCubeAmount < 0.995f) {
             drawProceduralHuman(viewProj, target, state.time, targetColor);
+        }
+        if (target.slurpable && target.soulCubeAmount > 0.001f) {
+            if (!target.soulVisual.visible) continue;
+            const auto& sv=target.soulVisual; const float cube=0.72f*0.78f*target.scale*sv.morphScale;
+            const float soulColor[4] = {sv.color.r, sv.color.g, sv.color.b, 0.68f};
+            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+            drawBox(viewProj, target.pos + Vec3{0.0f, 0.57f+sv.verticalOffset, 0.0f}, {cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z}, sv.rotationY, soulColor);
+            glDepthMask(GL_TRUE); glDisable(GL_BLEND);
         }
     }
 
