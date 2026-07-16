@@ -7,6 +7,12 @@
 static bool near(float a, float b, float e = 0.001f) { return std::fabs(a - b) <= e; }
 
 int main() {
+    const Quat halfFlip = quatAxisAngle({1, 0, 0}, -DB_PI);
+    const Vec3 flippedUp = rotate(halfFlip, {0, 1, 0});
+    assert(near(flippedUp.y, -1.0f));
+    const Quat turn = quatSlerp({}, quatAxisAngle({0, 1, 0}, DB_PI), 0.5f);
+    const Vec3 turnedForward = rotate(turn, {0, 0, 1});
+    assert(near(std::fabs(turnedForward.x), 1.0f) && near(turnedForward.z, 0.0f));
     const PhoneVisualState idle = makePhoneVisualState(0, 0, 0, 1, false);
     assert(near(idle.vacuumPose, 0) && near(idle.screenGlow, 0.75f));
     assert(near(idle.bodyScale.x, 1) && idle.visible);

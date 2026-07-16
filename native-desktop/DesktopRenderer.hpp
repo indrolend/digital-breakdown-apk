@@ -5,6 +5,7 @@
 class DesktopRenderer {
 public:
     static void drawBox(const Vec3& position, const Vec3& scale, float pitch, float yaw, float roll, float r, float g, float b);
+    static void drawBox(const Vec3& position, const Vec3& scale, const Quat& orientation, float r, float g, float b);
     void resize(int width, int height);
     void draw(const GameState& state) const;
 

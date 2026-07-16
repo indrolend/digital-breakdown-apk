@@ -85,6 +85,27 @@ int main() {
     ok &= expect(near(diagonal.player.vel.x / diagSpeed, 0.7071f, 0.02f) && near(diagonal.player.vel.z / diagSpeed, -0.7071f, 0.02f), "diagonal movement normalizes combined camera forward/right intent");
 
     game.reset();
+    game.setTouchControls(0, 1, 0, 0, false, false, true, false, false, false);
+    step(game);
+    game.setTouchControls(0, 1, 0, 0, false, false, true, false, false, false);
+    step(game);
+    ok &= expect(game.state().phonePose.actionState == 5 && game.state().phonePose.doubleJumpTimer > 0.0f,
+        "double jump gives the browser phone flip pose priority");
+    step(game, 8);
+    ok &= expect(game.state().phonePose.doubleJumpFlip > 2.0f && game.state().phonePose.doubleJumpFlip < 4.3f,
+        "double-jump phone rotation passes through the half-flip phase");
+
+    game.reset();
+    game.setTouchControls(0, 0, 0, 0, true, false, false, false, false, false);
+    step(game, 20);
+    ok &= expect(game.state().phonePose.screenForwardTurn > 0.75f && game.state().phonePose.actionState == 2,
+        "vacuum eases the phone toward its screen-forward pose");
+    game.setTouchControls(0, 0, 0, 0, false, false, false, false, false, false);
+    step(game, 30);
+    ok &= expect(game.state().phonePose.screenForwardTurn < 0.10f,
+        "phone screen-forward pose returns toward neutral after vacuum release");
+
+    game.reset();
     {
         GameState& setup = const_cast<GameState&>(game.state());
         TargetState& target = setup.targets[0];

@@ -137,6 +137,14 @@ void modelBox(float* m, const Vec3& pos, const Vec3& scale, float yaw) {
     m[14] = pos.z;
 }
 
+void modelBox(float* m, const Vec3& pos, const Vec3& scale, const Quat& q) {
+    ident(m);
+    m[0]=(1-2*(q.y*q.y+q.z*q.z))*scale.x; m[1]=(2*(q.x*q.y+q.z*q.w))*scale.x; m[2]=(2*(q.x*q.z-q.y*q.w))*scale.x;
+    m[4]=(2*(q.x*q.y-q.z*q.w))*scale.y; m[5]=(1-2*(q.x*q.x+q.z*q.z))*scale.y; m[6]=(2*(q.y*q.z+q.x*q.w))*scale.y;
+    m[8]=(2*(q.x*q.z+q.y*q.w))*scale.z; m[9]=(2*(q.y*q.z-q.x*q.w))*scale.z; m[10]=(1-2*(q.x*q.x+q.y*q.y))*scale.z;
+    m[12]=pos.x; m[13]=pos.y; m[14]=pos.z;
+}
+
 GLuint compileShader(GLenum type, const char* src) {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &src, nullptr);
@@ -228,6 +236,14 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
+void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]) {
+    if (!program_) return;
+    float model[16], mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
+    glUseProgram(program_); glBindBuffer(GL_ARRAY_BUFFER,vbo_); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);
+    glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLES,0,36);
+}
+
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
     if (!program_ || !roundedVbo_ || roundedVertexCount_ <= 0) return;
     float model[16];
@@ -316,9 +332,9 @@ void Renderer::draw(const GameState& state) {
         const Vec3 right{std::cos(state.player.yaw), 0.0f, -std::sin(state.player.yaw)};
         const Vec3 phonePos = state.player.pos + Vec3{0.0f, state.phonePose.lift + state.phoneVisual.actionLift, 0.0f}
             + forward * (state.phonePose.forward + state.phoneVisual.actionForward) + right * state.phonePose.side;
-        const float phoneYaw = state.player.yaw + state.phonePose.yaw;
-        drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH * state.phoneVisual.bodyScale.x, PHONE_BODY_HEIGHT * state.phoneVisual.bodyScale.y, PHONE_BODY_DEPTH}, phoneYaw + state.phoneVisual.roll, phoneBody);
-        drawBox(viewProj, phonePos + forward * (PHONE_SCREEN_Z_OFFSET + state.phoneVisual.screenOffset), {PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x, PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y, PHONE_SCREEN_DEPTH}, phoneYaw + state.phoneVisual.roll, phoneScreen);
+        Quat phoneOrientation=state.phonePose.orientation * quatAxisAngle({1,0,0},state.phoneVisual.pitch) * quatAxisAngle({0,0,1},state.phoneVisual.roll);
+        drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH * state.phoneVisual.bodyScale.x, PHONE_BODY_HEIGHT * state.phoneVisual.bodyScale.y, PHONE_BODY_DEPTH}, phoneOrientation, phoneBody);
+        drawBox(viewProj, phonePos + rotate(phoneOrientation,{0,0,PHONE_SCREEN_Z_OFFSET + state.phoneVisual.screenOffset}), {PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x, PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y, PHONE_SCREEN_DEPTH}, phoneOrientation, phoneScreen);
     }
 
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};

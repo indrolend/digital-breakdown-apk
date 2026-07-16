@@ -159,6 +159,13 @@ struct PhonePoseState {
     float lift = 0.0f;
     float forward = 0.0f;
     float side = 0.0f;
+    Quat orientation;
+    float screenForwardTurn = 0.0f;
+    float doubleJumpTimer = 0.0f;
+    float doubleJumpVacuumPause = 0.0f;
+    float doubleJumpFlipYaw = 0.0f;
+    float doubleJumpFlip = 0.0f;
+    int actionState = 0;
 };
 
 struct PlayerDebugState {
@@ -230,6 +237,7 @@ private:
     void updateCamera(float dt);
     void updatePlayer(float dt);
     void updatePhoneGait(float dt, bool running);
+    void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updateTargets(float dt);
     void updateVacuum(float dt);
     void updateBullets(float dt);

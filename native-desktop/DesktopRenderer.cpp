@@ -141,6 +141,17 @@ void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float y
     glScalef(s.x, s.y, s.z); glColor3f(r,g,b); cube(); glPopMatrix();
 }
 
+void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, const Quat& q, float r, float g, float b) {
+    const float matrix[16] = {
+        1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y+q.z*q.w), 2*(q.x*q.z-q.y*q.w), 0,
+        2*(q.x*q.y-q.z*q.w), 1-2*(q.x*q.x+q.z*q.z), 2*(q.y*q.z+q.x*q.w), 0,
+        2*(q.x*q.z+q.y*q.w), 2*(q.y*q.z-q.x*q.w), 1-2*(q.x*q.x+q.y*q.y), 0,
+        0,0,0,1
+    };
+    glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(s.x,s.y,s.z);
+    glColor3f(r,g,b); cube(); glPopMatrix();
+}
+
 void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     const float z0 = static_cast<float>(tileIndex) * ROOM_DEPTH;
     const float doorWidth = 5.35f;
@@ -186,11 +197,11 @@ void DesktopRenderer::draw(const GameState& state) const {
         const Vec3 forward={-std::sin(state.player.yaw),0,-std::cos(state.player.yaw)};
         const Vec3 right={std::cos(state.player.yaw),0,-std::sin(state.player.yaw)};
         Vec3 phonePos=state.player.pos + Vec3{0,state.phonePose.lift+state.phoneVisual.actionLift,0} + forward*(state.phonePose.forward+state.phoneVisual.actionForward) + right*state.phonePose.side;
-        const float phoneYaw=state.player.yaw+state.phonePose.yaw;
         const auto& pv=state.phoneVisual;
-        drawBox(phonePos,{PHONE_BODY_WIDTH*pv.bodyScale.x,PHONE_BODY_HEIGHT*pv.bodyScale.y,PHONE_BODY_DEPTH},state.phonePose.pitch+pv.pitch,phoneYaw,state.phonePose.roll+pv.roll,Pass7Visual::PhoneBody.r,Pass7Visual::PhoneBody.g,Pass7Visual::PhoneBody.b);
+        Quat phoneOrientation=state.phonePose.orientation * quatAxisAngle({1,0,0},pv.pitch) * quatAxisAngle({0,0,1},pv.roll);
+        drawBox(phonePos,{PHONE_BODY_WIDTH*pv.bodyScale.x,PHONE_BODY_HEIGHT*pv.bodyScale.y,PHONE_BODY_DEPTH},phoneOrientation,Pass7Visual::PhoneBody.r,Pass7Visual::PhoneBody.g,Pass7Visual::PhoneBody.b);
         const float glow=std::min(1.0f,0.45f+pv.screenGlow*0.36f);
-        drawBox(phonePos+forward*(PHONE_SCREEN_Z_OFFSET+pv.screenOffset),{PHONE_SCREEN_WIDTH*pv.screenScale.x,PHONE_SCREEN_HEIGHT*pv.screenScale.y,PHONE_SCREEN_DEPTH},state.phonePose.pitch+pv.pitch,phoneYaw,state.phonePose.roll+pv.roll,Pass7Visual::PhoneEmission.r*glow,Pass7Visual::PhoneEmission.g*glow,Pass7Visual::PhoneEmission.b*glow);
+        drawBox(phonePos+rotate(phoneOrientation,{0,0,PHONE_SCREEN_Z_OFFSET+pv.screenOffset}),{PHONE_SCREEN_WIDTH*pv.screenScale.x,PHONE_SCREEN_HEIGHT*pv.screenScale.y,PHONE_SCREEN_DEPTH},phoneOrientation,Pass7Visual::PhoneEmission.r*glow,Pass7Visual::PhoneEmission.g*glow,Pass7Visual::PhoneEmission.b*glow);
     }
 
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;

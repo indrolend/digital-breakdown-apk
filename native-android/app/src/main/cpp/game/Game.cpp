@@ -439,6 +439,7 @@ void Game::updatePlayer(float dt) {
         const float support = getPlayerSupportY(p.pos.x, p.pos.z);
         if (p.pos.y <= support) {
             p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
+            state_.phonePose.doubleJumpTimer = 0.0f;
             if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
         }
     }
@@ -452,6 +453,7 @@ void Game::updatePlayer(float dt) {
         if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else p.pos.y = supportAfter;
     } else if (p.jumpVel <= 0 && p.pos.y <= supportAfter) {
         p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
+        state_.phonePose.doubleJumpTimer = 0.0f;
     }
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     if (p.pos.x < minX) { p.pos.x = minX; if (p.vel.x < 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
@@ -461,6 +463,7 @@ void Game::updatePlayer(float dt) {
     p.targetYaw = state_.camera.yaw;
     p.yaw = state_.camera.yaw;
     updatePhoneGait(dt, running);
+    updatePhoneActionPose(dt, running, forwardAxis, strafeAxis);
     state_.debug.supportY = supportAfter;
     state_.debug.localZ = wrapZ(p.pos.z);
     state_.debug.horizontalSpeed = horizontalLength(p.vel);
@@ -473,6 +476,47 @@ void Game::updatePlayer(float dt) {
     state_.debug.phoneLift = state_.phonePose.lift;
     state_.debug.phoneForward = state_.phonePose.forward;
     state_.debug.phoneSide = state_.phonePose.side;
+}
+
+void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis) {
+    PhonePoseState& pose = state_.phonePose;
+    pose.doubleJumpVacuumPause = std::max(0.0f, pose.doubleJumpVacuumPause - dt);
+    pose.doubleJumpTimer = std::max(0.0f, pose.doubleJumpTimer - dt);
+    const bool jumpFlip = pose.doubleJumpTimer > 0.0f;
+    const bool vacuumFacing = state_.vacuum.active && pose.doubleJumpVacuumPause <= 0.0f;
+    const float targetTurn = vacuumFacing ? 1.0f : 0.0f;
+    pose.screenForwardTurn += (targetTurn - pose.screenForwardTurn) * std::min(1.0f, dt * 4.5f);
+    const float easedTurn = pose.screenForwardTurn*pose.screenForwardTurn*(3.0f-2.0f*pose.screenForwardTurn);
+
+    const float inputMag = std::max(1.0f, std::sqrt(forwardAxis*forwardAxis + strafeAxis*strafeAxis));
+    const float lean = running ? 0.5f : 0.35f;
+    Quat base = quatAxisAngle({0,1,0}, state_.camera.yaw);
+    base = base * quatAxisAngle({1,0,0}, -(forwardAxis/inputMag)*lean);
+    base = base * quatAxisAngle({0,0,1}, -(strafeAxis/inputMag)*lean*0.82f);
+
+    // THREE.Object3D.lookAt points the phone's local +Z axis along the camera ray.
+    const Vec3 cameraRay = state_.camera.forward;
+    const float aimYaw = std::atan2(cameraRay.x, cameraRay.z);
+    const float aimPitch = -std::asin(clampf(cameraRay.y, -1.0f, 1.0f));
+    Quat aim = quatAxisAngle({0,1,0}, aimYaw) * quatAxisAngle({1,0,0}, aimPitch);
+    Quat q = quatSlerp(base, aim, easedTurn);
+    const float ritualFlip = std::sin(easedTurn * DB_PI) * 0.75f;
+    const float wobble = std::sin(state_.time * 18.0f) * 0.035f * state_.vacuum.pose;
+
+    if (jumpFlip) {
+        const float phase = 1.0f - clampf(pose.doubleJumpTimer / 0.30f, 0.0f, 1.0f);
+        const float ease = phase*phase*(3.0f-2.0f*phase);
+        pose.doubleJumpFlip = ease * DB_PI * 2.0f;
+        q = quatAxisAngle({0,1,0}, pose.doubleJumpFlipYaw) * quatAxisAngle({1,0,0}, -pose.doubleJumpFlip);
+        pose.actionState = 5;
+    } else {
+        pose.doubleJumpFlip = 0.0f;
+        q = q * quatAxisAngle({1,0,0}, -ritualFlip + pose.pitch);
+        q = q * quatAxisAngle({0,1,0}, pose.yaw);
+        q = q * quatAxisAngle({0,0,1}, wobble + pose.roll);
+        pose.actionState = vacuumFacing ? 2 : (pose.energy > 0.01f ? 1 : 0);
+    }
+    pose.orientation = quatNormalized(q);
 }
 
 void Game::updatePhoneGait(float dt, bool running) {
@@ -625,6 +669,16 @@ void Game::startGroundJump() {
 void Game::startAirJump() {
     PlayerState& p = state_.player;
     p.jumpVel = AIR_JUMP_SPEED; p.jumpBufferTimer = 0; p.airJumpsRemaining -= 1;
+    PhonePoseState& pose = state_.phonePose;
+    pose.doubleJumpTimer = std::max(pose.doubleJumpTimer, 0.30f);
+    pose.doubleJumpVacuumPause = std::max(pose.doubleJumpVacuumPause, 0.16f);
+    const InputState& input = state_.input;
+    const float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
+    const float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
+    Vec3 direction = cameraForwardFlat()*forwardAxis + cameraRightFlat()*strafeAxis;
+    pose.doubleJumpFlipYaw = lengthSq(direction) > 0.000001f
+        ? std::atan2(-normalized(direction).x, -normalized(direction).z)
+        : state_.camera.yaw;
 }
 
 void Game::triggerMelee() {
