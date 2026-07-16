@@ -337,6 +337,25 @@ void Renderer::draw(const GameState& state) {
         drawBox(viewProj, phonePos + rotate(phoneOrientation,{0,0,PHONE_SCREEN_Z_OFFSET + state.phoneVisual.screenOffset}), {PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x, PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y, PHONE_SCREEN_DEPTH}, phoneOrientation, phoneScreen);
     }
 
+    const MeleeVisualState& melee=state.meleeVisual;
+    if(melee.visualTimer>0.0f){
+        const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
+        const float hitBoost=melee.visualHit?1.25f:0.72f; const Vec3 side{melee.direction.z,0,-melee.direction.x};
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        const float cyan[4]={0.56f,0.97f,1.0f,(1.0f-t)*0.72f};
+        for(int segment=0;segment<9;++segment){const float a0=(-0.28f+t*1.15f)*DB_PI+segment*DB_PI*1.35f/9.0f;
+            const Vec3 radial=side*std::cos(a0)+Vec3{0,1,0}*std::sin(a0); const Vec3 p=melee.origin+melee.direction*(0.66f+0.22f*t)+radial*(0.52f*(0.75f+t*0.72f)*hitBoost);
+            drawBox(viewProj,p,{0.09f,0.035f,0.035f},state.player.yaw+a0,cyan);}
+        const Vec3 delta=melee.impact-melee.origin; const float len=std::max(0.3f,length(delta));
+        const float yaw=std::atan2(delta.x,delta.z); const float pitch=-std::asin(clampf(delta.y/std::max(len,0.001f),-1.0f,1.0f));
+        const Quat lineQ=quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},pitch); const float streak[4]={0.33f,0.84f,1.0f,(1.0f-t)*0.42f};
+        drawBox(viewProj,melee.origin+delta*0.46f,{0.07f,0.07f,len*(0.70f+std::sin(t*DB_PI)*0.18f)},lineQ,streak);
+        const float white[4]={1,1,1,melee.visualHit?(1.0f-t)*0.9f:(1.0f-t)*0.26f};
+        for(int segment=0;segment<12;++segment){const float a=segment*DB_PI*2.0f/12.0f; const float radius=(0.45f+t*1.45f)*0.34f*hitBoost;
+            drawBox(viewProj,melee.impact+Vec3{std::cos(a)*radius,std::sin(a)*radius,0},{0.055f,0.025f,0.025f},a,white);}
+        glDisable(GL_BLEND);
+    }
+
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
     for (const auto& target : state.targets) {
         if (!target.alive) continue;

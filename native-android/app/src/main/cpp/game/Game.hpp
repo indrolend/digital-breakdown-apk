@@ -112,6 +112,12 @@ struct TargetState {
     float visibility = 1.0f;
     float soulCubeAmount = 0.0f;
     float soulMorph = 0.0f;
+    Vec3 walkTarget;
+    int walkTargetSequence = 0;
+    float attackTimer = 0.0f;
+    float attackCooldown = 0.0f;
+    int attackVariant = 0;
+    bool attackHit = false;
     HumanReactionVisual visualReaction;
     bool brute = false;
     SoulState soulState = SoulState::Free;
@@ -168,6 +174,26 @@ struct PhonePoseState {
     int actionState = 0;
 };
 
+struct MeleeVisualState {
+    float visualTimer = 0.0f;
+    float visualDuration = 0.20f;
+    float dashTimer = 0.0f;
+    float dashSpeed = 12.5f;
+    float travel = 0.0f;
+    float lunge = 0.15f;
+    float recoilDistance = 0.08f;
+    float recoilSpeed = 1.25f;
+    float range = 2.35f;
+    float hitRadius = 0.78f;
+    float damage = 0.82f;
+    Vec3 direction{0.0f, 0.0f, -1.0f};
+    Vec3 origin;
+    Vec3 impact;
+    int variant = 0;
+    int comboIndex = 0;
+    bool visualHit = false;
+};
+
 struct PlayerDebugState {
     float supportY = 0.08f;
     float localZ = 0.0f;
@@ -204,6 +230,8 @@ struct GameState {
     bool roomClear = false;
     float meleeCooldown = 0.0f;
     float meleePose = 0.0f;
+    MeleeVisualState meleeVisual;
+    float meleeComboWindow = 0.0f;
 };
 
 class Game {
@@ -239,6 +267,9 @@ private:
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updateTargets(float dt);
+    void chooseHumanWalkTarget(int index);
+    bool isHumanPointBlocked(float x, float z, float radius) const;
+    void updateMeleeDash(float dt);
     void updateVacuum(float dt);
     void updateBullets(float dt);
     void updateCaptures(float dt);

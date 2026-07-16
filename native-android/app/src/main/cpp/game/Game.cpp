@@ -55,11 +55,33 @@ constexpr float SOUL_ARMOR_NORMAL = 2.0f;
 constexpr float SOUL_ARMOR_BRUTE = 4.0f;
 constexpr float HUMAN_SCALE_BRUTE = 1.7f;
 constexpr float HUMAN_WALK_PHASE_PER_METER = 7.5f;
+constexpr float HUMAN_WALK_SPEED = 0.72f;
+constexpr float HUMAN_WALK_TARGET_RADIUS = 0.55f;
+constexpr float HUMAN_WALK_RANGE = 5.5f;
+constexpr float HUMAN_ATTACK_NOTICE_RANGE = 5.6f;
+constexpr float HUMAN_ATTACK_START_RANGE = 1.55f;
+constexpr float HUMAN_ATTACK_HIT_RANGE = 1.85f;
+constexpr float HUMAN_ATTACK_DURATION = 0.48f;
+constexpr float HUMAN_ATTACK_ACTIVE_TIME = 0.26f;
+constexpr float HUMAN_ATTACK_COOLDOWN = 1.15f;
+constexpr float HUMAN_ATTACK_KNOCKBACK = 3.0f;
+constexpr float HUMAN_ATTACK_BATTERY_COST = 26.0f;
 constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
-constexpr float MELEE_RANGE = 2.85f;
-constexpr float MELEE_COOLDOWN = 0.34f;
+constexpr float MELEE_COMBO_WINDOW = 0.720f;
+struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge; };
+constexpr MeleeCombo MELEE_COMBOS[] = {
+    {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f},
+    {1,2.85f,1.08f,0.90f,0.25f,0.18f,14.0f,0.27f,0.12f,1.75f,0.22f},
+    {2,3.18f,1.48f,1.02f,0.31f,0.23f,15.2f,0.38f,0.15f,2.10f,0.29f},
+    {3,3.00f,1.22f,0.96f,0.29f,0.20f,13.8f,0.34f,0.12f,1.80f,0.25f}
+};
+constexpr float MELEE_VARIANT_SIDE[] = {1,-1,1,-1};
+constexpr float MELEE_VARIANT_ROLL[] = {-0.72f,0.72f,-0.42f,0.42f};
+constexpr float MELEE_VARIANT_YAW[] = {0.62f,-0.62f,0.42f,-0.42f};
+constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
+constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
 constexpr float BULLET_GRAVITY = 11.5f;
 constexpr float BULLET_LIFE = 3.25f;
@@ -116,7 +138,9 @@ void syncTargetReactionVisual(TargetState& target) {
         target.vacuumPullAmount,
         target.captureCollapseAmount,
         target.soulMorph,
-        target.visibility > 0.5f
+        target.visibility > 0.5f,
+        target.attackTimer,
+        target.attackVariant
     );
 }
 
@@ -184,6 +208,8 @@ void Game::resetRoom() {
     state_.camera = CameraState{};
     state_.vacuum = VacuumState{};
     state_.phonePose = PhonePoseState{};
+    state_.meleeVisual = MeleeVisualState{};
+    state_.meleeComboWindow = 0.0f;
     state_.topology = RoomTopologyState{};
     state_.roomIndex = roomIndex;
     state_.roomSeed = roomSeed;
@@ -201,6 +227,9 @@ void Game::resetRoom() {
         target.phase = static_cast<float>(i) * 0.77f;
         target.visualWalkPhase = target.phase;
         target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
+        target.attackCooldown = seededRoomValue(460 + i) * 0.5f;
+        target.attackVariant = static_cast<int>(seededRoomValue(480 + i) * 4.0f) % 4;
+        chooseHumanWalkTarget(i);
         syncTargetReactionVisual(target);
         if (!target.alive) target.respawnTimer = 1.45f + seededRoomValue(300 + i) * 0.9f;
     }
@@ -309,6 +338,8 @@ void Game::updateInputActions(float dt) {
     if (input.shootPressed) shootStoredSoul();
     input.cameraTogglePressed = input.jumpPressed = input.meleePressed = input.shootPressed = false;
     state_.meleeCooldown = std::max(0.0f, state_.meleeCooldown - dt);
+    state_.meleeComboWindow = std::max(0.0f, state_.meleeComboWindow - dt);
+    state_.meleeVisual.visualTimer = std::max(0.0f, state_.meleeVisual.visualTimer - dt);
     state_.meleePose = std::max(0.0f, state_.meleePose - dt * 5.5f);
     state_.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && state_.player.battery > 1.0f;
     if (state_.player.souls >= MAX_STORED_SOULS) state_.vacuum.active = false;
@@ -425,6 +456,7 @@ void Game::updatePlayer(float dt) {
     const float airSpeed = p.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
     const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
     const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
+    updateMeleeDash(dt);
     const float vacuumSlow = 1.0f - state_.vacuum.pose * (1.0f - VACUUM_MOVE_MULT);
     float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
@@ -515,6 +547,21 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
         q = q * quatAxisAngle({0,1,0}, pose.yaw);
         q = q * quatAxisAngle({0,0,1}, wobble + pose.roll);
         pose.actionState = vacuumFacing ? 2 : (pose.energy > 0.01f ? 1 : 0);
+        const MeleeVisualState& melee = state_.meleeVisual;
+        if (melee.visualTimer > 0.0f) {
+            const float attackT = 1.0f - clampf(melee.visualTimer / std::max(0.001f, melee.visualDuration), 0.0f, 1.0f);
+            const float snap = std::sin(attackT * DB_PI);
+            const float recover = std::sin(std::min(1.0f, attackT * 1.45f) * DB_PI);
+            const int variant = std::max(0, std::min(3, melee.variant));
+            const float hitWeight = melee.visualHit ? 1.18f : 0.82f;
+            pose.forward += melee.lunge * snap;
+            pose.side += MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
+            pose.lift += MELEE_VARIANT_LIFT[variant] * snap;
+            q = q * quatAxisAngle({1,0,0}, MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
+            q = q * quatAxisAngle({0,0,1}, MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
+            q = q * quatAxisAngle({0,1,0}, MELEE_VARIANT_YAW[variant] * snap * hitWeight);
+            pose.actionState = 4;
+        }
     }
     pose.orientation = quatNormalized(q);
 }
@@ -683,15 +730,44 @@ void Game::startAirJump() {
 
 void Game::triggerMelee() {
     if (state_.meleeCooldown > 0) return;
-    state_.meleeCooldown = MELEE_COOLDOWN; state_.meleePose = 1.0f;
-    for (auto& t : state_.targets) if (t.alive && distXZ(t.pos, state_.player.pos) <= MELEE_RANGE) {
+    const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
+    const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
+    state_.meleeComboWindow = MELEE_COMBO_WINDOW;
+    state_.meleeCooldown = combo.cooldown; state_.meleePose = 1.0f;
+    MeleeVisualState& visual = state_.meleeVisual;
+    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage;
+    visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
+    visual.dashTimer=combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
+    visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false;
+    visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+    visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
+    int hitCount=0;
+    for (auto& t : state_.targets) if (t.alive) {
+        const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
+        const float forwardDist=dotXZ(delta,visual.direction);
+        if(forwardDist < -0.35f || forwardDist > combo.range) continue;
+        const Vec3 sideDelta=delta-visual.direction*forwardDist;
+        const float hitRadius=combo.hitRadius+(t.brute?0.28f:0.0f);
+        if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
-        t.armor -= 1.0f;
+        t.armor -= combo.damage*(1.0f+std::min(0.75f,hitCount*0.12f));
         t.hitFlash = 1.0f;
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
         if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
+        visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++hitCount;
     }
+    if(visual.visualHit){state_.player.pos-=visual.direction*visual.recoilDistance; state_.player.vel-=visual.direction*visual.recoilSpeed; visual.dashTimer=hitCount>1?visual.dashTimer*0.35f:0.0f;}
+}
+
+void Game::updateMeleeDash(float dt) {
+    MeleeVisualState& visual=state_.meleeVisual;
+    if(visual.dashTimer<=0.0f) return;
+    const float step=std::min(visual.dashSpeed*dt,std::max(0.0f,visual.range-visual.travel));
+    visual.dashTimer=std::max(0.0f,visual.dashTimer-dt); visual.travel+=step;
+    state_.player.pos+=visual.direction*step; state_.player.vel.x*=0.55f; state_.player.vel.z*=0.55f;
+    visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+    if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
 }
 void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
@@ -719,7 +795,32 @@ void Game::respawnTarget(int index) {
     t.pos = {(seededRoomValue(500 + index) - 0.5f) * 20.0f, GROUND_Y, ROOM_MIN_SPAWN_Z + seededRoomValue(600 + index) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z)};
     t.visualYaw = seededRoomValue(540 + index) * DB_PI * 2.0f;
     t.visualWalkPhase = seededRoomValue(560 + index) * DB_PI * 2.0f;
+    t.attackCooldown=seededRoomValue(580+index)*0.5f;
+    t.attackVariant=static_cast<int>(seededRoomValue(590+index)*4.0f)%4;
+    chooseHumanWalkTarget(index);
     syncTargetReactionVisual(t);
+}
+
+bool Game::isHumanPointBlocked(float x,float z,float radius) const {
+    const float localZ=wrapZ(z);
+    if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius) return true;
+    for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
+        if(x>c.minX-radius && x<c.maxX+radius && localZ>c.minZ-radius && localZ<c.maxZ+radius) return true;}
+    return false;
+}
+
+void Game::chooseHumanWalkTarget(int index) {
+    TargetState& t=state_.targets[index];
+    const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
+    for(int attempt=0;attempt<10;++attempt){
+        const int seed=700+index*97+t.walkTargetSequence*19+attempt*2;
+        const float angle=seededRoomValue(seed)*DB_PI*2.0f;
+        const float radius=1.8f+seededRoomValue(seed+1)*HUMAN_WALK_RANGE;
+        const float x=clampf(t.pos.x+std::cos(angle)*radius,-ROOM_WIDTH*0.5f+1.1f,ROOM_WIDTH*0.5f-1.1f);
+        const float localZ=clampf(wrapZ(t.pos.z)+std::sin(angle)*radius,ROOM_MIN_SPAWN_Z,ROOM_MAX_SPAWN_Z);
+        if(!isHumanPointBlocked(x,tileOrigin+localZ,0.5f)){t.walkTarget={x,GROUND_Y,tileOrigin+localZ}; ++t.walkTargetSequence; return;}
+    }
+    t.walkTarget=t.pos; ++t.walkTargetSequence;
 }
 
 void Game::updateTargets(float dt) {
@@ -735,19 +836,38 @@ void Game::updateTargets(float dt) {
             t.locomotionAmount = 0.0f;
         } else {
             t.soulMorph = 0.0f;
-            t.phase += dt;
-            const float dx = std::sin(t.phase * 0.7f) * dt * 0.18f;
-            const float dz = std::cos(t.phase * 0.5f) * dt * 0.18f;
-            t.pos.x += dx;
-            t.pos.z += dz;
-            if (std::fabs(dx) + std::fabs(dz) > 0.0001f) {
-                t.visualYaw = std::atan2(-dx, -dz);
-                t.visualWalkPhase += std::sqrt(dx * dx + dz * dz) * HUMAN_WALK_PHASE_PER_METER;
-                t.locomotionAmount = 1.0f;
+            const float currentTileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
+            const float targetTileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
+            if(std::abs(currentTileOrigin-targetTileOrigin)>0.001f){const float shift=currentTileOrigin-targetTileOrigin; t.pos.z+=shift; t.walkTarget.z+=shift;}
+            t.pos.y=GROUND_Y; t.attackCooldown=std::max(0.0f,t.attackCooldown-dt);
+            Vec3 toPlayer{state_.player.pos.x-t.pos.x,0,state_.player.pos.z-t.pos.z};
+            float playerDist=horizontalLength(toPlayer);
+            if(playerDist>0.001f && playerDist<HUMAN_ATTACK_NOTICE_RANGE) t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(t.attackTimer>0.0f){
+                t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
+                const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
+                if(!t.attackHit && progress>=HUMAN_ATTACK_ACTIVE_TIME/HUMAN_ATTACK_DURATION && playerDist<=HUMAN_ATTACK_HIT_RANGE){
+                    const Vec3 away=playerDist>0.001f?toPlayer*(-1.0f/playerDist):Vec3{0,0,1};
+                    state_.player.vel+=away*HUMAN_ATTACK_KNOCKBACK;
+                    state_.player.battery=std::max(0.0f,state_.player.battery-HUMAN_ATTACK_BATTERY_COST); t.attackHit=true;
+                }
+            } else if(playerDist<HUMAN_ATTACK_START_RANGE && t.attackCooldown<=0.0f){
+                t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=HUMAN_ATTACK_COOLDOWN;
+                t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
             } else {
-                t.locomotionAmount = 0.0f;
+                Vec3 destination=(playerDist<HUMAN_ATTACK_NOTICE_RANGE && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?state_.player.pos:t.walkTarget;
+                Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
+                if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=HUMAN_ATTACK_NOTICE_RANGE){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
+                if(dist>0.001f){
+                    const Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<HUMAN_ATTACK_NOTICE_RANGE?1.28f:1.0f;
+                    const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
+                    const float speed=HUMAN_WALK_SPEED*aggro*(t.brute?0.56f:1.0f)*variation;
+                    const float step=std::min(dist,speed*dt); const Vec3 next=t.pos+dir*step;
+                    if(isHumanPointBlocked(next.x,next.z,0.42f)) chooseHumanWalkTarget(i);
+                    else {t.pos=next; t.visualYaw=std::atan2(-dir.x,-dir.z); t.visualWalkPhase+=step*HUMAN_WALK_PHASE_PER_METER;}
+                    t.locomotionAmount=step>0.00001f?1.0f:0.0f;
+                } else t.locomotionAmount=0.0f;
             }
-            t.pos.z = getRoomTileOriginZ(state_.topology.currentTileIndex) + wrapZ(t.pos.z);
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
         syncTargetReactionVisual(t);

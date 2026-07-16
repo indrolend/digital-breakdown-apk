@@ -132,13 +132,13 @@ void DesktopRenderer::resize(int width, int height) {
     width_ = std::max(1, width); height_ = std::max(1, height); glViewport(0, 0, width_, height_);
 }
 
-void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float yaw, float roll, float r, float g, float b) {
+void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float yaw, float roll, float r, float g, float b, float a) {
     glPushMatrix();
     glTranslatef(p.x, p.y, p.z);
     glRotatef(yaw * 180.0f / PI, 0, 1, 0);
     glRotatef(pitch * 180.0f / PI, 1, 0, 0);
     glRotatef(roll * 180.0f / PI, 0, 0, 1);
-    glScalef(s.x, s.y, s.z); glColor3f(r,g,b); cube(); glPopMatrix();
+    glScalef(s.x, s.y, s.z); glColor4f(r,g,b,a); cube(); glPopMatrix();
 }
 
 void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, const Quat& q, float r, float g, float b) {
@@ -202,6 +202,26 @@ void DesktopRenderer::draw(const GameState& state) const {
         drawBox(phonePos,{PHONE_BODY_WIDTH*pv.bodyScale.x,PHONE_BODY_HEIGHT*pv.bodyScale.y,PHONE_BODY_DEPTH},phoneOrientation,Pass7Visual::PhoneBody.r,Pass7Visual::PhoneBody.g,Pass7Visual::PhoneBody.b);
         const float glow=std::min(1.0f,0.45f+pv.screenGlow*0.36f);
         drawBox(phonePos+rotate(phoneOrientation,{0,0,PHONE_SCREEN_Z_OFFSET+pv.screenOffset}),{PHONE_SCREEN_WIDTH*pv.screenScale.x,PHONE_SCREEN_HEIGHT*pv.screenScale.y,PHONE_SCREEN_DEPTH},phoneOrientation,Pass7Visual::PhoneEmission.r*glow,Pass7Visual::PhoneEmission.g*glow,Pass7Visual::PhoneEmission.b*glow);
+    }
+
+    const MeleeVisualState& melee=state.meleeVisual;
+    if(melee.visualTimer>0.0f){
+        const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
+        const float fade=1.0f-t, hitBoost=melee.visualHit?1.25f:0.72f;
+        const Vec3 side{melee.direction.z,0,-melee.direction.x};
+        glDisable(GL_LIGHTING); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        for(int segment=0;segment<9;++segment){
+            const float a0=(-0.28f+t*1.15f)*PI + static_cast<float>(segment)*PI*1.35f/9.0f;
+            const Vec3 radial=side*std::cos(a0)+Vec3{0,1,0}*std::sin(a0);
+            const Vec3 p=melee.origin+melee.direction*(0.66f+0.22f*t)+radial*(0.52f*(0.75f+t*0.72f)*hitBoost);
+            drawBox(p,{0.09f,0.035f,0.035f},0,state.player.yaw,a0,0.56f,0.97f,1.0f,fade*0.72f);
+        }
+        const Vec3 delta=melee.impact-melee.origin; const float len=std::max(0.3f,length(delta));
+        const Vec3 mid=melee.origin+delta*0.46f; const float yaw=std::atan2(delta.x,delta.z); const float pitch=-std::asin(clampf(delta.y/std::max(len,0.001f),-1.0f,1.0f));
+        drawBox(mid,{0.07f,0.07f,len*(0.70f+std::sin(t*PI)*0.18f)},pitch,yaw,0,0.33f,0.84f,1.0f,fade*0.42f);
+        for(int segment=0;segment<12;++segment){const float a=segment*PI*2.0f/12.0f; const float radius=(0.45f+t*1.45f)*0.34f*hitBoost;
+            drawBox(melee.impact+Vec3{std::cos(a)*radius,std::sin(a)*radius,0},{0.055f,0.025f,0.025f},0,0,a,1,1,1,melee.visualHit?fade*0.9f:fade*0.26f);}
+        glDisable(GL_BLEND); glEnable(GL_LIGHTING);
     }
 
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;

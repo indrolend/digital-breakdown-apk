@@ -107,6 +107,39 @@ int main() {
 
     game.reset();
     {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& enemy=setup.targets[0]; enemy=TargetState{}; enemy.alive=true; enemy.pos=setup.player.pos+Vec3{4,0,0};
+        enemy.walkTarget=enemy.pos+Vec3{2,0,0}; enemy.armor=2.0f;
+    }
+    const float enemyStartX=game.state().targets[0].pos.x;
+    step(game,30);
+    ok &= expect(game.state().targets[0].pos.x < enemyStartX-0.15f && near(game.state().targets[0].pos.y,spawn.player.pos.y,0.001f),
+        "enemy stays grounded and pursues the player inside notice range");
+    {
+        GameState& setup=const_cast<GameState&>(game.state()); setup.targets[0].pos=setup.player.pos+Vec3{0,0,-1.0f};
+        setup.targets[0].attackCooldown=0; setup.targets[0].attackTimer=0;
+    }
+    const float batteryBeforeEnemyAttack=game.state().player.battery;
+    step(game,24);
+    ok &= expect(game.state().targets[0].attackHit && game.state().player.battery < batteryBeforeEnemyAttack,
+        "enemy attack uses the Pass 7 timed single-hit window");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.targets[0]=TargetState{}; setup.targets[0].alive=true; setup.targets[0].pos=setup.player.pos+Vec3{0,0,-1.5f}; setup.targets[0].armor=4;
+        setup.targets[1]=TargetState{}; setup.targets[1].alive=true; setup.targets[1].pos=setup.player.pos+Vec3{0,0,1.5f}; setup.targets[1].armor=4;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
+    ok &= expect(game.state().targets[0].armor < 4.0f && near(game.state().targets[1].armor,4.0f,0.001f),
+        "phone melee uses the browser directional hit volume instead of an omnidirectional radius");
+    ok &= expect(game.state().meleeVisual.visualTimer > 0 && game.state().phonePose.actionState==4,
+        "phone melee exposes shared attack pose and FX timing");
+
+    game.reset();
+    {
         GameState& setup = const_cast<GameState&>(game.state());
         TargetState& target = setup.targets[0];
         target.alive = true;
