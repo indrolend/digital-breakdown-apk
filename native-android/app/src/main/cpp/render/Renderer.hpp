@@ -22,6 +22,7 @@ private:
     bool initProgram();
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]);
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]);
+    void drawFxStrip(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4], const float* vertices, int vertexCount);
     void drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]);
     void drawGround(const float* viewProj);
     void drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]);

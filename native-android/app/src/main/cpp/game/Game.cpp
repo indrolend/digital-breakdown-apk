@@ -738,26 +738,33 @@ void Game::triggerMelee() {
     visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage;
     visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
     visual.dashTimer=combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
-    visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false;
+    visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
     visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
-    int hitCount=0;
-    for (auto& t : state_.targets) if (t.alive) {
+    applyMeleeHits();
+}
+
+int Game::applyMeleeHits() {
+    MeleeVisualState& visual=state_.meleeVisual;
+    int newHits=0; int totalHits=0;
+    for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
+    for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
         const float forwardDist=dotXZ(delta,visual.direction);
-        if(forwardDist < -0.35f || forwardDist > combo.range) continue;
+        if(forwardDist < -0.35f || forwardDist > visual.range) continue;
         const Vec3 sideDelta=delta-visual.direction*forwardDist;
-        const float hitRadius=combo.hitRadius+(t.brute?0.28f:0.0f);
+        const float hitRadius=visual.hitRadius+(t.brute?0.28f:0.0f);
         if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
-        t.armor -= combo.damage*(1.0f+std::min(0.75f,hitCount*0.12f));
+        t.armor -= visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f));
         t.hitFlash = 1.0f;
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
         if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
-        visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++hitCount;
+        visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
-    if(visual.visualHit){state_.player.pos-=visual.direction*visual.recoilDistance; state_.player.vel-=visual.direction*visual.recoilSpeed; visual.dashTimer=hitCount>1?visual.dashTimer*0.35f:0.0f;}
+    if(newHits>0){const float recoilScale=totalHits>1?0.35f:1.0f; state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale); state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale); visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
+    return newHits;
 }
 
 void Game::updateMeleeDash(float dt) {
@@ -768,6 +775,7 @@ void Game::updateMeleeDash(float dt) {
     state_.player.pos+=visual.direction*step; state_.player.vel.x*=0.55f; state_.player.vel.z*=0.55f;
     visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
+    applyMeleeHits();
 }
 void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
@@ -877,7 +885,7 @@ void Game::updateTargets(float dt) {
 void Game::updateVacuum(float dt) {
     VacuumState& v = state_.vacuum;
     v.power = clampf(v.power + (v.active ? VACUUM_CHARGE_SPEED : -VACUUM_DECAY_SPEED) * dt, 0, 1);
-    v.pose += ((v.active ? 1.0f : 0.0f) - v.pose) * std::min(1.0f, dt * 8.0f);
+    v.pose += ((v.active ? 1.0f : 0.0f) - v.pose) * std::min(1.0f, dt * 10.0f);
     v.target = -1;
     if (!v.active) {
         for (auto& target : state_.targets) {

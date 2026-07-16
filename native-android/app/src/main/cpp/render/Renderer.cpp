@@ -14,6 +14,16 @@ constexpr float ROOM_DEPTH = 42.0f;
 constexpr int ROUNDED_SEGMENTS = 7;
 constexpr int ROUNDED_RINGS = 5;
 constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * (ROUNDED_RINGS - 1) * 6;
+constexpr int FX_SEGMENTS=24;
+constexpr int FX_STRIP_VERTICES=(FX_SEGMENTS+1)*2;
+
+std::array<float,FX_STRIP_VERTICES*3> makeRibbon(float inner,float outer,float sweep){std::array<float,FX_STRIP_VERTICES*3> out{}; int n=0;
+    for(int i=0;i<=FX_SEGMENTS;++i){const float a=sweep*static_cast<float>(i)/FX_SEGMENTS,c=std::cos(a),s=std::sin(a); out[n++]=c*outer;out[n++]=s*outer;out[n++]=0;out[n++]=c*inner;out[n++]=s*inner;out[n++]=0;} return out;}
+std::array<float,FX_STRIP_VERTICES*3> makeStreak(){std::array<float,FX_STRIP_VERTICES*3> out{}; int n=0;
+    for(int i=0;i<=FX_SEGMENTS;++i){const float a=DB_PI*2*i/FX_SEGMENTS,c=std::cos(a),s=std::sin(a); out[n++]=c*0.11f;out[n++]=s*0.11f;out[n++]=-0.5f;out[n++]=c*0.035f;out[n++]=s*0.035f;out[n++]=0.5f;} return out;}
+const auto FX_ARC=makeRibbon(0.494f,0.546f,DB_PI*1.35f);
+const auto FX_RING=makeRibbon(0.318f,0.362f,DB_PI*2.0f);
+const auto FX_STREAK=makeStreak();
 
 Vec3 lowPolySpherePoint(int ring, int segment) {
     const float v = static_cast<float>(ring) / static_cast<float>(ROUNDED_RINGS);
@@ -244,6 +254,12 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLES,0,36);
 }
 
+void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& scale,const Quat& orientation,const float color[4],const float* vertices,int vertexCount){
+    if(!program_) return; float model[16],mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
+    glUseProgram(program_); glBindBuffer(GL_ARRAY_BUFFER,0); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices); glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLE_STRIP,0,vertexCount);
+}
+
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
     if (!program_ || !roundedVbo_ || roundedVertexCount_ <= 0) return;
     float model[16];
@@ -340,19 +356,18 @@ void Renderer::draw(const GameState& state) {
     const MeleeVisualState& melee=state.meleeVisual;
     if(melee.visualTimer>0.0f){
         const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
-        const float hitBoost=melee.visualHit?1.25f:0.72f; const Vec3 side{melee.direction.z,0,-melee.direction.x};
+        const float hitBoost=melee.visualHit?1.25f:0.72f;
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
         const float cyan[4]={0.56f,0.97f,1.0f,(1.0f-t)*0.72f};
-        for(int segment=0;segment<9;++segment){const float a0=(-0.28f+t*1.15f)*DB_PI+segment*DB_PI*1.35f/9.0f;
-            const Vec3 radial=side*std::cos(a0)+Vec3{0,1,0}*std::sin(a0); const Vec3 p=melee.origin+melee.direction*(0.66f+0.22f*t)+radial*(0.52f*(0.75f+t*0.72f)*hitBoost);
-            drawBox(viewProj,p,{0.09f,0.035f,0.035f},state.player.yaw+a0,cyan);}
+        const float slashScale=(0.75f+t*0.72f)*hitBoost;
+        const Quat slashQ=quatAxisAngle({0,1,0},state.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)*quatAxisAngle({0,0,1},-DB_PI*0.28f+t*DB_PI*1.15f);
+        drawFxStrip(viewProj,melee.origin+melee.direction*(0.66f+0.22f*t),{slashScale,slashScale,1},slashQ,cyan,FX_ARC.data(),FX_STRIP_VERTICES);
         const Vec3 delta=melee.impact-melee.origin; const float len=std::max(0.3f,length(delta));
         const float yaw=std::atan2(delta.x,delta.z); const float pitch=-std::asin(clampf(delta.y/std::max(len,0.001f),-1.0f,1.0f));
         const Quat lineQ=quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},pitch); const float streak[4]={0.33f,0.84f,1.0f,(1.0f-t)*0.42f};
-        drawBox(viewProj,melee.origin+delta*0.46f,{0.07f,0.07f,len*(0.70f+std::sin(t*DB_PI)*0.18f)},lineQ,streak);
+        const float strike=std::sin(t*DB_PI); drawFxStrip(viewProj,melee.origin+delta*0.46f,{1+strike*1.2f,1+strike*1.2f,len*(0.70f+strike*0.18f)},lineQ,streak,FX_STREAK.data(),FX_STRIP_VERTICES);
         const float white[4]={1,1,1,melee.visualHit?(1.0f-t)*0.9f:(1.0f-t)*0.26f};
-        for(int segment=0;segment<12;++segment){const float a=segment*DB_PI*2.0f/12.0f; const float radius=(0.45f+t*1.45f)*0.34f*hitBoost;
-            drawBox(viewProj,melee.impact+Vec3{std::cos(a)*radius,std::sin(a)*radius,0},{0.055f,0.025f,0.025f},a,white);}
+        const float ringScale=(0.45f+t*1.45f)*hitBoost; drawFxStrip(viewProj,melee.impact,{ringScale,ringScale,1},{},white,FX_RING.data(),FX_STRIP_VERTICES);
         glDisable(GL_BLEND);
     }
 

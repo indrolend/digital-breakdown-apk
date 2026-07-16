@@ -192,6 +192,7 @@ struct MeleeVisualState {
     int variant = 0;
     int comboIndex = 0;
     bool visualHit = false;
+    unsigned int hitMask = 0;
 };
 
 struct PlayerDebugState {
@@ -270,6 +271,7 @@ private:
     void chooseHumanWalkTarget(int index);
     bool isHumanPointBlocked(float x, float z, float radius) const;
     void updateMeleeDash(float dt);
+    int applyMeleeHits();
     void updateVacuum(float dt);
     void updateBullets(float dt);
     void updateCaptures(float dt);

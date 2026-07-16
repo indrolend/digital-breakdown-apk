@@ -141,6 +141,18 @@ void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float y
     glScalef(s.x, s.y, s.z); glColor4f(r,g,b,a); cube(); glPopMatrix();
 }
 
+void fxRibbon(const Vec3& p,const Quat& q,const Vec3& scale,float start,float sweep,int segments,float inner,float outer,float r,float g,float b,float a){
+    const float matrix[16]={1-2*(q.y*q.y+q.z*q.z),2*(q.x*q.y+q.z*q.w),2*(q.x*q.z-q.y*q.w),0,2*(q.x*q.y-q.z*q.w),1-2*(q.x*q.x+q.z*q.z),2*(q.y*q.z+q.x*q.w),0,2*(q.x*q.z+q.y*q.w),2*(q.y*q.z-q.x*q.w),1-2*(q.x*q.x+q.y*q.y),0,0,0,0,1};
+    glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(scale.x,scale.y,scale.z); glColor4f(r,g,b,a);
+    glBegin(GL_TRIANGLE_STRIP); for(int i=0;i<=segments;++i){const float angle=start+sweep*static_cast<float>(i)/segments; const float c=std::cos(angle),s=std::sin(angle); glVertex3f(c*outer,s*outer,0); glVertex3f(c*inner,s*inner,0);} glEnd(); glPopMatrix();
+}
+
+void fxStreak(const Vec3& p,const Quat& q,float length,float width,float r,float g,float b,float a){
+    constexpr int segments=12; const float matrix[16]={1-2*(q.y*q.y+q.z*q.z),2*(q.x*q.y+q.z*q.w),2*(q.x*q.z-q.y*q.w),0,2*(q.x*q.y-q.z*q.w),1-2*(q.x*q.x+q.z*q.z),2*(q.y*q.z+q.x*q.w),0,2*(q.x*q.z+q.y*q.w),2*(q.y*q.z-q.x*q.w),1-2*(q.x*q.x+q.y*q.y),0,0,0,0,1};
+    glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glColor4f(r,g,b,a); glBegin(GL_TRIANGLE_STRIP);
+    for(int i=0;i<=segments;++i){const float angle=i*PI*2.0f/segments,c=std::cos(angle),s=std::sin(angle); glVertex3f(c*width,s*width,-length*0.5f); glVertex3f(c*width*0.32f,s*width*0.32f,length*0.5f);} glEnd(); glPopMatrix();
+}
+
 void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, const Quat& q, float r, float g, float b) {
     const float matrix[16] = {
         1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y+q.z*q.w), 2*(q.x*q.z-q.y*q.w), 0,
@@ -208,19 +220,14 @@ void DesktopRenderer::draw(const GameState& state) const {
     if(melee.visualTimer>0.0f){
         const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
         const float fade=1.0f-t, hitBoost=melee.visualHit?1.25f:0.72f;
-        const Vec3 side{melee.direction.z,0,-melee.direction.x};
         glDisable(GL_LIGHTING); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-        for(int segment=0;segment<9;++segment){
-            const float a0=(-0.28f+t*1.15f)*PI + static_cast<float>(segment)*PI*1.35f/9.0f;
-            const Vec3 radial=side*std::cos(a0)+Vec3{0,1,0}*std::sin(a0);
-            const Vec3 p=melee.origin+melee.direction*(0.66f+0.22f*t)+radial*(0.52f*(0.75f+t*0.72f)*hitBoost);
-            drawBox(p,{0.09f,0.035f,0.035f},0,state.player.yaw,a0,0.56f,0.97f,1.0f,fade*0.72f);
-        }
+        const Quat slashQ=quatAxisAngle({0,1,0},state.player.yaw)*quatAxisAngle({1,0,0},PI*0.5f)*quatAxisAngle({0,0,1},-PI*0.28f+t*PI*1.15f);
+        fxRibbon(melee.origin+melee.direction*(0.66f+0.22f*t),slashQ,{(0.75f+t*0.72f)*hitBoost,(0.75f+t*0.72f)*hitBoost,1},0,PI*1.35f,24,0.494f,0.546f,0.56f,0.97f,1,fade*0.72f);
         const Vec3 delta=melee.impact-melee.origin; const float len=std::max(0.3f,length(delta));
         const Vec3 mid=melee.origin+delta*0.46f; const float yaw=std::atan2(delta.x,delta.z); const float pitch=-std::asin(clampf(delta.y/std::max(len,0.001f),-1.0f,1.0f));
-        drawBox(mid,{0.07f,0.07f,len*(0.70f+std::sin(t*PI)*0.18f)},pitch,yaw,0,0.33f,0.84f,1.0f,fade*0.42f);
-        for(int segment=0;segment<12;++segment){const float a=segment*PI*2.0f/12.0f; const float radius=(0.45f+t*1.45f)*0.34f*hitBoost;
-            drawBox(melee.impact+Vec3{std::cos(a)*radius,std::sin(a)*radius,0},{0.055f,0.025f,0.025f},0,0,a,1,1,1,melee.visualHit?fade*0.9f:fade*0.26f);}
+        const Quat streakQ=quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},pitch);
+        fxStreak(mid,streakQ,len*(0.70f+std::sin(t*PI)*0.18f),0.11f*(1+std::sin(t*PI)*1.2f),0.33f,0.84f,1,fade*0.42f);
+        fxRibbon(melee.impact,{}, {(0.45f+t*1.45f)*hitBoost,(0.45f+t*1.45f)*hitBoost,1},0,PI*2,24,0.318f,0.362f,1,1,1,melee.visualHit?fade*0.9f:fade*0.26f);
         glDisable(GL_BLEND); glEnable(GL_LIGHTING);
     }
 

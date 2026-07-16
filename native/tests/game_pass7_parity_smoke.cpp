@@ -140,6 +140,16 @@ int main() {
 
     game.reset();
     {
+        GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.player.pos+Vec3{0,0.5f,-3.0f}; target.health=1; target.soulState=SoulState::Free;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false); step(game,45);
+    ok &= expect(game.state().vacuum.target==0 && game.state().targets[0].pos.z > game.state().player.pos.z-3.0f,
+        "vacuum still acquires and moves a valid soul after melee changes");
+
+    game.reset();
+    {
         GameState& setup = const_cast<GameState&>(game.state());
         TargetState& target = setup.targets[0];
         target.alive = true;
