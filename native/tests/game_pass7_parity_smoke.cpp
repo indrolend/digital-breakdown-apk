@@ -204,7 +204,12 @@ int main() {
         "phone body arch integrates angular velocity instead of sampling a canned attack curve");
     ok &= expect(horizontalSpeed(airLungeForward.camera.pos-airLungeForward.player.pos)>3.05f,
         "lunge camera retains inertia so physical travel remains visible on screen");
-    step(game,44);
+    step(game,20);
+    const float uninterruptedLungeTimer=game.state().meleeVisual.airLungeTimer;
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
+    ok &= expect(game.state().meleeVisual.airLungeTimer<uninterruptedLungeTimer,
+        "repeated attack input cannot renew an unfinished airborne trajectory");
+    step(game,23);
     ok &= expect(game.state().player.grounded && !game.state().meleeVisual.airLungeLandingPending && game.state().player.pos.z<-4.0f,
         "ballistic lunge closes at a forward ground contact instead of recovering in midair");
 

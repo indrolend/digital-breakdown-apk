@@ -1334,6 +1334,9 @@ void Game::startAirJump() {
 }
 
 void Game::triggerMelee() {
+    // A body lunge owns the player until its computed ground contact. The
+    // shorter grounded-combo cooldown must never be allowed to renew flight.
+    if(state_.meleeVisual.airLungeLandingPending) return;
     if (state_.meleeCooldown > 0) return;
     const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
     const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
