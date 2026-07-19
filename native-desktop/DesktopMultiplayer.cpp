@@ -28,9 +28,115 @@ void DesktopMultiplayer::disconnect(){stop_=true;void* socket=nullptr;{std::lock
 std::string DesktopMultiplayer::jsonString(const std::string& json,const char* key){const std::string needle=std::string("\"")+key+"\"";std::size_t at=json.find(needle);if(at==std::string::npos)return{};at=json.find(':',at+needle.size());if(at==std::string::npos)return{};at=json.find('"',at+1);if(at==std::string::npos)return{};const std::size_t end=json.find('"',at+1);return end==std::string::npos?std::string{}:json.substr(at+1,end-at-1);}
 int DesktopMultiplayer::jsonInt(const std::string& json,const char* key,int fallback){const std::string needle=std::string("\"")+key+"\"";std::size_t at=json.find(needle);if(at==std::string::npos)return fallback;at=json.find(':',at+needle.size());if(at==std::string::npos)return fallback;try{return std::stoi(json.substr(at+1));}catch(...){return fallback;}}
 
-bool DesktopMultiplayer::createRoom(){UrlParts url;if(!crack(serviceUrl_+"/v1/rooms",url))return false;HINTERNET session=WinHttpOpen(L"DigitalBreakdown/1",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);if(!session)return false;HINTERNET connection=WinHttpConnect(session,url.host.c_str(),url.port,0);HINTERNET request=connection?WinHttpOpenRequest(connection,L"POST",url.path.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,url.secure?WINHTTP_FLAG_SECURE:0):nullptr;const char body[]="{\"gameplayVersion\":1}";BOOL ok=request&&WinHttpSendRequest(request,L"Content-Type: application/json\r\n",static_cast<DWORD>(-1),const_cast<char*>(body),sizeof(body)-1,sizeof(body)-1,0)&&WinHttpReceiveResponse(request,nullptr);std::string response;if(ok){DWORD available=0;while(WinHttpQueryDataAvailable(request,&available)&&available){const std::size_t old=response.size();response.resize(old+available);DWORD read=0;if(!WinHttpReadData(request,response.data()+old,available,&read))break;response.resize(old+read);}}if(request)WinHttpCloseHandle(request);if(connection)WinHttpCloseHandle(connection);WinHttpCloseHandle(session);if(!ok)return false;const std::string code=jsonString(response,"code"),key=jsonString(response,"hostKey");if(code.size()!=6||key.empty())return false;{std::lock_guard<std::mutex> lock(stateMutex_);roomCode_=code;hostKey_=key;}std::printf("MULTIPLAYER_ROOM_CODE %s\n",code.c_str());std::fflush(stdout);return true;}
+bool DesktopMultiplayer::createRoom() {
+  UrlParts url;
+  if (!crack(serviceUrl_ + "/v1/rooms", url))
+    return false;
+  HINTERNET session =
+      WinHttpOpen(L"DigitalBreakdown/1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!session)
+    return false;
+  HINTERNET connection = WinHttpConnect(session, url.host.c_str(), url.port, 0);
+  HINTERNET request =
+      connection
+          ? WinHttpOpenRequest(connection, L"POST", url.path.c_str(), nullptr,
+                               WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                               url.secure ? WINHTTP_FLAG_SECURE : 0)
+          : nullptr;
+  const char body[] = "{\"gameplayVersion\":2}";
+  BOOL ok = request &&
+            WinHttpSendRequest(request, L"Content-Type: application/json\r\n",
+                               static_cast<DWORD>(-1), const_cast<char *>(body),
+                               sizeof(body) - 1, sizeof(body) - 1, 0) &&
+            WinHttpReceiveResponse(request, nullptr);
+  std::string response;
+  if (ok) {
+    DWORD available = 0;
+    while (WinHttpQueryDataAvailable(request, &available) && available) {
+      const std::size_t old = response.size();
+      response.resize(old + available);
+      DWORD read = 0;
+      if (!WinHttpReadData(request, response.data() + old, available, &read))
+        break;
+      response.resize(old + read);
+    }
+  }
+  if (request)
+    WinHttpCloseHandle(request);
+  if (connection)
+    WinHttpCloseHandle(connection);
+  WinHttpCloseHandle(session);
+  if (!ok)
+    return false;
+  const std::string code = jsonString(response, "code"),
+                    key = jsonString(response, "hostKey");
+  if (code.size() != 6 || key.empty())
+    return false;
+  {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    roomCode_ = code;
+    hostKey_ = key;
+  }
+  std::printf("MULTIPLAYER_ROOM_CODE %s\n", code.c_str());
+  std::fflush(stdout);
+  return true;
+}
 
-bool DesktopMultiplayer::connectWebSocket(){const std::string code=roomCode();std::string url=serviceUrl_+"/v1/rooms/"+code+"/connect?role="+(role_==Role::Host?"host":"guest")+"&build=pass7-native&gameplay=1";if(role_==Role::Host){std::lock_guard<std::mutex> lock(stateMutex_);url+="&key="+hostKey_;}UrlParts parts;if(!crack(url,parts))return false;HINTERNET session=WinHttpOpen(L"DigitalBreakdown/1",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);if(!session)return false;HINTERNET connection=WinHttpConnect(session,parts.host.c_str(),parts.port,0);HINTERNET request=connection?WinHttpOpenRequest(connection,L"GET",parts.path.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,parts.secure?WINHTTP_FLAG_SECURE:0):nullptr;BOOL ok=request&&WinHttpSetOption(request,WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,nullptr,0)&&WinHttpSendRequest(request,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)&&WinHttpReceiveResponse(request,nullptr);HINTERNET socket=ok?WinHttpWebSocketCompleteUpgrade(request,0):nullptr;if(request)WinHttpCloseHandle(request);if(connection)WinHttpCloseHandle(connection);if(!socket){WinHttpCloseHandle(session);return false;} {std::lock_guard<std::mutex> lock(sendMutex_);webSocket_=socket;} receiveLoop();{std::lock_guard<std::mutex> lock(sendMutex_);if(webSocket_==socket)webSocket_=nullptr;}WinHttpCloseHandle(socket);WinHttpCloseHandle(session);return true;}
+bool DesktopMultiplayer::connectWebSocket() {
+  const std::string code = roomCode();
+  std::string url = serviceUrl_ + "/v1/rooms/" + code + "/connect?role=" +
+                    (role_ == Role::Host ? "host" : "guest") +
+                    "&build=pass7-native&gameplay=2";
+  if (role_ == Role::Host) {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    url += "&key=" + hostKey_;
+  }
+  UrlParts parts;
+  if (!crack(url, parts))
+    return false;
+  HINTERNET session =
+      WinHttpOpen(L"DigitalBreakdown/1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!session)
+    return false;
+  HINTERNET connection =
+      WinHttpConnect(session, parts.host.c_str(), parts.port, 0);
+  HINTERNET request =
+      connection
+          ? WinHttpOpenRequest(connection, L"GET", parts.path.c_str(), nullptr,
+                               WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                               parts.secure ? WINHTTP_FLAG_SECURE : 0)
+          : nullptr;
+  BOOL ok = request &&
+            WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,
+                             nullptr, 0) &&
+            WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                               WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+            WinHttpReceiveResponse(request, nullptr);
+  HINTERNET socket = ok ? WinHttpWebSocketCompleteUpgrade(request, 0) : nullptr;
+  if (request)
+    WinHttpCloseHandle(request);
+  if (connection)
+    WinHttpCloseHandle(connection);
+  if (!socket) {
+    WinHttpCloseHandle(session);
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(sendMutex_);
+    webSocket_ = socket;
+  }
+  receiveLoop();
+  {
+    std::lock_guard<std::mutex> lock(sendMutex_);
+    if (webSocket_ == socket)
+      webSocket_ = nullptr;
+  }
+  WinHttpCloseHandle(socket);
+  WinHttpCloseHandle(session);
+  return true;
+}
 
 void DesktopMultiplayer::workerMain(){if(role_==Role::Host&&!createRoom()){setStatus("ROOM CREATE FAILED");return;}setStatus("CONNECTING "+roomCode());if(!connectWebSocket()&&!stop_)setStatus("CONNECTION FAILED");connected_=false;}
 void DesktopMultiplayer::receiveLoop(){std::vector<std::uint8_t> assembled;while(!stop_){std::uint8_t buffer[8192];DWORD read=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE type=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;DWORD result=WinHttpWebSocketReceive(static_cast<HINTERNET>(webSocket_),buffer,sizeof(buffer),&read,&type);if(result!=NO_ERROR)break;if(type==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)break;assembled.insert(assembled.end(),buffer,buffer+read);const bool complete=type==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE||type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;if(!complete)continue;Incoming item;if(type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE){item.text.assign(reinterpret_cast<const char*>(assembled.data()),assembled.size());const std::string kind=jsonString(item.text,"type");if(kind=="welcome"){playerId_=jsonInt(item.text,"playerId",0);connected_=true;setStatus(role_==Role::Host?"ROOM "+roomCode():"JOINED "+roomCode());std::printf("MULTIPLAYER_CONNECTED role=%s player=%d room=%s\n",role_==Role::Host?"host":"guest",playerId_.load(),roomCode().c_str());std::fflush(stdout);}}else{item.binary=true;item.bytes=assembled;} {std::lock_guard<std::mutex> lock(queueMutex_);incoming_.push_back(std::move(item));}assembled.clear();}}

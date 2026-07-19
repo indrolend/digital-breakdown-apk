@@ -48,13 +48,303 @@ bool decodeHeader(const std::uint8_t* data,std::size_t size,PacketHeader& out){i
 std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){Writer payload;payload.f32(input.moveX);payload.f32(input.moveZ);payload.f32(input.yaw);payload.f32(input.pitch);payload.u16(input.buttons);Writer packet;header(packet,MessageType::Input,playerId,input.sequence,input.tick,static_cast<std::uint32_t>(payload.data.size()));packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;}
 bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){if(!decodeHeader(data,size,h)||h.type!=MessageType::Input)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);input.sequence=h.sequence;input.tick=h.tick;return r.f32(input.moveX)&&r.f32(input.moveZ)&&r.f32(input.yaw)&&r.f32(input.pitch)&&r.u16(input.buttons)&&r.done();}
 
-std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,const WorldSnapshot& s,std::uint32_t sequence){Writer p;p.f32(s.time);p.i32(s.roomIndex);p.i32(s.roomSeed);p.i32(s.requiredSouls);p.i32(s.depositedSouls);p.u8(s.roomClear?1:0);p.i32(s.runRules.requiredSlotStacks);p.i32(s.runRules.crowdedRoomStacks);p.i32(s.runRules.fasterSlurpStacks);p.i32(s.runRules.nextId);p.i32(s.runRules.lastAdded);for(const auto& player:s.players)writePlayer(p,player);for(const auto& target:s.targets)writeTarget(p,target);for(bool capture:s.captures)p.u8(capture?1:0);for(const auto& bullet:s.bullets)writeBullet(p,bullet);for(const auto& flower:s.flowers)writeFlower(p,flower);Writer packet;header(packet,MessageType::Snapshot,playerId,sequence,s.tick,static_cast<std::uint32_t>(p.data.size()));packet.data.insert(packet.data.end(),p.data.begin(),p.data.end());return packet.data;}
-bool decodeSnapshot(const std::uint8_t* data,std::size_t size,PacketHeader& h,WorldSnapshot& s){if(!decodeHeader(data,size,h)||h.type!=MessageType::Snapshot)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);s.tick=h.tick;std::uint8_t clear=0;if(!r.f32(s.time)||!r.i32(s.roomIndex)||!r.i32(s.roomSeed)||!r.i32(s.requiredSouls)||!r.i32(s.depositedSouls)||!r.u8(clear))return false;s.roomClear=clear!=0;if(!r.i32(s.runRules.requiredSlotStacks)||!r.i32(s.runRules.crowdedRoomStacks)||!r.i32(s.runRules.fasterSlurpStacks)||!r.i32(s.runRules.nextId)||!r.i32(s.runRules.lastAdded))return false;for(auto& player:s.players)if(!readPlayer(r,player))return false;for(auto& target:s.targets)if(!readTarget(r,target))return false;for(std::size_t i=0;i<s.captures.size();++i){std::uint8_t value=0;if(!r.u8(value))return false;s.captures[i]=value!=0;}for(auto& bullet:s.bullets)if(!readBullet(r,bullet))return false;for(auto& flower:s.flowers)if(!readFlower(r,flower))return false;return r.done();}
+std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
+                                         const WorldSnapshot &s,
+                                         std::uint32_t sequence) {
+  Writer p;
+  p.f32(s.time);
+  p.i32(s.roomIndex);
+  p.i32(s.roomSeed);
+  p.i32(s.requiredSouls);
+  p.i32(s.depositedSouls);
+  p.u8(s.roomClear ? 1 : 0);
+  p.i32(s.runRules.requiredSlotStacks);
+  p.i32(s.runRules.crowdedRoomStacks);
+  p.i32(s.runRules.fasterSlurpStacks);
+  p.i32(s.runRules.nextId);
+  p.i32(s.runRules.lastAdded);
+  p.u8(s.upgradeMenuActive ? 1 : 0);
+  for (auto level : s.temporaryUpgradeLevels)
+    p.i32(level);
+  p.f32(s.roomHeat);
+  for (const auto &player : s.players)
+    writePlayer(p, player);
+  for (const auto &target : s.targets)
+    writeTarget(p, target);
+  for (bool capture : s.captures)
+    p.u8(capture ? 1 : 0);
+  for (const auto &bullet : s.bullets)
+    writeBullet(p, bullet);
+  for (const auto &flower : s.flowers)
+    writeFlower(p, flower);
+  Writer packet;
+  header(packet, MessageType::Snapshot, playerId, sequence, s.tick,
+         static_cast<std::uint32_t>(p.data.size()));
+  packet.data.insert(packet.data.end(), p.data.begin(), p.data.end());
+  return packet.data;
+}
+bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
+                    WorldSnapshot &s) {
+  if (!decodeHeader(data, size, h) || h.type != MessageType::Snapshot)
+    return false;
+  Reader r(data + HEADER_BYTES, h.payloadBytes);
+  s.tick = h.tick;
+  std::uint8_t clear = 0, upgradeMenu = 0;
+  if (!r.f32(s.time) || !r.i32(s.roomIndex) || !r.i32(s.roomSeed) ||
+      !r.i32(s.requiredSouls) || !r.i32(s.depositedSouls) || !r.u8(clear))
+    return false;
+  s.roomClear = clear != 0;
+  if (!r.i32(s.runRules.requiredSlotStacks) ||
+      !r.i32(s.runRules.crowdedRoomStacks) ||
+      !r.i32(s.runRules.fasterSlurpStacks) || !r.i32(s.runRules.nextId) ||
+      !r.i32(s.runRules.lastAdded) || !r.u8(upgradeMenu))
+    return false;
+  s.upgradeMenuActive = upgradeMenu != 0;
+  for (auto &level : s.temporaryUpgradeLevels)
+    if (!r.i32(level))
+      return false;
+  if (!r.f32(s.roomHeat))
+    return false;
+  for (auto &player : s.players)
+    if (!readPlayer(r, player))
+      return false;
+  for (auto &target : s.targets)
+    if (!readTarget(r, target))
+      return false;
+  for (std::size_t i = 0; i < s.captures.size(); ++i) {
+    std::uint8_t value = 0;
+    if (!r.u8(value))
+      return false;
+    s.captures[i] = value != 0;
+  }
+  for (auto &bullet : s.bullets)
+    if (!readBullet(r, bullet))
+      return false;
+  for (auto &flower : s.flowers)
+    if (!readFlower(r, flower))
+      return false;
+  return r.done();
+}
 
-std::array<PlayerSnapshot,MAX_PLAYERS> capturePlayers(const GameState& state){std::array<PlayerSnapshot,MAX_PLAYERS> players{};auto fill=[](PlayerSnapshot& out,int id,const PlayerState& player,const CameraState& camera,const VacuumState& vacuum,const MeleeVisualState& melee,const EnergyState& energy){out.active=true;out.id=static_cast<std::uint8_t>(id);out.pos=player.pos;out.vel=player.vel;out.yaw=player.yaw;out.pitch=camera.pitch;out.battery=player.battery;out.souls=static_cast<std::uint8_t>(std::max(0,std::min(PHONE_CAPACITY,player.souls)));out.flags=(player.grounded?1:0)|(camera.firstPerson?2:0)|(player.alive?4:0);out.vacuumPower=vacuum.power;out.vacuumPose=vacuum.pose;out.vacuumTarget=static_cast<std::int8_t>(vacuum.target);out.meleeTimer=melee.visualTimer;out.dischargeAmount=energy.dischargePositionAmount;};const int local=state.multiplayer.enabled?state.multiplayer.localPlayerId:0;fill(players[local],local,state.player,state.camera,state.vacuum,state.meleeVisual,state.energy);for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId>=0&&peer.playerId<MAX_PLAYERS&&peer.playerId!=local)fill(players[peer.playerId],peer.playerId,peer.player,peer.camera,peer.vacuum,peer.meleeVisual,peer.energy);return players;}
+std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
+  std::array<PlayerSnapshot, MAX_PLAYERS> players{};
+  auto fill = [](PlayerSnapshot &out, int id, const PlayerState &player,
+                 const CameraState &camera, const VacuumState &vacuum,
+                 const MeleeVisualState &melee, const EnergyState &energy) {
+    out.active = true;
+    out.id = static_cast<std::uint8_t>(id);
+    out.pos = player.pos;
+    out.vel = player.vel;
+    out.yaw = player.yaw;
+    out.pitch = camera.pitch;
+    out.battery = player.battery;
+    out.souls = static_cast<std::uint8_t>(
+        std::max(0, std::min(PHONE_CAPACITY, player.souls)));
+    out.flags = (player.grounded ? 1 : 0) | (camera.firstPerson ? 2 : 0) |
+                (player.alive ? 4 : 0);
+    out.vacuumPower = vacuum.power;
+    out.vacuumPose = vacuum.pose;
+    out.vacuumTarget = static_cast<std::int8_t>(vacuum.target);
+    out.meleeTimer = melee.visualTimer;
+    out.dischargeAmount = energy.dischargePositionAmount;
+  };
+  const int local =
+      state.multiplayer.enabled ? state.multiplayer.localPlayerId : 0;
+  fill(players[local], local, state.player, state.camera, state.vacuum,
+       state.meleeVisual, state.energy);
+  for (const auto &peer : state.multiplayer.peers)
+    if (peer.active && peer.playerId >= 0 && peer.playerId < MAX_PLAYERS &&
+        peer.playerId != local)
+      fill(players[peer.playerId], peer.playerId, peer.player, peer.camera,
+           peer.vacuum, peer.meleeVisual, peer.energy);
+  return players;
+}
 
-WorldSnapshot captureWorld(const GameState& state,const std::array<PlayerSnapshot,MAX_PLAYERS>& players,std::uint32_t tick){WorldSnapshot s;s.tick=tick;s.time=state.time;s.roomIndex=state.roomIndex;s.roomSeed=state.roomSeed;s.requiredSouls=state.requiredSouls;s.depositedSouls=state.depositedSouls;s.roomClear=state.roomClear;s.runRules=state.runRules;s.players=players;for(int i=0;i<TARGET_COUNT;++i){const auto& a=state.targets[i];auto& b=s.targets[i];b.flags=(a.alive?1:0)|(a.slurpable?2:0)|(a.brute?4:0)|(a.captureQueued?8:0)|(a.captureCommitted?16:0);b.soulState=a.soulState;b.pos=a.pos;b.vel=a.vel;b.armor=a.armor;b.health=a.health;b.capture=a.capture;b.ingest=a.ingestProgress;b.recoil=a.recoilTime;b.scale=a.scale;b.visualYaw=a.visualYaw;b.soulMorph=a.soulMorph;b.attackTimer=a.attackTimer;b.attackCooldown=a.attackCooldown;b.ownerPlayerId=static_cast<std::int8_t>(a.networkOwnerPlayerId);}for(int i=0;i<CAPTURE_COUNT;++i)s.captures[i]=state.captures[i].filled;for(int i=0;i<BULLET_COUNT;++i){const auto& a=state.bullets[i];auto& b=s.bullets[i];b.active=a.alive;b.brute=a.brute;b.pos=a.pos;b.vel=a.vel;b.life=a.life;b.spin=a.spin;}for(int i=0;i<FLOWER_POWERUP_COUNT;++i){const auto& a=state.flowers[i];auto& b=s.flowers[i];b.active=a.active;b.pos=a.pos;b.age=a.age;b.rotation=a.rotationY;}return s;}
+WorldSnapshot
+captureWorld(const GameState &state,
+             const std::array<PlayerSnapshot, MAX_PLAYERS> &players,
+             std::uint32_t tick) {
+  WorldSnapshot s;
+  s.tick = tick;
+  s.time = state.time;
+  s.roomIndex = state.roomIndex;
+  s.roomSeed = state.roomSeed;
+  s.requiredSouls = state.requiredSouls;
+  s.depositedSouls = state.depositedSouls;
+  s.roomClear = state.roomClear;
+  s.runRules = state.runRules;
+  s.upgradeMenuActive = state.upgradeMenu.active;
+  for (int i = 0; i < 3; ++i)
+    s.temporaryUpgradeLevels[i] = state.progression.run.temporaryLevels[i];
+  s.roomHeat = state.progression.run.roomHeat;
+  s.players = players;
+  for (int i = 0; i < TARGET_COUNT; ++i) {
+    const auto &a = state.targets[i];
+    auto &b = s.targets[i];
+    b.flags = (a.alive ? 1 : 0) | (a.slurpable ? 2 : 0) | (a.brute ? 4 : 0) |
+              (a.captureQueued ? 8 : 0) | (a.captureCommitted ? 16 : 0);
+    b.soulState = a.soulState;
+    b.pos = a.pos;
+    b.vel = a.vel;
+    b.armor = a.armor;
+    b.health = a.health;
+    b.capture = a.capture;
+    b.ingest = a.ingestProgress;
+    b.recoil = a.recoilTime;
+    b.scale = a.scale;
+    b.visualYaw = a.visualYaw;
+    b.soulMorph = a.soulMorph;
+    b.attackTimer = a.attackTimer;
+    b.attackCooldown = a.attackCooldown;
+    b.ownerPlayerId = static_cast<std::int8_t>(a.networkOwnerPlayerId);
+  }
+  for (int i = 0; i < CAPTURE_COUNT; ++i)
+    s.captures[i] = state.captures[i].filled;
+  for (int i = 0; i < BULLET_COUNT; ++i) {
+    const auto &a = state.bullets[i];
+    auto &b = s.bullets[i];
+    b.active = a.alive;
+    b.brute = a.brute;
+    b.pos = a.pos;
+    b.vel = a.vel;
+    b.life = a.life;
+    b.spin = a.spin;
+  }
+  for (int i = 0; i < FLOWER_POWERUP_COUNT; ++i) {
+    const auto &a = state.flowers[i];
+    auto &b = s.flowers[i];
+    b.active = a.active;
+    b.pos = a.pos;
+    b.age = a.age;
+    b.rotation = a.rotationY;
+  }
+  return s;
+}
 
-void applyWorld(GameState& state,const WorldSnapshot& s,std::uint8_t localPlayerId){state.time=s.time;state.frame=static_cast<int>(s.tick);state.roomIndex=s.roomIndex;state.roomSeed=s.roomSeed;state.requiredSouls=s.requiredSouls;state.depositedSouls=s.depositedSouls;state.roomClear=s.roomClear;state.runRules=s.runRules;for(auto& peer:state.multiplayer.peers)peer=NetworkPeerState{};for(const auto& p:s.players)if(p.active){if(p.id==localPlayerId){state.player.pos=p.pos;state.player.vel=p.vel;state.player.yaw=p.yaw;state.player.battery=p.battery;state.player.souls=p.souls;state.player.grounded=(p.flags&1)!=0;state.player.alive=(p.flags&4)!=0;state.camera.pitch=p.pitch;state.camera.firstPerson=(p.flags&2)!=0;state.vacuum.power=p.vacuumPower;state.vacuum.pose=p.vacuumPose;state.vacuum.target=p.vacuumTarget;state.meleeVisual.visualTimer=p.meleeTimer;state.energy.dischargePositionAmount=p.dischargeAmount;}else if(p.id<MAX_PLAYERS){auto& peer=state.multiplayer.peers[p.id];peer.active=true;peer.playerId=p.id;peer.player.pos=p.pos;peer.player.vel=p.vel;peer.player.yaw=p.yaw;peer.player.battery=p.battery;peer.player.souls=p.souls;peer.player.grounded=(p.flags&1)!=0;peer.player.alive=(p.flags&4)!=0;peer.camera.pitch=p.pitch;peer.vacuum.power=p.vacuumPower;peer.vacuum.pose=p.vacuumPose;peer.vacuum.target=p.vacuumTarget;peer.meleeVisual.visualTimer=p.meleeTimer;peer.energy.dischargePositionAmount=p.dischargeAmount;peer.phoneVisual=makePhoneVisualState(p.vacuumPose,p.vacuumPower,0,s.time,false);peer.phoneTransform.position=p.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},p.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}}for(int i=0;i<TARGET_COUNT;++i){const auto& a=s.targets[i];auto& b=state.targets[i];b.alive=(a.flags&1)!=0;b.slurpable=(a.flags&2)!=0;b.brute=(a.flags&4)!=0;b.captureQueued=(a.flags&8)!=0;b.captureCommitted=(a.flags&16)!=0;b.soulState=a.soulState;b.pos=a.pos;b.vel=a.vel;b.armor=a.armor;b.health=a.health;b.capture=a.capture;b.ingestProgress=a.ingest;b.recoilTime=a.recoil;b.scale=a.scale;b.visualYaw=a.visualYaw;b.soulMorph=a.soulMorph;b.attackTimer=a.attackTimer;b.attackCooldown=a.attackCooldown;b.networkOwnerPlayerId=a.ownerPlayerId;}for(int i=0;i<CAPTURE_COUNT;++i)state.captures[i].filled=s.captures[i];for(int i=0;i<BULLET_COUNT;++i){const auto& a=s.bullets[i];auto& b=state.bullets[i];b.alive=a.active;b.brute=a.brute;b.pos=a.pos;b.vel=a.vel;b.life=a.life;b.spin=a.spin;}for(int i=0;i<FLOWER_POWERUP_COUNT;++i){const auto& a=s.flowers[i];auto& b=state.flowers[i];b.active=a.active;b.pos=a.pos;b.age=a.age;b.rotationY=a.rotation;} }
-
+void applyWorld(GameState &state, const WorldSnapshot &s,
+                std::uint8_t localPlayerId) {
+  state.time = s.time;
+  state.frame = static_cast<int>(s.tick);
+  state.roomIndex = s.roomIndex;
+  state.roomSeed = s.roomSeed;
+  state.requiredSouls = s.requiredSouls;
+  state.depositedSouls = s.depositedSouls;
+  state.roomClear = s.roomClear;
+  state.runRules = s.runRules;
+  state.upgradeMenu.active = s.upgradeMenuActive;
+  state.uiPaused = s.upgradeMenuActive;
+  for (int i = 0; i < 3; ++i)
+    state.progression.run.temporaryLevels[i] = s.temporaryUpgradeLevels[i];
+  state.progression.run.roomHeat = s.roomHeat;
+  for (auto &peer : state.multiplayer.peers)
+    peer = NetworkPeerState{};
+  for (const auto &p : s.players)
+    if (p.active) {
+      if (p.id == localPlayerId) {
+        state.player.pos = p.pos;
+        state.player.vel = p.vel;
+        state.player.yaw = p.yaw;
+        state.player.battery = p.battery;
+        state.player.souls = p.souls;
+        state.player.grounded = (p.flags & 1) != 0;
+        state.player.alive = (p.flags & 4) != 0;
+        state.camera.pitch = p.pitch;
+        state.camera.firstPerson = (p.flags & 2) != 0;
+        state.vacuum.power = p.vacuumPower;
+        state.vacuum.pose = p.vacuumPose;
+        state.vacuum.target = p.vacuumTarget;
+        state.meleeVisual.visualTimer = p.meleeTimer;
+        state.energy.dischargePositionAmount = p.dischargeAmount;
+      } else if (p.id < MAX_PLAYERS) {
+        auto &peer = state.multiplayer.peers[p.id];
+        peer.active = true;
+        peer.playerId = p.id;
+        peer.player.pos = p.pos;
+        peer.player.vel = p.vel;
+        peer.player.yaw = p.yaw;
+        peer.player.battery = p.battery;
+        peer.player.souls = p.souls;
+        peer.player.grounded = (p.flags & 1) != 0;
+        peer.player.alive = (p.flags & 4) != 0;
+        peer.camera.pitch = p.pitch;
+        peer.vacuum.power = p.vacuumPower;
+        peer.vacuum.pose = p.vacuumPose;
+        peer.vacuum.target = p.vacuumTarget;
+        peer.meleeVisual.visualTimer = p.meleeTimer;
+        peer.energy.dischargePositionAmount = p.dischargeAmount;
+        peer.phoneVisual =
+            makePhoneVisualState(p.vacuumPose, p.vacuumPower, 0, s.time, false);
+        peer.phoneTransform.position = p.pos + Vec3{0, 0.54f, 0};
+        peer.phoneTransform.orientation = quatAxisAngle({0, 1, 0}, p.yaw);
+        peer.phoneTransform.screenRight =
+            rotate(peer.phoneTransform.orientation, {1, 0, 0});
+        peer.phoneTransform.screenUp =
+            rotate(peer.phoneTransform.orientation, {0, 1, 0});
+        peer.phoneTransform.screenNormal =
+            rotate(peer.phoneTransform.orientation, {0, 0, 1});
+        peer.phoneTransform.screenCenter =
+            peer.phoneTransform.position +
+            peer.phoneTransform.screenNormal * PHONE_SCREEN_Z_OFFSET;
+        peer.phoneTransform.vacuumPullPoint =
+            peer.phoneTransform.screenCenter +
+            peer.phoneTransform.screenNormal * 0.24f;
+      }
+    }
+  for (int i = 0; i < TARGET_COUNT; ++i) {
+    const auto &a = s.targets[i];
+    auto &b = state.targets[i];
+    b.alive = (a.flags & 1) != 0;
+    b.slurpable = (a.flags & 2) != 0;
+    b.brute = (a.flags & 4) != 0;
+    b.captureQueued = (a.flags & 8) != 0;
+    b.captureCommitted = (a.flags & 16) != 0;
+    b.soulState = a.soulState;
+    b.pos = a.pos;
+    b.vel = a.vel;
+    b.armor = a.armor;
+    b.health = a.health;
+    b.capture = a.capture;
+    b.ingestProgress = a.ingest;
+    b.recoilTime = a.recoil;
+    b.scale = a.scale;
+    b.visualYaw = a.visualYaw;
+    b.soulMorph = a.soulMorph;
+    b.attackTimer = a.attackTimer;
+    b.attackCooldown = a.attackCooldown;
+    b.networkOwnerPlayerId = a.ownerPlayerId;
+  }
+  const bool initialSnapshot = !state.multiplayer.hasWorldSnapshot;
+  for (int i = 0; i < CAPTURE_COUNT; ++i) {
+    auto &capture = state.captures[i];
+    capture.filled = s.captures[i];
+    if (!capture.filled) {
+      capture.tokenAwarded = false;
+    } else if (!capture.tokenAwarded) {
+      capture.tokenAwarded = true;
+      if (!initialSnapshot) {
+        ++state.progression.permanent.tokens;
+        ++state.progression.permanent.revision;
+      }
+    }
+  }
+  state.multiplayer.hasWorldSnapshot = true;
+  for (int i = 0; i < BULLET_COUNT; ++i) {
+    const auto &a = s.bullets[i];
+    auto &b = state.bullets[i];
+    b.alive = a.active;
+    b.brute = a.brute;
+    b.pos = a.pos;
+    b.vel = a.vel;
+    b.life = a.life;
+    b.spin = a.spin;
+  }
+  for (int i = 0; i < FLOWER_POWERUP_COUNT; ++i) {
+    const auto &a = s.flowers[i];
+    auto &b = state.flowers[i];
+    b.active = a.active;
+    b.pos = a.pos;
+    b.age = a.age;
+    b.rotationY = a.rotation;
+  }
+}
 }

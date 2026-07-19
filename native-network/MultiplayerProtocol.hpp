@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 1;
-constexpr std::uint16_t GAMEPLAY_VERSION = 1;
+constexpr std::uint16_t PROTOCOL_VERSION = 2;
+constexpr std::uint16_t GAMEPLAY_VERSION = 2;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr int MAX_PLAYERS = 4;
@@ -101,6 +101,9 @@ struct WorldSnapshot {
     std::int32_t depositedSouls = 0;
     bool roomClear = false;
     RunRuleState runRules;
+    bool upgradeMenuActive = false;
+    std::array<std::int32_t,3> temporaryUpgradeLevels{};
+    float roomHeat = 0.0f;
     std::array<PlayerSnapshot, MAX_PLAYERS> players{};
     std::array<TargetSnapshot, TARGET_COUNT> targets{};
     std::array<bool, CAPTURE_COUNT> captures{};

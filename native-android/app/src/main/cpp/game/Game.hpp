@@ -299,6 +299,7 @@ struct RunProgressionState {
     int accuracyStacks = 0;
     float accuracyMultiplier = 1.0f;
     float accuracyDecayTimer = 0.0f;
+    float headshotRegenTax = 0.0f;
     float batteryRegenLock = 0.0f;
     float roomHeat = 0.0f;
     float roomElapsed = 0.0f;
@@ -341,6 +342,7 @@ struct MeleeVisualState {
     bool airLungeLandingPending = false;
     bool locomotionLunge = false;
     float airLungeSpeed = 0.0f;
+    float airLungeVerticalKick = 3.2f;
     float airLungeTimer = 0.0f;
     float airLungeRotation = 0.0f;
     float airLungeAngularVelocity = 0.0f;
@@ -437,6 +439,7 @@ struct MultiplayerRuntimeState {
     std::array<char, 7> roomCode{};
     std::array<char, 64> status{};
     std::array<NetworkPeerState, NETWORK_PLAYER_COUNT> peers{};
+    bool hasWorldSnapshot = false;
 };
 
 struct GameState {

@@ -133,7 +133,6 @@ constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
 constexpr float AIR_MELEE_CAMERA_RECOVERY_RESPONSE = 11.0f;
 constexpr float AIR_MELEE_CAMERA_LAG_DECAY = 2.4f;
-constexpr float AIR_MELEE_VERTICAL_KICK = 3.2f;
 constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
 constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
 struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
@@ -285,6 +284,7 @@ void Game::setUiPaused(bool paused){
 
 bool Game::chooseTemporaryUpgrade(int track){
     if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)return false;
     auto& level=state_.progression.run.temporaryLevels[track];
     level=std::min(12,level+1);
     state_.upgradeMenu.active=false;
@@ -295,6 +295,7 @@ bool Game::chooseTemporaryUpgrade(int track){
 
 bool Game::purchasePermanentUpgrade(int track){
     if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)return false;
     auto& permanent=state_.progression.permanent;
     if(permanent.tokens<=0||permanent.levels[track]>=5)return false;
     --permanent.tokens;++permanent.levels[track];++permanent.revision;
@@ -528,6 +529,7 @@ void Game::registerMeleeBatteryHit(int hitCount) {
 void Game::updateBattery(float dt) {
     if (!state_.player.alive) return;
     state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
+    state_.progression.run.headshotRegenTax = std::max(0.0f, state_.progression.run.headshotRegenTax - dt * 0.11f);
     EnergyState& energy = state_.energy;
     if (energy.comboHits > 0 && state_.time - energy.lastComboHitTime > BATTERY_COMBO_TIMEOUT) {
         energy.comboHits = 0;
@@ -547,7 +549,7 @@ void Game::updateBattery(float dt) {
     if (state_.vacuum.active) { drain += BATTERY_VACUUM_DRAIN * std::max(0.35f, state_.vacuum.power); active = true; }
     if (state_.meleeVisual.visualTimer > 0.0f || energy.dischargeTimer > 0.0f) active = true;
     if (drain > 0.0f) spendBattery(drain * dt);
-    else if(state_.progression.run.batteryRegenLock<=0.0f) gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * dt);
+    else if(state_.progression.run.batteryRegenLock<=0.0f) gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * (1.0f-state_.progression.run.headshotRegenTax) * dt);
 }
 
 void Game::triggerRunDeath() {
@@ -1169,7 +1171,7 @@ void Game::updatePlayer(float dt) {
         p.vel = direction * std::max(forwardSpeed, melee.airLungeSpeed) + lateral * AIR_MELEE_LATERAL_RETENTION;
         // This is a physical kick, not a trajectory fitted to an animation
         // duration. Gravity and the actual support below decide when it lands.
-        p.jumpVel=std::max(p.jumpVel,AIR_MELEE_VERTICAL_KICK);
+        p.jumpVel=std::max(p.jumpVel,melee.airLungeVerticalKick);
         melee.airLungePending = false;
     }
     if (!p.grounded) {
@@ -1555,12 +1557,13 @@ void Game::triggerMelee() {
     if (state_.meleeCooldown > 0) return;
     const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
     const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
-    if (!spendBattery(combo.cost,BatteryReason::Melee)) return;
+    const bool airborne=!state_.player.grounded;
+    const float upwardAim=airborne?clampf(state_.camera.pitch/0.62f,0.0f,1.0f):0.0f;
+    if (!spendBattery(combo.cost+upwardAim*5.5f,BatteryReason::Melee)) return;
     state_.meleeComboWindow = MELEE_COMBO_WINDOW;
     const int lungeLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Lunge)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Lunge)];
     state_.meleeCooldown = combo.cooldown/(1.0f+0.045f*static_cast<float>(lungeLevel)); state_.meleePose = 1.0f;
     MeleeVisualState& visual = state_.meleeVisual;
-    const bool airborne=!state_.player.grounded;
     const int attackLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Attack)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Attack)];
     visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel));
     visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
@@ -1568,6 +1571,7 @@ void Game::triggerMelee() {
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
     visual.airLungePending=airborne;visual.airLungeLandingPending=airborne;
     visual.airLungeSpeed=airborne?AIR_MELEE_LOCOMOTION_DISTANCE/AIR_MELEE_LOCOMOTION_DURATION:0.0f;
+    visual.airLungeVerticalKick=3.0f+upwardAim*2.8f;
     visual.airLungeTimer=airborne?AIR_MELEE_LOCOMOTION_DURATION:0.0f;
     visual.airLungeRotation=0.0f;visual.airLungeAngularVelocity=airborne?AIR_MELEE_ANGULAR_VELOCITY:0.0f;visual.airLungeCameraLag=airborne?1.0f:0.0f;
     if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
@@ -1630,7 +1634,7 @@ void Game::continueLungeFromHeadshot() {
     lunge.airLungeAngularVelocity=std::max(lunge.airLungeAngularVelocity,AIR_MELEE_ANGULAR_VELOCITY);
     lunge.airLungeCameraLag=1.0f;
     state_.player.grounded=false;
-    state_.player.jumpVel=std::max(state_.player.jumpVel,AIR_MELEE_VERTICAL_KICK);
+    state_.player.jumpVel=std::max(state_.player.jumpVel,lunge.airLungeVerticalKick);
 }
 
 void Game::rewardHeadshot(const Vec3& position, bool critical) {
@@ -1638,6 +1642,7 @@ void Game::rewardHeadshot(const Vec3& position, bool critical) {
     run.accuracyStacks=std::min(ACCURACY_STACK_CAP,run.accuracyStacks+1);
     run.accuracyMultiplier=1.0f+static_cast<float>(run.accuracyStacks)*ACCURACY_STACK_BONUS;
     run.accuracyDecayTimer=ACCURACY_CHAIN_TIMEOUT;
+    run.headshotRegenTax=std::min(0.65f,run.headshotRegenTax+0.12f);
     const float beatPhase=std::fmod(std::max(0.0f,state_.time),HEADSHOT_BEAT_SECONDS);
     const float beatDistance=std::min(beatPhase,HEADSHOT_BEAT_SECONDS-beatPhase);
     const bool perfect=beatDistance<=HEADSHOT_PERFECT_WINDOW;

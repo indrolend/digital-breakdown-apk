@@ -371,6 +371,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?0.72f:1.0f,1.0f,state.roomClear?0.74f:1.0f);
     text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,0.82f,1.0f,0.91f);
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,0.72f,1.0f,0.86f);}
+    if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));text(tax,12,320,1.05f,1.0f,0.72f,0.62f);}
     if(state.hud.headshotPulse>0.001f){const float a=state.hud.headshotPulse*0.36f,p=state.hud.perfectPulse,w=static_cast<float>(width_),h=static_cast<float>(height_);quad(0,0,w,2+p*2,0.55f+p*0.45f,0.92f,1.0f,a);quad(0,h-2-p*2,w,2+p*2,0.55f+p*0.45f,0.92f,1.0f,a);quad(0,0,2+p*2,h,0.55f+p*0.45f,0.92f,1.0f,a);quad(w-2-p*2,0,2+p*2,h,0.55f+p*0.45f,0.92f,1.0f,a);}
 
     // Battery display remains visible while vacuuming without a target; target lock is separate.
@@ -404,7 +405,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
 
     if(state.upgradeMenu.active){
         const float pw=std::min(620.0f,static_cast<float>(width_)-24.0f),ph=250.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
-        quad(px,py,pw,ph,0,0,0,0.88f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text("CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
+        quad(px,py,pw,ph,0,0,0,0.88f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost?"HOST IS CHOOSING":"CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
         text("1 SHOT",px+26,py+82,1.5f);text("2 LUNGE",px+220,py+82,1.5f);text("3 ATTACK",px+420,py+82,1.5f);
         text("PERMANENT SHOP  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+136,1.2f,0.82f,1.0f,0.91f);
         text("4 SHOT "+std::to_string(state.progression.permanent.levels[0])+"/5",px+26,py+174,1.25f);text("5 LUNGE "+std::to_string(state.progression.permanent.levels[1])+"/5",px+220,py+174,1.25f);text("6 ATTACK "+std::to_string(state.progression.permanent.levels[2])+"/5",px+420,py+174,1.25f);

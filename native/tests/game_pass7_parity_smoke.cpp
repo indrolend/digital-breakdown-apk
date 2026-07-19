@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 #include <cstring>
+#include <memory>
 
 #include "Game.hpp"
 
@@ -258,6 +259,12 @@ int main() {
         "phone body arch integrates angular velocity instead of sampling a canned attack curve");
     ok &= expect(horizontalSpeed(airLungeForward.camera.pos-airLungeForward.player.pos)>3.05f,
         "lunge camera retains inertia so physical travel remains visible on screen");
+    auto lowAimLunge=std::make_unique<Game>(),highAimLunge=std::make_unique<Game>();lowAimLunge->reset();highAimLunge->reset();
+    for(Game* fixture:{lowAimLunge.get(),highAimLunge.get()}){GameState& setup=const_cast<GameState&>(fixture->state());for(auto& target:setup.targets)target.alive=false;setup.player.pos={0,1.4f,0};setup.player.grounded=false;setup.player.jumpVel=-0.4f;setup.camera.yaw=0;}
+    const_cast<GameState&>(lowAimLunge->state()).camera.pitch=0.0f;const_cast<GameState&>(highAimLunge->state()).camera.pitch=0.62f;
+    lowAimLunge->setTouchControls(0,0,0,0,false,false,false,true,false,false);highAimLunge->setTouchControls(0,0,0,0,false,false,false,true,false,false);step(*lowAimLunge);step(*highAimLunge);
+    ok &= expect(highAimLunge->state().player.jumpVel>lowAimLunge->state().player.jumpVel+2.4f&&highAimLunge->state().player.battery<lowAimLunge->state().player.battery-5.0f,
+        "upward aim buys a higher physical lunge trajectory with a proportional battery surcharge");
     step(game,20);
     const float uninterruptedLungeTimer=game.state().meleeVisual.airLungeTimer;
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
@@ -845,9 +852,11 @@ int main() {
         "a three-slot room takes exactly three headshots to break a fresh shell and plays all three jingles");
     ok &= expect(game.state().progression.run.accuracyStacks==3&&near(game.state().progression.run.accuracyMultiplier,1.24f,0.001f)&&game.state().hud.headshotPulse>0.8f,
         "consecutive accurate headshots build the bounded percentage chain and shared tactile pulse");
+    ok &= expect(game.state().progression.run.headshotRegenTax>0.34f&&game.state().progression.run.headshotRegenTax<=0.65f,
+        "rapid headshots trade their immediate battery reward for a bounded passive-regeneration tax");
     step(game,200);
-    ok &= expect(game.state().progression.run.accuracyStacks==0&&near(game.state().progression.run.accuracyMultiplier,1.0f,0.001f),
-        "an idle accuracy chain expires cleanly instead of scaling without bound");
+    ok &= expect(game.state().progression.run.accuracyStacks==0&&near(game.state().progression.run.accuracyMultiplier,1.0f,0.001f)&&near(game.state().progression.run.headshotRegenTax,0.0f,0.001f),
+        "an idle accuracy chain and regeneration tax cool off cleanly instead of scaling without bound");
 
     game.reset();
     {
