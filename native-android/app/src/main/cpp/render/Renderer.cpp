@@ -508,7 +508,7 @@ void Renderer::draw(const GameState& state) {
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){const float remoteBody[4]={0.32f,0.86f,1.0f,1.0f},remoteScreen[4]={0.05f,0.55f,0.78f,1.0f};if(phoneModel_.valid())drawStaticModel(viewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(viewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,remoteBody);drawBox(viewProj,peer.phoneTransform.screenCenter,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},peer.phoneTransform.orientation,remoteScreen);}
 
     const MeleeVisualState& melee=state.meleeVisual;
-    if(melee.visualTimer>0.0f){
+    if(melee.visualTimer>0.0f && !melee.locomotionLunge){
         const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
         const float hitBoost=melee.visualHit?1.25f:0.72f;
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);

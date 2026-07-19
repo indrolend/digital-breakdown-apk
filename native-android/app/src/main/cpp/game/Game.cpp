@@ -114,9 +114,11 @@ constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
-constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 0.82f;
-constexpr float AIR_MELEE_LATERAL_RETENTION = 0.35f;
-constexpr float AIR_MELEE_VERTICAL_KICK = 1.40f;
+constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 1.08f;
+constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
+constexpr float AIR_MELEE_VERTICAL_KICK = 2.60f;
+constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.34f;
+constexpr float AIR_MELEE_BODY_RADIUS = 0.72f;
 struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
 constexpr MeleeCombo MELEE_COMBOS[] = {
     {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
@@ -1007,7 +1009,8 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
     PhonePoseState& pose = state_.phonePose;
     pose.doubleJumpVacuumPause = std::max(0.0f, pose.doubleJumpVacuumPause - dt);
     pose.doubleJumpTimer = std::max(0.0f, pose.doubleJumpTimer - dt);
-    const bool jumpFlip = pose.doubleJumpTimer > 0.0f;
+    const bool locomotionLunge = state_.meleeVisual.locomotionLunge && state_.meleeVisual.visualTimer > 0.0f;
+    const bool jumpFlip = pose.doubleJumpTimer > 0.0f && !locomotionLunge;
     const bool dischargeFacing = state_.energy.dischargeTimer > 0.0f;
     state_.energy.dischargePositionAmount += ((dischargeFacing ? 1.0f : 0.0f) - state_.energy.dischargePositionAmount) * std::min(1.0f, dt * 12.0f);
     const bool vacuumFacing = (state_.vacuum.active && pose.doubleJumpVacuumPause <= 0.0f) || dischargeFacing;
@@ -1046,6 +1049,19 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
         if (melee.visualTimer > 0.0f) {
             const float attackT = 1.0f - clampf(melee.visualTimer / std::max(0.001f, melee.visualDuration), 0.0f, 1.0f);
             const float snap = std::sin(attackT * DB_PI);
+            if (melee.locomotionLunge) {
+                // The airborne action is the phone itself travelling through a
+                // compact forward arc. It is locomotion with contact damage,
+                // not a handheld-style swing layered over ordinary movement.
+                const float settle = attackT * attackT * (3.0f - 2.0f * attackT);
+                pose.forward += 0.18f * snap;
+                pose.lift += 0.13f * snap;
+                q = quatAxisAngle({0,1,0}, state_.camera.yaw)
+                    * quatAxisAngle({1,0,0}, -0.18f - snap * 1.12f + settle * 0.18f);
+                pose.actionState = 6;
+                pose.orientation = quatNormalized(q);
+                return;
+            }
             const float recover = std::sin(std::min(1.0f, attackT * 1.45f) * DB_PI);
             const int variant = std::max(0, std::min(3, melee.variant));
             const float hitWeight = melee.visualHit ? 1.18f : 0.82f;
@@ -1274,12 +1290,15 @@ void Game::triggerMelee() {
     visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage;
     visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
     const bool airborne=!state_.player.grounded;
+    visual.locomotionLunge=airborne;
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
-    visual.airLungePending=airborne; visual.airLungeSpeed=combo.dashSpeed*AIR_MELEE_LUNGE_SPEED_MULT; visual.airLungeTimer=airborne?combo.dash:0.0f;
+    visual.airLungePending=airborne; visual.airLungeSpeed=combo.dashSpeed*AIR_MELEE_LUNGE_SPEED_MULT;
+    visual.airLungeTimer=airborne?AIR_MELEE_LOCOMOTION_DURATION:0.0f;
+    if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
     visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
     visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
-    applyMeleeHits();
+    if(!airborne) applyMeleeHits();
 }
 
 int Game::applyMeleeHits() {
@@ -1288,11 +1307,16 @@ int Game::applyMeleeHits() {
     for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
     for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
-        const float forwardDist=dotXZ(delta,visual.direction);
-        if(forwardDist < -0.35f || forwardDist > visual.range) continue;
-        const Vec3 sideDelta=delta-visual.direction*forwardDist;
-        const float hitRadius=visual.hitRadius+(t.brute?0.28f:0.0f);
-        if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
+        if(visual.locomotionLunge){
+            const float hitRadius=AIR_MELEE_BODY_RADIUS+(t.brute?0.28f:0.0f);
+            if(lengthSq(delta)>hitRadius*hitRadius || std::abs(t.pos.y-state_.player.pos.y)>1.15f) continue;
+        }else{
+            const float forwardDist=dotXZ(delta,visual.direction);
+            if(forwardDist < -0.35f || forwardDist > visual.range) continue;
+            const Vec3 sideDelta=delta-visual.direction*forwardDist;
+            const float hitRadius=visual.hitRadius+(t.brute?0.28f:0.0f);
+            if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
+        }
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
@@ -1300,7 +1324,7 @@ int Game::applyMeleeHits() {
         spawnFlameBurst(t.pos+Vec3{0,0.65f,0},newHits>0?0.95f+static_cast<float>(newHits+1)*0.18f:0.55f);
         visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
-    if(newHits>0){emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits); const float recoilScale=totalHits>1?0.35f:1.0f; state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale); state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale); visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
+    if(newHits>0){emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}}
     return newHits;
 }
 

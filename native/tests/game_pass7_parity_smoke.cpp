@@ -187,12 +187,14 @@ int main() {
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
     const GameState airLungeForward=game.state();
-    ok &= expect(airLungeForward.player.vel.z < -9.5f && std::abs(airLungeForward.player.vel.x) < 1.0f,
-        "airborne melee converts the attack into a strong camera-forward physics impulse");
-    ok &= expect(airLungeForward.player.jumpVel > 1.0f && !airLungeForward.player.grounded,
-        "airborne melee adds a small ball-like lift while preserving airborne state");
+    ok &= expect(airLungeForward.player.vel.z < -12.5f && std::abs(airLungeForward.player.vel.x) < 1.2f,
+        "airborne action becomes a strong camera-forward locomotion impulse");
+    ok &= expect(airLungeForward.player.jumpVel > 2.0f && !airLungeForward.player.grounded,
+        "airborne locomotion begins a forward physical arc instead of a flat attack dash");
     ok &= expect(airLungeForward.meleeVisual.dashTimer <= 0.0f && airLungeForward.meleeVisual.airLungeTimer > 0.0f && !airLungeForward.meleeVisual.airLungePending,
-        "airborne melee consumes one impulse instead of stacking the grounded positional dash");
+        "airborne locomotion consumes one impulse instead of stacking the grounded positional dash");
+    ok &= expect(airLungeForward.meleeVisual.locomotionLunge && airLungeForward.phonePose.actionState==6,
+        "airborne locomotion uses the full-phone arch pose rather than the grounded swing pose");
 
     game.reset();
     {
@@ -201,8 +203,22 @@ int main() {
         setup.player.pos={0.0f,1.4f,0.0f}; setup.player.grounded=false; setup.camera.yaw=-DB_PI*0.5f;
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
-    ok &= expect(game.state().player.vel.x > 9.5f && std::abs(game.state().player.vel.z) < 0.25f,
-        "airborne melee lunge follows camera heading on touch and desktop input paths");
+    ok &= expect(game.state().player.vel.x > 12.5f && std::abs(game.state().player.vel.z) < 0.25f,
+        "airborne locomotion lunge follows camera heading on touch and desktop input paths");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.pos={0.0f,0.8f,0.0f};setup.player.grounded=false;setup.player.jumpVel=0.0f;setup.camera.yaw=0.0f;
+        setup.targets[0]=TargetState{};setup.targets[0].alive=true;setup.targets[0].pos={0.0f,0.08f,-2.25f};setup.targets[0].armor=4.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
+    ok &= expect(near(game.state().targets[0].armor,4.0f,0.001f),
+        "airborne locomotion does not project the grounded melee hit volume ahead of the phone");
+    step(game,12);
+    ok &= expect(game.state().targets[0].armor<4.0f && game.state().player.vel.z<0.0f,
+        "airborne locomotion deals secondary damage on body contact without cancelling travel");
 
     game.reset();
     { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
