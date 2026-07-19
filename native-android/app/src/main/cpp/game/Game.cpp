@@ -1962,8 +1962,11 @@ void Game::updateCrosshair(float dt) {
     HudState& hud=state_.hud;
     const bool fullyCommitted=state_.dead||!state_.started||state_.cinematic.introActive||state_.uiPaused
         ||state_.meleeVisual.airLungeLandingPending;
-    const float opacityTarget=fullyCommitted?0.0f:1.0f;
-    const float opacityResponse=fullyCommitted?14.0f:9.0f;
+    const bool shooting=state_.energy.dischargeTimer>0.0f||state_.energy.dischargePositionAmount>0.01f
+        ||state_.hud.shootJoinTimer>0.0f;
+    const bool crosshairAction=state_.vacuum.active||shooting;
+    const float opacityTarget=!fullyCommitted&&crosshairAction?1.0f:0.0f;
+    const float opacityResponse=opacityTarget>hud.crosshairOpacity?12.0f:14.0f;
     hud.crosshairOpacity+=(opacityTarget-hud.crosshairOpacity)*std::min(1.0f,dt*opacityResponse);
     bool aimTarget=state_.vacuum.target!=-1;
     const Vec3 characterForward=cameraForwardFlat();

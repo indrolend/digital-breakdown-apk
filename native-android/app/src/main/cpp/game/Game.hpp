@@ -357,7 +357,7 @@ struct HudState {
     float lockStrength = 0.0f;
     float crosshairRotationDegrees = 0.0f;
     float crosshairSpreadPixels = 8.0f;
-    float crosshairOpacity = 1.0f;
+    float crosshairOpacity = 0.0f;
     float shootJoinTimer = 0.0f;
     float supplementalFill = 0.0f;
     int flowerStacks = 0;

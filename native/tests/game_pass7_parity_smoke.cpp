@@ -167,8 +167,11 @@ int main() {
     ok &= expect(game.state().hud.crosshairOpacity<0.30f,
         "crosshair fades away while the committed lunge owns every phone action");
     game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game,60);
-    ok &= expect(!game.state().meleeVisual.airLungeLandingPending&&game.state().hud.crosshairOpacity>0.80f,
-        "crosshair fades back in after landing returns actionable control");
+    ok &= expect(!game.state().meleeVisual.airLungeLandingPending&&game.state().hud.crosshairOpacity<0.05f,
+        "crosshair stays hidden after landing until a reticle-driven action begins");
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);step(game,12);
+    ok &= expect(game.state().vacuum.active&&game.state().hud.crosshairOpacity>0.80f,
+        "crosshair fades in when vacuuming begins");
 
     game.reset();
     {
@@ -591,6 +594,8 @@ int main() {
             "stored brute soul uses the browser's heavier launch speed");
         ok &= expect(state.hud.shootJoinTimer>0.0f && state.hud.crosshairSpreadPixels<15.0f,
             "successful discharge starts the browser crosshair join cue");
+        ok &= expect(state.hud.crosshairOpacity>0.65f,
+            "soul discharge fades in the action-specific crosshair");
         ok &= expect(state.frame-dischargeStartFrame==6 && fired!=nullptr,
             "fresh discharge releases on the oracle sixth frame after its 0.09-second hold");
         ok &= expect(std::strstr(state.hud.energyTicker.data(),"SHOOT")!=nullptr && state.time<state.hud.energyTickerUntil,
