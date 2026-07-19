@@ -35,6 +35,10 @@ public final class ControlOverlayView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        if (NativeBridge.isIntroActive()) {
+            postInvalidateOnAnimation();
+            return;
+        }
 
         final float joystickRadius = gameView.joystickRadius();
         final float joystickX = gameView.joystickCenterX();

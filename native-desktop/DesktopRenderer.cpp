@@ -296,6 +296,8 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     glOrtho(0.0,static_cast<double>(width_),static_cast<double>(height_),0.0,-1.0,1.0);
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
 
+    if(state.cinematic.introActive){glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;}
+
     if(!state.started) {
         quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,state.dead?0.44f:0.88f);
         const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f);

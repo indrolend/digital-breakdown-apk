@@ -64,12 +64,15 @@ int main() {
     game.restart();
     ok &= expect(game.state().started&&hasAudioCue(game.state(),AudioCue::VcInvitation),
         "START begins a fresh native run and queues the browser invitation cue");
+    const Vec3 introLockedPosition=game.state().player.pos;
+    game.setTouchControls(1,1,80,40,true,true,true,true,true,true);
     step(game);
-    ok &= expect(game.state().cinematic.introActive && horizontalSpeed(game.state().camera.pos-game.state().player.pos)>3.1f,
-        "fresh START begins the short orbiting camera reveal without blocking gameplay");
-    step(game,64);
-    ok &= expect(!game.state().cinematic.introActive && near(horizontalSpeed(game.state().camera.pos-game.state().player.pos),3.0f,0.02f),
-        "intro camera settles into the browser-equivalent three-unit chase boom");
+    ok &= expect(game.state().cinematic.introActive && length(game.state().camera.pos-game.state().phoneTransform.position)<0.8f &&
+        near(length(game.state().player.pos-introLockedPosition),0.0f,0.0001f),
+        "fresh START locks control for a close product-style phone reveal");
+    step(game,70);
+    ok &= expect(!game.state().cinematic.introActive && horizontalSpeed(game.state().camera.pos-game.state().player.pos)>2.45f,
+        "product reveal hands off into the collision-safe gameplay chase camera before play");
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
@@ -437,7 +440,12 @@ int main() {
     ok &= expect(hasAudioCue(game.state(),AudioCue::LowPower),"crossing below 24 percent emits low-power audio");
     { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f; }
     game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game);
-    ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recharging any depleted battery to full emits connect-power audio once");
+    ok &= expect(!hasAudioCue(game.state(),AudioCue::ConnectPower),"ordinary near-full recovery does not emit connect-power audio");
+    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=13.0f; }
+    step(game);
+    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f; }
+    step(game);
+    ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recovery to full emits connect-power once after crossing the browser 14-percent arming threshold");
 
     game.reset();
     step(game);

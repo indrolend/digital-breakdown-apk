@@ -42,7 +42,7 @@ constexpr float PLAYER_SUPPORT_RADIUS = 0.34f;
 constexpr float WALL_CLIMB_RADIUS = 0.34f;
 constexpr float CAMERA_COLLISION_RADIUS = 0.42f;
 constexpr float CAMERA_COLLISION_BACKOFF = 0.16f;
-constexpr float INTRO_CAMERA_DURATION = 1.05f;
+constexpr float INTRO_CAMERA_DURATION = 1.15f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
@@ -411,7 +411,9 @@ void Game::updateBatteryAudio(float beforeValue) {
     AudioState& audio=state_.audio;
     const float before=clampf(beforeValue/100.0f,0.0f,1.0f),now=clampf(state_.player.battery/100.0f,0.0f,1.0f);
     if(before>0.24f && now<=0.24f && audio.lowPowerArmed){emitAudio(AudioCue::LowPower,0.48f);audio.lowPowerArmed=false;}
-    if(now<0.995f) audio.connectPowerArmed=true;
+    // Pass 7 only arms the recovered/full cue after a genuinely critical
+    // discharge. Small expenditures near full must not repeatedly chime.
+    if(now<=0.14f) audio.connectPowerArmed=true;
     if(audio.connectPowerArmed && before<1.0f && now>=0.995f){emitAudio(AudioCue::ConnectPower,0.52f);audio.connectPowerArmed=false;audio.lowPowerArmed=true;}
     if(now>0.32f) audio.lowPowerArmed=true;
 }
@@ -615,6 +617,10 @@ void Game::clearInputState() {
     input.touchMoveZ = 0.0f;
     input.lookDeltaX = 0.0f;
     input.lookDeltaY = 0.0f;
+    input.jumpPressed = false;
+    input.meleePressed = false;
+    input.shootPressed = false;
+    input.cameraTogglePressed = false;
     input.touching = false;
 }
 
@@ -661,6 +667,16 @@ void Game::update(float dt) {
         return;
     }
     if(!state_.started) {
+        state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+        state_.hud.lowBattery=state_.player.battery<24.0f;
+        state_.hud.gameOver=false;
+        return;
+    }
+    if(state_.cinematic.introActive) {
+        clearInputState();
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
+        updatePhoneTransform();
+        updateIntroCamera(dt);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
         state_.hud.gameOver=false;
@@ -1223,15 +1239,21 @@ void Game::updateIntroCamera(float dt) {
     if (!cinematic.introActive) return;
     cinematic.introElapsed = std::min(INTRO_CAMERA_DURATION, cinematic.introElapsed + dt);
     const float linear = clampf(cinematic.introElapsed / INTRO_CAMERA_DURATION, 0.0f, 1.0f);
-    const float t = linear * linear * (3.0f - 2.0f * linear);
-    const float orbitYaw = cinematic.baseYaw + (1.0f - t) * 1.28f;
-    const Vec3 orbitForward{-std::sin(orbitYaw), 0.0f, -std::cos(orbitYaw)};
-    const float distance = 5.15f + (3.0f - 5.15f) * t;
-    const float height = 2.35f + (1.10f - 2.35f) * t;
-    Vec3 desired = state_.player.pos - orbitForward * distance + Vec3{0.0f, height, 0.0f};
-    constrainThirdPersonCamera(desired, state_.player.pos);
-    state_.camera.pos = desired;
-    state_.camera.lookTarget = state_.player.pos + Vec3{0.0f, 0.58f, 0.0f};
+    const float productPhase=clampf(linear/0.68f,0.0f,1.0f);
+    const float productEase=smooth01(productPhase);
+    const Vec3 phoneFocus=state_.phoneTransform.position+Vec3{0.0f,0.02f,0.0f};
+    const float productYaw=cinematic.baseYaw-0.58f+productEase*0.76f;
+    const Vec3 productForward{-std::sin(productYaw),0.0f,-std::cos(productYaw)};
+    const Vec3 productCamera=phoneFocus-productForward*0.54f+Vec3{0.0f,0.11f,0.0f};
+
+    const float cp=std::cos(state_.camera.pitch);
+    const Vec3 gameplayForward=normalized({-std::sin(cinematic.baseYaw)*cp,std::sin(state_.camera.pitch),-std::cos(cinematic.baseYaw)*cp});
+    Vec3 gameplayCamera=state_.player.pos-gameplayForward*3.0f+Vec3{0.0f,1.1f,0.0f};
+    constrainThirdPersonCamera(gameplayCamera,state_.player.pos);
+    const Vec3 gameplayTarget=state_.player.pos+gameplayForward*10.0f+Vec3{0.0f,0.45f,0.0f};
+    const float handoff=smooth01((linear-0.68f)/0.32f);
+    state_.camera.pos=productCamera*(1.0f-handoff)+gameplayCamera*handoff;
+    state_.camera.lookTarget=phoneFocus*(1.0f-handoff)+gameplayTarget*handoff;
     state_.camera.forward = normalized(state_.camera.lookTarget - state_.camera.pos);
     if (linear >= 1.0f) {
         cinematic.introActive = false;

@@ -190,6 +190,11 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint key
     gGame.setKey(keyCode, down == JNI_TRUE);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_indrolend_digitalbreakdown_NativeBridge_isIntroActive(JNIEnv*, jclass) {
+    return gGame.state().cinematic.introActive ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_startSolo(JNIEnv*,jclass){NetworkEvent event;event.kind=NetworkEvent::Solo;std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.clear();gNetworkEvents.push_back(std::move(event));}
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_configureNetwork(JNIEnv* env,jclass,jboolean host,jint playerId,jstring room,jstring status){const char* r=env->GetStringUTFChars(room,nullptr);const char* s=env->GetStringUTFChars(status,nullptr);NetworkEvent event;event.kind=NetworkEvent::Configure;event.host=host==JNI_TRUE;event.playerId=playerId;event.room=r?r:"";event.status=s?s:"";if(r)env->ReleaseStringUTFChars(room,r);if(s)env->ReleaseStringUTFChars(status,s);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkControl(JNIEnv* env,jclass,jstring value){const char* chars=env->GetStringUTFChars(value,nullptr);NetworkEvent event;event.kind=NetworkEvent::Control;event.text=chars?chars:"";if(chars)env->ReleaseStringUTFChars(value,chars);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}

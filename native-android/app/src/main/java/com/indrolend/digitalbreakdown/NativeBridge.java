@@ -126,6 +126,7 @@ public final class NativeBridge {
         boolean cameraTogglePressed
     );
     public static native void onKey(int keyCode, boolean down);
+    public static native boolean isIntroActive();
     public static native void startSolo();
     public static native void configureNetwork(boolean host, int playerId, String roomCode, String status);
     public static native void onNetworkControl(String json);
