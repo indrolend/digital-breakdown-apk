@@ -48,6 +48,10 @@ int main() {
         "versioned permanent progression survives run reset and clamps upgrade tracks safely");
     ok &= expect(progressionFixture.state().progression.run.temporaryLevels==std::array<int,3>{},
         "run-only progression resets independently from permanent shop state");
+    {GameState& settings=const_cast<GameState&>(progressionFixture.state());settings.localSettings.musicVolume=0.30f;settings.localSettings.sfxVolume=0.80f;settings.localSettings.shadows=false;settings.localSettings.particles=false;settings.localSettings.menuPage=LocalMenuPage::Graphics;}
+    progressionFixture.reset();
+    ok &= expect(near(progressionFixture.state().localSettings.musicVolume,0.30f,0.001f)&&near(progressionFixture.state().localSettings.sfxVolume,0.80f,0.001f)&&!progressionFixture.state().localSettings.shadows&&!progressionFixture.state().localSettings.particles&&progressionFixture.state().localSettings.menuPage==LocalMenuPage::Main,
+        "local audio and graphics settings survive run reset while submenu navigation returns safely to main");
     Game precisionBuild;precisionBuild.setPersistentProgression(0,2,2,0);precisionBuild.reset();step(precisionBuild);
     ok &= expect(std::strstr(precisionBuild.state().hud.buildLabel.data(),"PINBALL SNIPER")!=nullptr,
         "paired shot and lunge levels unlock a visible precision-mobility build identity");
@@ -66,18 +70,56 @@ int main() {
         setup.player.battery=5.0f;TargetState& target=setup.targets[0];target=TargetState{};target.alive=true;target.armor=2.0f;target.pos=setup.player.pos+Vec3{0,0,-1.0f};target.walkTarget=target.pos;target.attackCooldown=0.0f;
     }
     step(cockroachBuild,90);
-    ok &= expect(cockroachBuild.state().player.alive&&cockroachBuild.state().progression.run.lastStandCooldown>0.0f,
-        "the balanced low-damage survival circuit catches one otherwise lethal enemy swing on a bounded cooldown");
+    ok &= expect(cockroachBuild.state().player.alive&&(cockroachBuild.state().player.grabbedByTarget>=0||cockroachBuild.state().progression.run.lastStandCooldown>0.0f),
+        "the balanced low-damage survival circuit enters a recoverable grab or catches one lethal swing");
+    Game wiggleGame;wiggleGame.reset();
+    {GameState& setup=const_cast<GameState&>(wiggleGame.state());for(auto& target:setup.targets)target.alive=false;setup.targets[0]=TargetState{};setup.targets[0].alive=true;setup.targets[0].pos=setup.player.pos+Vec3{0,0,-0.5f};setup.targets[0].grabbedPlayerId=0;setup.player.grabbedByTarget=0;}
+    for(int tap=0;tap<5;++tap){wiggleGame.setWiggle(0.0f);step(wiggleGame);}
+    ok &= expect(wiggleGame.state().player.grabbedByTarget<0&&!wiggleGame.state().input.meleePressed&&!wiggleGame.state().input.shootPressed,
+        "five simple phone taps synthesize alternating wiggles and release without leaking an action into the next menu");
     Game game;
     game.reset();
     const GameState spawn = game.state();
     ok &= expect(hasAudioCue(spawn,AudioCue::VcInvitation),"new native run queues the browser invitation cue");
     ok &= expect(near(spawn.player.pos.y, PHONE_MODEL_HEIGHT * 0.5f, 0.0001f), "spawn support y equals half Pass 7 phone height");
+    Game ledgeGame;ledgeGame.reset();
+    {GameState& ledge=const_cast<GameState&>(ledgeGame.state());const RoomCollider& platform=ledge.roomColliders[0];ledge.player.pos={platform.maxX+0.12f,platform.topY+PHONE_MODEL_HEIGHT*0.5f,platform.center.z};ledge.player.vel={};ledge.player.jumpVel=0.0f;ledge.player.grounded=true;}
+    step(ledgeGame);
+    ok &= expect(!ledgeGame.state().player.grounded,
+        "phone leaves obstacle support shortly after its visible footprint crosses the ledge instead of standing on invisible air");
+    auto ledgeHangGame=std::make_unique<Game>();ledgeHangGame->reset();
+    {GameState& ledge=const_cast<GameState&>(ledgeHangGame->state());const RoomCollider& platform=ledge.roomColliders[0];ledge.player.pos={platform.maxX+0.34f,platform.topY-PHONE_MODEL_HEIGHT*0.5f,platform.center.z};ledge.player.vel={0,0,1.6f};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;}
+    step(*ledgeHangGame);
+    const float caughtTop=ledgeHangGame->state().player.pos.y+PHONE_MODEL_HEIGHT*0.5f;
+    ok &= expect(ledgeHangGame->state().player.ledgeHanging&&near(caughtTop,ledgeHangGame->state().roomColliders[0].topY+0.008f,0.002f),
+        "descending phone catches the obstacle lip with its visible top edge instead of its collision capsule");
+    const float shimmyStart=ledgeHangGame->state().player.pos.z;
+    {GameState& ledge=const_cast<GameState&>(ledgeHangGame->state());ledge.camera.yaw=3.14159265f;}
+    ledgeHangGame->setTouchControls(0,1,0,0,false,false,false,false,false,false);step(*ledgeHangGame,18);
+    ok &= expect(ledgeHangGame->state().player.ledgeHanging&&ledgeHangGame->state().player.pos.z>shimmyStart+0.08f,
+        "ledge shimmy accelerates laterally while retaining a bounded tactile momentum");
+    {GameState& ledge=const_cast<GameState&>(ledgeHangGame->state());ledge.camera.yaw=kHalfPi;}
+    ledgeHangGame->setTouchControls(0,1,0,0,false,false,true,false,false,false);step(*ledgeHangGame);
+    ok &= expect(!ledgeHangGame->state().player.ledgeHanging&&ledgeHangGame->state().player.grounded&&ledgeHangGame->state().player.ledgeMantleTimer>0.0f&&ledgeHangGame->state().phonePose.actionState==9,
+        "toward-plus-jump mantles onto the platform through the quick phone flip-up pose");
+    auto ledgeVaultGame=std::make_unique<Game>();ledgeVaultGame->reset();
+    {GameState& ledge=const_cast<GameState&>(ledgeVaultGame->state());const RoomCollider& platform=ledge.roomColliders[0];ledge.player.pos={platform.maxX+0.34f,platform.topY-PHONE_MODEL_HEIGHT*0.5f,platform.center.z};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;}
+    step(*ledgeVaultGame);ledgeVaultGame->setTouchControls(0,0,0,0,false,false,true,false,false,false);step(*ledgeVaultGame);
+    ok &= expect(!ledgeVaultGame->state().player.ledgeHanging&&!ledgeVaultGame->state().player.grounded&&ledgeVaultGame->state().player.jumpVel>3.5f&&ledgeVaultGame->state().player.ledgeGrabCooldown>0.0f,
+        "neutral jump vaults outward with gravity-owned airtime and a short anti-loop regrab cooldown");
+    auto ledgeAttackGame=std::make_unique<Game>();ledgeAttackGame->reset();
+    {GameState& ledge=const_cast<GameState&>(ledgeAttackGame->state());const RoomCollider& platform=ledge.roomColliders[0];ledge.player.pos={platform.maxX+0.34f,platform.topY-PHONE_MODEL_HEIGHT*0.5f,platform.center.z};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;}
+    step(*ledgeAttackGame);ledgeAttackGame->setTouchControls(0,0,0,0,false,false,false,true,false,false);step(*ledgeAttackGame);
+    ok &= expect(!ledgeAttackGame->state().player.ledgeHanging&&ledgeAttackGame->state().meleeVisual.airLungeLandingPending&&ledgeAttackGame->state().player.jumpVel>0.0f,
+        "attack from a ledge releases the phone into the existing gravity-owned locomotion lunge");
     ok &= expect(near(PHONE_BODY_WIDTH, 0.08f, 0.0001f) && near(PHONE_BODY_HEIGHT, 0.16f, 0.0001f) && near(PHONE_BODY_DEPTH, 0.012f, 0.0001f), "phone body dimensions match Pass 7 fallback/model normalized size");
     const float intactThinning=humanShellThinningAmount(2.0f,2.0f,false),criticalThinning=humanShellThinningAmount(0.1f,2.0f,false);
     int missingFixtureTriangles=0;for(std::size_t triangle=0;triangle<1000;++triangle)if(humanShellTriangleMissing(triangle,criticalThinning))++missingFixtureTriangles;
-    ok &= expect(near(intactThinning,0.0f,0.0001f)&&criticalThinning>0.14f&&missingFixtureTriangles>120&&missingFixtureTriangles<220,
-        "low armor deterministically thins a bounded minority of shell triangles without affecting intact enemies");
+    ok &= expect(near(intactThinning,0.0f,0.0001f)&&criticalThinning>0.38f&&missingFixtureTriangles>350&&missingFixtureTriangles<500,
+        "low armor deterministically exposes an obvious bounded share of shell triangles without affecting intact enemies");
+    int missingNearCrit=0,missingAwayFromCrit=0;for(std::size_t triangle=0;triangle<1000;++triangle){if(humanShellTriangleMissingTowardCrit(triangle,criticalThinning,humanShellCritCenter()))++missingNearCrit;if(humanShellTriangleMissingTowardCrit(triangle,criticalThinning,{0.0f,0.05f,0.0f}))++missingAwayFromCrit;}
+    ok &= expect(missingNearCrit>missingAwayFromCrit+250&&length(humanShellAbsorbTowardCrit({0.0f,0.05f,0.0f},7,criticalThinning)-humanShellCritCenter())<length(Vec3{0.0f,0.05f,0.0f}-humanShellCritCenter()),
+        "damaged shell erosion and data channels converge visibly toward the collision-authoritative crit point");
     ok &= expect(near(Pass7Visual::CameraVerticalFovDegrees,75.0f,0.0001f) && near(Pass7Visual::CameraNearPlane,0.1f,0.0001f) && near(Pass7Visual::CameraFarPlane,1000.0f,0.0001f), "native projection matches the browser PerspectiveCamera contract");
     ok &= expect(near(spawn.camera.pos.y - spawn.player.pos.y, 1.1f, 0.0001f), "third-person camera height is relative to corrected player support");
     Game clearCameraGame; clearCameraGame.reset();
@@ -85,6 +127,11 @@ int main() {
     step(clearCameraGame);const GameState clearCamera=clearCameraGame.state();
     ok &= expect(near(clearCamera.camera.pos.x-clearCamera.player.pos.x,0.0f,0.0001f) && near(clearCamera.camera.pos.z-clearCamera.player.pos.z,3.0f,0.0001f), "unobstructed third-person boom matches the browser three-unit aim-relative offset");
     ok &= expect(near(clearCamera.camera.lookTarget.y-clearCamera.player.pos.y,0.45f,0.0001f) && near(clearCamera.camera.lookTarget.z-clearCamera.player.pos.z,-10.0f,0.0001f), "third-person look target preserves browser aim direction and look lift");
+    auto wallCameraGame=std::make_unique<Game>();wallCameraGame->reset();
+    {GameState& fixture=const_cast<GameState&>(wallCameraGame->state());const RoomCollider& wall=fixture.roomColliders[0];fixture.debug.colliderCount=1;fixture.player.pos={wall.maxX+0.34f,PHONE_MODEL_HEIGHT*0.5f,wall.center.z};fixture.player.vel={};fixture.player.grounded=true;fixture.camera.yaw=kHalfPi;fixture.camera.pitch=0.0f;fixture.camera.firstPerson=false;}
+    step(*wallCameraGame);
+    ok &= expect(!wallCameraGame->state().camera.firstPerson&&horizontalSpeed(wallCameraGame->state().camera.pos-wallCameraGame->state().player.pos)>1.2f,
+        "walking directly into a wall lets the third-person boom exit its initial padding instead of collapsing onto the phone");
 
     game.prepareStartScreen();
     const Vec3 preStartPosition=game.state().player.pos;
@@ -113,6 +160,11 @@ int main() {
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
+    Game onlineMenuGame;onlineMenuGame.reset();onlineMenuGame.configureNetworkHost();
+    {GameState& online=const_cast<GameState&>(onlineMenuGame.state());online.targets[0].alive=true;online.targets[0].slurpable=false;online.targets[0].attackTimer=0.50f;online.enemyAttackOwner=0;}
+    onlineMenuGame.setUiPaused(true);const float onlineAttackBefore=onlineMenuGame.state().targets[0].attackTimer;step(onlineMenuGame);
+    ok &= expect(onlineMenuGame.state().uiPaused&&onlineMenuGame.state().targets[0].attackTimer<onlineAttackBefore,
+        "connected menu releases local controls without freezing the authoritative match clock");
     game.setUiPaused(false);
     game.reset();
 
@@ -353,11 +405,17 @@ int main() {
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
     ok &= expect(std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")!=nullptr &&
-                 game.state().player.battery>45.0f && hasAudioCue(game.state(),AudioCue::Headshot),
-        "an accurate airborne phone-body contact with the modeled head grants a pronounced battery headshot reward");
-    ok &= expect(game.state().meleeVisual.airLungeTimer>0.67f &&
-                 game.state().player.vel.z<-7.0f && game.state().player.jumpVel>2.0f,
-        "a lunge headshot immediately converts impact into another full physical forward arc");
+                 game.state().progression.run.headshotRechargeBoost>1.0f && hasAudioCue(game.state(),AudioCue::Headshot) && hasAudioCue(game.state(),AudioCue::RewardWoah),
+        "an accurate airborne phone-body contact with the modeled head opens the precision recharge window");
+    ok &= expect(!game.state().meleeVisual.airLungeLandingPending&&game.state().progression.run.lungeReboundTimer>1.0f,
+        "a lunge headshot releases the committed arc and opens a bounded player-owned rebound window");
+    const float reboundBattery=game.state().player.battery;
+    {GameState& setup=const_cast<GameState&>(game.state());setup.targets[0].alive=false;}
+    game.setKey(31,true);step(game);game.setKey(31,false);
+    ok &= expect(game.state().meleeVisual.airLungeLandingPending&&game.state().progression.run.lungeReboundTimer<=0.0f&&reboundBattery-game.state().player.battery<3.0f&&!game.state().camera.firstPerson,
+        "C retriggers the rebound lunge on demand and consumes the one-shot reduced battery cost");
+    game.setKey(50,true);step(game);game.setKey(50,false);
+    ok &= expect(game.state().camera.firstPerson,"V owns the remapped desktop first-person camera toggle");
 
     game.reset();
     { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
@@ -591,10 +649,10 @@ int main() {
     { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f; }
     game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game);
     ok &= expect(!hasAudioCue(game.state(),AudioCue::ConnectPower),"ordinary near-full recovery does not emit connect-power audio");
-    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=13.0f; }
+    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=13.0f;setup.player.grounded=true;setup.player.jumpVel=0.0f;setup.player.vel={};setup.vacuum=VacuumState{};setup.progression.run.batteryRegenLock=0.0f; }
     step(game);
-    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f; }
-    step(game);
+    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f;setup.player.grounded=true;setup.player.jumpVel=0.0f;setup.player.vel={};setup.progression.run.batteryRegenLock=0.0f; }
+    step(game,2);
     ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recovery to full emits connect-power once after crossing the browser 14-percent arming threshold");
 
     game.reset();
@@ -628,8 +686,8 @@ int main() {
     step(game);
     ok &= expect(!game.state().targets[0].alive && game.state().player.souls==soulsBeforeCommit+1,
         "release at the commit threshold completes through the capture queue");
-    ok &= expect(hasAudioCue(game.state(),AudioCue::ReceivedMessage),
-        "completed capture queues the authoritative received-message cue");
+    ok &= expect(hasAudioCue(game.state(),AudioCue::ReceivedMessage)&&hasAudioCue(game.state(),AudioCue::RewardNice),
+        "completed capture queues the received-message cue and lightweight engagement rehook");
     int captureParticles=0; for(const auto& particle:game.state().particles) if(particle.life>0.0f) ++captureParticles;
     ok &= expect(captureParticles==22,
         "completed capture emits the browser's 22-cube particle burst from shared state");
@@ -850,9 +908,9 @@ int main() {
     }
     step(game);
     ok &= expect(std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")!=nullptr &&
-                 game.state().player.battery>50.0f && !game.state().bullets[0].alive &&
-                 hasAudioCue(game.state(),AudioCue::HeadshotCritical),
-        "a final-hit-band soul headshot grants battery and selects the two-step critical jingle");
+                 game.state().progression.run.headshotRechargeBoost>1.0f && !game.state().bullets[0].alive &&
+                 hasAudioCue(game.state(),AudioCue::HeadshotCritical) && hasAudioCue(game.state(),AudioCue::RewardWoah),
+        "a final-hit-band soul headshot opens recharge and selects the two-step critical jingle");
 
     game.reset();
     {

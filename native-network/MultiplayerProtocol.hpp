@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 3;
-constexpr std::uint16_t GAMEPLAY_VERSION = 3;
+constexpr std::uint16_t PROTOCOL_VERSION = 4;
+constexpr std::uint16_t GAMEPLAY_VERSION = 4;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr int MAX_PLAYERS = 4;
@@ -20,7 +20,7 @@ enum class MessageType : std::uint8_t { Input = 1, Snapshot = 2, Event = 3, Ping
 enum InputButton : std::uint16_t {
     Forward = 1u << 0, Back = 1u << 1, Left = 1u << 2, Right = 1u << 3,
     Sprint = 1u << 4, Jump = 1u << 5, Vacuum = 1u << 6, Melee = 1u << 7,
-    Shoot = 1u << 8, CameraToggle = 1u << 9
+    Shoot = 1u << 8, CameraToggle = 1u << 9, WiggleLeft = 1u << 10, WiggleRight = 1u << 11
 };
 
 struct PacketHeader {
@@ -56,6 +56,12 @@ struct PlayerSnapshot {
     std::int8_t vacuumTarget = -1;
     float meleeTimer = 0.0f;
     float dischargeAmount = 0.0f;
+    float bleedoutTimer = 0.0f;
+    float reviveCharge = 0.0f;
+    float grabEscape = 0.0f;
+    std::int8_t grabbedByTarget = -1;
+    std::int32_t secretVisitRoom = -1;
+    float secretVisitTimer = 0.0f;
 };
 
 struct TargetSnapshot {
@@ -74,6 +80,8 @@ struct TargetSnapshot {
     float attackTimer = 0.0f;
     float attackCooldown = 0.0f;
     std::int8_t ownerPlayerId = -1;
+    std::int8_t grabbedPlayerId = -1;
+    float grabCooldown = 0.0f;
 };
 
 struct BulletSnapshot {
@@ -105,6 +113,10 @@ struct WorldSnapshot {
     std::array<std::int32_t,3> temporaryUpgradeLevels{};
     std::array<std::int32_t,3> sharedPermanentUpgradeLevels{};
     float roomHeat = 0.0f;
+    std::int32_t tvSignal = 0;
+    std::int32_t tvDamage = 0;
+    std::int32_t tvTolerance = 3;
+    bool tvBroken = false;
     std::array<PlayerSnapshot, MAX_PLAYERS> players{};
     std::array<TargetSnapshot, TARGET_COUNT> targets{};
     std::array<bool, CAPTURE_COUNT> captures{};

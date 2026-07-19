@@ -38,6 +38,7 @@ constexpr int KEY_S_ANDROID = 47;
 constexpr int KEY_D_ANDROID = 32;
 constexpr int KEY_Q_ANDROID = 45;
 constexpr int KEY_C_ANDROID = 31;
+constexpr int KEY_V_ANDROID = 50;
 constexpr int KEY_F_ANDROID = 34;
 constexpr int KEY_SHIFT_LEFT_ANDROID = 59;
 constexpr int KEY_SHIFT_RIGHT_ANDROID = 60;
@@ -75,24 +76,88 @@ bool saveProgression(const PermanentProgressionState& progression,const std::fil
 #endif
     return true;}
 
-int androidKeyForGlfw(int key) {
-    switch (key) {
-        case GLFW_KEY_W: return KEY_W_ANDROID;
-        case GLFW_KEY_A: return KEY_A_ANDROID;
-        case GLFW_KEY_S: return KEY_S_ANDROID;
-        case GLFW_KEY_D: return KEY_D_ANDROID;
-        case GLFW_KEY_Q: return KEY_Q_ANDROID;
-        case GLFW_KEY_C: return KEY_C_ANDROID;
-        case GLFW_KEY_F: return KEY_F_ANDROID;
-        case GLFW_KEY_LEFT_SHIFT: return KEY_SHIFT_LEFT_ANDROID;
-        case GLFW_KEY_RIGHT_SHIFT: return KEY_SHIFT_RIGHT_ANDROID;
-        case GLFW_KEY_SPACE: return KEY_SPACE_ANDROID;
-        default: return -1;
-    }
+int androidKeyForGlfw(const LocalSettingsState& settings,int key) {
+    const int semantic[10]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_C_ANDROID,KEY_Q_ANDROID,KEY_V_ANDROID,KEY_F_ANDROID};
+    for(int i=0;i<10;++i)if(settings.keyboardBindings[i]==key)return semantic[i];
+    return key==GLFW_KEY_RIGHT_SHIFT?KEY_SHIFT_RIGHT_ANDROID:-1;
 }
 
 HostState* stateFor(GLFWwindow* window) {
     return static_cast<HostState*>(glfwGetWindowUserPointer(window));
+}
+
+void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured);
+
+int menuItemCount(const GameState& state) {
+    if(state.upgradeMenu.active)return 6;
+    if(!state.started){
+        if(state.dead)return 2;
+        switch(state.localSettings.menuPage){
+            case LocalMenuPage::Main:return 4;
+            case LocalMenuPage::Online:return 3;
+            case LocalMenuPage::JoinCode:return 0;
+            case LocalMenuPage::Settings:return 4;
+            case LocalMenuPage::Controls:return 12;
+            case LocalMenuPage::Audio:return 5;
+            case LocalMenuPage::Graphics:return 5;
+        }
+    }
+    if(state.uiPaused)return 1;
+    return 0;
+}
+
+void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.36f;}
+
+bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const int item=state.hud.menuSelection;if(settings.menuPage==LocalMenuPage::Audio){if(item==0)settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);else if(item==1)settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);else return false;state.cinematic.textInteraction=0.65f;return true;}if(settings.menuPage==LocalMenuPage::Graphics&&item==0){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
+
+void setMenuSelection(HostState& host,int selection) {
+    const int count=menuItemCount(host.game.state());
+    if(count<=0)return;
+    GameState& state=host.game.networkMutableState();const int next=(selection%count+count)%count;
+    if(state.hud.menuSelection!=next){state.hud.menuSelection=next;state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);}
+}
+
+int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double windowY) {
+    int ww=1,wh=1,fw=1,fh=1;glfwGetWindowSize(window,&ww,&wh);glfwGetFramebufferSize(window,&fw,&fh);
+    const float x=static_cast<float>(windowX)*fw/std::max(1,ww),y=static_cast<float>(windowY)*fh/std::max(1,wh);
+    const GameState& state=host.game.state();
+    if(state.upgradeMenu.active){
+        const float pw=std::min(680.0f,static_cast<float>(fw)-24.0f),ph=300.0f,px=(fw-pw)*0.5f,py=(fh-ph)*0.5f;
+        if(y>=py+66&&y<=py+142)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return column;}
+        if(y>=py+184&&y<=py+250)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return 3+column;}
+        return -1;
+    }
+    if(!state.started){
+        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;const float pw=std::min(520.0f,static_cast<float>(fw)*0.72f),ph=controls?500.0f:430.0f,px=(fw-pw)*0.5f,py=(fh-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
+        if(x<buttonX||x>buttonX+buttonW)return -1;
+        const int count=menuItemCount(state);
+        const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;
+        return -1;
+    }
+    if(state.uiPaused){const float pw=360.0f,px=fw-pw-12.0f,py=48.0f;if(x>=px+12&&x<=px+pw-12&&y>=py+34&&y<=py+92)return 0;}
+    return -1;
+}
+
+void activateMenuSelection(GLFWwindow* window,HostState& host) {
+    GameState& state=host.game.networkMutableState();const int selection=state.hud.menuSelection;state.cinematic.textInteraction=0.42f;
+    host.audio.playMenuCue(true);
+    if(state.upgradeMenu.active){
+        if(selection<3)host.game.chooseTemporaryUpgrade(selection);else host.game.purchasePermanentUpgrade(selection-3);
+        if(!host.game.state().upgradeMenu.active)setMouseCaptured(window,host,true);
+        return;
+    }
+    if(!state.started){
+        if(state.dead){if(selection==1){glfwSetWindowShouldClose(window,GLFW_TRUE);return;}host.game.restart();setMouseCaptured(window,host,true);return;}
+        auto& settings=state.localSettings;
+        if(settings.menuPage==LocalMenuPage::Main){if(selection==0){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Online);else if(selection==2)openMenuPage(host,LocalMenuPage::Settings);else glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        else if(settings.menuPage==LocalMenuPage::Online){if(selection==0){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(selection==1){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else openMenuPage(host,LocalMenuPage::Main);}
+        else if(settings.menuPage==LocalMenuPage::Settings){if(selection==0)openMenuPage(host,LocalMenuPage::Controls);else if(selection==1)openMenuPage(host,LocalMenuPage::Audio);else if(selection==2)openMenuPage(host,LocalMenuPage::Graphics);else openMenuPage(host,LocalMenuPage::Main);}
+        else if(settings.menuPage==LocalMenuPage::Controls){if(selection<10){settings.rebindingAction=selection;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(selection==10){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};}else openMenuPage(host,LocalMenuPage::Settings);}
+        else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Settings);}
+        else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Settings);}
+        return;
+    }
+    if(state.uiPaused)setMouseCaptured(window,host,true);
 }
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
@@ -112,17 +177,29 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
 
-    if(action==GLFW_PRESS&&host->game.state().upgradeMenu.active){
-        if(key>=GLFW_KEY_1&&key<=GLFW_KEY_3)host->game.chooseTemporaryUpgrade(key-GLFW_KEY_1);
-        else if(key>=GLFW_KEY_4&&key<=GLFW_KEY_6)host->game.purchasePermanentUpgrade(key-GLFW_KEY_4);
+    if(action==GLFW_PRESS&&!host->game.state().started&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;settings.pendingBinding=-1;settings.conflictingAction=-1;return;}if(settings.pendingBinding>=0){if(key==GLFW_KEY_ENTER){const int actionIndex=settings.rebindingAction,other=settings.conflictingAction,old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=settings.pendingBinding;if(other>=0)settings.keyboardBindings[other]=old;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;}else if(key==GLFW_KEY_BACKSPACE){settings.pendingBinding=settings.conflictingAction=-1;}return;}int conflict=-1;for(int i=0;i<10;++i)if(i!=settings.rebindingAction&&settings.keyboardBindings[i]==key){conflict=i;break;}if(conflict>=0){settings.pendingBinding=key;settings.conflictingAction=conflict;}else{settings.keyboardBindings[settings.rebindingAction]=key;settings.rebindingAction=-1;}return;}
+
+    const bool menuActive=menuItemCount(host->game.state())>0;
+    if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
+        // Menus release the cursor, so Escape has the same second-press exit
+        // meaning it has after releasing the cursor during ordinary play.
+        if(key==GLFW_KEY_ESCAPE){if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){const auto page=host->game.state().localSettings.menuPage;openMenuPage(*host,page==LocalMenuPage::Settings||page==LocalMenuPage::Online?LocalMenuPage::Main:LocalMenuPage::Settings);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
+        const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
+        if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
+        if((left||right)&&!host->game.state().started&&adjustMenuSetting(*host,right?1:-1))return;
+        if(left||up){setMenuSelection(*host,host->game.state().hud.menuSelection-1);return;}
+        if(right||down){setMenuSelection(*host,host->game.state().hud.menuSelection+1);return;}
+        if(key==GLFW_KEY_ENTER||key==GLFW_KEY_SPACE||key==GLFW_KEY_F){activateMenuSelection(window,*host);return;}
+        if(host->game.state().upgradeMenu.active&&key>=GLFW_KEY_1&&key<=GLFW_KEY_6){setMenuSelection(*host,key-GLFW_KEY_1);activateMenuSelection(window,*host);}
         return;
     }
 
     if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
-        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();return;}
+        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();openMenuPage(*host,LocalMenuPage::Online);return;}
         if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}
         if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;return;}
-        if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){host->joinCode.push_back(static_cast<char>(key));host->game.setNetworkRoom(host->joinCode.c_str(),"ENTER ROOM CODE",false);return;}
+        if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){host->joinCode.push_back(static_cast<char>(key));host->game.setNetworkRoom(host->joinCode.c_str(),"ENTER CODE",false);if(host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;}return;}
         return;
     }
     if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
@@ -148,7 +225,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         return;
     }
 
-    const int androidKey = androidKeyForGlfw(key);
+    const int androidKey = androidKeyForGlfw(host->game.state().localSettings,key);
     if (androidKey >= 0) {
         host->game.setKey(androidKey, action != GLFW_RELEASE);
     }
@@ -156,7 +233,8 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
 
 void cursorCallback(GLFWwindow* window, double x, double y) {
     HostState* host = stateFor(window);
-    if (!host || !host->mouseCaptured) return;
+    if (!host) return;
+    if(!host->mouseCaptured){const int hovered=menuItemAt(window,*host,x,y);if(hovered>=0)setMenuSelection(*host,hovered);return;}
 
     if (!host->haveMouse) {
         host->lastMouseX = x;
@@ -164,6 +242,8 @@ void cursorCallback(GLFWwindow* window, double x, double y) {
         host->haveMouse = true;
         return;
     }
+
+    if(host->game.state().player.grabbedByTarget>=0){const double delta=x-host->lastMouseX;host->lastMouseX=x;host->lastMouseY=y;if(std::abs(delta)>=1.0)host->game.setWiggle(static_cast<float>(delta));return;}
 
     host->lookX += x - host->lastMouseX;
     host->lookY += y - host->lastMouseY;
@@ -179,6 +259,12 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     HostState* host = stateFor(window);
     if (!host || action != GLFW_PRESS) return;
+    if(menuItemCount(host->game.state())>0){
+        double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
+        if(hovered>=0)setMenuSelection(*host,hovered);
+        if(button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)activateMenuSelection(window,*host);
+        return;
+    }
     if(button==GLFW_MOUSE_BUTTON_RIGHT && !host->game.state().dead) {
         host->game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
         return;
@@ -452,7 +538,8 @@ int main(int argc, char** argv) {
         host.lookY = 0.0;
 
         host.multiplayer.update(host.game);
-        if (host.game.state().started && host.game.state().multiplayer.connected && !host.mouseCaptured) {
+        if((!host.game.state().started||host.game.state().upgradeMenu.active)&&host.mouseCaptured)setMouseCaptured(window,host,false);
+        if (host.game.state().started && host.game.state().multiplayer.connected && !host.game.state().upgradeMenu.active && !host.game.state().uiPaused && !host.mouseCaptured) {
             setMouseCaptured(window, host, true);
         }
 

@@ -58,6 +58,7 @@ struct InputState {
     float lastTouchY = 0.0f;
     float lookDeltaX = 0.0f;
     float lookDeltaY = 0.0f;
+    float wiggleAxis = 0.0f;
     bool touching = false;
 };
 
@@ -75,13 +76,31 @@ struct PlayerState {
     float coyoteTimer = 0.12f;
     float jumpBufferTimer = 0.0f;
     bool alive = true;
+    bool downed = false;
+    float bleedoutTimer = 0.0f;
+    float reviveCharge = 0.0f;
+    int grabbedByTarget = -1;
+    float grabEscape = 0.0f;
+    int grabLastDirection = 0;
+    bool soloSoulRebootUsed = false;
+    bool inSecretRoom = false;
+    int secretVisitRoom = -1;
+    float secretVisitTimer = 0.0f;
+    bool ledgeHanging = false;
+    int ledgeCollider = -1;
+    Vec3 ledgeNormal;
+    Vec3 ledgeTangent;
+    float ledgeShimmySpeed = 0.0f;
+    float ledgeHangTime = 0.0f;
+    float ledgeGrabCooldown = 0.0f;
+    float ledgeMantleTimer = 0.0f;
 };
 
 enum class AudioCue : unsigned char {
     VcEnded, VcInvitation, ConnectPower, LowPower, NegativeAck, ReceivedMessage,
     SentMessage, PhoneAttack, PaymentSuccess, PaymentFailure, EndCallTone,
     SlurpRingtoneStart, SlurpRingtoneStop, Capture1, Capture2, Capture3, Capture4, Capture5,
-    Headshot, HeadshotCritical
+    Headshot, HeadshotCritical, RewardWoah, RewardNice
 };
 
 struct AudioEventState {
@@ -114,6 +133,7 @@ struct EnergyState {
 struct CameraState {
     float yaw = 0.0f;
     float pitch = 0.0f;
+    float verticalFovDegrees = 60.0f;
     bool firstPerson = false;
     Vec3 pos {0.0f, 1.18f, 3.0f};
     Vec3 forward {0.0f, 0.0f, -1.0f};
@@ -179,6 +199,8 @@ struct TargetState {
     bool attackHit = false;
     Vec3 attackDirection{0.0f,0.0f,-1.0f};
     int attackTargetPlayerId = 0;
+    int grabbedPlayerId = -1;
+    float grabCooldown = 0.0f;
     HumanReactionVisual visualReaction;
     bool brute = false;
     SoulState soulState = SoulState::Free;
@@ -309,11 +331,43 @@ struct RunProgressionState {
     float relayPrimerTimer = 0.0f;
     float impactGuardTimer = 0.0f;
     float lastStandCooldown = 0.0f;
+    float lungeReboundTimer = 0.0f;
+    float headshotRechargeBoost = 0.0f;
 };
 
 struct ProgressionState {
     PermanentProgressionState permanent;
     RunProgressionState run;
+};
+
+struct SecretTvState {
+    int signal = 0;
+    int damage = 0;
+    int tolerance = 3;
+    bool broken = false;
+    bool available = false;
+    float donationCooldown = 0.0f;
+};
+
+enum class LocalMenuPage : unsigned char { Main, Online, JoinCode, Settings, Controls, Audio, Graphics };
+
+struct LocalSettingsState {
+    LocalMenuPage menuPage = LocalMenuPage::Main;
+    float musicVolume = 0.70f;
+    float sfxVolume = 0.55f;
+    bool musicMuted = false;
+    bool sfxMuted = false;
+    int graphicsPreset = 1; // 0 legacy, 1 normal, 2 pretty
+    bool shadows = true;
+    bool portalWindow = true;
+    bool particles = true;
+    bool fpsCounter = false;
+    // GLFW key values are kept as local presentation/input preferences only.
+    // They are intentionally absent from multiplayer snapshots.
+    std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
+    int rebindingAction = -1;
+    int pendingBinding = -1;
+    int conflictingAction = -1;
 };
 
 struct UpgradeMenuState {
@@ -372,6 +426,8 @@ struct MeleeVisualState {
     int comboIndex = 0;
     bool visualHit = false;
     unsigned int hitMask = 0;
+    Vec3 previousContactPosition;
+    bool contactPositionValid = false;
 };
 
 struct PlayerDebugState {
@@ -412,7 +468,10 @@ struct HudState {
     int energyTickerType = 0;
     float headshotPulse = 0.0f;
     float perfectPulse = 0.0f;
+    float headshotKillCharge = 0.0f;
+    float critMarkerOpacity = 0.0f;
     std::array<char,32> buildLabel{};
+    int menuSelection = 0;
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
@@ -467,6 +526,8 @@ struct GameState {
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
+    SecretTvState secretTv;
+    LocalSettingsState localSettings;
     UpgradeMenuState upgradeMenu;
     std::array<HumanRespawnRequest, TARGET_COUNT> respawnQueue;
     DoorTransitionState doorTransition;
@@ -518,6 +579,7 @@ public:
         bool shootPressed,
         bool cameraTogglePressed
     );
+    void setWiggle(float axis);
     void configureNetworkHost();
     void configureNetworkGuest(int localPlayerId);
     void disableNetwork();
@@ -541,6 +603,10 @@ private:
     void buildRoomColliders();
     void updateInputActions(float dt);
     void updateNetworkPeers(float dt);
+    void updateTeamRevival(float dt);
+    void updateTargetGrab(int targetIndex, float dt);
+    void releaseTargetGrab(int targetIndex);
+    void updateSecretTv(float dt);
     void updateNetworkGuest(float dt);
     void savePlayerContext(NetworkPeerState& context) const;
     void loadPlayerContext(const NetworkPeerState& context);
@@ -548,6 +614,9 @@ private:
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);
+    bool tryBeginLedgeHang();
+    bool updateLedgeHang(float dt, float forwardAxis, float strafeAxis);
+    void releaseLedgeHang(bool mantle);
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updatePhoneTransform();
@@ -562,7 +631,7 @@ private:
     Vec3 targetHeadCenter(const TargetState& target) const;
     float headshotDamage(const TargetState& target) const;
     void continueLungeFromHeadshot();
-    void rewardHeadshot(const Vec3& position, bool critical, bool fromLunge);
+    void rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, float enemyAttackProgress, float killCharge);
     void updateVacuum(float dt);
     void updateCrosshair(float dt);
     void updateSoulLattices();

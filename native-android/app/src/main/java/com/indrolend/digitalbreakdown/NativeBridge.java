@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.MediaPlayer;
 import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioTrack;
 import android.media.SoundPool;
 import android.media.audiofx.Equalizer;
 import android.util.SparseArray;
@@ -16,6 +18,7 @@ public final class NativeBridge {
     private static Context audioContext;
     private static MediaPlayer slurpPlayer;
     private static MediaPlayer musicPlayer;
+    private static MediaPlayer tvRoomPlayer;
     private static MediaPlayer gameOverPlayer;
     private static SoundPool soundPool;
     private static final SparseArray<Integer> cueSamples = new SparseArray<>();
@@ -25,6 +28,12 @@ public final class NativeBridge {
     private static boolean gameOverStarted;
     private static Equalizer musicEqualizer;
     private static float menuFilterAmount;
+    private static float tvRoomMix;
+    private static float rewardDuck;
+    private static float localMusicLevel = 0.70f;
+    private static float localSfxLevel = 0.55f;
+    private static final AudioTrack[] menuVoices = new AudioTrack[2];
+    private static int menuVariation;
     private static MultiplayerClient multiplayerClient;
     private static SharedPreferences progressionPreferences;
 
@@ -54,6 +63,7 @@ public final class NativeBridge {
             Float pending = pendingSamples.get(sampleId);
             if (pending != null) { pool.play(sampleId, pending, pending, 1, 0, 1.0f); pendingSamples.remove(sampleId); }
         });
+        for(int i=0;i<2;++i){short[] pcm=makeMenuPluck(i==0?220.0f:293.66f);try{AudioTrack track=new AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(22050).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(pcm.length*2).setTransferMode(AudioTrack.MODE_STATIC).build();track.write(pcm,0,pcm.length);menuVoices[i]=track;}catch(Exception ignored){menuVoices[i]=null;}}
         final int[] resources = cueResources();
         for (int cue = 0; cue < resources.length; ++cue) if (cue != 11 && cue != 12) cueSamples.put(cue, soundPool.load(audioContext, resources[cue], 1));
     }
@@ -76,6 +86,8 @@ public final class NativeBridge {
 
     public static synchronized void playAudioCue(int cue, float volume) {
         if (audioContext == null) return;
+        if(cue==20)rewardDuck=Math.max(rewardDuck,0.18f);else if(cue==21)rewardDuck=Math.max(rewardDuck,0.09f);
+        volume *= localSfxLevel;
         if (cue == 12) {
             if (slurpPlayer != null) { slurpPlayer.stop(); slurpPlayer.release(); slurpPlayer = null; }
             return;
@@ -99,21 +111,28 @@ public final class NativeBridge {
             R.raw.vc_ended,R.raw.vc_invitation,R.raw.connect_power,R.raw.low_power,R.raw.negative_ack,
             R.raw.received_message,R.raw.sent_message,R.raw.phone_attack,R.raw.payment_success,R.raw.payment_failure,
             R.raw.end_call_tone,R.raw.slurp_ringtone,R.raw.slurp_ringtone,R.raw.capture_1,R.raw.capture_2,
-            R.raw.capture_3,R.raw.capture_4,R.raw.capture_5,R.raw.headshot,R.raw.headshot_critical
+            R.raw.capture_3,R.raw.capture_4,R.raw.capture_5,R.raw.headshot,R.raw.headshot_critical,
+            R.raw.reward_woah,R.raw.reward_nice
         }; }
 
-    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, float headshotCrush) {
+    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush) {
         if (audioContext == null) return;
         if (started && !dead) {
             stopGameOver();
-            if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); initializeMusicEqualizer(); }
+            if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); tvRoomPlayer=createNamedPlayer("tv_room_pad",true,0.0f);initializeMusicEqualizer(); }
             updateMusicFilter(menuFiltered, headshotCrush);
-        } else if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; } musicStarted = false; }
-        if (dead && !gameOverStarted) { gameOverStarted = true; gameOverPlayer = createNamedPlayer("game_over", false, 0.62f); }
+            rewardDuck=Math.max(0.0f,rewardDuck-0.006f);float duck=1.0f-rewardDuck;tvRoomMix+=((inTvRoom?1.0f:0.0f)-tvRoomMix)*0.035f;if(tvRoomPlayer!=null){float pad=0.48f*localMusicLevel*tvRoomMix*duck;tvRoomPlayer.setVolume(pad,pad);}if(musicPlayer!=null){float base=(0.52f-Math.max(0.0f,Math.min(1.0f,headshotCrush))*0.018f)*localMusicLevel*(1.0f-tvRoomMix)*duck;musicPlayer.setVolume(base,base);}
+        } else if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; }if(tvRoomPlayer!=null){tvRoomPlayer.stop();tvRoomPlayer.release();tvRoomPlayer=null;}tvRoomMix=0.0f;musicStarted = false; }
+        if (dead && !gameOverStarted) { gameOverStarted = true; gameOverPlayer = createNamedPlayer("game_over", false, 0.62f * localMusicLevel); }
         else if (!dead) stopGameOver();
     }
+
+    private static short[] makeMenuPluck(float frequency){final int rate=22050,frames=2867,reflection=640,bottomOut=154;short[] result=new short[frames];float[] work=new float[frames];int noise=0x53A91;for(int i=0;i<frames;++i){float t=(float)i/rate,phase=t*frequency;noise=noise*1664525+1013904223;float grain=((noise>>>24)&255)/127.5f-1.0f;float contact=grain*(float)Math.exp(-t*125.0f),body=((float)Math.sin(phase*6.2831853f)*0.62f+(float)Math.sin(phase*12.5663706f)*0.16f)*(float)Math.exp(-t*34.0f);float dry=contact*0.24f+body;if(i>=bottomOut){float bt=(float)(i-bottomOut)/rate;dry+=work[i-bottomOut]*0.18f*(float)Math.exp(-bt*70.0f);}dry=Math.round(Math.tanh(dry*1.18f)*48.0f)/48.0f;work[i]=dry*0.18f+(i>=reflection?work[i-reflection]*0.13f:0.0f);result[i]=(short)Math.max(-32767,Math.min(32767,Math.round(work[i]*32767.0f)));}return result;}
+
+    public static synchronized void playMenuCue(boolean confirm){if(localSfxLevel<=0)return;final float[] ratios={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};int variation=menuVariation++;for(AudioTrack track:menuVoices)if(track!=null)try{track.pause();track.flush();track.stop();}catch(Exception ignored){}AudioTrack voice=menuVoices[confirm?1:0];if(voice==null)return;try{voice.setPlaybackHeadPosition(0);voice.setPlaybackRate(Math.round(22050*ratios[(variation+(confirm?2:0))%ratios.length]));voice.setVolume(localSfxLevel*(confirm?0.76f:0.54f)*(0.96f+(variation%3)*0.018f));voice.play();}catch(Exception ignored){}}
     private static void initializeMusicEqualizer() { try { if(musicPlayer==null)return;musicEqualizer=new Equalizer(0,musicPlayer.getAudioSessionId());musicEqualizer.setEnabled(true); } catch(Exception ignored){musicEqualizer=null;} }
-    private static void updateMusicFilter(boolean filtered, float headshotCrush) { if(musicEqualizer==null)return;menuFilterAmount+=((filtered?1.0f:0.0f)-menuFilterAmount)*0.085f;float crush=Math.max(0.0f,Math.min(1.0f,headshotCrush));float step=(System.nanoTime()/16000000L)%3L==0L?1.0f:0.0f;try{short bands=musicEqualizer.getNumberOfBands();short minimum=musicEqualizer.getBandLevelRange()[0];for(short band=0;band<bands;++band){float high=bands<=1?1.0f:(float)band/(float)(bands-1);float shaped=high*high;float attenuation=menuFilterAmount*shaped+crush*step*0.08f*high;musicEqualizer.setBandLevel(band,(short)(minimum*Math.min(1.0f,attenuation)));}if(musicPlayer!=null){float volume=0.52f-crush*(0.010f+step*0.018f);musicPlayer.setVolume(volume,volume);}}catch(Exception ignored){} }
+    private static void updateMusicFilter(boolean filtered, float headshotCrush) { menuFilterAmount+=((filtered?1.0f:0.0f)-menuFilterAmount)*0.085f;float crush=Math.max(0.0f,Math.min(1.0f,headshotCrush));float step=(System.nanoTime()/16000000L)%3L==0L?1.0f:0.0f;if(musicPlayer!=null){float volume=(0.52f-crush*(0.010f+step*0.018f))*localMusicLevel;musicPlayer.setVolume(volume,volume);}if(musicEqualizer==null)return;try{short bands=musicEqualizer.getNumberOfBands();short minimum=musicEqualizer.getBandLevelRange()[0];for(short band=0;band<bands;++band){float high=bands<=1?1.0f:(float)band/(float)(bands-1);float shaped=high*high;float attenuation=menuFilterAmount*shaped+crush*step*0.08f*high;musicEqualizer.setBandLevel(band,(short)(minimum*Math.min(1.0f,attenuation)));}}catch(Exception ignored){} }
+    public static synchronized void applyLocalSettings(float music,float sfx,boolean musicMuted,boolean sfxMuted,int preset,boolean shadows,boolean portal,boolean particles,boolean fps){localMusicLevel=musicMuted?0.0f:Math.max(0.0f,Math.min(1.0f,music));localSfxLevel=sfxMuted?0.0f:Math.max(0.0f,Math.min(1.0f,sfx));setLocalSettings(music,sfx,musicMuted,sfxMuted,preset,shadows,portal,particles,fps);}
     private static void releaseMusicEqualizer(){if(musicEqualizer!=null){try{musicEqualizer.setEnabled(false);musicEqualizer.release();}catch(Exception ignored){}musicEqualizer=null;}menuFilterAmount=0.0f;}
     private static MediaPlayer createNamedPlayer(String name, boolean loop, float volume) {
         int resource = audioContext.getResources().getIdentifier(name, "raw", audioContext.getPackageName());
@@ -133,6 +152,8 @@ public final class NativeBridge {
     public static native void onSurfaceChanged(int width, int height);
     public static native void onDrawFrame();
     public static native void onTouch(int action, float x, float y, int pointerCount);
+    public static native void onWiggle(float axis);
+    public static native boolean isGrabbed();
     public static native void onTouchControls(
         float moveX,
         float moveZ,
@@ -149,6 +170,7 @@ public final class NativeBridge {
     public static native boolean isIntroActive();
     public static native int getMenuMode();
     public static native void chooseUpgrade(int track, boolean permanent);
+    private static native void setLocalSettings(float music,float sfx,boolean musicMuted,boolean sfxMuted,int preset,boolean shadows,boolean portal,boolean particles,boolean fps);
     public static native void startSolo();
     public static native void configureNetwork(boolean host, int playerId, String roomCode, String status);
     public static native void onNetworkControl(String json);

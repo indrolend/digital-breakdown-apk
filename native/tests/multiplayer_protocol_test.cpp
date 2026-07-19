@@ -31,6 +31,10 @@ int main() {
   players[1].id = 1;
   players[1].pos = {2, 0.08f, 3};
   players[1].battery = 73;
+  players[1].flags |= 1u << 3;
+  players[1].bleedoutTimer = 9.5f;
+  players[1].reviveCharge = 4.0f;
+  players[1].grabbedByTarget = 2;
   auto world = captureWorld(game.state(), players, 123);
   auto snapshotBytes = encodeSnapshot(0, world, 8);
   WorldSnapshot roundtrip;
@@ -39,6 +43,9 @@ int main() {
         h.type == MessageType::Snapshot && roundtrip.tick == 123 &&
         roundtrip.players[1].active &&
         std::abs(roundtrip.players[1].pos.x - 2) < 0.0001f &&
+        (roundtrip.players[1].flags & (1u << 3)) != 0 &&
+        std::abs(roundtrip.players[1].bleedoutTimer - 9.5f) < 0.0001f &&
+        roundtrip.players[1].grabbedByTarget == 2 &&
         roundtrip.roomSeed == 12345;
   game.configureNetworkHost();
   game.setNetworkPeerActive(1, true);
@@ -82,6 +89,10 @@ int main() {
   hostProgressionState.progression.run.roomHeat = 0.75f;
   auto progressionWorld = captureWorld(
       hostProgression.state(), capturePlayers(hostProgression.state()), 200);
+  progressionWorld.tvSignal = 11;
+  progressionWorld.tvDamage = 2;
+  progressionWorld.tvTolerance = 4;
+  progressionWorld.tvBroken = true;
   auto progressionBytes = encodeSnapshot(0, progressionWorld, 9);
   WorldSnapshot progressionRoundtrip;
   ok &= decodeSnapshot(progressionBytes.data(), progressionBytes.size(), h,
@@ -89,6 +100,8 @@ int main() {
         progressionRoundtrip.upgradeMenuActive &&
         progressionRoundtrip.temporaryUpgradeLevels[1] == 3 &&
         progressionRoundtrip.sharedPermanentUpgradeLevels[0] == 4 &&
+        progressionRoundtrip.tvSignal == 11 &&
+        progressionRoundtrip.tvDamage == 2 && progressionRoundtrip.tvBroken &&
         std::abs(progressionRoundtrip.roomHeat - 0.75f) < 0.0001f;
   Game guestProgression;
   guestProgression.reset();

@@ -53,7 +53,7 @@ void updateNetwork(JNIEnv* env){
         else if(event.kind==NetworkEvent::Binary&&gNetworkConfigured){dbnet::PacketHeader header;if(!dbnet::decodeHeader(event.bytes.data(),event.bytes.size(),header))continue;if(gNetworkHost&&header.type==dbnet::MessageType::Input){dbnet::InputCommand input;if(dbnet::decodeInput(event.bytes.data(),event.bytes.size(),header,input))gGame.setNetworkPeerInput(header.playerId,input.sequence,input.moveX,input.moveZ,input.yaw,input.pitch,input.buttons);}else if(!gNetworkHost&&header.type==dbnet::MessageType::Snapshot){dbnet::WorldSnapshot snapshot;if(dbnet::decodeSnapshot(event.bytes.data(),event.bytes.size(),header,snapshot))dbnet::applyWorld(gGame.networkMutableState(),snapshot,static_cast<std::uint8_t>(gNetworkPlayerId));}}
     }
     if(!gNetworkConfigured)return;const GameState& state=gGame.state();
-    if(!gNetworkHost&&state.frame%2==0){dbnet::InputCommand input;input.sequence=++gNetworkSequence;input.tick=static_cast<std::uint32_t>(std::max(0,state.frame));input.moveX=clampf((state.input.right?1.0f:0.0f)-(state.input.left?1.0f:0.0f)+state.input.touchMoveX,-1,1);input.moveZ=clampf((state.input.forward?1.0f:0.0f)-(state.input.back?1.0f:0.0f)+state.input.touchMoveZ,-1,1);input.yaw=state.camera.yaw;input.pitch=state.camera.pitch;if(state.input.sprint||state.input.touchSprint)input.buttons|=dbnet::Sprint;if(state.input.jumpPressed)input.buttons|=dbnet::Jump;if(state.input.primaryHeld||state.input.touchPrimaryHeld)input.buttons|=dbnet::Vacuum;if(state.input.meleePressed)input.buttons|=dbnet::Melee;if(state.input.shootPressed)input.buttons|=dbnet::Shoot;if(state.input.cameraTogglePressed)input.buttons|=dbnet::CameraToggle;sendPacket(env,dbnet::encodeInput(static_cast<std::uint8_t>(gNetworkPlayerId),input));}
+    if(!gNetworkHost&&state.frame%2==0){dbnet::InputCommand input;input.sequence=++gNetworkSequence;input.tick=static_cast<std::uint32_t>(std::max(0,state.frame));input.moveX=clampf((state.input.right?1.0f:0.0f)-(state.input.left?1.0f:0.0f)+state.input.touchMoveX,-1,1);input.moveZ=clampf((state.input.forward?1.0f:0.0f)-(state.input.back?1.0f:0.0f)+state.input.touchMoveZ,-1,1);input.yaw=state.camera.yaw;input.pitch=state.camera.pitch;if(state.input.sprint||state.input.touchSprint)input.buttons|=dbnet::Sprint;if(state.input.jumpPressed)input.buttons|=dbnet::Jump;if(state.input.primaryHeld||state.input.touchPrimaryHeld)input.buttons|=dbnet::Vacuum;if(state.input.meleePressed)input.buttons|=dbnet::Melee;if(state.input.shootPressed)input.buttons|=dbnet::Shoot;if(state.input.cameraTogglePressed)input.buttons|=dbnet::CameraToggle;if(state.input.wiggleAxis<0)input.buttons|=dbnet::WiggleLeft;else if(state.input.wiggleAxis>0)input.buttons|=dbnet::WiggleRight;sendPacket(env,dbnet::encodeInput(static_cast<std::uint8_t>(gNetworkPlayerId),input));}
     else if(gNetworkHost&&static_cast<std::uint32_t>(state.frame)>=gLastSnapshotTick+3){gLastSnapshotTick=static_cast<std::uint32_t>(state.frame);sendPacket(env,dbnet::encodeSnapshot(0,dbnet::captureWorld(state,dbnet::capturePlayers(state),gLastSnapshotTick),++gNetworkSequence));}
 }
 
@@ -95,7 +95,7 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv* env, j
     gLastAudioSerial=0;
     if(!gBridgeClass) gBridgeClass=static_cast<jclass>(env->NewGlobalRef(bridgeClass));
     if(!gPlayAudioCue) gPlayAudioCue=env->GetStaticMethodID(gBridgeClass,"playAudioCue","(IF)V");
-    if(!gSyncMusic) gSyncMusic=env->GetStaticMethodID(gBridgeClass,"syncMusic","(ZZZF)V");
+    if(!gSyncMusic) gSyncMusic=env->GetStaticMethodID(gBridgeClass,"syncMusic","(ZZZZF)V");
     if(!gSendNetworkPacket) gSendNetworkPacket=env->GetStaticMethodID(gBridgeClass,"sendNetworkPacket","([B)V");
     if(!gSaveProgression) gSaveProgression=env->GetStaticMethodID(gBridgeClass,"saveProgression","(JJIII)V");
     gLastProgressionRevision=gGame.state().progression.permanent.revision;
@@ -126,7 +126,7 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv* env, jclass
     const GameState& s = gGame.state();
     const auto& permanent=s.progression.permanent;
     if(gBridgeClass&&gSaveProgression&&permanent.revision!=gLastProgressionRevision){env->CallStaticVoidMethod(gBridgeClass,gSaveProgression,static_cast<jlong>(permanent.revision),static_cast<jlong>(permanent.tokens),permanent.levels[0],permanent.levels[1],permanent.levels[2]);gLastProgressionRevision=permanent.revision;}
-    if(gBridgeClass&&gSyncMusic)env->CallStaticVoidMethod(gBridgeClass,gSyncMusic,s.started?JNI_TRUE:JNI_FALSE,s.dead?JNI_TRUE:JNI_FALSE,(s.uiPaused||s.upgradeMenu.active)?JNI_TRUE:JNI_FALSE,clampf(s.hud.headshotPulse+s.hud.perfectPulse*0.22f,0.0f,1.0f));
+    if(gBridgeClass&&gSyncMusic)env->CallStaticVoidMethod(gBridgeClass,gSyncMusic,s.started?JNI_TRUE:JNI_FALSE,s.dead?JNI_TRUE:JNI_FALSE,(s.uiPaused||s.upgradeMenu.active)?JNI_TRUE:JNI_FALSE,s.player.inSecretRoom?JNI_TRUE:JNI_FALSE,clampf(s.hud.headshotPulse+s.hud.perfectPulse*0.22f,0.0f,1.0f));
     if(gBridgeClass && gPlayAudioCue) {
         const unsigned int newest=s.audio.nextSerial>0?s.audio.nextSerial-1:0;
         const unsigned int first=std::max(gLastAudioSerial+1,newest>=AUDIO_EVENT_COUNT?newest-AUDIO_EVENT_COUNT+1:1u);
@@ -195,9 +195,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint keyCode, jboolean down) {
     gGame.setKey(keyCode, down == JNI_TRUE);
 }
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onWiggle(JNIEnv*,jclass,jfloat axis){gGame.setWiggle(axis);}
+extern "C" JNIEXPORT jboolean JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_isGrabbed(JNIEnv*,jclass){return gGame.state().player.grabbedByTarget>=0?JNI_TRUE:JNI_FALSE;}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_getMenuMode(JNIEnv*,jclass){return gGame.state().upgradeMenu.active?1:0;}
+
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_setLocalSettings(JNIEnv*,jclass,jfloat music,jfloat sfx,jboolean musicMuted,jboolean sfxMuted,jint preset,jboolean shadows,jboolean portal,jboolean particles,jboolean fps){auto& settings=gGame.networkMutableState().localSettings;settings.musicVolume=clampf(music,0,1);settings.sfxVolume=clampf(sfx,0,1);settings.musicMuted=musicMuted==JNI_TRUE;settings.sfxMuted=sfxMuted==JNI_TRUE;settings.graphicsPreset=std::max(0,std::min(2,static_cast<int>(preset)));settings.shadows=shadows==JNI_TRUE;settings.portalWindow=portal==JNI_TRUE;settings.particles=particles==JNI_TRUE;settings.fpsCounter=fps==JNI_TRUE;}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_chooseUpgrade(JNIEnv*,jclass,jint track,jboolean permanent){if(permanent)gGame.purchasePermanentUpgrade(track);else gGame.chooseTemporaryUpgrade(track);}

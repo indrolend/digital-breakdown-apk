@@ -15,6 +15,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private static final long ACTION_HOLD_MILLIS = 180L;
     private static final float ACTION_LOOK_SCALE = 0.24f;
     private static final float CONTROLLER_LOOK_DELTA_PER_FRAME = 12.0f;
+    private float touchLookMultiplier = 1.0f;
+    private float controllerLookMultiplier = 1.0f;
     private static final float CONTROLLER_DEAD_ZONE = 0.14f;
 
     private final NativeRenderer renderer;
@@ -31,6 +33,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private float actionLastX = 0.0f;
     private long actionDownMillis = 0L;
     private float actionTravel = 0.0f;
+    private long menuInputBlockedUntil = 0L;
 
     // Controller values are stateful. They are merged with touch controls so a
     // Bluetooth pad can be connected or disconnected during a run without
@@ -100,8 +103,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         if (nextRenderedFrameNanos == 0L) nextRenderedFrameNanos = frameTimeNanos;
         if (frameTimeNanos >= nextRenderedFrameNanos) {
             sendControls(
-                controllerLookX * CONTROLLER_LOOK_DELTA_PER_FRAME,
-                controllerLookY * CONTROLLER_LOOK_DELTA_PER_FRAME,
+                controllerLookX * CONTROLLER_LOOK_DELTA_PER_FRAME * controllerLookMultiplier,
+                controllerLookY * CONTROLLER_LOOK_DELTA_PER_FRAME * controllerLookMultiplier,
                 false, false, false, false
             );
             requestRender();
@@ -123,13 +126,23 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
 
+        if (NativeBridge.isGrabbed()) {
+            clearTouchState();
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                NativeBridge.onWiggle(0.0f);
+                menuInputBlockedUntil = SystemClock.uptimeMillis() + 350L;
+            }
+            return true;
+        }
+
         if (NativeBridge.getMenuMode() == 1) {
             clearTouchState();
-            if (action == MotionEvent.ACTION_DOWN) {
-                final float panelWidth = Math.min(620.0f, viewWidth - 24.0f);
+            if (action == MotionEvent.ACTION_DOWN && SystemClock.uptimeMillis() >= menuInputBlockedUntil) {
+                final float panelWidth = Math.min(680.0f, viewWidth - 24.0f);
                 final float panelX = (viewWidth - panelWidth) * 0.5f;
                 final int track = Math.max(0, Math.min(2, (int)((x - panelX) / (panelWidth / 3.0f))));
-                NativeBridge.chooseUpgrade(track, y > viewHeight * 0.5f);
+                final float panelY = (viewHeight - 300.0f) * 0.5f;
+                NativeBridge.chooseUpgrade(track, y >= panelY + 176.0f);
             }
             return true;
         }
@@ -172,7 +185,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
                     final float delta = nextX - actionLastX;
                     actionTravel += Math.abs(delta);
                     actionLastX = nextX;
-                    lookDx = clamp(delta * ACTION_LOOK_SCALE, -8.0f, 8.0f);
+                    lookDx = clamp(delta * ACTION_LOOK_SCALE * touchLookMultiplier, -8.0f, 8.0f);
                     if (!vacuumHeld && SystemClock.uptimeMillis() - actionDownMillis >= ACTION_HOLD_MILLIS) {
                         vacuumHeld = true;
                     }
@@ -264,6 +277,11 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         sprintHeld = false;
         vacuumHeld = false;
         sendControls(0.0f, 0.0f, false, false, false, false);
+    }
+
+    void setLookSensitivity(float touch, float controller) {
+        touchLookMultiplier = clamp(touch, 0.5f, 1.75f);
+        controllerLookMultiplier = clamp(controller, 0.5f, 1.75f);
     }
 
     private void clearControllerState() {
@@ -407,7 +425,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             case KeyEvent.KEYCODE_BUTTON_A: if (down) controllerJumpPressed = true; return true;
             case KeyEvent.KEYCODE_BUTTON_B: if (down) controllerMeleePressed = true; return true;
             case KeyEvent.KEYCODE_BUTTON_X: if (down) controllerShootPressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_Y: if (down) controllerCameraPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: if (down) controllerCameraPressed = true; return true;
             case KeyEvent.KEYCODE_BUTTON_R1: controllerBumperVacuumHeld = down; return true;
             case KeyEvent.KEYCODE_BUTTON_L1: controllerBumperSprintHeld = down; return true;
             case KeyEvent.KEYCODE_DPAD_LEFT: controllerDpadLeft = down; return true;

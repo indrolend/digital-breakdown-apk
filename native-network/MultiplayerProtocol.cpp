@@ -32,10 +32,10 @@ private: const std::uint8_t* data;std::size_t size=0,at=0;
 
 void header(Writer& w,MessageType type,std::uint8_t playerId,std::uint32_t seq,std::uint32_t tick,std::uint32_t payload){w.u32(MAGIC);w.u16(PROTOCOL_VERSION);w.u8(static_cast<std::uint8_t>(type));w.u8(playerId);w.u32(seq);w.u32(tick);w.u32(payload);}
 
-void writePlayer(Writer& w,const PlayerSnapshot& p){w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);w.f32(p.yaw);w.f32(p.pitch);w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.i8(p.vacuumTarget);w.f32(p.meleeTimer);w.f32(p.dischargeAmount);}
-bool readPlayer(Reader& r,PlayerSnapshot& p){std::uint8_t active=0;return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&r.f32(p.yaw)&&r.f32(p.pitch)&&r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.i8(p.vacuumTarget)&&r.f32(p.meleeTimer)&&r.f32(p.dischargeAmount);}
-void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.i8(t.ownerPlayerId);}
-bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.i8(t.ownerPlayerId);}
+void writePlayer(Writer& w,const PlayerSnapshot& p){w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);w.f32(p.yaw);w.f32(p.pitch);w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.i8(p.vacuumTarget);w.f32(p.meleeTimer);w.f32(p.dischargeAmount);w.f32(p.bleedoutTimer);w.f32(p.reviveCharge);w.f32(p.grabEscape);w.i8(p.grabbedByTarget);w.i32(p.secretVisitRoom);w.f32(p.secretVisitTimer);}
+bool readPlayer(Reader& r,PlayerSnapshot& p){std::uint8_t active=0;return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&r.f32(p.yaw)&&r.f32(p.pitch)&&r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.i8(p.vacuumTarget)&&r.f32(p.meleeTimer)&&r.f32(p.dischargeAmount)&&r.f32(p.bleedoutTimer)&&r.f32(p.reviveCharge)&&r.f32(p.grabEscape)&&r.i8(p.grabbedByTarget)&&r.i32(p.secretVisitRoom)&&r.f32(p.secretVisitTimer);}
+void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);}
+bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown);}
 void writeBullet(Writer& w,const BulletSnapshot& b){w.u8(b.active?1:0);w.u8(b.brute?1:0);w.vec(b.pos);w.vec(b.vel);w.f32(b.life);w.f32(b.spin);}
 bool readBullet(Reader& r,BulletSnapshot& b){std::uint8_t active=0,brute=0;return r.u8(active)&&r.u8(brute)&&((b.active=active!=0),(b.brute=brute!=0),true)&&r.vec(b.pos)&&r.vec(b.vel)&&r.f32(b.life)&&r.f32(b.spin);}
 void writeFlower(Writer& w,const FlowerSnapshot& f){w.u8(f.active?1:0);w.vec(f.pos);w.f32(f.age);w.f32(f.rotation);}
@@ -69,6 +69,7 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
   for (auto level : s.sharedPermanentUpgradeLevels)
     p.i32(level);
   p.f32(s.roomHeat);
+  p.i32(s.tvSignal);p.i32(s.tvDamage);p.i32(s.tvTolerance);p.u8(s.tvBroken?1:0);
   for (const auto &player : s.players)
     writePlayer(p, player);
   for (const auto &target : s.targets)
@@ -108,8 +109,10 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
   for (auto &level : s.sharedPermanentUpgradeLevels)
     if (!r.i32(level))
       return false;
-  if (!r.f32(s.roomHeat))
+  std::uint8_t tvBroken=0;
+  if (!r.f32(s.roomHeat)||!r.i32(s.tvSignal)||!r.i32(s.tvDamage)||!r.i32(s.tvTolerance)||!r.u8(tvBroken))
     return false;
+  s.tvBroken=tvBroken!=0;
   for (auto &player : s.players)
     if (!readPlayer(r, player))
       return false;
@@ -146,12 +149,14 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
     out.souls = static_cast<std::uint8_t>(
         std::max(0, std::min(PHONE_CAPACITY, player.souls)));
     out.flags = (player.grounded ? 1 : 0) | (camera.firstPerson ? 2 : 0) |
-                (player.alive ? 4 : 0);
+                (player.alive ? 4 : 0) | (player.downed ? 8 : 0) | (player.inSecretRoom ? 16 : 0);
     out.vacuumPower = vacuum.power;
     out.vacuumPose = vacuum.pose;
     out.vacuumTarget = static_cast<std::int8_t>(vacuum.target);
     out.meleeTimer = melee.visualTimer;
     out.dischargeAmount = energy.dischargePositionAmount;
+    out.bleedoutTimer=player.bleedoutTimer;out.reviveCharge=player.reviveCharge;out.grabEscape=player.grabEscape;out.grabbedByTarget=static_cast<std::int8_t>(player.grabbedByTarget);
+    out.secretVisitRoom=player.secretVisitRoom;out.secretVisitTimer=player.secretVisitTimer;
   };
   const int local =
       state.multiplayer.enabled ? state.multiplayer.localPlayerId : 0;
@@ -184,6 +189,7 @@ captureWorld(const GameState &state,
   for (int i = 0; i < 3; ++i)
     s.sharedPermanentUpgradeLevels[i] = state.progression.permanent.levels[i];
   s.roomHeat = state.progression.run.roomHeat;
+  s.tvSignal=state.secretTv.signal;s.tvDamage=state.secretTv.damage;s.tvTolerance=state.secretTv.tolerance;s.tvBroken=state.secretTv.broken;
   s.players = players;
   for (int i = 0; i < TARGET_COUNT; ++i) {
     const auto &a = state.targets[i];
@@ -204,6 +210,7 @@ captureWorld(const GameState &state,
     b.attackTimer = a.attackTimer;
     b.attackCooldown = a.attackCooldown;
     b.ownerPlayerId = static_cast<std::int8_t>(a.networkOwnerPlayerId);
+    b.grabbedPlayerId=static_cast<std::int8_t>(a.grabbedPlayerId);b.grabCooldown=a.grabCooldown;
   }
   for (int i = 0; i < CAPTURE_COUNT; ++i)
     s.captures[i] = state.captures[i].filled;
@@ -245,6 +252,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   for (int i = 0; i < 3; ++i)
     state.progression.run.networkSharedPermanentLevels[i] = s.sharedPermanentUpgradeLevels[i];
   state.progression.run.roomHeat = s.roomHeat;
+  state.secretTv.signal=s.tvSignal;state.secretTv.damage=s.tvDamage;state.secretTv.tolerance=s.tvTolerance;state.secretTv.broken=s.tvBroken;
   for (auto &peer : state.multiplayer.peers)
     peer = NetworkPeerState{};
   for (const auto &p : s.players)
@@ -257,6 +265,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.player.souls = p.souls;
         state.player.grounded = (p.flags & 1) != 0;
         state.player.alive = (p.flags & 4) != 0;
+        state.player.downed=(p.flags&8)!=0;state.player.bleedoutTimer=p.bleedoutTimer;state.player.reviveCharge=p.reviveCharge;state.player.grabEscape=p.grabEscape;state.player.grabbedByTarget=p.grabbedByTarget;
+        state.player.inSecretRoom=(p.flags&16)!=0;state.player.secretVisitRoom=p.secretVisitRoom;state.player.secretVisitTimer=p.secretVisitTimer;
         state.camera.pitch = p.pitch;
         state.camera.firstPerson = (p.flags & 2) != 0;
         state.vacuum.power = p.vacuumPower;
@@ -275,6 +285,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.player.souls = p.souls;
         peer.player.grounded = (p.flags & 1) != 0;
         peer.player.alive = (p.flags & 4) != 0;
+        peer.player.downed=(p.flags&8)!=0;peer.player.bleedoutTimer=p.bleedoutTimer;peer.player.reviveCharge=p.reviveCharge;peer.player.grabEscape=p.grabEscape;peer.player.grabbedByTarget=p.grabbedByTarget;
+        peer.player.inSecretRoom=(p.flags&16)!=0;peer.player.secretVisitRoom=p.secretVisitRoom;peer.player.secretVisitTimer=p.secretVisitTimer;
         peer.camera.pitch = p.pitch;
         peer.vacuum.power = p.vacuumPower;
         peer.vacuum.pose = p.vacuumPose;
@@ -284,7 +296,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.phoneVisual =
             makePhoneVisualState(p.vacuumPose, p.vacuumPower, 0, s.time, false);
         peer.phoneTransform.position = p.pos + Vec3{0, 0.54f, 0};
-        peer.phoneTransform.orientation = quatAxisAngle({0, 1, 0}, p.yaw);
+        peer.phoneTransform.orientation = peer.player.downed?quatNormalized(quatAxisAngle({0,1,0},p.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatAxisAngle({0, 1, 0}, p.yaw);
         peer.phoneTransform.screenRight =
             rotate(peer.phoneTransform.orientation, {1, 0, 0});
         peer.phoneTransform.screenUp =
@@ -321,6 +333,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.attackTimer = a.attackTimer;
     b.attackCooldown = a.attackCooldown;
     b.networkOwnerPlayerId = a.ownerPlayerId;
+    b.grabbedPlayerId=a.grabbedPlayerId;b.grabCooldown=a.grabCooldown;
   }
   const bool initialSnapshot = !state.multiplayer.hasWorldSnapshot;
   for (int i = 0; i < CAPTURE_COUNT; ++i) {

@@ -99,15 +99,41 @@ inline float smoothStep01(float x) {
 inline float humanShellThinningAmount(float armor, float armorMax, bool slurpable) {
     if(slurpable||armorMax<=0.001f)return 0.0f;
     const float remaining=clampf(armor/armorMax,0.0f,1.0f);
-    return smoothStep01(clampf((0.62f-remaining)/0.62f,0.0f,1.0f))*0.18f;
+    // Start exposing deterministic data-shaped holes after the first meaningful
+    // damage and grow them into an unmistakable, still-readable silhouette.
+    return smoothStep01(clampf((0.86f-remaining)/0.86f,0.0f,1.0f))*0.44f;
 }
 
-inline bool humanShellTriangleMissing(std::size_t triangleIndex,float thinningAmount) {
+inline float humanShellTriangleDataSample(std::size_t triangleIndex) {
     std::uint32_t hash=static_cast<std::uint32_t>(triangleIndex)*747796405u+2891336453u;
     hash=((hash>>((hash>>28u)+4u))^hash)*277803737u;
     hash=(hash>>22u)^hash;
-    const float sample=static_cast<float>(hash&0x00ffffffu)/16777216.0f;
-    return sample<thinningAmount;
+    return static_cast<float>(hash&0x00ffffffu)/16777216.0f;
+}
+
+inline bool humanShellTriangleMissing(std::size_t triangleIndex,float thinningAmount) {
+    return humanShellTriangleDataSample(triangleIndex)<thinningAmount;
+}
+
+inline Vec3 humanShellCritCenter() {
+    return {0.0f,PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius,0.0f};
+}
+
+inline float humanShellCritInfluence(const Vec3& triangleCenter) {
+    const Vec3 delta=triangleCenter-humanShellCritCenter();
+    return smoothStep01(1.0f-clampf(std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z)/0.72f,0.0f,1.0f));
+}
+
+inline bool humanShellTriangleMissingTowardCrit(std::size_t triangleIndex,float thinningAmount,const Vec3& triangleCenter) {
+    const float threshold=clampf(thinningAmount*(0.56f+humanShellCritInfluence(triangleCenter)*1.20f),0.0f,0.72f);
+    return humanShellTriangleDataSample(triangleIndex)<threshold;
+}
+
+inline Vec3 humanShellAbsorbTowardCrit(const Vec3& vertex,std::size_t triangleIndex,float thinningAmount) {
+    if(thinningAmount<=0.001f)return vertex;
+    const float damage=clampf(thinningAmount/0.44f,0.0f,1.0f);
+    const float channel=0.30f+(1.0f-humanShellTriangleDataSample(triangleIndex))*0.70f;
+    return vertex+(humanShellCritCenter()-vertex)*(smoothStep01(damage)*0.075f*channel);
 }
 
 inline HumanReactionVisual makeHumanReactionVisual(
