@@ -487,15 +487,29 @@ int main() {
     {
         GameState& setup=const_cast<GameState&>(game.state());
         TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
-        target.pos=setup.phoneTransform.screenCenter + setup.phoneTransform.screenRight*1.0f + setup.phoneTransform.screenNormal*0.40f;
+        target.pos=setup.phoneTransform.screenCenter+setup.phoneTransform.screenRight*1.0f
+            +setup.phoneTransform.screenUp*1.0f+setup.phoneTransform.screenNormal*0.40f;
         target.soulState=SoulState::Latched;
     }
     step(game);
     {
         const GameState& state=game.state();
         const Vec3 local=inverseRotate(state.phoneTransform.orientation,state.targets[0].latchPoint-state.phoneTransform.screenCenter);
-        ok &= expect(std::abs(local.x)<=PHONE_SCREEN_WIDTH*0.5f*0.92f+0.0001f,
-            "screen-local latch clamps to the authoritative screen aperture");
+        ok &= expect(std::abs(local.x)<=PHONE_SCREEN_WIDTH*0.5f*0.92f+0.0001f&&
+                     std::abs(local.y)<=PHONE_SCREEN_HEIGHT*0.5f*0.92f+0.0001f,
+            "screen-local latch clamps sideways and above-phone drift to the authoritative aperture");
+    }
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        TargetState& target=setup.targets[0];target.soulState=SoulState::Attracted;target.latchedToScreen=false;
+        target.pos=setup.phoneTransform.position+setup.phoneTransform.screenUp*0.10f;
+    }
+    step(game);
+    {
+        const GameState& state=game.state();
+        const Vec3 local=inverseRotate(state.phoneTransform.orientation,state.targets[0].pos-state.phoneTransform.position);
+        ok &= expect(local.z>=PHONE_BODY_DEPTH*0.5f+0.33f-0.001f,
+            "attracted soul core is moved to the screen-facing side before it can cross through or over the phone");
     }
 
     game.reset();

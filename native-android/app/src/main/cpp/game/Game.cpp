@@ -1805,6 +1805,22 @@ void Game::updateVacuum(float dt) {
         target.pos = world;
         target.pos.z = wrapZ(world.z) + getRoomTileOriginZ(state_.topology.currentTileIndex);
     };
+    auto keepOutsidePhoneSolid = [&](Vec3 world, bool preferScreenFront) {
+        if(state_.camera.firstPerson)return world;
+        Vec3 local=inverseRotate(state_.phoneTransform.orientation,world-state_.phoneTransform.position);
+        const float hx=PHONE_SOLID_HALF_X+SOUL_CORE_SOLID_RADIUS;
+        const float hy=PHONE_SOLID_HALF_Y+SOUL_CORE_SOLID_RADIUS;
+        const float hz=PHONE_SOLID_HALF_Z+SOUL_CORE_SOLID_RADIUS;
+        if(std::abs(local.x)>hx||std::abs(local.y)>hy||std::abs(local.z)>hz)return world;
+        if(preferScreenFront)local.z=hz;
+        else {
+            const float px=hx-std::abs(local.x),py=hy-std::abs(local.y),pz=hz-std::abs(local.z);
+            if(px<=py&&px<=pz)local.x=(local.x<0.0f?-1.0f:1.0f)*hx;
+            else if(py<=px&&py<=pz)local.y=(local.y<0.0f?-1.0f:1.0f)*hy;
+            else local.z=(local.z<0.0f?-1.0f:1.0f)*hz;
+        }
+        return state_.phoneTransform.position+rotate(state_.phoneTransform.orientation,local);
+    };
     auto insideCylinder = [&](const Vec3& p) {
         const Vec3 d = p - state_.phoneTransform.position;
         return d.x*d.x + d.z*d.z <= SOUL_CAPTURE_CYLINDER_RADIUS*SOUL_CAPTURE_CYLINDER_RADIUS &&
@@ -1869,6 +1885,7 @@ void Game::updateVacuum(float dt) {
             const float proximity = 1.0f - clampf(d / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
             const float speed = v.power * (3.2f + smooth01(proximity)*5.8f + (insideCylinder(soulWorld)?8.5f:0.0f)) / soulMass;
             Vec3 next = soulWorld + normalized(delta) * std::min(d, speed*dt);
+            next=keepOutsidePhoneSolid(next,insideCylinder(soulWorld));
             writeCanonical(t, next); t.vel = {}; t.vacuumPullAmount = v.power;
             if (insideCylinder(next) || d <= SOUL_LATCH_DISTANCE) { t.soulState = SoulState::Latched; t.latchedToScreen = true; }
             syncTargetReactionVisual(t); continue;
@@ -1891,12 +1908,7 @@ void Game::updateVacuum(float dt) {
             Vec3 toSeal = sealPoint - soulWorld; const float d = length(toSeal);
             const float move = std::min(d, ((7.0f+sealEase*5.0f+popEase*14.0f)/soulMass)*dt);
             Vec3 next = d > 0.001f ? soulWorld + normalized(toSeal)*move : soulWorld;
-            if (!state_.camera.firstPerson) {
-                Vec3 phoneLocal = inverseRotate(state_.phoneTransform.orientation, next-state_.phoneTransform.position);
-                const float hx=PHONE_SOLID_HALF_X+SOUL_CORE_SOLID_RADIUS, hy=PHONE_SOLID_HALF_Y+SOUL_CORE_SOLID_RADIUS, hz=PHONE_SOLID_HALF_Z+SOUL_CORE_SOLID_RADIUS;
-                if (std::abs(phoneLocal.x)<=hx && std::abs(phoneLocal.y)<=hy && std::abs(phoneLocal.z)<=hz) phoneLocal.z=hz;
-                next = state_.phoneTransform.position + rotate(state_.phoneTransform.orientation, phoneLocal);
-            }
+            next=keepOutsidePhoneSolid(next,true);
             writeCanonical(t,next); t.vel={}; t.vacuumPullAmount=std::max(v.power,t.ingestProgress);
             const bool sealed = std::max(0.0f,d-move) <= SOUL_SEAL_DISTANCE;
             t.soulState = sealed ? SoulState::Ingesting : SoulState::Latched;
