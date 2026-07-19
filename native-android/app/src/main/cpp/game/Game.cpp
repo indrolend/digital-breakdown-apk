@@ -119,6 +119,10 @@ constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
 constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.68f;
 constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = 5.40f;
 constexpr float AIR_MELEE_BODY_RADIUS = 0.72f;
+constexpr float HEADSHOT_BATTERY_GAIN = 18.0f;
+constexpr float LUNGE_HEAD_CONTACT_RADIUS = 0.28f;
+constexpr float BULLET_HEAD_CONTACT_RADIUS = 0.18f;
+constexpr float HEADSHOT_CRITICAL_ARMOR_FRACTION = 0.60f;
 constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
@@ -241,6 +245,7 @@ void Game::restart() {
     state_.cinematic.introActive = true;
     state_.cinematic.introElapsed = 0.0f;
     state_.cinematic.baseYaw = state_.camera.yaw;
+    state_.cinematic.textInteraction = 1.0f;
 }
 
 void Game::prepareStartScreen(){
@@ -358,11 +363,37 @@ void Game::spawnFlameBurst(const Vec3& position,float strength) {
     }
 }
 
+void Game::spawnShellShatter(const TargetState& target) {
+    const int count=target.brute?48:32;
+    const float bodyHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*target.scale;
+    unsigned int visualSeed=0x91E10DA5u^static_cast<unsigned int>((target.pos.x+32.0f)*997.0f)^static_cast<unsigned int>((target.pos.z+64.0f)*619.0f);
+    const auto visualRandom=[&](){visualSeed=visualSeed*1664525u+1013904223u;return static_cast<float>((visualSeed>>8)&0x00ffffffu)/16777216.0f;};
+    for(int n=0;n<count;++n){
+        ParticleState& particle=state_.particles[state_.nextParticle];state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
+        const float angle=visualRandom()*DB_PI*2.0f;
+        const float height=0.08f+visualRandom()*bodyHeight*0.90f;
+        const float bodyWidth=(height>bodyHeight*0.68f?0.16f:0.25f)*target.scale;
+        const float radial=0.45f+visualRandom()*1.55f;
+        const float life=0.72f+visualRandom()*0.38f;
+        particle=ParticleState{};
+        particle.kind=1;
+        particle.size=(0.055f+visualRandom()*0.075f)*target.scale;
+        particle.pos=target.pos+Vec3{std::cos(angle)*bodyWidth*visualRandom(),height,std::sin(angle)*bodyWidth*visualRandom()};
+        particle.vel={std::cos(angle)*radial,0.45f+visualRandom()*2.25f,std::sin(angle)*radial};
+        particle.life=life;particle.maxLife=life;
+    }
+}
+
 void Game::updateParticles(float dt) {
     for(auto& particle:state_.particles) {
         if(particle.life<=0.0f) continue;
-        particle.vel.y-=8.0f*dt;
+        particle.vel.y-=(particle.kind==1?10.5f:8.0f)*dt;
         particle.pos+=particle.vel*dt;
+        if(particle.kind==1&&particle.pos.y<=0.025f){
+            particle.pos.y=0.025f;particle.vel.y=0.0f;
+            const float settle=std::exp(-16.0f*dt);particle.vel.x*=settle;particle.vel.z*=settle;
+            particle.life=std::max(0.0f,particle.life-dt*1.25f);
+        }
         particle.life=std::max(0.0f,particle.life-dt);
     }
 }
@@ -403,7 +434,7 @@ void Game::gainBattery(float amount,BatteryReason reason) {
     if (!state_.player.alive) return;
     const float before=state_.player.battery;
     state_.player.battery = clampf(state_.player.battery + std::max(0.0f, amount), 0.0f, 100.0f);
-    if(reason!=BatteryReason::Continuous){const char* label=reason==BatteryReason::Ingest?"INGEST":reason==BatteryReason::NextRoom?"ROOM":reason==BatteryReason::Chain?"CHAIN":"COMBO";char message[48]{};std::snprintf(message,sizeof(message),"+%.1F %s",state_.player.battery-before,label);setEnergyTicker(message,reason==BatteryReason::Combo||reason==BatteryReason::Chain?2:0);}
+    if(reason!=BatteryReason::Continuous){const char* label=reason==BatteryReason::Ingest?"INGEST":reason==BatteryReason::NextRoom?"ROOM":reason==BatteryReason::Chain?"CHAIN":reason==BatteryReason::Headshot?"HEADSHOT":"COMBO";char message[48]{};std::snprintf(message,sizeof(message),"+%.1F %s",state_.player.battery-before,label);setEnergyTicker(message,reason==BatteryReason::Combo||reason==BatteryReason::Chain||reason==BatteryReason::Headshot?2:0);}
     updateBatteryAudio(before);
 }
 
@@ -488,6 +519,7 @@ void Game::triggerRunDeath() {
     state_.cinematic.introActive=false;
     state_.cinematic.deathActive=true;
     state_.cinematic.deathElapsed=0.0f;
+    state_.cinematic.textInteraction=1.0f;
     state_.cinematic.baseYaw=state_.camera.yaw;
     state_.cinematic.startCameraPos=state_.camera.pos;
     state_.camera.firstPerson=false;
@@ -666,6 +698,7 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
+    state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         updateDeathCamera(dt);
@@ -770,7 +803,7 @@ void Game::update(float dt) {
 void Game::configureNetworkHost(){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=true;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=0;std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"HOSTING");}
 void Game::configureNetworkGuest(int localPlayerId){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=false;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=std::max(1,std::min(NETWORK_PLAYER_COUNT-1,localPlayerId));std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"CONNECTED");}
 void Game::disableNetwork(){state_.multiplayer=MultiplayerRuntimeState{};}
-void Game::setNetworkRoom(const char* code,const char* status,bool connected){if(code)std::snprintf(state_.multiplayer.roomCode.data(),state_.multiplayer.roomCode.size(),"%.6s",code);if(status)std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"%.63s",status);state_.multiplayer.connected=connected;}
+void Game::setNetworkRoom(const char* code,const char* status,bool connected){if(code)std::snprintf(state_.multiplayer.roomCode.data(),state_.multiplayer.roomCode.size(),"%.6s",code);if(status)std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"%.63s",status);state_.multiplayer.connected=connected;state_.cinematic.textInteraction=1.0f;}
 void Game::setNetworkPeerActive(int playerId,bool active){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT||playerId==state_.multiplayer.localPlayerId)return;auto& peer=state_.multiplayer.peers[playerId];if(active&&!peer.active){peer=NetworkPeerState{};peer.active=true;peer.playerId=playerId;peer.player.pos=state_.player.pos+Vec3{static_cast<float>(playerId)*0.75f,0,0};peer.camera=state_.camera;peer.energy=state_.energy;}else if(!active)peer=NetworkPeerState{};}
 void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
 void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float pitch,float vacuumPower,float vacuumPose,int vacuumTarget,float meleeTimer,float dischargeAmount){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT)return;if(playerId==state_.multiplayer.localPlayerId){state_.player=player;state_.camera.pitch=pitch;state_.vacuum.power=vacuumPower;state_.vacuum.pose=vacuumPose;state_.vacuum.target=vacuumTarget;state_.meleeVisual.visualTimer=meleeTimer;state_.energy.dischargePositionAmount=dischargeAmount;updatePhoneTransform();return;}setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];peer.player=player;peer.camera.pitch=pitch;peer.vacuum.power=vacuumPower;peer.vacuum.pose=vacuumPose;peer.vacuum.target=vacuumTarget;peer.meleeVisual.visualTimer=meleeTimer;peer.energy.dischargePositionAmount=dischargeAmount;peer.phoneVisual=makePhoneVisualState(vacuumPose,vacuumPower,0,state_.time,false);peer.phoneTransform.position=player.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},player.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}
@@ -1461,7 +1494,7 @@ void Game::triggerMelee() {
 
 int Game::applyMeleeHits() {
     MeleeVisualState& visual=state_.meleeVisual;
-    int newHits=0; int totalHits=0;
+    int newHits=0; int totalHits=0; int headshots=0; std::array<Vec3,TARGET_COUNT> headshotPositions{}; std::array<bool,TARGET_COUNT> headshotCritical{};
     for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
     for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
@@ -1475,15 +1508,50 @@ int Game::applyMeleeHits() {
             const float hitRadius=visual.hitRadius+(t.brute?0.28f:0.0f);
             if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
         }
+        const Vec3 headCenter=targetHeadCenter(t);
+        const float headRadius=PASS7_HUMAN_VISUAL_SPEC.headRadius*t.scale+LUNGE_HEAD_CONTACT_RADIUS;
+        const bool headshot=visual.locomotionLunge && lengthSq(state_.phoneTransform.position-headCenter)<=headRadius*headRadius;
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
-        damageSoulShell(i, visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f)));
+        damageSoulShell(i,headshot?headshotDamage(t):visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f)));
+        if(headshot){const float armorMax=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;headshotPositions[headshots]=headCenter;headshotCritical[headshots]=t.slurpable||t.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION;++headshots;}
         spawnFlameBurst(t.pos+Vec3{0,0.65f,0},newHits>0?0.95f+static_cast<float>(newHits+1)*0.18f:0.55f);
         visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
-    if(newHits>0){emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}}
+    if(newHits>0){emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);for(int hit=0;hit<headshots;++hit)rewardHeadshot(headshotPositions[hit],headshotCritical[hit]);if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}}
     return newHits;
+}
+
+Vec3 Game::targetHeadCenter(const TargetState& target) const {
+    // The authoritative FBX is normalized from the floor to HUMAN_MODEL_HEIGHT.
+    // Its head sphere therefore sits one visual head radius below that top.
+    return {target.pos.x,
+        (PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius)*target.scale,
+        target.pos.z};
+}
+
+float Game::headshotDamage(const TargetState& target) const {
+    const float fullArmor=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+    return fullArmor/static_cast<float>(std::max(1,state_.requiredSouls));
+}
+
+void Game::continueLungeFromHeadshot() {
+    MeleeVisualState& lunge=state_.meleeVisual;
+    lunge.airLungePending=true;
+    lunge.airLungeTimer=AIR_MELEE_LOCOMOTION_DURATION;
+    lunge.visualTimer=std::max(lunge.visualTimer,AIR_MELEE_LOCOMOTION_DURATION);
+    lunge.airLungeAngularVelocity=std::max(lunge.airLungeAngularVelocity,AIR_MELEE_ANGULAR_VELOCITY);
+    lunge.airLungeCameraLag=1.0f;
+    state_.player.grounded=false;
+    state_.player.jumpVel=std::max(state_.player.jumpVel,AIR_MELEE_VERTICAL_KICK);
+}
+
+void Game::rewardHeadshot(const Vec3& position, bool critical) {
+    gainBattery(HEADSHOT_BATTERY_GAIN,BatteryReason::Headshot);
+    spawnFlameBurst(position,1.35f);
+    spawnParticleBurst(position);
+    emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.62f:0.50f);
 }
 
 bool Game::damageSoulShell(int index, float amount) {
@@ -1495,6 +1563,7 @@ bool Game::damageSoulShell(int index, float amount) {
         t.hitFlash=1.0f;
         if(t.armor<=0.0f) {
             t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
+            spawnShellShatter(t);
             if(t.brute && nextFlowerRandom()<FLOWER_DROP_CHANCE) spawnFlowerPowerup(t.pos.x,GROUND_Y+0.42f,t.pos.z);
         }
     } else {
@@ -2114,8 +2183,13 @@ void Game::updateBullets(float dt) {
             if(!target.alive || target.slurpable || target.captureQueued || target.captureCommitted) continue;
             const Vec3 shellCenter{target.pos.x,0.65f,target.pos.z};
             const float hitRadius=b.brute?0.95f:0.72f;
-            if(pointSegmentDistanceSq(shellCenter,previous,b.pos)>hitRadius*hitRadius) continue;
-            if(!damageSoulShell(i,b.brute?1.65f:0.9f)) continue;
+            const Vec3 headCenter=targetHeadCenter(target);
+            const float headRadius=PASS7_HUMAN_VISUAL_SPEC.headRadius*target.scale+BULLET_HEAD_CONTACT_RADIUS;
+            const bool headshot=pointSegmentDistanceSq(headCenter,previous,b.pos)<=headRadius*headRadius;
+            const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
+            if(!bodyHit&&!headshot)continue;
+            if(!damageSoulShell(i,headshot?headshotDamage(target):(b.brute?1.65f:0.9f))) continue;
+            if(headshot){const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION);}
             target.vel+=b.vel*0.08f;
             target.vel.y=std::max(target.vel.y,1.0f);
             b.alive=false;

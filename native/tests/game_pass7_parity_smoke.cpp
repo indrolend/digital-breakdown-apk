@@ -37,6 +37,7 @@ bool hasAudioCueAfter(const GameState& state, AudioCue cue, unsigned int serial)
     for(const auto& event:state.audio.events) if(event.serial>serial && event.cue==cue) return true;
     return false;
 }
+int countAudioCue(const GameState& state,AudioCue cue){int count=0;for(const auto& event:state.audio.events)if(event.serial>0&&event.cue==cue)++count;return count;}
 }
 
 int main() {
@@ -47,6 +48,10 @@ int main() {
     ok &= expect(hasAudioCue(spawn,AudioCue::VcInvitation),"new native run queues the browser invitation cue");
     ok &= expect(near(spawn.player.pos.y, PHONE_MODEL_HEIGHT * 0.5f, 0.0001f), "spawn support y equals half Pass 7 phone height");
     ok &= expect(near(PHONE_BODY_WIDTH, 0.08f, 0.0001f) && near(PHONE_BODY_HEIGHT, 0.16f, 0.0001f) && near(PHONE_BODY_DEPTH, 0.012f, 0.0001f), "phone body dimensions match Pass 7 fallback/model normalized size");
+    const float intactThinning=humanShellThinningAmount(2.0f,2.0f,false),criticalThinning=humanShellThinningAmount(0.1f,2.0f,false);
+    int missingFixtureTriangles=0;for(std::size_t triangle=0;triangle<1000;++triangle)if(humanShellTriangleMissing(triangle,criticalThinning))++missingFixtureTriangles;
+    ok &= expect(near(intactThinning,0.0f,0.0001f)&&criticalThinning>0.14f&&missingFixtureTriangles>120&&missingFixtureTriangles<220,
+        "low armor deterministically thins a bounded minority of shell triangles without affecting intact enemies");
     ok &= expect(near(Pass7Visual::CameraVerticalFovDegrees,75.0f,0.0001f) && near(Pass7Visual::CameraNearPlane,0.1f,0.0001f) && near(Pass7Visual::CameraFarPlane,1000.0f,0.0001f), "native projection matches the browser PerspectiveCamera contract");
     ok &= expect(near(spawn.camera.pos.y - spawn.player.pos.y, 1.1f, 0.0001f), "third-person camera height is relative to corrected player support");
     Game clearCameraGame; clearCameraGame.reset();
@@ -70,11 +75,15 @@ int main() {
     ok &= expect(game.state().cinematic.introActive && length(game.state().camera.pos-game.state().phoneTransform.position)<0.8f &&
         near(length(game.state().player.pos-introLockedPosition),0.0f,0.0001f),
         "fresh START locks control for a close product-style phone reveal");
+    ok &= expect(game.state().cinematic.textInteraction>0.80f,
+        "start interaction publishes a strong shared text wave-and-tracking impulse");
     step(game,70);
     ok &= expect(!game.state().cinematic.introActive && horizontalSpeed(game.state().camera.pos-game.state().player.pos)>2.45f,
         "product reveal hands off into the collision-safe gameplay chase camera before play");
     ok &= expect(length(game.state().player.pos-introLockedPosition)>0.001f,
         "direction held through the entrance becomes active on the first gameplay frame");
+    ok &= expect(game.state().cinematic.textInteraction<0.01f,
+        "floating text interaction expansion settles smoothly instead of remaining stretched");
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
@@ -299,6 +308,23 @@ int main() {
     step(game,24);
     ok &= expect(game.state().targets[0].armor<4.0f && game.state().player.vel.z<0.0f,
         "airborne locomotion deals secondary damage on body contact without cancelling travel");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.battery=35.0f; setup.player.pos={0.0f,0.58f,0.0f}; setup.player.grounded=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true;
+        target.pos={0.0f,0.08f,-0.20f}; target.armor=4.0f; target.scale=1.0f;
+        setup.phoneTransform.position={target.pos.x,1.055f,target.pos.z};
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
+    ok &= expect(std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")!=nullptr &&
+                 game.state().player.battery>45.0f && hasAudioCue(game.state(),AudioCue::Headshot),
+        "an accurate airborne phone-body contact with the modeled head grants a pronounced battery headshot reward");
+    ok &= expect(game.state().meleeVisual.airLungeTimer>0.67f &&
+                 game.state().player.vel.z<-7.0f && game.state().player.jumpVel>2.0f,
+        "a lunge headshot immediately converts impact into another full physical forward arc");
 
     game.reset();
     { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
@@ -709,7 +735,8 @@ int main() {
     }
     step(game);
     ok &= expect(near(game.state().targets[0].armor,3.1f,0.001f) &&
-        near(game.state().targets[1].armor,4.0f,0.001f) && !game.state().bullets[0].alive,
+        near(game.state().targets[1].armor,4.0f,0.001f) && !game.state().bullets[0].alive &&
+        std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")==nullptr,
         "normal fired cube damages only the first living shell on its swept path and is consumed");
 
     game.reset();
@@ -724,6 +751,49 @@ int main() {
     step(game);
     ok &= expect(near(game.state().targets[0].armor,2.35f,0.001f) && !game.state().bullets[0].alive,
         "brute fired cube uses the browser's wider 0.95 shell radius and 1.65 damage");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.battery=35.0f;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true;
+        target.armor=1.0f; target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f}; target.walkTarget=target.pos;
+        BulletState& bullet=setup.bullets[0]; bullet=BulletState{}; bullet.alive=true; bullet.life=1.0f;
+        bullet.pos={target.pos.x,1.055f,target.pos.z+0.50f}; bullet.vel={0,0,-25.0f};
+    }
+    step(game);
+    ok &= expect(std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")!=nullptr &&
+                 game.state().player.battery>50.0f && !game.state().bullets[0].alive &&
+                 hasAudioCue(game.state(),AudioCue::HeadshotCritical),
+        "a final-hit-band soul headshot grants battery and selects the two-step critical jingle");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());for(auto& target:setup.targets)target.alive=false;
+        setup.requiredSouls=3;TargetState& target=setup.targets[0];target=TargetState{};target.alive=true;
+        target.armor=2.0f;target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f};target.walkTarget=target.pos;target.attackCooldown=999.0f;
+    }
+    bool exactHeadshotFractions=true;
+    for(int shot=1;shot<=3;++shot){
+        GameState& setup=const_cast<GameState&>(game.state());TargetState& target=setup.targets[0];target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f};target.walkTarget=target.pos;
+        BulletState& bullet=setup.bullets[0];bullet=BulletState{};bullet.alive=true;bullet.life=1.0f;bullet.pos={target.pos.x,1.055f,target.pos.z+0.50f};bullet.vel={0,0,-25.0f};
+        step(game);
+        if(shot<3)exactHeadshotFractions=exactHeadshotFractions&&!game.state().targets[0].slurpable&&near(game.state().targets[0].armor,2.0f*(3-shot)/3.0f,0.001f);
+    }
+    const int headshotJingles=countAudioCue(game.state(),AudioCue::Headshot)+countAudioCue(game.state(),AudioCue::HeadshotCritical);
+    ok &= expect(exactHeadshotFractions&&game.state().targets[0].slurpable&&headshotJingles==3,
+        "a three-slot room takes exactly three headshots to break a fresh shell and plays all three jingles");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());for(auto& target:setup.targets)target.alive=false;
+        setup.requiredSouls=4;TargetState& target=setup.targets[0];target=TargetState{};target.alive=true;target.brute=true;target.scale=1.7f;
+        target.armor=4.0f;target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f};target.walkTarget=target.pos;target.attackCooldown=999.0f;
+    }
+    for(int shot=0;shot<4;++shot){GameState& setup=const_cast<GameState&>(game.state());TargetState& target=setup.targets[0];target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f};target.walkTarget=target.pos;BulletState& bullet=setup.bullets[0];bullet=BulletState{};bullet.alive=true;bullet.life=1.0f;bullet.pos={target.pos.x,1.7935f,target.pos.z+0.50f};bullet.vel={0,0,-25.0f};step(game);}
+    ok &= expect(game.state().targets[0].slurpable,
+        "the same slot-count headshot guarantee applies to the brute shell's larger armor pool");
 
     game.reset();
     {
@@ -823,13 +893,19 @@ int main() {
         const Vec3 d=flower.pos-game.state().targets[0].pos;
         dropDistance=std::sqrt(d.x*d.x+d.z*d.z);
     }
-    ok &= expect(game.state().targets[0].slurpable && droppedFlowers==1 && dropDistance>=1.05f,
+    int shellFragments=0;for(const auto& particle:game.state().particles)if(particle.kind==1&&particle.life>0.0f)++shellFragments;
+    ok &= expect(game.state().targets[0].slurpable && droppedFlowers==1 && dropDistance>=1.05f && shellFragments==48,
         "brute shell conversion performs one drop roll and separates the flower from its source");
+    ok &= expect(game.state().targets[0].soulMorph<0.10f,
+        "shell shatter begins while the exposed soul still follows its independent emergence timing");
     game.setTouchControls(0,0,0,0,false,false,false,false,false,false); step(game,20);
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
     int repeatedDrops=0; for(const auto& flower:game.state().flowers) if(flower.active) ++repeatedDrops;
     ok &= expect(repeatedDrops==1,
         "subsequent hits on an already slurpable brute do not roll duplicate flowers");
+    step(game,70);int lingeringShellFragments=0;for(const auto& particle:game.state().particles)if(particle.kind==1&&particle.life>0.0f)++lingeringShellFragments;
+    ok &= expect(lingeringShellFragments==0,
+        "shattered shell fragments settle, shrink, and are fully reabsorbed into the floor");
 
     game.reset();
     {

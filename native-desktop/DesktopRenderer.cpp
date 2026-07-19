@@ -97,7 +97,7 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
-    const bool aliveHuman = !target.slurpable || target.soulCubeAmount < 0.995f;
+    const bool aliveHuman = !target.slurpable;
     const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
@@ -222,7 +222,7 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
 
 void DesktopRenderer::drawHumanModel(const TargetState& target,float time,bool shadow) const {
     humanModel_.skin(target.humanAnimationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
-    const bool aliveHuman=!target.slurpable||target.soulCubeAmount<0.995f;const HumanVisualPose pose=makeHumanVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman);
+    const bool aliveHuman=!target.slurpable;const HumanVisualPose pose=makeHumanVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman);
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
@@ -230,7 +230,8 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,bool s
     const Vec3 root{target.pos.x,target.attackTimer>0?std::sin(attackT*PI)*0.035f*low:0,target.pos.z};
     const float matrix[16]={1-2*(rootQ.y*rootQ.y+rootQ.z*rootQ.z),2*(rootQ.x*rootQ.y+rootQ.z*rootQ.w),2*(rootQ.x*rootQ.z-rootQ.y*rootQ.w),0,2*(rootQ.x*rootQ.y-rootQ.z*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.z*rootQ.z),2*(rootQ.y*rootQ.z+rootQ.x*rootQ.w),0,2*(rootQ.x*rootQ.z+rootQ.y*rootQ.w),2*(rootQ.y*rootQ.z-rootQ.x*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.y*rootQ.y),0,0,0,0,1};
     glPushMatrix();glTranslatef(root.x,root.y,root.z);glMultMatrixf(matrix);glScalef(pose.scale,pose.scale,pose.scale);if(shadow)glColor4f(0.012f,0.018f,0.022f,0.28f);else glColor4fv(humanModel_.color);glBegin(GL_TRIANGLES);
-    for(std::size_t i=0;i+8<humanVertices_.size();i+=9){const Vec3 a{humanVertices_[i],humanVertices_[i+1],humanVertices_[i+2]},b{humanVertices_[i+3],humanVertices_[i+4],humanVertices_[i+5]},c{humanVertices_[i+6],humanVertices_[i+7],humanVertices_[i+8]},n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);}glEnd();glPopMatrix();
+    const float thinning=humanShellThinningAmount(target.armor,target.brute?4.0f:2.0f,target.slurpable);
+    for(std::size_t i=0;i+8<humanVertices_.size();i+=9){if(humanShellTriangleMissing(i/9,thinning))continue;const Vec3 a{humanVertices_[i],humanVertices_[i+1],humanVertices_[i+2]},b{humanVertices_[i+3],humanVertices_[i+4],humanVertices_[i+5]},c{humanVertices_[i+6],humanVertices_[i+7],humanVertices_[i+8]},n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);}glEnd();glPopMatrix();
 }
 
 void DesktopRenderer::drawSoulFlesh(const TargetState& target,const Vec3& center){
@@ -290,6 +291,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     const auto text=[&](const std::string& value,float x,float y,float scale,float r=1.0f,float g=1.0f,float b=1.0f,float a=0.94f){
         float pen=x;for(char c:value){if(c==' '){pen+=6*scale;continue;}const auto rows=bitmapGlyph(c);for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col)))quad(pen+col*scale,y+row*scale,scale,scale,r,g,b,a);pen+=6*scale;}
     };
+    const auto floatingText=[&](const std::string& value,float x,float y,float scale,float r,float g,float b,float a=0.96f){const float pulse=clampf(state.cinematic.textInteraction,0.0f,1.0f),tracking=pulse*0.9f*std::min(scale,2.0f),wave=0.48f+pulse*0.78f;float pen=x-tracking*std::max(0.0f,(static_cast<float>(value.size())-1.0f)*0.5f);for(std::size_t i=0;i<value.size();++i){const float offset=std::sin(state.time*4.2f+static_cast<float>(i)*0.68f)*wave;const std::string glyph(1,value[i]);text(glyph,pen+2.0f,y+offset+2.0f,scale,0.0f,0.0f,0.0f,0.72f*a);text(glyph,pen,y+offset,scale,r,g,b,a);pen+=6.0f*scale+tracking;}};
 
     glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
@@ -297,29 +299,33 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     glOrtho(0.0,static_cast<double>(width_),static_cast<double>(height_),0.0,-1.0,1.0);
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
 
-    if(state.cinematic.introActive){glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;}
+    if(state.cinematic.introActive){
+        const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));
+        const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f),panelH=250.0f,panelX=(static_cast<float>(width_)-panelW)*0.5f,panelY=(static_cast<float>(height_)-panelH)*0.5f;
+        const std::string status="READY";const float statusScale=3.0f,statusW=status.size()*6*statusScale;
+        floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*alpha);
+        floatingText("ENTER  SOLO",panelX+34,panelY+105,1.55f,0.75f,0.96f,1.0f,alpha);
+        floatingText("H  HOST ONLINE",panelX+34,panelY+132,1.55f,0.75f,0.96f,1.0f,alpha);
+        floatingText("J  JOIN ROOM",panelX+34,panelY+159,1.55f,0.75f,0.96f,1.0f,alpha);
+        glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
+    }
 
     if(!state.started) {
-        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,state.dead?0.44f:0.88f);
         const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f);
         const float panelH=250.0f;
         const float panelX=(static_cast<float>(width_)-panelW)*0.5f;
         const float panelY=(static_cast<float>(height_)-panelH)*0.5f;
-        quad(panelX,panelY,panelW,panelH,0.005f,0.012f,0.016f,0.96f);
-        quad(panelX,panelY,panelW,2,0.50f,0.91f,1.0f,0.95f);
-        quad(panelX,panelY+panelH-2,panelW,2,0.50f,0.91f,1.0f,0.95f);
-        quad(panelX,panelY,2,panelH,0.50f,0.91f,1.0f,0.95f);
-        quad(panelX+panelW-2,panelY,2,panelH,0.50f,0.91f,1.0f,0.95f);
-        const std::string status=state.dead?"BATTERY EMPTY":"READY";
+        const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;
+        const std::string status=state.dead?"AGAIN?":"READY";
         const float statusScale=3.0f,statusW=status.size()*6*statusScale;
-        text(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f);
+        floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*menuAlpha);
         const std::string networkStatus=state.multiplayer.status[0]?state.multiplayer.status.data():"";
         const std::string room=state.multiplayer.roomCode[0]?state.multiplayer.roomCode.data():"";
-        text(state.dead?"ENTER / CLICK  RESTART":"ENTER  SOLO",panelX+34,panelY+105,1.55f,0.75f,0.96f,1.0f);
-        text(state.dead?"ESC  EXIT":"H  HOST ONLINE",panelX+34,panelY+132,1.55f,0.75f,0.96f,1.0f);
-        if(!state.dead)text("J  JOIN ROOM",panelX+34,panelY+159,1.55f,0.75f,0.96f,1.0f);
-        if(!networkStatus.empty())text(networkStatus,panelX+34,panelY+196,1.35f,0.65f,1.0f,0.80f);
-        if(!room.empty())text("CODE "+room,panelX+panelW-190,panelY+196,1.55f,1.0f,1.0f,1.0f);
+        floatingText(state.dead?"ENTER / CLICK  RESTART":"ENTER  SOLO",panelX+34,panelY+105,1.55f,0.75f,0.96f,1.0f,menuAlpha);
+        floatingText(state.dead?"ESC  EXIT":"H  HOST ONLINE",panelX+34,panelY+132,1.55f,0.75f,0.96f,1.0f,menuAlpha);
+        if(!state.dead)floatingText("J  JOIN ROOM",panelX+34,panelY+159,1.55f,0.75f,0.96f,1.0f,menuAlpha);
+        if(!networkStatus.empty())floatingText(networkStatus,panelX+34,panelY+196,1.35f,0.65f,1.0f,0.88f*menuAlpha);
+        if(!room.empty())floatingText("CODE "+room,panelX+panelW-190,panelY+196,1.55f,1.0f,1.0f,menuAlpha);
         glMatrixMode(GL_MODELVIEW); glPopMatrix();
         glMatrixMode(GL_PROJECTION); glPopMatrix();
         glMatrixMode(GL_MODELVIEW);
@@ -441,7 +447,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     if(!state.camera.firstPerson){if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!target.slurpable||target.soulCubeAmount<0.995f){if(humanModel_.valid())drawHumanModel(target,state.time,true);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const Vec3 center=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0};const float cubeSize=0.72f*0.78f*target.scale*target.soulVisual.morphScale;drawBox(center,{cubeSize*target.soulVisual.scale.x,cubeSize*target.soulVisual.scale.y,cubeSize*target.soulVisual.scale.z},0,target.soulVisual.rotationY,0,0.012f,0.018f,0.022f,0.28f);}}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,true);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const Vec3 center=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0};const float cubeSize=0.72f*0.78f*target.scale*target.soulVisual.morphScale;drawBox(center,{cubeSize*target.soulVisual.scale.x,cubeSize*target.soulVisual.scale.y,cubeSize*target.soulVisual.scale.z},0,target.soulVisual.rotationY,0,0.012f,0.018f,0.022f,0.28f);}}
     for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};if(flowerShadowList_)drawStaticModel(flowerShadowList_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));}
     for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0.012f,0.018f,0.022f,0.24f);}
     for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox({c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,0,0,0.012f,0.018f,0.022f,0.20f);}
@@ -479,7 +485,7 @@ void DesktopRenderer::draw(const GameState& state) const {
         const float mirrorShift=p.z-target.pos.z;
         target.tetherAnchor.z+=mirrorShift;target.tetherDestination.z+=mirrorShift;target.latchPoint.z+=mirrorShift;
         target.pos = p;
-        if (!target.slurpable || target.soulCubeAmount < 0.995f) {
+        if (!target.slurpable) {
             if(humanModel_.valid())drawHumanModel(target,state.time);else drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
@@ -520,8 +526,9 @@ void DesktopRenderer::draw(const GameState& state) const {
     }
     for(const auto& particle:state.particles) if(particle.life>0.0f) {
         const float t=particle.maxLife>0.0f?clampf(particle.life/particle.maxLife,0.0f,1.0f):0.0f;
-        const float size=0.08f*t;
-        drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
+        const float size=particle.size*t;
+        if(particle.kind==1)drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,0.16f,0.39f,0.42f,0.82f*t);
+        else drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
     }
     drawDoorDataMosh(state);
     drawHud(state);

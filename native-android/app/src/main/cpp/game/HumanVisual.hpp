@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 #include "Math.hpp"
 
@@ -92,6 +94,20 @@ struct HumanReactionVisual {
 inline float smoothStep01(float x) {
     x = clampf(x, 0.0f, 1.0f);
     return x * x * (3.0f - 2.0f * x);
+}
+
+inline float humanShellThinningAmount(float armor, float armorMax, bool slurpable) {
+    if(slurpable||armorMax<=0.001f)return 0.0f;
+    const float remaining=clampf(armor/armorMax,0.0f,1.0f);
+    return smoothStep01(clampf((0.62f-remaining)/0.62f,0.0f,1.0f))*0.18f;
+}
+
+inline bool humanShellTriangleMissing(std::size_t triangleIndex,float thinningAmount) {
+    std::uint32_t hash=static_cast<std::uint32_t>(triangleIndex)*747796405u+2891336453u;
+    hash=((hash>>((hash>>28u)+4u))^hash)*277803737u;
+    hash=(hash>>22u)^hash;
+    const float sample=static_cast<float>(hash&0x00ffffffu)/16777216.0f;
+    return sample<thinningAmount;
 }
 
 inline HumanReactionVisual makeHumanReactionVisual(

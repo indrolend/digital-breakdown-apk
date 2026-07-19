@@ -7,11 +7,11 @@
 
 namespace {
 const char* cueFile(AudioCue cue) {
-    constexpr std::array<const char*,18> names={{
+    constexpr std::array<const char*,20> names={{
         "vc_ended.mp3","vc_invitation.mp3","connect_power.mp3","low_power.mp3","negative_ack.mp3",
         "received_message.mp3","sent_message.mp3","phone_attack.mp3","payment_success.mp3","payment_failure.mp3",
         "end_call_tone.mp3","slurp_ringtone.mp3","slurp_ringtone.mp3","capture_1.mp3","capture_2.mp3",
-        "capture_3.mp3","capture_4.mp3","capture_5.mp3"
+        "capture_3.mp3","capture_4.mp3","capture_5.mp3","headshot.mp3","headshot_critical.mp3"
     }};
     const int index=static_cast<int>(cue);
     return index>=0&&index<static_cast<int>(names.size())?names[index]:nullptr;

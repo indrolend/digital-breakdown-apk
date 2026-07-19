@@ -84,7 +84,7 @@ public final class NativeBridge {
             R.raw.vc_ended,R.raw.vc_invitation,R.raw.connect_power,R.raw.low_power,R.raw.negative_ack,
             R.raw.received_message,R.raw.sent_message,R.raw.phone_attack,R.raw.payment_success,R.raw.payment_failure,
             R.raw.end_call_tone,R.raw.slurp_ringtone,R.raw.slurp_ringtone,R.raw.capture_1,R.raw.capture_2,
-            R.raw.capture_3,R.raw.capture_4,R.raw.capture_5
+            R.raw.capture_3,R.raw.capture_4,R.raw.capture_5,R.raw.headshot,R.raw.headshot_critical
         }; }
 
     public static synchronized void syncMusic(boolean started, boolean dead) {

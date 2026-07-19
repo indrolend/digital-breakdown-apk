@@ -79,7 +79,8 @@ struct PlayerState {
 enum class AudioCue : unsigned char {
     VcEnded, VcInvitation, ConnectPower, LowPower, NegativeAck, ReceivedMessage,
     SentMessage, PhoneAttack, PaymentSuccess, PaymentFailure, EndCallTone,
-    SlurpRingtoneStart, SlurpRingtoneStop, Capture1, Capture2, Capture3, Capture4, Capture5
+    SlurpRingtoneStart, SlurpRingtoneStop, Capture1, Capture2, Capture3, Capture4, Capture5,
+    Headshot, HeadshotCritical
 };
 
 struct AudioEventState {
@@ -123,6 +124,7 @@ struct CinematicState {
     bool deathActive = false;
     float introElapsed = 0.0f;
     float deathElapsed = 0.0f;
+    float textInteraction = 0.0f;
     float baseYaw = 0.0f;
     Vec3 startCameraPos;
 };
@@ -225,6 +227,8 @@ struct ParticleState {
     Vec3 vel;
     float life = 0.0f;
     float maxLife = 0.0f;
+    float size = 0.08f;
+    unsigned char kind = 0;
 };
 
 struct RoomCollider {
@@ -482,7 +486,7 @@ public:
     GameState& networkMutableState() { return state_; }
 
 private:
-    enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain };
+    enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot };
     GameState state_;
     int simulationPlayerId_ = 0;
 
@@ -508,6 +512,10 @@ private:
     void finishAirLungeLanding(float impactSpeed);
     int applyMeleeHits();
     bool damageSoulShell(int index, float amount);
+    Vec3 targetHeadCenter(const TargetState& target) const;
+    float headshotDamage(const TargetState& target) const;
+    void continueLungeFromHeadshot();
+    void rewardHeadshot(const Vec3& position, bool critical);
     void updateVacuum(float dt);
     void updateCrosshair(float dt);
     void updateSoulLattices();
@@ -521,6 +529,7 @@ private:
     void updateParticles(float dt);
     void spawnParticleBurst(const Vec3& position);
     void spawnFlameBurst(const Vec3& position, float strength);
+    void spawnShellShatter(const TargetState& target);
 
     float batteryDrainMultiplier() const;
     float consumeSupplementalBattery(float cost);
