@@ -350,14 +350,13 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     const float lateral=state.player.vel.x*hudRight.x+state.player.vel.z*hudRight.z,forward=state.player.vel.x*hudForward.x+state.player.vel.z*hudForward.z;
     const float inertiaX=clampf(-lateral*1.35f,-7.0f,7.0f);
     const float inertiaY=clampf(forward*0.75f-state.player.jumpVel*0.12f,-5.0f,5.0f);
-    for(int i=0;i<18;++i) {
+    for(int i=0;i<filledSoulPixels;++i) {
         const float angle=i/18.0f*PI*2.0f,ring=0.38f+((i*7)%10)/26.0f;
         const float sx=34.0f*ring*std::cos(angle)+((i*13)%7-3),sy=14.0f*ring*std::sin(angle)+((i*17)%5-2);
         const float dx=((i*11)%9-4)*0.9f,dy=((i*19)%7-3)*0.8f;
         const float drift=0.5f+0.5f*std::sin(state.time*(1.35f+i%6*0.08f)-i*0.41f);
         const float x=67.0f+sx+dx*drift+inertiaX, y=119.0f+sy+dy*drift+inertiaY;
-        const bool filled=i<filledSoulPixels;
-        quad(x,y,filled?6.0f:5.0f,filled?6.0f:5.0f,filled?0.80f:0.50f,filled?1.0f:0.90f,1.0f,filled?0.92f:0.10f);
+        quad(x,y,6.0f,6.0f,0.80f,1.0f,1.0f,0.92f);
     }
     text("SOULS "+std::to_string(state.hud.storedSouls),20,80,1.2f,0.78f,0.94f,1.0f,0.82f);
 
