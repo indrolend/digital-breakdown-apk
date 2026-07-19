@@ -23,8 +23,12 @@
 #include <vector>
 #include <string>
 #include <cstdlib>
+#include <thread>
 
 namespace {
+constexpr double PRESENTATION_STEP_SECONDS = 1.0 / 60.0;
+constexpr double MAX_FRAME_DELTA_SECONDS = 0.25;
+constexpr int MAX_SIMULATION_STEPS_PER_FRAME = 4;
 constexpr int KEY_W_ANDROID = 51;
 constexpr int KEY_A_ANDROID = 29;
 constexpr int KEY_S_ANDROID = 47;
@@ -363,7 +367,10 @@ int main(int argc, char** argv) {
 
     glfwMakeContextCurrent(window);
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
-    glfwSwapInterval(1);
+    // A software deadline below owns the 60 Hz presentation rate. Disabling
+    // monitor-rate vsync avoids running gameplay at 120/144 Hz or being
+    // double-throttled on displays whose refresh is not an even multiple of 60.
+    glfwSwapInterval(0);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused)host.game.setUiPaused(true);
 
@@ -379,13 +386,24 @@ int main(int argc, char** argv) {
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
     auto previous = std::chrono::steady_clock::now();
+    auto nextPresentation = previous;
+    double simulationAccumulator = 0.0;
     int captureFrames=0;
     while (!glfwWindowShouldClose(window)) {
+        if (!capturePath) {
+            const auto beforePacing = std::chrono::steady_clock::now();
+            if (beforePacing < nextPresentation) std::this_thread::sleep_until(nextPresentation);
+        }
         glfwPollEvents();
 
         const auto now = std::chrono::steady_clock::now();
-        const float dt = std::chrono::duration<float>(now - previous).count();
+        const double elapsed = std::chrono::duration<double>(now - previous).count();
         previous = now;
+        if (!capturePath) {
+            if (now > nextPresentation + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(PRESENTATION_STEP_SECONDS * 4.0))) nextPresentation = now;
+            nextPresentation += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(PRESENTATION_STEP_SECONDS));
+            simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
+        }
 
         const bool vacuumHeld = captureSoul || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         const bool sprintHeld = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
@@ -412,7 +430,17 @@ int main(int argc, char** argv) {
         }
 
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
-        host.game.update(capturePath?1.0f/60.0f:std::min(dt, 0.033f));
+        if (capturePath) {
+            host.game.update(static_cast<float>(PRESENTATION_STEP_SECONDS));
+        } else {
+            int simulationSteps = 0;
+            while (simulationAccumulator >= PRESENTATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
+                host.game.update(static_cast<float>(PRESENTATION_STEP_SECONDS));
+                simulationAccumulator -= PRESENTATION_STEP_SECONDS;
+                ++simulationSteps;
+            }
+            if (simulationSteps == MAX_SIMULATION_STEPS_PER_FRAME && simulationAccumulator >= PRESENTATION_STEP_SECONDS) simulationAccumulator = 0.0;
+        }
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         host.audio.update(host.game.state());
         host.renderer.draw(host.game.state());

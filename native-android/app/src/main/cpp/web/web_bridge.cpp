@@ -1,6 +1,8 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
+#include <algorithm>
+
 #include "../game/Game.hpp"
 #include "../render/Renderer.hpp"
 
@@ -9,6 +11,10 @@ Game gGame;
 Renderer gRenderer;
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE gContext = 0;
 bool gReady = false;
+constexpr float FIXED_STEP_SECONDS = 1.0f / 60.0f;
+constexpr float MAX_FRAME_SECONDS = 0.25f;
+constexpr int MAX_STEPS_PER_FRAME = 4;
+float gAccumulatorSeconds = 0.0f;
 }
 
 extern "C" {
@@ -29,6 +35,7 @@ EMSCRIPTEN_KEEPALIVE int db_init(const char* canvasSelector) {
     if (emscripten_webgl_make_context_current(gContext) != EMSCRIPTEN_RESULT_SUCCESS) return 0;
 
     gGame.reset();
+    gAccumulatorSeconds = 0.0f;
     gRenderer.surfaceCreated();
     gReady = true;
     return 1;
@@ -41,7 +48,14 @@ EMSCRIPTEN_KEEPALIVE void db_resize(int width, int height) {
 
 EMSCRIPTEN_KEEPALIVE void db_frame(float dt) {
     if (!gReady) return;
-    gGame.update(dt);
+    gAccumulatorSeconds += std::min(std::max(dt, 0.0f), MAX_FRAME_SECONDS);
+    int steps = 0;
+    while (gAccumulatorSeconds >= FIXED_STEP_SECONDS && steps < MAX_STEPS_PER_FRAME) {
+        gGame.update(FIXED_STEP_SECONDS);
+        gAccumulatorSeconds -= FIXED_STEP_SECONDS;
+        ++steps;
+    }
+    if (steps == MAX_STEPS_PER_FRAME && gAccumulatorSeconds >= FIXED_STEP_SECONDS) gAccumulatorSeconds = 0.0f;
     gRenderer.draw(gGame.state());
 }
 

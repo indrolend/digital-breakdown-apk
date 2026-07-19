@@ -2,7 +2,9 @@ package com.indrolend.digitalbreakdown;
 
 import android.content.Context;
 import android.opengl.GLSurfaceView;
+import android.os.Build;
 import android.os.SystemClock;
+import android.view.Surface;
 import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -28,7 +30,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private float actionTravel = 0.0f;
 
     private boolean frameLoopRunning = false;
-    private long lastRenderedFrameNanos = 0L;
+    private long nextRenderedFrameNanos = 0L;
 
     public GameView(Context context) {
         super(context);
@@ -55,7 +57,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         super.onResume();
         if (!frameLoopRunning) {
             frameLoopRunning = true;
-            lastRenderedFrameNanos = 0L;
+            nextRenderedFrameNanos = 0L;
             Choreographer.getInstance().postFrameCallback(this);
         }
     }
@@ -70,9 +72,11 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     @Override
     public void doFrame(long frameTimeNanos) {
         if (!frameLoopRunning) return;
-        if (lastRenderedFrameNanos == 0L || frameTimeNanos - lastRenderedFrameNanos >= FRAME_INTERVAL_NANOS) {
-            lastRenderedFrameNanos = frameTimeNanos;
+        if (nextRenderedFrameNanos == 0L) nextRenderedFrameNanos = frameTimeNanos;
+        if (frameTimeNanos >= nextRenderedFrameNanos) {
             requestRender();
+            do { nextRenderedFrameNanos += FRAME_INTERVAL_NANOS; }
+            while (nextRenderedFrameNanos <= frameTimeNanos);
         }
         Choreographer.getInstance().postFrameCallback(this);
     }
@@ -275,10 +279,18 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         return true;
     }
 
-    private static final class NativeRenderer implements GLSurfaceView.Renderer {
+    private void requestSixtyHertzSurface() {
+        final Surface surface = getHolder().getSurface();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && surface != null && surface.isValid()) {
+            surface.setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+        }
+    }
+
+    private final class NativeRenderer implements GLSurfaceView.Renderer {
         @Override
         public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl, javax.microedition.khronos.egl.EGLConfig config) {
             NativeBridge.onSurfaceCreated();
+            post(GameView.this::requestSixtyHertzSurface);
         }
 
         @Override
