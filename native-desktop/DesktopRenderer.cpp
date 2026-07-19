@@ -515,6 +515,10 @@ void DesktopRenderer::draw(const GameState& state) const {
         drawBox({40.4f,2.4f,-3.2f},{7.4f,4.8f,0.12f},0,0,0,0.07f,0.078f,0.082f);
         drawBox({40.4f,2.4f,3.2f},{7.4f,4.8f,0.12f},0,0,0,0.07f,0.078f,0.082f);
         drawBox({42.25f,0.70f,0},{1.75f,1.35f,0.82f},0,-1.5708f,0,0.018f,0.020f,0.021f);
+        float phoneProximity=0.0f;const Vec3 tvPosition{41.82f,0.78f,0};
+        const auto includePhone=[&](const PlayerState& player,bool active){if(!active||!player.inSecretRoom)return;const float distance=length(player.pos-tvPosition);phoneProximity=std::max(phoneProximity,1.0f-clampf(distance/6.0f,0.0f,1.0f));};
+        includePhone(state.player,true);if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)includePhone(peer.player,peer.active);
+        const float fullness=clampf(static_cast<float>(state.secretTv.signal)/24.0f,0.0f,1.0f);
         if(state.secretTv.broken){
             const float staticValue=0.18f+0.16f*std::abs(std::sin(state.time*47.0f+state.secretTv.signal*1.7f));
             drawBox({41.82f,0.78f,0},{0.035f,0.86f,1.22f},0,-1.5708f,0,staticValue,staticValue+0.035f,staticValue+0.045f);
@@ -522,7 +526,10 @@ void DesktopRenderer::draw(const GameState& state) const {
             const float cellY=0.86f/TvGifWall::Rows,cellZ=1.22f/TvGifWall::Columns;
             for(int row=0;row<TvGifWall::Rows;++row)for(int col=0;col<TvGifWall::Columns;++col){
                 const auto color=tvGifWall_.sample(col,row,state.time,state.secretTv.signal);
-                drawBox({41.805f,0.78f-0.43f+cellY*(row+0.5f),-0.61f+cellZ*(col+0.5f)},{0.038f,cellY*1.04f,cellZ*1.04f},0,-1.5708f,0,color.r,color.g,color.b);
+                const float magnetic=phoneProximity*(0.010f+0.018f*(1.0f-fullness)),phase=state.time*5.1f+row*0.83f+col*0.29f;
+                const float yWarp=std::sin(phase)*magnetic,zWarp=std::sin(phase*0.63f+row)*magnetic*1.6f;
+                const float clarity=0.62f+0.38f*fullness,flicker=1.0f-(1.0f-fullness)*phoneProximity*(0.05f+0.05f*std::sin(state.time*17.0f+row));
+                drawBox({41.805f,0.78f-0.43f+cellY*(row+0.5f)+yWarp,-0.61f+cellZ*(col+0.5f)+zWarp},{0.038f,cellY*1.04f,cellZ*1.04f},0,-1.5708f,0,color.r*clarity*flicker,color.g*clarity*flicker,color.b*clarity*flicker);
             }
         }
         drawBox({41.35f,0.18f,-0.80f},{1.8f,0.055f,0.055f},0,0.18f,0,0.025f,0.028f,0.03f);

@@ -3,6 +3,7 @@ package com.indrolend.digitalbreakdown;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.MediaPlayer;
+import android.media.PlaybackParams;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
@@ -29,6 +30,7 @@ public final class NativeBridge {
     private static Equalizer musicEqualizer;
     private static float menuFilterAmount;
     private static float tvRoomMix;
+    private static long tvRoomPitchUpdateNs;
     private static float rewardDuck;
     private static float localMusicLevel = 0.70f;
     private static float localSfxLevel = 0.55f;
@@ -128,13 +130,13 @@ public final class NativeBridge {
             R.raw.reward_woah,R.raw.reward_nice
         }; }
 
-    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush) {
+    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush, float phoneProximity) {
         if (audioContext == null) return;
         if (started && !dead) {
             stopGameOver();
             if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); tvRoomPlayer=createNamedPlayer("tv_room_pad",true,0.0f);initializeMusicEqualizer(); }
             updateMusicFilter(menuFiltered, headshotCrush);
-            rewardDuck=Math.max(0.0f,rewardDuck-0.006f);float duck=1.0f-rewardDuck;tvRoomMix+=((inTvRoom?1.0f:0.0f)-tvRoomMix)*0.035f;if(tvRoomPlayer!=null){float pad=0.48f*localMusicLevel*tvRoomMix*duck;tvRoomPlayer.setVolume(pad,pad);}if(musicPlayer!=null){float base=(0.52f-Math.max(0.0f,Math.min(1.0f,headshotCrush))*0.018f)*localMusicLevel*(1.0f-tvRoomMix)*duck;musicPlayer.setVolume(base,base);}
+            rewardDuck=Math.max(0.0f,rewardDuck-0.006f);float duck=1.0f-rewardDuck;tvRoomMix+=((inTvRoom?1.0f:0.0f)-tvRoomMix)*0.035f;if(tvRoomPlayer!=null){float pad=0.48f*localMusicLevel*tvRoomMix*duck;tvRoomPlayer.setVolume(pad,pad);long now=System.nanoTime();if(now-tvRoomPitchUpdateNs>50000000L){tvRoomPitchUpdateNs=now;float t=now*0.000000001f,p=Math.max(0.0f,Math.min(1.0f,phoneProximity)),pitch=1.0f+p*(-0.012f+(float)Math.sin(t*2.7f)*0.018f+(float)Math.sin(t*0.61f)*0.010f);try{tvRoomPlayer.setPlaybackParams(new PlaybackParams().allowDefaults().setSpeed(1.0f).setPitch(pitch));}catch(Exception ignored){}}}if(musicPlayer!=null){float base=(0.52f-Math.max(0.0f,Math.min(1.0f,headshotCrush))*0.018f)*localMusicLevel*(1.0f-tvRoomMix)*duck;musicPlayer.setVolume(base,base);}
         } else if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; }if(tvRoomPlayer!=null){tvRoomPlayer.stop();tvRoomPlayer.release();tvRoomPlayer=null;}tvRoomMix=0.0f;musicStarted = false; }
         if (dead && !gameOverStarted) { gameOverStarted = true; gameOverPlayer = createNamedPlayer("game_over", false, 0.62f * localMusicLevel); }
         else if (!dead) stopGameOver();
