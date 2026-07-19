@@ -64,6 +64,12 @@ int main() {
     game.restart();
     ok &= expect(game.state().started&&hasAudioCue(game.state(),AudioCue::VcInvitation),
         "START begins a fresh native run and queues the browser invitation cue");
+    step(game);
+    ok &= expect(game.state().cinematic.introActive && horizontalSpeed(game.state().camera.pos-game.state().player.pos)>3.1f,
+        "fresh START begins the short orbiting camera reveal without blocking gameplay");
+    step(game,64);
+    ok &= expect(!game.state().cinematic.introActive && near(horizontalSpeed(game.state().camera.pos-game.state().player.pos),3.0f,0.02f),
+        "intro camera settles into the browser-equivalent three-unit chase boom");
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
@@ -586,6 +592,7 @@ int main() {
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
     step(game);
     const Vec3 deadPosition=game.state().player.pos;
+    const Vec3 deathStartCamera=game.state().camera.pos;
     const float deadTargetPhase=game.state().targets[0].visualWalkPhase;
     ok &= expect(game.state().dead && !game.state().started && !game.state().player.alive &&
         game.state().hud.gameOver && near(game.state().player.battery,0.0f,0.0001f),
@@ -597,6 +604,8 @@ int main() {
     ok &= expect(near(game.state().player.pos.x,deadPosition.x,0.0001f) && near(game.state().player.pos.z,deadPosition.z,0.0001f) &&
         near(game.state().targets[0].visualWalkPhase,deadTargetPhase,0.0001f),
         "dead lifecycle freezes gameplay simulation despite held movement and actions");
+    ok &= expect(game.state().cinematic.deathActive && length(game.state().camera.pos-deathStartCamera)>0.05f,
+        "death presentation keeps the world frozen while the camera begins its slow pullback");
     game.restart();
     ok &= expect(!game.state().dead && game.state().started && game.state().player.alive &&
         near(game.state().player.battery,100.0f,0.0001f) && game.state().roomIndex==1,

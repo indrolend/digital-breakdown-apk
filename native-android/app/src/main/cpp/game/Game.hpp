@@ -118,6 +118,15 @@ struct CameraState {
     Vec3 lookTarget {0.0f, 0.53f, 0.0f};
 };
 
+struct CinematicState {
+    bool introActive = false;
+    bool deathActive = false;
+    float introElapsed = 0.0f;
+    float deathElapsed = 0.0f;
+    float baseYaw = 0.0f;
+    Vec3 startCameraPos;
+};
+
 struct VacuumState {
     bool active = false;
     float power = 0.0f;
@@ -416,6 +425,7 @@ struct GameState {
     bool started = true;
     bool dead = false;
     bool uiPaused = false;
+    CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
     float meleePose = 0.0f;
@@ -472,6 +482,8 @@ private:
     void savePlayerContext(NetworkPeerState& context) const;
     void loadPlayerContext(const NetworkPeerState& context);
     void updateCamera(float dt);
+    void updateIntroCamera(float dt);
+    void updateDeathCamera(float dt);
     void updatePlayer(float dt);
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);

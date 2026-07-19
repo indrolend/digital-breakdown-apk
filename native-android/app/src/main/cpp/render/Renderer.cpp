@@ -400,10 +400,10 @@ void Renderer::drawHud(const GameState& state) {
     const auto text=[&](const std::string& value,float x,float y,float scale,const float color[4]){float pen=x;for(char c:value){if(c==' '){pen+=6*scale;continue;}const auto rows=bitmapGlyph(c);for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col)))quad(pen+col*scale,y+row*scale,scale,scale,color);pen+=6*scale;}};
     const float panel[4]={0.005f,0.012f,0.016f,0.72f}, cyan[4]={0.50f,0.91f,1.0f,0.95f};
     if(!state.started) {
-        const float black[4]={0,0,0,0.88f}; quad(0,0,static_cast<float>(width_),static_cast<float>(height_),black);
+        const float black[4]={0,0,0,state.dead?0.46f:0.88f}; quad(0,0,static_cast<float>(width_),static_cast<float>(height_),black);
         const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
         quad(px,py,pw,ph,panel); quad(px,py,pw,3,cyan); quad(px,py+ph-3,pw,3,cyan); quad(px,py,3,ph,cyan); quad(px+pw-3,py,3,ph,cyan);
-        const float white[4]={0.92f,0.97f,1,0.94f};const std::string status=state.dead?"BATTERY EMPTY":"READY";const float ss=std::max(2.0f,std::min(width_,height_)/240.0f);text(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,white);quad(px+pw*0.32f,py+ph*0.60f,pw*0.36f,38,panel);const float startScale=ss*0.8f;text("START",px+(pw-5*6*startScale)*0.5f,py+ph*0.60f+10,startScale,white);
+        const float white[4]={0.92f,0.97f,1,0.94f};const std::string status=state.dead?"BATTERY EMPTY":"READY";const float ss=std::max(2.0f,std::min(width_,height_)/240.0f);text(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,white);quad(px+pw*0.24f,py+ph*0.60f,pw*0.52f,38,panel);const std::string action=state.dead?"TAP TO RESTART":"START";const float startScale=ss*0.8f;text(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.60f+10,startScale,white);
         glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST); return;
     }
     const int goals=std::max(1,state.hud.requiredGoals); const float gs=22,gap=8,total=goals*gs+(goals-1)*gap,start=(width_-total)*0.5f;

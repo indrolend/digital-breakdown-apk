@@ -297,7 +297,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
 
     if(!state.started) {
-        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,0.88f);
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,state.dead?0.44f:0.88f);
         const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f);
         const float panelH=250.0f;
         const float panelX=(static_cast<float>(width_)-panelW)*0.5f;
@@ -312,9 +312,9 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         text(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f);
         const std::string networkStatus=state.multiplayer.status[0]?state.multiplayer.status.data():"";
         const std::string room=state.multiplayer.roomCode[0]?state.multiplayer.roomCode.data():"";
-        text("ENTER  SOLO",panelX+34,panelY+105,1.55f,0.75f,0.96f,1.0f);
-        text("H  HOST ONLINE",panelX+34,panelY+132,1.55f,0.75f,0.96f,1.0f);
-        text("J  JOIN ROOM",panelX+34,panelY+159,1.55f,0.75f,0.96f,1.0f);
+        text(state.dead?"ENTER / CLICK  RESTART":"ENTER  SOLO",panelX+34,panelY+105,1.55f,0.75f,0.96f,1.0f);
+        text(state.dead?"ESC  EXIT":"H  HOST ONLINE",panelX+34,panelY+132,1.55f,0.75f,0.96f,1.0f);
+        if(!state.dead)text("J  JOIN ROOM",panelX+34,panelY+159,1.55f,0.75f,0.96f,1.0f);
         if(!networkStatus.empty())text(networkStatus,panelX+34,panelY+196,1.35f,0.65f,1.0f,0.80f);
         if(!room.empty())text("CODE "+room,panelX+panelW-190,panelY+196,1.55f,1.0f,1.0f,1.0f);
         glMatrixMode(GL_MODELVIEW); glPopMatrix();

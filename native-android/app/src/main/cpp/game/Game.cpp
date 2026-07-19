@@ -42,6 +42,9 @@ constexpr float PLAYER_SUPPORT_RADIUS = 0.34f;
 constexpr float WALL_CLIMB_RADIUS = 0.34f;
 constexpr float CAMERA_COLLISION_RADIUS = 0.42f;
 constexpr float CAMERA_COLLISION_BACKOFF = 0.16f;
+constexpr float INTRO_CAMERA_DURATION = 1.05f;
+constexpr float DEATH_CAMERA_DURATION = 1.35f;
+constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
 constexpr float VACUUM_MOVE_MULT = 0.35f;
@@ -223,7 +226,12 @@ void Game::reset() {
     emitAudio(AudioCue::VcInvitation,0.58f);
 }
 
-void Game::restart() { reset(); }
+void Game::restart() {
+    reset();
+    state_.cinematic.introActive = true;
+    state_.cinematic.introElapsed = 0.0f;
+    state_.cinematic.baseYaw = state_.camera.yaw;
+}
 
 void Game::prepareStartScreen(){
     reset();
@@ -465,6 +473,12 @@ void Game::triggerRunDeath() {
     if(simulationPlayerId_!=0){state_.player.alive=false;state_.player.battery=0;state_.vacuum=VacuumState{};clearInputState();return;}
     if(state_.dead) return;
     state_.dead=true; state_.started=false; state_.uiPaused=false;
+    state_.cinematic.introActive=false;
+    state_.cinematic.deathActive=true;
+    state_.cinematic.deathElapsed=0.0f;
+    state_.cinematic.baseYaw=state_.camera.yaw;
+    state_.cinematic.startCameraPos=state_.camera.pos;
+    state_.camera.firstPerson=false;
     state_.player.alive=false; state_.player.battery=0.0f; state_.player.vel={}; state_.player.jumpVel=0.0f;
     state_.vacuum=VacuumState{};
     clearActivePowerups();
@@ -636,10 +650,18 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
-    if(state_.dead || !state_.started) {
+    if(state_.dead) {
+        updateDeathCamera(dt);
+        updateParticles(dt*DEATH_PRESENTATION_SCALE);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
-        state_.hud.gameOver=state_.dead;
+        state_.hud.gameOver=true;
+        return;
+    }
+    if(!state_.started) {
+        state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+        state_.hud.lowBattery=state_.player.battery<24.0f;
+        state_.hud.gameOver=false;
         return;
     }
     if(state_.uiPaused){
@@ -686,6 +708,7 @@ void Game::update(float dt) {
     // Pass 7 evaluates vacuum against the prior rendered camera transform, then
     // advances the camera and crosshair for the frame that is about to render.
     updateCamera(dt);
+    updateIntroCamera(dt);
     updateSoulLattices();
     updateCrosshair(dt);
     state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
@@ -1177,6 +1200,42 @@ void Game::updateCamera(float dt) {
     camera.lookTarget = player.pos + aimForward * 10.0f;
     camera.lookTarget.y += 0.45f;
     camera.forward = normalized(camera.lookTarget-camera.pos);
+}
+
+void Game::updateIntroCamera(float dt) {
+    CinematicState& cinematic = state_.cinematic;
+    if (!cinematic.introActive) return;
+    cinematic.introElapsed = std::min(INTRO_CAMERA_DURATION, cinematic.introElapsed + dt);
+    const float linear = clampf(cinematic.introElapsed / INTRO_CAMERA_DURATION, 0.0f, 1.0f);
+    const float t = linear * linear * (3.0f - 2.0f * linear);
+    const float orbitYaw = cinematic.baseYaw + (1.0f - t) * 1.28f;
+    const Vec3 orbitForward{-std::sin(orbitYaw), 0.0f, -std::cos(orbitYaw)};
+    const float distance = 5.15f + (3.0f - 5.15f) * t;
+    const float height = 2.35f + (1.10f - 2.35f) * t;
+    Vec3 desired = state_.player.pos - orbitForward * distance + Vec3{0.0f, height, 0.0f};
+    constrainThirdPersonCamera(desired, state_.player.pos);
+    state_.camera.pos = desired;
+    state_.camera.lookTarget = state_.player.pos + Vec3{0.0f, 0.58f, 0.0f};
+    state_.camera.forward = normalized(state_.camera.lookTarget - state_.camera.pos);
+    if (linear >= 1.0f) {
+        cinematic.introActive = false;
+        updateCamera(0.0f);
+    }
+}
+
+void Game::updateDeathCamera(float dt) {
+    CinematicState& cinematic = state_.cinematic;
+    if (!cinematic.deathActive) return;
+    cinematic.deathElapsed = std::min(DEATH_CAMERA_DURATION, cinematic.deathElapsed + dt);
+    const float linear = clampf(cinematic.deathElapsed / DEATH_CAMERA_DURATION, 0.0f, 1.0f);
+    const float t = linear * linear * (3.0f - 2.0f * linear);
+    const float orbitYaw = cinematic.baseYaw + t * 0.72f;
+    const Vec3 orbitForward{-std::sin(orbitYaw), 0.0f, -std::cos(orbitYaw)};
+    Vec3 desired = state_.player.pos - orbitForward * 5.3f + Vec3{0.0f, 2.15f, 0.0f};
+    constrainThirdPersonCamera(desired, state_.player.pos);
+    state_.camera.pos = cinematic.startCameraPos * (1.0f - t) + desired * t;
+    state_.camera.lookTarget = state_.player.pos + Vec3{0.0f, 0.48f, 0.0f};
+    state_.camera.forward = normalized(state_.camera.lookTarget - state_.camera.pos);
 }
 
 void Game::tryJump() {
