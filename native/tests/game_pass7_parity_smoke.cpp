@@ -617,6 +617,23 @@ int main() {
     }
 
     game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.debug.colliderCount=0;
+        setup.player.pos={2.0f,PHONE_MODEL_HEIGHT*0.5f,-20.90f};setup.player.vel={0,0,-14.0f};setup.player.grounded=true;
+    }
+    step(game);
+    ok &= expect(game.state().player.pos.z>=-21.0f+0.34f-0.001f&&game.state().topology.currentTileIndex==0,
+        "swept doorway collision blocks crossing through the solid side wall");
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.debug.colliderCount=0;
+        setup.player.pos={1.70f,PHONE_MODEL_HEIGHT*0.5f,-20.80f};setup.player.vel={8.0f,0,0};setup.player.grounded=true;
+    }
+    step(game);
+    ok &= expect(game.state().player.pos.x<=2.1f-0.34f+0.001f,
+        "doorway jamb stops lateral capsule motion while the phone occupies the opening");
+
+    game.reset();
     const int firstRoomRequired=game.state().requiredSouls;
     for(int shot=0;shot<firstRoomRequired;++shot){
         GameState& setup=const_cast<GameState&>(game.state());

@@ -561,6 +561,7 @@ private:
     float getPlayerCeilingLimit() const;
     float getPlayerSupportY(float x, float z) const;
     void resolvePlayerObstacleCollisions();
+    void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);
     void updateRoomTopology(float previousZ, float currentZ);
     float getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const;

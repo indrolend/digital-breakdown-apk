@@ -881,6 +881,40 @@ void Game::resolvePlayerObstacleCollisions() {
     }
 }
 
+void Game::resolveDoorwayCollisions(float previousX,float previousZ){
+    PlayerState& player=state_.player;
+    const float radius=PLAYER_COLLISION_RADIUS;
+    const float safeHalfWidth=2.1f-radius;
+    const int previousTile=getRoomTileIndex(previousZ);
+    const int currentTile=getRoomTileIndex(player.pos.z);
+    const bool apertureHeight=player.pos.y>=GROUND_Y-0.12f&&player.pos.y<=3.72f+0.22f;
+    if(previousTile!=currentTile&&(!apertureHeight||std::abs(player.pos.x)>safeHalfWidth)){
+        const float seam=previousTile<currentTile
+            ? getRoomTileOriginZ(previousTile)+ROOM_DEPTH*0.5f
+            : getRoomTileOriginZ(previousTile)-ROOM_DEPTH*0.5f;
+        player.pos.z=seam+(previousTile<currentTile?-radius:radius);
+        if((previousTile<currentTile&&player.vel.z>0.0f)||(previousTile>currentTile&&player.vel.z<0.0f))player.vel.z=0.0f;
+        return;
+    }
+    const float localZ=wrapZ(player.pos.z);
+    const float seamDistance=ROOM_DEPTH*0.5f-std::abs(localZ);
+    if(seamDistance>=radius)return;
+    if(!apertureHeight){
+        const float seamSign=localZ<0.0f?-1.0f:1.0f;
+        player.pos.z=getRoomTileOriginZ(getRoomTileIndex(player.pos.z))+seamSign*(ROOM_DEPTH*0.5f-radius);
+        if((seamSign<0.0f&&player.vel.z<0.0f)||(seamSign>0.0f&&player.vel.z>0.0f))player.vel.z=0.0f;
+        return;
+    }
+    if(std::abs(previousX)<=safeHalfWidth&&std::abs(player.pos.x)>safeHalfWidth){
+        player.pos.x=(player.pos.x<0.0f?-1.0f:1.0f)*safeHalfWidth;
+        if((player.pos.x<0.0f&&player.vel.x<0.0f)||(player.pos.x>0.0f&&player.vel.x>0.0f))player.vel.x=0.0f;
+    }else if(std::abs(player.pos.x)>safeHalfWidth){
+        const float seamSign=localZ<0.0f?-1.0f:1.0f;
+        player.pos.z=getRoomTileOriginZ(getRoomTileIndex(player.pos.z))+seamSign*(ROOM_DEPTH*0.5f-radius);
+        if((seamSign<0.0f&&player.vel.z<0.0f)||(seamSign>0.0f&&player.vel.z>0.0f))player.vel.z=0.0f;
+    }
+}
+
 void Game::applyWallClimb(float dt) {
     PlayerState& p = state_.player;
     InputState& input = state_.input;
@@ -986,6 +1020,7 @@ void Game::updateDoorTransition() {
 void Game::updatePlayer(float dt) {
     PlayerState& p = state_.player;
     InputState& input = state_.input;
+    const float previousX = p.pos.x;
     const float previousZ = p.pos.z;
     if (p.jumpBufferTimer > 0) p.jumpBufferTimer = std::max(0.0f, p.jumpBufferTimer - dt);
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
@@ -1038,6 +1073,7 @@ void Game::updatePlayer(float dt) {
     if (p.grounded && p.jumpBufferTimer > 0) startGroundJump();
     p.pos += p.vel * dt;
     resolvePlayerObstacleCollisions();
+    resolveDoorwayCollisions(previousX,previousZ);
     if(simulationPlayerId_==0) updateRoomTopology(previousZ, p.pos.z);
     if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }
     const float supportAfter = getPlayerSupportY(p.pos.x, p.pos.z);
