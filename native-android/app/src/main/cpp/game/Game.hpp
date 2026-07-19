@@ -310,6 +310,10 @@ struct ProgressionState {
     RunProgressionState run;
 };
 
+struct UpgradeMenuState {
+    bool active = false;
+};
+
 struct DoorTransitionState {
     bool active = false;
     float progress = 0.0f;
@@ -454,6 +458,7 @@ struct GameState {
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
+    UpgradeMenuState upgradeMenu;
     std::array<HumanRespawnRequest, TARGET_COUNT> respawnQueue;
     DoorTransitionState doorTransition;
     PhonePoseState phonePose;
@@ -509,6 +514,8 @@ public:
     void disableNetwork();
     void setNetworkRoom(const char* code, const char* status, bool connected);
     void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);
+    bool chooseTemporaryUpgrade(int track);
+    bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);
     void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons);
     void applyNetworkPeerSnapshot(int playerId, const PlayerState& player, float pitch, float vacuumPower, float vacuumPose, int vacuumTarget, float meleeTimer, float dischargeAmount);

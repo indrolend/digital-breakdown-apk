@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.media.MediaPlayer;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.media.audiofx.Equalizer;
 import android.util.SparseArray;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -22,6 +23,8 @@ public final class NativeBridge {
     private static final SparseArray<Float> pendingSamples = new SparseArray<>();
     private static boolean musicStarted;
     private static boolean gameOverStarted;
+    private static Equalizer musicEqualizer;
+    private static float menuFilterAmount;
     private static MultiplayerClient multiplayerClient;
     private static SharedPreferences progressionPreferences;
 
@@ -99,15 +102,19 @@ public final class NativeBridge {
             R.raw.capture_3,R.raw.capture_4,R.raw.capture_5,R.raw.headshot,R.raw.headshot_critical
         }; }
 
-    public static synchronized void syncMusic(boolean started, boolean dead) {
+    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, float headshotCrush) {
         if (audioContext == null) return;
         if (started && !dead) {
             stopGameOver();
-            if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); }
-        } else if (musicStarted) { if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; } musicStarted = false; }
+            if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); initializeMusicEqualizer(); }
+            updateMusicFilter(menuFiltered, headshotCrush);
+        } else if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; } musicStarted = false; }
         if (dead && !gameOverStarted) { gameOverStarted = true; gameOverPlayer = createNamedPlayer("game_over", false, 0.62f); }
         else if (!dead) stopGameOver();
     }
+    private static void initializeMusicEqualizer() { try { if(musicPlayer==null)return;musicEqualizer=new Equalizer(0,musicPlayer.getAudioSessionId());musicEqualizer.setEnabled(true); } catch(Exception ignored){musicEqualizer=null;} }
+    private static void updateMusicFilter(boolean filtered, float headshotCrush) { if(musicEqualizer==null)return;menuFilterAmount+=((filtered?1.0f:0.0f)-menuFilterAmount)*0.085f;float crush=Math.max(0.0f,Math.min(1.0f,headshotCrush));float step=(System.nanoTime()/16000000L)%3L==0L?1.0f:0.0f;try{short bands=musicEqualizer.getNumberOfBands();short minimum=musicEqualizer.getBandLevelRange()[0];for(short band=0;band<bands;++band){float high=bands<=1?1.0f:(float)band/(float)(bands-1);float shaped=high*high;float attenuation=menuFilterAmount*shaped+crush*step*0.08f*high;musicEqualizer.setBandLevel(band,(short)(minimum*Math.min(1.0f,attenuation)));}if(musicPlayer!=null){float volume=0.52f-crush*(0.010f+step*0.018f);musicPlayer.setVolume(volume,volume);}}catch(Exception ignored){} }
+    private static void releaseMusicEqualizer(){if(musicEqualizer!=null){try{musicEqualizer.setEnabled(false);musicEqualizer.release();}catch(Exception ignored){}musicEqualizer=null;}menuFilterAmount=0.0f;}
     private static MediaPlayer createNamedPlayer(String name, boolean loop, float volume) {
         int resource = audioContext.getResources().getIdentifier(name, "raw", audioContext.getPackageName());
         if (resource == 0) return null;
@@ -140,6 +147,8 @@ public final class NativeBridge {
     );
     public static native void onKey(int keyCode, boolean down);
     public static native boolean isIntroActive();
+    public static native int getMenuMode();
+    public static native void chooseUpgrade(int track, boolean permanent);
     public static native void startSolo();
     public static native void configureNetwork(boolean host, int playerId, String roomCode, String status);
     public static native void onNetworkControl(String json);

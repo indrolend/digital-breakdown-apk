@@ -109,6 +109,12 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
 
+    if(action==GLFW_PRESS&&host->game.state().upgradeMenu.active){
+        if(key>=GLFW_KEY_1&&key<=GLFW_KEY_3)host->game.chooseTemporaryUpgrade(key-GLFW_KEY_1);
+        else if(key>=GLFW_KEY_4&&key<=GLFW_KEY_6)host->game.purchasePermanentUpgrade(key-GLFW_KEY_4);
+        return;
+    }
+
     if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
         if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();return;}
         if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}

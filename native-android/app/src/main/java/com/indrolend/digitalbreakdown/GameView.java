@@ -123,6 +123,17 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
 
+        if (NativeBridge.getMenuMode() == 1) {
+            clearTouchState();
+            if (action == MotionEvent.ACTION_DOWN) {
+                final float panelWidth = Math.min(620.0f, viewWidth - 24.0f);
+                final float panelX = (viewWidth - panelWidth) * 0.5f;
+                final int track = Math.max(0, Math.min(2, (int)((x - panelX) / (panelWidth / 3.0f))));
+                NativeBridge.chooseUpgrade(track, y > viewHeight * 0.5f);
+            }
+            return true;
+        }
+
         boolean jumpPressed = false;
         boolean meleePressed = false;
         boolean shootPressed = false;

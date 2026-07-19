@@ -278,8 +278,27 @@ void Game::prepareStartScreen(){
 
 void Game::setUiPaused(bool paused){
     if(!state_.started||state_.dead)return;
+    if(state_.upgradeMenu.active&&!paused)return;
     state_.uiPaused=paused;
     clearInputState();
+}
+
+bool Game::chooseTemporaryUpgrade(int track){
+    if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    auto& level=state_.progression.run.temporaryLevels[track];
+    level=std::min(12,level+1);
+    state_.upgradeMenu.active=false;
+    state_.uiPaused=false;
+    clearInputState();
+    return true;
+}
+
+bool Game::purchasePermanentUpgrade(int track){
+    if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    auto& permanent=state_.progression.permanent;
+    if(permanent.tokens<=0||permanent.levels[track]>=5)return false;
+    --permanent.tokens;++permanent.levels[track];++permanent.revision;
+    return true;
 }
 
 float Game::batteryDrainMultiplier() const {
@@ -1046,6 +1065,9 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         buildRoomColliders();
         for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};
         for(int i=0;i<TARGET_COUNT;++i){if(i<activeHumanTarget()) respawnTarget(i); else state_.targets[i]=TargetState{};}
+        state_.upgradeMenu.active=true;
+        state_.uiPaused=true;
+        clearInputState();
     } else if(!state_.roomClear) {
         chargeClosedDoorLoop();
     }
@@ -1080,8 +1102,10 @@ void Game::awardGoalToken(CapturePointState& capture) {
 }
 
 int Game::activeHumanTarget() const {
+    int activePlayers=1;
+    if(state_.multiplayer.authoritativeHost)for(int id=1;id<NETWORK_PLAYER_COUNT;++id)if(state_.multiplayer.peers[id].active)++activePlayers;
     return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,
-        ACTIVE_HUMAN_TARGET+std::max(0,state_.roomIndex-1)+state_.runRules.crowdedRoomStacks));
+        ACTIVE_HUMAN_TARGET+std::max(0,state_.roomIndex-1)+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2));
 }
 
 void Game::advanceRunRulesForRoom() {
@@ -1533,11 +1557,13 @@ void Game::triggerMelee() {
     const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
     if (!spendBattery(combo.cost,BatteryReason::Melee)) return;
     state_.meleeComboWindow = MELEE_COMBO_WINDOW;
-    state_.meleeCooldown = combo.cooldown; state_.meleePose = 1.0f;
+    const int lungeLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Lunge)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Lunge)];
+    state_.meleeCooldown = combo.cooldown/(1.0f+0.045f*static_cast<float>(lungeLevel)); state_.meleePose = 1.0f;
     MeleeVisualState& visual = state_.meleeVisual;
-    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage;
-    visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
     const bool airborne=!state_.player.grounded;
+    const int attackLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Attack)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Attack)];
+    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel));
+    visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
     visual.locomotionLunge=airborne;
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
     visual.airLungePending=airborne;visual.airLungeLandingPending=airborne;
@@ -2278,10 +2304,12 @@ void Game::updateBullets(float dt) {
             const bool headshot=pointSegmentDistanceSq(headCenter,previous,b.pos)<=headRadius*headRadius;
             const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
             if(!bodyHit&&!headshot)continue;
-            if(!damageSoulShell(i,headshot?headshotDamage(target):(b.brute?1.65f:0.9f))) continue;
+            const int shotLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Shot)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Shot)];
+            const float shotDamage=(b.brute?1.65f:0.9f)*(1.0f+0.07f*static_cast<float>(shotLevel));
+            if(!damageSoulShell(i,headshot?headshotDamage(target):shotDamage)) continue;
             if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
             if(headshot){const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION);}
-            target.vel+=b.vel*0.08f;
+            target.vel+=b.vel*(0.08f+0.004f*static_cast<float>(shotLevel));
             target.vel.y=std::max(target.vel.y,1.0f);
             b.alive=false;
         }

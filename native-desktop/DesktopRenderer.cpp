@@ -402,7 +402,14 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     center=rotateCenter(-spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
     center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
 
-    if(state.uiPaused){
+    if(state.upgradeMenu.active){
+        const float pw=std::min(620.0f,static_cast<float>(width_)-24.0f),ph=250.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
+        quad(px,py,pw,ph,0,0,0,0.88f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text("CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
+        text("1 SHOT",px+26,py+82,1.5f);text("2 LUNGE",px+220,py+82,1.5f);text("3 ATTACK",px+420,py+82,1.5f);
+        text("PERMANENT SHOP  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+136,1.2f,0.82f,1.0f,0.91f);
+        text("4 SHOT "+std::to_string(state.progression.permanent.levels[0])+"/5",px+26,py+174,1.25f);text("5 LUNGE "+std::to_string(state.progression.permanent.levels[1])+"/5",px+220,py+174,1.25f);text("6 ATTACK "+std::to_string(state.progression.permanent.levels[2])+"/5",px+420,py+174,1.25f);
+        text("PERMANENT COST: 1 TOKEN",px+18,py+218,1.1f,0.72f,0.90f,1.0f);
+    } else if(state.uiPaused){
         const float pw=320.0f,ph=230.0f,px=static_cast<float>(width_)-pw-12.0f,py=48.0f;
         quad(px,py,pw,ph,0,0,0,0.82f);quad(px,py,pw,1,1,1,1,0.55f);quad(px,py+ph-1,pw,1,1,1,1,0.55f);quad(px,py,1,ph,1,1,1,0.55f);quad(px+pw-1,py,1,ph,1,1,1,0.55f);
         text("PAUSED",px+12,py+12,2.0f);text("CLICK OR TAB TO RESUME",px+12,py+36,1.25f,0.75f,0.94f,1.0f);

@@ -237,6 +237,7 @@ int main() {
         "phone-attack audio is emitted by confirmed melee contact");
 
     game.reset();
+    game.setPersistentProgression(0,0,0,0);
     {
         GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets) target.alive=false;
@@ -739,7 +740,14 @@ int main() {
             "required-slot run rules rebuild the following room goal inventory");
         ok &= expect(state.doorTransition.active && state.doorTransition.progress>0.75f,
             "open-door crossing starts the browser distance-owned datamosh transition state");
+        ok &= expect(state.upgradeMenu.active&&state.uiPaused,
+            "room advancement enters one bounded upgrade choice beat before the next round");
     }
+    const auto tokensBeforeShop=game.state().progression.permanent.tokens;
+    ok &= expect(game.purchasePermanentUpgrade(static_cast<int>(UpgradeTrack::Shot))&&game.state().progression.permanent.tokens==tokensBeforeShop-1&&game.state().progression.permanent.levels[0]==1,
+        "the inter-round permanent shop converts exactly one earned goal token into one level");
+    ok &= expect(game.chooseTemporaryUpgrade(static_cast<int>(UpgradeTrack::Lunge))&&!game.state().upgradeMenu.active&&!game.state().uiPaused&&game.state().progression.run.temporaryLevels[1]==1,
+        "choosing one free run upgrade smoothly resumes the next room");
     {
         const_cast<GameState&>(game.state()).player.vel={};
         const float heldProgress=game.state().doorTransition.progress;
@@ -772,6 +780,7 @@ int main() {
         "recent shell damage pauses regeneration so rhythmic headshot guarantees remain stable");
 
     game.reset();
+    game.setPersistentProgression(0,0,0,0);
     {
         GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets) target.alive=false;

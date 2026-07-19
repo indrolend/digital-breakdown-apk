@@ -28,12 +28,16 @@ struct DesktopAudio::Impl {
     Voice gameOver;
     bool musicActive=false;
     bool deadPrevious=false;
+    ma_lpf_node menuFilter{};
+    bool menuFilterInitialized=false;
+    double menuCutoff=20000.0;
 };
 
 DesktopAudio::DesktopAudio():impl_(std::make_unique<Impl>()) {
     impl_->initialized=ma_engine_init(nullptr,&impl_->engine)==MA_SUCCESS;
+    if(impl_->initialized){const auto config=ma_lpf_node_config_init(ma_engine_get_channels(&impl_->engine),ma_engine_get_sample_rate(&impl_->engine),impl_->menuCutoff,2);impl_->menuFilterInitialized=ma_lpf_node_init(ma_engine_get_node_graph(&impl_->engine),&config,nullptr,&impl_->menuFilter)==MA_SUCCESS;if(impl_->menuFilterInitialized)ma_node_attach_output_bus(&impl_->menuFilter,0,ma_engine_get_endpoint(&impl_->engine),0);}
 }
-DesktopAudio::~DesktopAudio(){stopAll();if(impl_&&impl_->initialized)ma_engine_uninit(&impl_->engine);}
+DesktopAudio::~DesktopAudio(){stopAll();if(impl_&&impl_->menuFilterInitialized)ma_lpf_node_uninit(&impl_->menuFilter,nullptr);if(impl_&&impl_->initialized)ma_engine_uninit(&impl_->engine);}
 
 namespace {
 void stopVoice(DesktopAudio::Impl::Voice& voice){if(!voice.initialized)return;ma_sound_stop(&voice.sound);ma_sound_uninit(&voice.sound);voice.initialized=false;}
@@ -58,11 +62,13 @@ void DesktopAudio::play(const AudioEventState& event) {
 void DesktopAudio::update(const GameState& state) {
     if(impl_&&impl_->initialized&&!root_.empty()){
         const bool shouldPlayMusic=state.started&&!state.dead;
-        if(shouldPlayMusic&&!impl_->musicActive){stopVoice(impl_->gameOver);startVoice(*impl_,impl_->music,root_/"game_music.mp3",0.52f,true);impl_->musicActive=true;}
+        if(shouldPlayMusic&&!impl_->musicActive){stopVoice(impl_->gameOver);startVoice(*impl_,impl_->music,root_/"game_music.mp3",0.52f,true);if(impl_->music.initialized&&impl_->menuFilterInitialized)ma_node_attach_output_bus(&impl_->music.sound,0,&impl_->menuFilter,0);impl_->musicActive=true;}
         else if(!shouldPlayMusic&&impl_->musicActive){stopVoice(impl_->music);impl_->musicActive=false;}
         if(state.dead&&!impl_->deadPrevious){stopVoice(impl_->music);impl_->musicActive=false;startVoice(*impl_,impl_->gameOver,root_/"game_over.mp3",0.62f,false);}
         else if(!state.dead&&impl_->deadPrevious)stopVoice(impl_->gameOver);
         impl_->deadPrevious=state.dead;
+        if(impl_->menuFilterInitialized&&impl_->musicActive){const double target=(state.uiPaused||state.upgradeMenu.active)?900.0:20000.0;impl_->menuCutoff+=(target-impl_->menuCutoff)*0.085;const auto filter=ma_lpf_config_init(ma_format_f32,ma_engine_get_channels(&impl_->engine),ma_engine_get_sample_rate(&impl_->engine),impl_->menuCutoff,2);ma_lpf_node_reinit(&filter,&impl_->menuFilter);}
+        if(impl_->musicActive&&impl_->music.initialized){const float crush=clampf(state.hud.headshotPulse+state.hud.perfectPulse*0.22f,0.0f,1.0f);const float step=(state.frame%3)==0?1.0f:0.0f;ma_sound_set_volume(&impl_->music.sound,0.52f-crush*(0.010f+step*0.018f));ma_sound_set_pitch(&impl_->music.sound,1.0f-crush*step*0.006f);}
     }
     const unsigned int newest=state.audio.nextSerial>0?state.audio.nextSerial-1:0;
     const unsigned int first=std::max(lastSerial_+1,newest>=AUDIO_EVENT_COUNT?newest-AUDIO_EVENT_COUNT+1:1u);
