@@ -123,6 +123,11 @@ constexpr float HEADSHOT_BATTERY_GAIN = 18.0f;
 constexpr float LUNGE_HEAD_CONTACT_RADIUS = 0.28f;
 constexpr float BULLET_HEAD_CONTACT_RADIUS = 0.18f;
 constexpr float HEADSHOT_CRITICAL_ARMOR_FRACTION = 0.60f;
+constexpr float HEADSHOT_BEAT_SECONDS = 60.0f / 130.0f;
+constexpr float HEADSHOT_PERFECT_WINDOW = 0.055f;
+constexpr float ACCURACY_STACK_BONUS = 0.08f;
+constexpr int ACCURACY_STACK_CAP = 15;
+constexpr float ACCURACY_CHAIN_TIMEOUT = 3.2f;
 constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
@@ -157,6 +162,8 @@ constexpr int ACTIVE_HUMAN_TARGET = 5;
 constexpr int ACTIVE_HUMAN_TARGET_CAP = 20;
 constexpr float HUMAN_RESPAWN_DELAY_MIN = 1.45f;
 constexpr float HUMAN_RESPAWN_DELAY_MAX = 2.35f;
+constexpr float ENEMY_ARMOR_REGEN_DELAY = 2.40f;
+constexpr float ROOM_HEAT_SECONDS = 90.0f;
 constexpr float DOOR_DATAMOSH_DISTANCE = 3.0f;
 constexpr float DOOR_DATAMOSH_MIN_STRENGTH = 0.018f;
 
@@ -232,7 +239,9 @@ void syncSoulVisual(TargetState& target, float time) {
 }
 
 void Game::reset() {
+    const PermanentProgressionState permanent=state_.progression.permanent;
     state_ = GameState{};
+    state_.progression.permanent=permanent;
     resetRoom();
     state_.started=true;
     state_.dead=false;
@@ -246,6 +255,15 @@ void Game::restart() {
     state_.cinematic.introElapsed = 0.0f;
     state_.cinematic.baseYaw = state_.camera.yaw;
     state_.cinematic.textInteraction = 1.0f;
+}
+
+void Game::setPersistentProgression(std::int64_t tokens,int shotLevel,int lungeLevel,int attackLevel){
+    auto& permanent=state_.progression.permanent;
+    permanent.tokens=std::max<std::int64_t>(0,tokens);
+    permanent.levels[static_cast<int>(UpgradeTrack::Shot)]=std::max(0,std::min(5,shotLevel));
+    permanent.levels[static_cast<int>(UpgradeTrack::Lunge)]=std::max(0,std::min(5,lungeLevel));
+    permanent.levels[static_cast<int>(UpgradeTrack::Attack)]=std::max(0,std::min(5,attackLevel));
+    permanent.revision=1;
 }
 
 void Game::prepareStartScreen(){
@@ -418,7 +436,7 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
     const float remaining = consumeSupplementalBattery(std::max(0.0f, amount) * batteryDrainMultiplier());
     player.battery = clampf(player.battery - remaining, 0.0f, 100.0f);
     if(reason!=BatteryReason::Continuous){
-        const char* label=reason==BatteryReason::Melee?"MELEE":reason==BatteryReason::Shoot?"SHOOT":reason==BatteryReason::Hit?"HIT":reason==BatteryReason::Climb?"CLIMB":"JUMP";char message[48]{};
+        const char* label=reason==BatteryReason::Melee?"MELEE":reason==BatteryReason::Shoot?"SHOOT":reason==BatteryReason::Hit?"HIT":reason==BatteryReason::Climb?"CLIMB":reason==BatteryReason::Loop?"LOOP":"JUMP";char message[48]{};
         const float spent=before-player.battery;if(spent>0.001f)std::snprintf(message,sizeof(message),"-%.1F %s",spent,label);else std::snprintf(message,sizeof(message),"FLOWER %s",label);setEnergyTicker(message,spent>0.001f?1:0);
     }
     updateBatteryAudio(before);
@@ -490,6 +508,7 @@ void Game::registerMeleeBatteryHit(int hitCount) {
 
 void Game::updateBattery(float dt) {
     if (!state_.player.alive) return;
+    state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
     EnergyState& energy = state_.energy;
     if (energy.comboHits > 0 && state_.time - energy.lastComboHitTime > BATTERY_COMBO_TIMEOUT) {
         energy.comboHits = 0;
@@ -509,7 +528,7 @@ void Game::updateBattery(float dt) {
     if (state_.vacuum.active) { drain += BATTERY_VACUUM_DRAIN * std::max(0.35f, state_.vacuum.power); active = true; }
     if (state_.meleeVisual.visualTimer > 0.0f || energy.dischargeTimer > 0.0f) active = true;
     if (drain > 0.0f) spendBattery(drain * dt);
-    else gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * dt);
+    else if(state_.progression.run.batteryRegenLock<=0.0f) gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * dt);
 }
 
 void Game::triggerRunDeath() {
@@ -743,6 +762,13 @@ void Game::update(float dt) {
         updateSoulLattices();
         updateCrosshair(dt);
         return;
+    }
+    state_.hud.headshotPulse=std::max(0.0f,state_.hud.headshotPulse-dt*5.5f);
+    state_.hud.perfectPulse=std::max(0.0f,state_.hud.perfectPulse-dt*3.8f);
+    auto& runProgression=state_.progression.run;
+    if(runProgression.accuracyStacks>0){
+        runProgression.accuracyDecayTimer=std::max(0.0f,runProgression.accuracyDecayTimer-dt);
+        if(runProgression.accuracyDecayTimer<=0.0f){runProgression.accuracyStacks=0;runProgression.accuracyMultiplier=1.0f;}
     }
     if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
     updateInputActions(dt);
@@ -1010,6 +1036,9 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.player.storedSoulBrute.fill(false);
         state_.requiredSouls=std::min(9,5+state_.runRules.requiredSlotStacks);
         state_.depositedSouls=0;
+        state_.progression.run.roomHeat=0.0f;
+        state_.progression.run.roomElapsed=0.0f;
+        state_.progression.run.roomCaptures=0;
         const float startX=-((static_cast<float>(state_.requiredSouls)-1.0f)*0.82f)*0.5f;
         for(int i=0;i<CAPTURE_COUNT;++i){state_.captures[i]=CapturePointState{}; state_.captures[i].pos={startX+static_cast<float>(i)*0.82f,3.05f,ROOM_GRID_Z};}
         for(auto& bullet:state_.bullets) bullet=BulletState{};
@@ -1017,7 +1046,37 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         buildRoomColliders();
         for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};
         for(int i=0;i<TARGET_COUNT;++i){if(i<activeHumanTarget()) respawnTarget(i); else state_.targets[i]=TargetState{};}
+    } else if(!state_.roomClear) {
+        chargeClosedDoorLoop();
     }
+}
+
+void Game::chargeClosedDoorLoop() {
+    constexpr float LOW_BATTERY_THRESHOLD=24.0f;
+    constexpr float LOOP_BATTERY_COST=16.0f;
+    constexpr float LOOP_REGEN_LOCK=1.25f;
+    auto& permanent=state_.progression.permanent;
+    if(state_.player.battery>LOW_BATTERY_THRESHOLD){
+        state_.progression.run.batteryRegenLock=std::max(state_.progression.run.batteryRegenLock,LOOP_REGEN_LOCK);
+        spendBattery(LOOP_BATTERY_COST,BatteryReason::Loop);
+        return;
+    }
+    if(permanent.tokens>0){
+        --permanent.tokens;
+        ++permanent.revision;
+        setEnergyTicker("EMERGENCY LOOP -1 TOKEN",1);
+        return;
+    }
+    setEnergyTicker("LOOP FAILURE / BATTERY EMPTY",1);
+    spendBattery(state_.player.battery,BatteryReason::Loop);
+}
+
+void Game::awardGoalToken(CapturePointState& capture) {
+    if(capture.tokenAwarded)return;
+    capture.tokenAwarded=true;
+    ++state_.progression.permanent.tokens;
+    ++state_.progression.permanent.revision;
+    setEnergyTicker("GOAL +1 TOKEN",2);
 }
 
 int Game::activeHumanTarget() const {
@@ -1515,6 +1574,7 @@ int Game::applyMeleeHits() {
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
         damageSoulShell(i,headshot?headshotDamage(t):visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f)));
+        if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
         if(headshot){const float armorMax=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;headshotPositions[headshots]=headCenter;headshotCritical[headshots]=t.slurpable||t.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION;++headshots;}
         spawnFlameBurst(t.pos+Vec3{0,0.65f,0},newHits>0?0.95f+static_cast<float>(newHits+1)*0.18f:0.55f);
         visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
@@ -1548,7 +1608,19 @@ void Game::continueLungeFromHeadshot() {
 }
 
 void Game::rewardHeadshot(const Vec3& position, bool critical) {
-    gainBattery(HEADSHOT_BATTERY_GAIN,BatteryReason::Headshot);
+    auto& run=state_.progression.run;
+    run.accuracyStacks=std::min(ACCURACY_STACK_CAP,run.accuracyStacks+1);
+    run.accuracyMultiplier=1.0f+static_cast<float>(run.accuracyStacks)*ACCURACY_STACK_BONUS;
+    run.accuracyDecayTimer=ACCURACY_CHAIN_TIMEOUT;
+    const float beatPhase=std::fmod(std::max(0.0f,state_.time),HEADSHOT_BEAT_SECONDS);
+    const float beatDistance=std::min(beatPhase,HEADSHOT_BEAT_SECONDS-beatPhase);
+    const bool perfect=beatDistance<=HEADSHOT_PERFECT_WINDOW;
+    gainBattery(HEADSHOT_BATTERY_GAIN*run.accuracyMultiplier*(perfect?1.20f:1.0f),BatteryReason::Headshot);
+    char ticker[48]{};
+    std::snprintf(ticker,sizeof(ticker),perfect?"PERFECT HEADSHOT X%.2F":"HEADSHOT CHAIN X%.2F",run.accuracyMultiplier);
+    setEnergyTicker(ticker,2);
+    state_.hud.headshotPulse=1.0f;
+    if(perfect)state_.hud.perfectPulse=1.0f;
     spawnFlameBurst(position,1.35f);
     spawnParticleBurst(position);
     emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.62f:0.50f);
@@ -1560,6 +1632,7 @@ bool Game::damageSoulShell(int index, float amount) {
     if(!t.alive || t.captureQueued || t.captureCommitted) return false;
     if(!t.slurpable) {
         t.armor-=amount;
+        t.armorRegenDelay=ENEMY_ARMOR_REGEN_DELAY;
         t.hitFlash=1.0f;
         if(t.armor<=0.0f) {
             t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
@@ -1706,6 +1779,8 @@ void Game::captureSoul(int index) {
     const Vec3 capturedAt=t.pos;
     state_.player.storedSoulBrute[state_.player.souls]=t.brute;
     state_.player.souls++;
+    ++state_.progression.run.roomCaptures;
+    state_.progression.run.roomHeat=clampf(state_.progression.run.roomHeat+0.045f,0.0f,1.0f);
     gainBattery(BATTERY_CAPTURE_GAIN,BatteryReason::Ingest);
     feedSupplementalBattery(FLOWER_SLURP_FEED);
     emitAudio(AudioCue::ReceivedMessage,0.58f);
@@ -1718,13 +1793,19 @@ void Game::queueHumanRespawn(const Vec3& avoid) {
     if(state_.roomClear) return;
     for(auto& request:state_.respawnQueue) if(!request.active) {
         request.active=true; request.avoid=avoid;
-        request.delay=lerpf(HUMAN_RESPAWN_DELAY_MIN,HUMAN_RESPAWN_DELAY_MAX,nextFlowerRandom());
+        const float roomScale=1.0f+0.16f*std::log2(1.0f+static_cast<float>(std::max(0,state_.roomIndex-1)));
+        const float heatScale=1.0f+state_.progression.run.roomHeat*1.35f;
+        request.delay=lerpf(HUMAN_RESPAWN_DELAY_MIN,HUMAN_RESPAWN_DELAY_MAX,nextFlowerRandom())/std::min(4.0f,roomScale*heatScale);
         return;
     }
 }
 
 void Game::updateRoomPopulation(float dt) {
     if(state_.roomClear){for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{}; return;}
+    state_.progression.run.roomElapsed+=dt;
+    const float timeHeat=clampf(state_.progression.run.roomElapsed/ROOM_HEAT_SECONDS,0.0f,1.0f);
+    const float captureHeat=clampf(static_cast<float>(state_.progression.run.roomCaptures)*0.045f,0.0f,0.55f);
+    state_.progression.run.roomHeat=std::max(state_.progression.run.roomHeat,clampf(timeHeat+captureHeat,0.0f,1.0f));
     for(auto& request:state_.respawnQueue) if(request.active) request.delay-=dt;
     int active=0;
     for(const auto& target:state_.targets) if(target.alive && !target.slurpable && target.soulState==SoulState::Free) ++active;
@@ -1823,6 +1904,15 @@ void Game::updateTargets(float dt) {
             t.locomotionAmount = 0.0f;
         } else {
             t.soulMorph = 0.0f;
+            t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
+            if(t.armorRegenDelay<=0.0f){
+                const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+                if(t.armor<fullArmor){
+                    const float roomScale=std::log2(1.0f+static_cast<float>(std::max(0,state_.roomIndex)));
+                    const float regenPerSecond=std::min(0.50f,0.035f+roomScale*0.018f+state_.progression.run.roomHeat*0.16f);
+                    t.armor=std::min(fullArmor,t.armor+regenPerSecond*dt);
+                }
+            }
             const float currentTileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
             const float targetTileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
             if(std::abs(currentTileOrigin-targetTileOrigin)>0.001f){const float shift=currentTileOrigin-targetTileOrigin; t.pos.z+=shift; t.walkTarget.z+=shift;}
@@ -2158,7 +2248,7 @@ void Game::updateBullets(float dt) {
                 }
                 if(!sphereHit && !wallHit) continue;
                 int filledSlot=0;
-                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; ++state_.depositedSouls; filledSlot=fill; break;}
+                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
                 emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);
                 spawnParticleBurst(b.pos);
                 spawnParticleBurst(goal);
@@ -2189,6 +2279,7 @@ void Game::updateBullets(float dt) {
             const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
             if(!bodyHit&&!headshot)continue;
             if(!damageSoulShell(i,headshot?headshotDamage(target):(b.brute?1.65f:0.9f))) continue;
+            if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
             if(headshot){const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION);}
             target.vel+=b.vel*0.08f;
             target.vel.y=std::max(target.vel.y,1.0f);

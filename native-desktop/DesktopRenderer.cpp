@@ -369,6 +369,9 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     text("ROOM: "+std::to_string(state.roomIndex),12,170,1.5f);
     text("GOALS: "+std::to_string(state.hud.filledGoals)+"/"+std::to_string(state.hud.requiredGoals),12,187,1.5f);
     text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?0.72f:1.0f,1.0f,state.roomClear?0.74f:1.0f);
+    text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,0.82f,1.0f,0.91f);
+    if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,0.72f,1.0f,0.86f);}
+    if(state.hud.headshotPulse>0.001f){const float a=state.hud.headshotPulse*0.36f,p=state.hud.perfectPulse,w=static_cast<float>(width_),h=static_cast<float>(height_);quad(0,0,w,2+p*2,0.55f+p*0.45f,0.92f,1.0f,a);quad(0,h-2-p*2,w,2+p*2,0.55f+p*0.45f,0.92f,1.0f,a);quad(0,0,2+p*2,h,0.55f+p*0.45f,0.92f,1.0f,a);quad(w-2-p*2,0,2+p*2,h,0.55f+p*0.45f,0.92f,1.0f,a);}
 
     // Battery display remains visible while vacuuming without a target; target lock is separate.
     quad(12,236,148,30,0.005f,0.012f,0.016f,0.68f);

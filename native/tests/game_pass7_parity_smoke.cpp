@@ -42,6 +42,11 @@ int countAudioCue(const GameState& state,AudioCue cue){int count=0;for(const aut
 
 int main() {
     bool ok = true;
+    Game progressionFixture;progressionFixture.setPersistentProgression(17,2,3,9);progressionFixture.reset();
+    ok &= expect(progressionFixture.state().progression.permanent.tokens==17&&progressionFixture.state().progression.permanent.levels[0]==2&&progressionFixture.state().progression.permanent.levels[1]==3&&progressionFixture.state().progression.permanent.levels[2]==5,
+        "versioned permanent progression survives run reset and clamps upgrade tracks safely");
+    ok &= expect(progressionFixture.state().progression.run.temporaryLevels==std::array<int,3>{},
+        "run-only progression resets independently from permanent shop state");
     Game game;
     game.reset();
     const GameState spawn = game.state();
@@ -670,8 +675,31 @@ int main() {
     ok &= expect(game.state().topology.currentTileIndex==-1&&game.state().targets[0].alive&&
                  game.state().targets[0].pos.z<-21.0f&&near(game.state().targets[0].armor,1.7f,0.001f),
         "locked room looping re-anchors one canonical enemy simulation instead of spawning duplicate AI");
+    ok &= expect(near(game.state().player.battery,84.0f,0.05f)&&game.state().progression.run.batteryRegenLock>1.20f,
+        "locked room looping spends battery once and suppresses immediate regeneration");
 
     game.reset();
+    game.setPersistentProgression(2,0,0,0);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.debug.colliderCount=0;
+        setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,-20.90f};setup.player.vel={0,0,-14.0f};setup.player.grounded=true;setup.player.battery=20.0f;
+    }
+    step(game);
+    ok &= expect(game.state().progression.permanent.tokens==1&&game.state().player.alive,
+        "a low-battery locked loop spends exactly one emergency token");
+
+    game.reset();
+    game.setPersistentProgression(0,0,0,0);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.debug.colliderCount=0;
+        setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,-20.90f};setup.player.vel={0,0,-14.0f};setup.player.grounded=true;setup.player.battery=20.0f;
+    }
+    step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive,
+        "a low-battery locked loop without an emergency token exhausts the run");
+
+    game.reset();
+    game.setPersistentProgression(0,0,0,0);
     const int firstRoomRequired=game.state().requiredSouls;
     for(int shot=0;shot<firstRoomRequired;++shot){
         GameState& setup=const_cast<GameState&>(game.state());
@@ -684,6 +712,8 @@ int main() {
         int filled=0; for(const auto& capture:state.captures) if(capture.filled) ++filled;
         ok &= expect(filled==firstRoomRequired && state.roomClear,
             "fired soul cubes fill the wall goals sequentially and open the room");
+        ok &= expect(state.progression.permanent.tokens==firstRoomRequired,
+            "each newly filled goal awards exactly one persistent token");
         ok &= expect(hasAudioCue(state,AudioCue::PaymentSuccess),
             "final room deposit queues the authoritative payment-success cue");
     }
@@ -720,6 +750,26 @@ int main() {
         ok &= expect(!game.state().doorTransition.active&&near(game.state().doorTransition.progress,0.0f,0.0001f),
             "three meters of traversal resolves the browser doorway prediction-frame effect");
     }
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.roomIndex=256;setup.progression.run.roomHeat=1.0f;
+        for(auto& target:setup.targets)target=TargetState{};
+        TargetState& enemy=setup.targets[0];enemy.alive=true;enemy.pos={10.0f,0.08f,8.0f};enemy.walkTarget=enemy.pos;
+        enemy.armor=1.0f;enemy.armorRegenDelay=0.0f;enemy.attackCooldown=100.0f;
+    }
+    const float armorBeforeInfiniteRegen=game.state().targets[0].armor;
+    step(game,60);
+    ok &= expect(game.state().targets[0].armor>armorBeforeInfiniteRegen&&game.state().targets[0].armor<=2.0f,
+        "deep-room enemy regeneration scales through bounded arithmetic without exceeding shell armor");
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.targets[0].armor=1.0f;setup.targets[0].armorRegenDelay=1.0f;
+    }
+    step(game,30);
+    ok &= expect(near(game.state().targets[0].armor,1.0f,0.001f),
+        "recent shell damage pauses regeneration so rhythmic headshot guarantees remain stable");
 
     game.reset();
     {
@@ -784,6 +834,11 @@ int main() {
     const int headshotJingles=countAudioCue(game.state(),AudioCue::Headshot)+countAudioCue(game.state(),AudioCue::HeadshotCritical);
     ok &= expect(exactHeadshotFractions&&game.state().targets[0].slurpable&&headshotJingles==3,
         "a three-slot room takes exactly three headshots to break a fresh shell and plays all three jingles");
+    ok &= expect(game.state().progression.run.accuracyStacks==3&&near(game.state().progression.run.accuracyMultiplier,1.24f,0.001f)&&game.state().hud.headshotPulse>0.8f,
+        "consecutive accurate headshots build the bounded percentage chain and shared tactile pulse");
+    step(game,200);
+    ok &= expect(game.state().progression.run.accuracyStacks==0&&near(game.state().progression.run.accuracyMultiplier,1.0f,0.001f),
+        "an idle accuracy chain expires cleanly instead of scaling without bound");
 
     game.reset();
     {

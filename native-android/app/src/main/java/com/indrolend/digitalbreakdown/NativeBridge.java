@@ -1,6 +1,7 @@
 package com.indrolend.digitalbreakdown;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.MediaPlayer;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
@@ -22,6 +23,17 @@ public final class NativeBridge {
     private static boolean musicStarted;
     private static boolean gameOverStarted;
     private static MultiplayerClient multiplayerClient;
+    private static SharedPreferences progressionPreferences;
+
+    public static synchronized void initializeProgression(Context context) {
+        progressionPreferences=context.getApplicationContext().getSharedPreferences("digital_breakdown_progression",Context.MODE_PRIVATE);
+        setPersistentProgression(progressionPreferences.getLong("tokens",0),progressionPreferences.getInt("shot",0),progressionPreferences.getInt("lunge",0),progressionPreferences.getInt("attack",0));
+    }
+
+    public static synchronized void saveProgression(long revision,long tokens,int shot,int lunge,int attack) {
+        if(progressionPreferences==null)return;
+        progressionPreferences.edit().putLong("revision",revision).putLong("tokens",Math.max(0,tokens)).putInt("shot",shot).putInt("lunge",lunge).putInt("attack",attack).apply();
+    }
 
     public static void setMultiplayerClient(MultiplayerClient client) { multiplayerClient = client; }
     public static void sendNetworkPacket(byte[] packet) {
@@ -109,6 +121,7 @@ public final class NativeBridge {
     }
 
     public static native void onSurfaceCreated();
+    public static native void setPersistentProgression(long tokens, int shot, int lunge, int attack);
     public static native void setAssetRoot(String path);
     public static native void onSurfaceChanged(int width, int height);
     public static native void onDrawFrame();

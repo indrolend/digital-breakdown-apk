@@ -29,6 +29,8 @@ jclass gBridgeClass = nullptr;
 jmethodID gPlayAudioCue = nullptr;
 jmethodID gSyncMusic = nullptr;
 jmethodID gSendNetworkPacket = nullptr;
+jmethodID gSaveProgression = nullptr;
+std::uint64_t gLastProgressionRevision = 0;
 struct NetworkEvent { enum Kind { Solo, Configure, Control, Binary } kind; bool host=false; int playerId=0; std::string room,status,text; std::vector<std::uint8_t> bytes; };
 std::mutex gNetworkMutex;
 std::deque<NetworkEvent> gNetworkEvents;
@@ -95,6 +97,8 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv* env, j
     if(!gPlayAudioCue) gPlayAudioCue=env->GetStaticMethodID(gBridgeClass,"playAudioCue","(IF)V");
     if(!gSyncMusic) gSyncMusic=env->GetStaticMethodID(gBridgeClass,"syncMusic","(ZZ)V");
     if(!gSendNetworkPacket) gSendNetworkPacket=env->GetStaticMethodID(gBridgeClass,"sendNetworkPacket","([B)V");
+    if(!gSaveProgression) gSaveProgression=env->GetStaticMethodID(gBridgeClass,"saveProgression","(JJIII)V");
+    gLastProgressionRevision=gGame.state().progression.permanent.revision;
     gRenderer.surfaceCreated();
     resetFrameClock();
 }
@@ -120,6 +124,8 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv* env, jclass
     gRenderer.draw(gGame.state());
 
     const GameState& s = gGame.state();
+    const auto& permanent=s.progression.permanent;
+    if(gBridgeClass&&gSaveProgression&&permanent.revision!=gLastProgressionRevision){env->CallStaticVoidMethod(gBridgeClass,gSaveProgression,static_cast<jlong>(permanent.revision),static_cast<jlong>(permanent.tokens),permanent.levels[0],permanent.levels[1],permanent.levels[2]);gLastProgressionRevision=permanent.revision;}
     if(gBridgeClass&&gSyncMusic)env->CallStaticVoidMethod(gBridgeClass,gSyncMusic,s.started?JNI_TRUE:JNI_FALSE,s.dead?JNI_TRUE:JNI_FALSE);
     if(gBridgeClass && gPlayAudioCue) {
         const unsigned int newest=s.audio.nextSerial>0?s.audio.nextSerial-1:0;
@@ -189,6 +195,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint keyCode, jboolean down) {
     gGame.setKey(keyCode, down == JNI_TRUE);
 }
+
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_setPersistentProgression(JNIEnv*,jclass,jlong tokens,jint shot,jint lunge,jint attack){gGame.setPersistentProgression(static_cast<std::int64_t>(tokens),shot,lunge,attack);gLastProgressionRevision=gGame.state().progression.permanent.revision;}
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_isIntroActive(JNIEnv*, jclass) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 
 #include "HumanVisual.hpp"
 #include "VisualIdentity.hpp"
@@ -163,6 +164,7 @@ struct TargetState {
     float humanAnimationTime = 0.0f;
     float locomotionAmount = 0.0f;
     float hitFlash = 0.0f;
+    float armorRegenDelay = 0.0f;
     float hitDirectionLocal = 0.0f;
     float vacuumPullAmount = 0.0f;
     float captureCollapseAmount = 0.0f;
@@ -196,6 +198,7 @@ struct TargetState {
 struct CapturePointState {
     Vec3 pos;
     bool filled = false;
+    bool tokenAwarded = false;
 };
 
 struct BulletState {
@@ -281,6 +284,30 @@ struct HumanRespawnRequest {
     float delay = 0.0f;
     Vec3 avoid;
     bool active = false;
+};
+
+enum class UpgradeTrack : unsigned char { Shot, Lunge, Attack, Count };
+
+struct PermanentProgressionState {
+    std::int64_t tokens = 0;
+    std::array<int,3> levels{};
+    std::uint64_t revision = 0;
+};
+
+struct RunProgressionState {
+    std::array<int,3> temporaryLevels{};
+    int accuracyStacks = 0;
+    float accuracyMultiplier = 1.0f;
+    float accuracyDecayTimer = 0.0f;
+    float batteryRegenLock = 0.0f;
+    float roomHeat = 0.0f;
+    float roomElapsed = 0.0f;
+    int roomCaptures = 0;
+};
+
+struct ProgressionState {
+    PermanentProgressionState permanent;
+    RunProgressionState run;
 };
 
 struct DoorTransitionState {
@@ -372,6 +399,8 @@ struct HudState {
     std::array<char,48> energyTicker{};
     float energyTickerUntil = 0.0f;
     int energyTickerType = 0;
+    float headshotPulse = 0.0f;
+    float perfectPulse = 0.0f;
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
@@ -424,6 +453,7 @@ struct GameState {
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
     RoomTopologyState topology;
     RunRuleState runRules;
+    ProgressionState progression;
     std::array<HumanRespawnRequest, TARGET_COUNT> respawnQueue;
     DoorTransitionState doorTransition;
     PhonePoseState phonePose;
@@ -478,6 +508,7 @@ public:
     void configureNetworkGuest(int localPlayerId);
     void disableNetwork();
     void setNetworkRoom(const char* code, const char* status, bool connected);
+    void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);
     void setNetworkPeerActive(int playerId, bool active);
     void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons);
     void applyNetworkPeerSnapshot(int playerId, const PlayerState& player, float pitch, float vacuumPower, float vacuumPose, int vacuumTarget, float meleeTimer, float dischargeAmount);
@@ -486,7 +517,7 @@ public:
     GameState& networkMutableState() { return state_; }
 
 private:
-    enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot };
+    enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
     int simulationPlayerId_ = 0;
 
@@ -573,6 +604,8 @@ private:
     void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);
     void updateRoomTopology(float previousZ, float currentZ);
+    void chargeClosedDoorLoop();
+    void awardGoalToken(CapturePointState& capture);
     float getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const;
     void constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const;
     bool isInsideDoorAperture(const Vec3& position, float pad = 0.0f) const;

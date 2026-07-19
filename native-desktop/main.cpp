@@ -55,7 +55,22 @@ struct HostState {
     bool haveMouse = false;
     bool mouseCaptured = true;
     bool focused = true;
+    std::filesystem::path progressionPath;
+    std::uint64_t savedProgressionRevision = 0;
 };
+
+std::filesystem::path progressionSavePath(){const char* local=std::getenv("LOCALAPPDATA");const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();return root/"DigitalBreakdown"/"progression.v1";}
+void loadProgression(Game& game,const std::filesystem::path& path){std::ifstream input(path);std::string magic;int version=0,shot=0,lunge=0,attack=0;long long tokens=0;if(input>>magic>>version>>tokens>>shot>>lunge>>attack&&magic=="DBPROG"&&version==1)game.setPersistentProgression(tokens,shot,lunge,attack);}
+bool saveProgression(const PermanentProgressionState& progression,const std::filesystem::path& path){
+    std::error_code error;std::filesystem::create_directories(path.parent_path(),error);
+    const std::filesystem::path temporary=path.wstring()+L".tmp";
+    {std::ofstream output(temporary,std::ios::trunc);if(!output)return false;output<<"DBPROG 1 "<<progression.tokens<<' '<<progression.levels[0]<<' '<<progression.levels[1]<<' '<<progression.levels[2]<<'\n';output.flush();if(!output)return false;}
+#ifdef _WIN32
+    if(!MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(temporary,error);return false;}
+#else
+    std::filesystem::rename(temporary,path,error);if(error){std::filesystem::remove(temporary,error);return false;}
+#endif
+    return true;}
 
 int androidKeyForGlfw(int key) {
     switch (key) {
@@ -349,9 +364,12 @@ int main(int argc, char** argv) {
     }
 
     HostState host;
+    host.progressionPath=progressionSavePath();
+    loadProgression(host.game,host.progressionPath);
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
+    host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(capturePaused)host.game.setUiPaused(true);
@@ -443,6 +461,7 @@ int main(int argc, char** argv) {
         }
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         host.audio.update(host.game.state());
+        const auto& permanent=host.game.state().progression.permanent;if(permanent.revision!=host.savedProgressionRevision&&saveProgression(permanent,host.progressionPath))host.savedProgressionRevision=permanent.revision;
         host.renderer.draw(host.game.state());
         if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
         glfwSwapBuffers(window);

@@ -58,6 +58,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     public GameView(Context context) {
         super(context);
         NativeBridge.initializeAudio(context);
+        NativeBridge.initializeProgression(context);
         NativeBridge.initializeModels(context);
         setEGLContextClientVersion(2);
         setFocusable(true);
