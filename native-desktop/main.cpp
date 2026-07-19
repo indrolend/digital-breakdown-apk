@@ -17,6 +17,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -59,9 +60,30 @@ struct HostState {
     bool haveMouse = false;
     bool mouseCaptured = true;
     bool focused = true;
+    int gamepadId = -1;
+    std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> previousGamepadButtons{};
+    bool previousGamepadMenuLeft = false;
+    bool previousGamepadMenuRight = false;
+    bool previousGamepadMenuUp = false;
+    bool previousGamepadMenuDown = false;
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
 };
+
+struct DesktopGamepadInput {
+    float moveX = 0.0f;
+    float moveZ = 0.0f;
+    float lookX = 0.0f;
+    float lookY = 0.0f;
+    bool vacuumHeld = false;
+    bool sprintHeld = false;
+    bool jumpPressed = false;
+    bool meleePressed = false;
+    bool shootPressed = false;
+    bool cameraPressed = false;
+};
+
+float gamepadAxis(float value,float deadzone=0.18f){const float magnitude=std::abs(value);if(magnitude<=deadzone)return 0.0f;return std::copysign((magnitude-deadzone)/(1.0f-deadzone),value);}
 
 std::filesystem::path progressionSavePath(){const char* local=std::getenv("LOCALAPPDATA");const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();return root/"DigitalBreakdown"/"progression.v1";}
 void loadProgression(Game& game,const std::filesystem::path& path){std::ifstream input(path);std::string magic;int version=0,shot=0,lunge=0,attack=0;long long tokens=0;if(input>>magic>>version>>tokens>>shot>>lunge>>attack&&magic=="DBPROG"&&version==1)game.setPersistentProgression(tokens,shot,lunge,attack);}
@@ -158,6 +180,64 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         return;
     }
     if(state.uiPaused)setMouseCaptured(window,host,true);
+}
+
+void controllerMenuBack(GLFWwindow* window,HostState& host){
+    const GameState& state=host.game.state();
+    if(!state.started&&state.localSettings.menuPage!=LocalMenuPage::Main){
+        if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();openMenuPage(host,LocalMenuPage::Online);return;}
+        const auto page=state.localSettings.menuPage;
+        openMenuPage(host,page==LocalMenuPage::Settings||page==LocalMenuPage::Online?LocalMenuPage::Main:LocalMenuPage::Settings);
+        return;
+    }
+    if(state.uiPaused){setMouseCaptured(window,host,true);return;}
+}
+
+DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
+    DesktopGamepadInput input;
+    int jid=host.gamepadId;
+    if(jid<GLFW_JOYSTICK_1||jid>GLFW_JOYSTICK_LAST||!glfwJoystickIsGamepad(jid)){
+        jid=-1;
+        for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickIsGamepad(candidate)){jid=candidate;break;}
+        if(jid!=host.gamepadId){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;host.gamepadId=jid;if(jid>=0)std::printf("Controller connected: %s\n",glfwGetGamepadName(jid));}
+    }
+    if(jid<0)return input;
+    GLFWgamepadstate pad{};
+    if(!glfwGetGamepadState(jid,&pad)){host.gamepadId=-1;host.previousGamepadButtons.fill(GLFW_RELEASE);return input;}
+    const auto pressed=[&](int button){return pad.buttons[button]==GLFW_PRESS&&host.previousGamepadButtons[button]!=GLFW_PRESS;};
+    const float leftX=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_LEFT_X]);
+    const float leftY=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_LEFT_Y]);
+    const float rightX=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_X]);
+    const float rightY=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y]);
+    const bool menuActive=menuItemCount(host.game.state())>0;
+    const bool menuLeft=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]==GLFW_PRESS||leftX<-0.55f;
+    const bool menuRight=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]==GLFW_PRESS||leftX>0.55f;
+    const bool menuUp=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_UP]==GLFW_PRESS||leftY<-0.55f;
+    const bool menuDown=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_DOWN]==GLFW_PRESS||leftY>0.55f;
+    if(menuActive&&!host.enteringJoinCode){
+        if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
+            const int delta=host.game.state().upgradeMenu.active?(menuDown?3:-3):(menuDown?1:-1);setMenuSelection(host,host.game.state().hud.menuSelection+delta);
+        }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
+            const int direction=menuRight?1:-1;if(!host.game.state().started&&!adjustMenuSetting(host,direction))setMenuSelection(host,host.game.state().hud.menuSelection+direction);
+        }
+        if(pressed(GLFW_GAMEPAD_BUTTON_A))activateMenuSelection(window,host);
+        if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
+    }else if(host.enteringJoinCode){
+        if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
+    }else{
+        input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*12.0f;input.lookY=rightY*12.0f;
+        input.vacuumHeld=pad.buttons[GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER]==GLFW_PRESS||pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]>0.25f;
+        input.sprintHeld=pad.buttons[GLFW_GAMEPAD_BUTTON_LEFT_BUMPER]==GLFW_PRESS||pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]>0.25f;
+        input.jumpPressed=pressed(GLFW_GAMEPAD_BUTTON_A);
+        input.meleePressed=pressed(GLFW_GAMEPAD_BUTTON_B)||pressed(GLFW_GAMEPAD_BUTTON_Y);
+        input.shootPressed=pressed(GLFW_GAMEPAD_BUTTON_X);
+        input.cameraPressed=pressed(GLFW_GAMEPAD_BUTTON_RIGHT_THUMB);
+        if(pressed(GLFW_GAMEPAD_BUTTON_START))setMouseCaptured(window,host,!host.mouseCaptured);
+        if(host.game.state().player.grabbedByTarget>=0&&std::abs(leftX)>0.35f)host.game.setWiggle(leftX*12.0f);
+    }
+    host.previousGamepadMenuLeft=menuLeft;host.previousGamepadMenuRight=menuRight;host.previousGamepadMenuUp=menuUp;host.previousGamepadMenuDown=menuDown;
+    for(int button=0;button<=GLFW_GAMEPAD_BUTTON_LAST;++button)host.previousGamepadButtons[button]=pad.buttons[button];
+    return input;
 }
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
@@ -518,21 +598,22 @@ int main(int argc, char** argv) {
             simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
         }
 
-        const bool vacuumHeld = captureSoul || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        const DesktopGamepadInput gamepad=pollGamepad(window,host);
+        const bool vacuumHeld = captureSoul || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || gamepad.vacuumHeld;
         const bool sprintHeld = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                                glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                                glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS || gamepad.sprintHeld;
 
         host.game.setTouchControls(
-            0.0f,
-            0.0f,
-            static_cast<float>(host.lookX),
-            static_cast<float>(host.lookY),
+            gamepad.moveX,
+            gamepad.moveZ,
+            static_cast<float>(host.lookX)+gamepad.lookX,
+            static_cast<float>(host.lookY)+gamepad.lookY,
             vacuumHeld,
             sprintHeld,
-            false,
-            false,
-            false,
-            false
+            gamepad.jumpPressed,
+            gamepad.meleePressed,
+            gamepad.shootPressed,
+            gamepad.cameraPressed
         );
         host.lookX = 0.0;
         host.lookY = 0.0;
