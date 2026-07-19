@@ -667,6 +667,7 @@ void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
     if(state_.dead) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         updateDeathCamera(dt);
         updateParticles(dt*DEATH_PRESENTATION_SCALE);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
@@ -675,12 +676,14 @@ void Game::update(float dt) {
         return;
     }
     if(!state_.started) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
         state_.hud.gameOver=false;
         return;
     }
     if(state_.cinematic.introActive) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         // Freeze simulation without deleting held locomotion. Touch sticks,
         // keyboard keys, and controller axes held through the reveal should
         // become live on the first gameplay frame. Only transient actions and
@@ -705,7 +708,7 @@ void Game::update(float dt) {
     if(state_.uiPaused){
         updateCamera(0.0f);
         updateSoulLattices();
-        updateCrosshair(0.0f);
+        updateCrosshair(dt);
         return;
     }
     if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
@@ -1957,6 +1960,11 @@ void Game::updateSoulLattices() {
 
 void Game::updateCrosshair(float dt) {
     HudState& hud=state_.hud;
+    const bool fullyCommitted=state_.dead||!state_.started||state_.cinematic.introActive||state_.uiPaused
+        ||state_.meleeVisual.airLungeLandingPending;
+    const float opacityTarget=fullyCommitted?0.0f:1.0f;
+    const float opacityResponse=fullyCommitted?14.0f:9.0f;
+    hud.crosshairOpacity+=(opacityTarget-hud.crosshairOpacity)*std::min(1.0f,dt*opacityResponse);
     bool aimTarget=state_.vacuum.target!=-1;
     const Vec3 characterForward=cameraForwardFlat();
     for(const auto& target:state_.targets) {

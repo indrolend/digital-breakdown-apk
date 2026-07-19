@@ -164,6 +164,11 @@ int main() {
     game.setTouchControls(0,0,0,0,true,false,true,false,false,false);step(game,8);
     ok &= expect(!game.state().vacuum.active&&game.state().player.airJumpsRemaining==lungeAirJumps,
         "held vacuum and jump input cannot overlap or interrupt a committed lunge");
+    ok &= expect(game.state().hud.crosshairOpacity<0.30f,
+        "crosshair fades away while the committed lunge owns every phone action");
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game,60);
+    ok &= expect(!game.state().meleeVisual.airLungeLandingPending&&game.state().hud.crosshairOpacity>0.80f,
+        "crosshair fades back in after landing returns actionable control");
 
     game.reset();
     {

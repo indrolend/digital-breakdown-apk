@@ -386,11 +386,12 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     const float angle=state.hud.crosshairRotationDegrees*PI/180.0f;
     const bool joining=state.hud.shootJoinTimer>0.0f;
     const float rr=joining?1.0f:0.498f,rg=joining?1.0f:0.906f,rb=1.0f;
+    const float reticleAlpha=0.98f*clampf(state.hud.crosshairOpacity,0.0f,1.0f);
     const auto rotateCenter=[&](float x,float y){return Vec3{cx+x*std::cos(angle)-y*std::sin(angle),cy+x*std::sin(angle)+y*std::cos(angle),0};};
-    Vec3 center=rotateCenter(0,-spread); rotatedQuad(center.x,center.y,thick,arm,angle,rr,rg,rb,0.98f);
-    center=rotateCenter(0,spread); rotatedQuad(center.x,center.y,thick,arm,angle,rr,rg,rb,0.98f);
-    center=rotateCenter(-spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,0.98f);
-    center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,0.98f);
+    Vec3 center=rotateCenter(0,-spread); rotatedQuad(center.x,center.y,thick,arm,angle,rr,rg,rb,reticleAlpha);
+    center=rotateCenter(0,spread); rotatedQuad(center.x,center.y,thick,arm,angle,rr,rg,rb,reticleAlpha);
+    center=rotateCenter(-spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
+    center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
 
     if(state.uiPaused){
         const float pw=320.0f,ph=230.0f,px=static_cast<float>(width_)-pw-12.0f,py=48.0f;
