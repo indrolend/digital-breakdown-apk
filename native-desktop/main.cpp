@@ -141,22 +141,24 @@ void setMenuSelection(HostState& host,int selection) {
 
 int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double windowY) {
     int ww=1,wh=1,fw=1,fh=1;glfwGetWindowSize(window,&ww,&wh);glfwGetFramebufferSize(window,&fw,&fh);
-    const float x=static_cast<float>(windowX)*fw/std::max(1,ww),y=static_cast<float>(windowY)*fh/std::max(1,wh);
+    const float uiScale=clampf(std::min(static_cast<float>(fw)/1280.0f,static_cast<float>(fh)/720.0f),0.55f,1.8f);
+    const float canvasW=fw/uiScale,canvasH=fh/uiScale;
+    const float x=static_cast<float>(windowX)*fw/std::max(1,ww)/uiScale,y=static_cast<float>(windowY)*fh/std::max(1,wh)/uiScale;
     const GameState& state=host.game.state();
     if(state.upgradeMenu.active){
-        const float pw=std::min(680.0f,static_cast<float>(fw)-24.0f),ph=300.0f,px=(fw-pw)*0.5f,py=(fh-ph)*0.5f;
+        const float pw=std::min(680.0f,canvasW-24.0f),ph=300.0f,px=(canvasW-pw)*0.5f,py=(canvasH-ph)*0.5f;
         if(y>=py+66&&y<=py+142)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return column;}
         if(y>=py+184&&y<=py+250)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return 3+column;}
         return -1;
     }
     if(!state.started){
-        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;const float pw=std::min(520.0f,static_cast<float>(fw)*0.72f),ph=controls?500.0f:430.0f,px=(fw-pw)*0.5f,py=(fh-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
+        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;const float pw=std::min(520.0f,canvasW*0.72f),ph=controls?500.0f:430.0f,px=(canvasW-pw)*0.5f,py=(canvasH-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
         if(x<buttonX||x>buttonX+buttonW)return -1;
         const int count=menuItemCount(state);
         const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;
         return -1;
     }
-    if(state.uiPaused){const float pw=360.0f,px=fw-pw-12.0f,py=48.0f;if(x>=px+12&&x<=px+pw-12&&y>=py+34&&y<=py+92)return 0;}
+    if(state.uiPaused){const float pw=360.0f,px=canvasW-pw-12.0f,py=48.0f;if(x>=px+12&&x<=px+pw-12&&y>=py+34&&y<=py+92)return 0;}
     return -1;
 }
 

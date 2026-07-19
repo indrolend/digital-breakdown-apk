@@ -305,24 +305,28 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
     glOrtho(0.0,static_cast<double>(width_),static_cast<double>(height_),0.0,-1.0,1.0);
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+    const float menuUiScale=clampf(std::min(static_cast<float>(width_)/1280.0f,static_cast<float>(height_)/720.0f),0.55f,1.8f);
+    const float menuCanvasW=static_cast<float>(width_)/menuUiScale,menuCanvasH=static_cast<float>(height_)/menuUiScale;
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedFps)));text(fps,width_-fps.size()*7.2f-12,68,1.2f,0.72f,1.0f,0.90f);}
 
     if(state.cinematic.introActive){
+        glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));
-        const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f),panelH=250.0f,panelX=(static_cast<float>(width_)-panelW)*0.5f,panelY=(static_cast<float>(height_)-panelH)*0.5f;
+        const float panelW=std::min(520.0f,menuCanvasW*0.72f),panelH=250.0f,panelX=(menuCanvasW-panelW)*0.5f,panelY=(menuCanvasH-panelH)*0.5f;
         const std::string status="READY";const float statusScale=3.0f,statusW=status.size()*6*statusScale;
         floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*alpha);
         const std::string start="START";const float startScale=2.0f,startW=start.size()*6*startScale;
         floatingText(start,panelX+(panelW-startW)*0.5f,panelY+118,startScale,0.75f,0.96f,1.0f,alpha);
-        glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
+        glPopMatrix();glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
     }
 
     if(!state.started) {
-        const float panelW=std::min(520.0f,static_cast<float>(width_)*0.72f);
+        glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
+        const float panelW=std::min(520.0f,menuCanvasW*0.72f);
         const bool controlsPage=state.localSettings.menuPage==LocalMenuPage::Controls;
         const float panelH=controlsPage?500.0f:430.0f;
-        const float panelX=(static_cast<float>(width_)-panelW)*0.5f;
-        const float panelY=(static_cast<float>(height_)-panelH)*0.5f;
+        const float panelX=(menuCanvasW-panelW)*0.5f;
+        const float panelY=(menuCanvasH-panelH)*0.5f;
         const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;
         const std::string status=state.dead?"AGAIN?":state.localSettings.menuPage==LocalMenuPage::Main?"READY":state.localSettings.menuPage==LocalMenuPage::Online?"ONLINE":state.localSettings.menuPage==LocalMenuPage::JoinCode?"ENTER CODE":state.localSettings.menuPage==LocalMenuPage::Settings?"SETTINGS":state.localSettings.menuPage==LocalMenuPage::Controls?"CONTROLS":state.localSettings.menuPage==LocalMenuPage::Audio?"AUDIO":"GRAPHICS";
         const float statusScale=3.0f,statusW=status.size()*6*statusScale;
@@ -343,7 +347,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         if(state.localSettings.menuPage==LocalMenuPage::JoinCode){std::string typed;for(int i=0;i<6;++i){typed+=i<static_cast<int>(room.size())?room[i]:'_';if(i<5)typed+=' ';}const float scale=3.0f,tw=typed.size()*6*scale;floatingText(typed,panelX+(panelW-tw)*0.5f,panelY+142,scale,0.88f,1.0f,1.0f,menuAlpha);floatingText("ESC BACK",panelX+panelW*0.5f-48,panelY+224,1.2f,0.62f,0.90f,0.94f,0.72f*menuAlpha);}
         if(controlsPage&&state.localSettings.rebindingAction>=0){const std::string prompt=state.localSettings.pendingBinding>=0?"ENTER SWAP   BACKSPACE CANCEL":"PRESS INPUT   ESC CANCEL";const float tw=prompt.size()*6.0f*1.15f;floatingText(prompt,panelX+(panelW-tw)*0.5f,panelY+468,1.15f,0.82f,1.0f,1.0f,menuAlpha);}
         if(!networkStatus.empty()&&state.localSettings.menuPage==LocalMenuPage::Online){const float tw=networkStatus.size()*6.0f*1.2f;floatingText(networkStatus,panelX+(panelW-tw)*0.5f,panelY+274,1.2f,0.65f,1.0f,0.88f*menuAlpha);}
-        glMatrixMode(GL_MODELVIEW); glPopMatrix();
+        glPopMatrix();glMatrixMode(GL_MODELVIEW); glPopMatrix();
         glMatrixMode(GL_PROJECTION); glPopMatrix();
         glMatrixMode(GL_MODELVIEW);
         glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST); glEnable(GL_LIGHTING);
@@ -430,18 +434,21 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
 
     if(state.upgradeMenu.active){
-        const float pw=std::min(680.0f,static_cast<float>(width_)-24.0f),ph=300.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
+        glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
+        const float pw=std::min(680.0f,menuCanvasW-24.0f),ph=300.0f,px=(menuCanvasW-pw)*0.5f,py=(menuCanvasH-ph)*0.5f;
         quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.16f);quad(px,py,pw,1,0.62f,0.96f,1,0.62f);quad(px,py+ph-1,pw,1,0.62f,0.96f,1,0.42f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost?"HOST IS CHOOSING":"CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
         const float cellW=(pw-24.0f)/3.0f;const std::string labels[3]={"SHOT","LUNGE","ATTACK"};const auto choice=[&](int item,float top,float height){const bool selected=state.hud.menuSelection==item;const float pulse=selected?clampf(state.cinematic.textInteraction,0,1):0,cx=px+12+(item%3)*cellW+(cellW-4)*0.5f,cy=py+top+height*0.5f-pulse*1.5f,tilt=selected?std::sin(state.time*2.5f+item*1.7f)*0.025f:0,scale=2.15f+pulse*0.08f;rotatedQuad(cx,cy,cellW-6,height,tilt,selected?0.16f:0.02f,selected?0.86f:0.08f,selected?1.0f:0.11f,selected?0.20f:0.09f);rotatedQuad(cx,cy+height*0.5f-1,cellW-20,1,tilt,0.66f,0.97f,1.0f,selected?0.76f:0.26f);const std::string& label=labels[item%3];text(label,cx-label.size()*6*scale*0.5f,cy-3.5f*scale,scale,selected?1.0f:0.82f,selected?1.0f:0.94f,1.0f);};
         for(int i=0;i<3;++i)choice(i,66,76);text("PERMANENT  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+158,1.2f,0.82f,1.0f,0.91f);for(int i=3;i<6;++i)choice(i,184,66);
         for(int i=0;i<3;++i){const std::string level=std::to_string(state.progression.permanent.levels[i])+"/5";text(level,px+12+i*cellW+cellW-level.size()*6*0.9f-12,py+256,0.9f,0.66f,0.90f,1.0f);}
         text("COST 1 TOKEN",px+18,py+278,1.05f,0.72f,0.90f,1.0f);text("ESC EXIT",px+pw-82,py+278,1.05f,0.82f,0.94f,1.0f);
     } else if(state.uiPaused){
-        const float pw=360.0f,ph=250.0f,px=static_cast<float>(width_)-pw-12.0f,py=48.0f;
+        glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
+        const float pw=360.0f,ph=250.0f,px=menuCanvasW-pw-12.0f,py=48.0f;
         quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.16f);quad(px,py,pw,1,1,1,1,0.55f);quad(px,py+ph-1,pw,1,1,1,1,0.40f);quad(px,py,1,ph,1,1,1,0.42f);quad(px+pw-1,py,1,ph,1,1,1,0.42f);
         text("PAUSED",px+12,py+12,2.0f);const float pauseTilt=std::sin(state.time*2.4f)*0.018f,pulse=clampf(state.cinematic.textInteraction,0,1),buttonScale=2.45f+pulse*0.06f;rotatedQuad(px+pw*0.5f,py+63,pw-24,58,pauseTilt,0.16f,0.86f,1.0f,0.18f);text("RESUME",px+pw*0.5f-6*6*buttonScale*0.5f,py+54-3.5f*buttonScale,buttonScale,0.92f,1.0f,1.0f);
         text("WASD  MOVE",px+12,py+112,1.25f);text("SHIFT RUN",px+12,py+130,1.25f);text("SPACE JUMP",px+12,py+148,1.25f);text("MOUSE LOOK",px+12,py+166,1.25f);text("LEFT VACUUM",px+12,py+184,1.25f);text("C/F LUNGE  Q SHOOT",px+12,py+202,1.25f);text("V CAMERA",px+12,py+220,1.25f);
     }
+    if(state.upgradeMenu.active||state.uiPaused)glPopMatrix();
 
     glMatrixMode(GL_MODELVIEW); glPopMatrix();
     glMatrixMode(GL_PROJECTION); glPopMatrix();
