@@ -30,6 +30,18 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(miniaudio)
+if(APPLE)
+    set(USE_TLS ON CACHE BOOL "" FORCE)
+    set(USE_OPEN_SSL OFF CACHE BOOL "" FORCE)
+    set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        ixwebsocket
+        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+        GIT_TAG v11.4.6
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(ixwebsocket)
+endif()
 find_package(OpenGL REQUIRED)
 
 set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/cpp")
@@ -63,6 +75,16 @@ target_link_libraries(
     glfw
     OpenGL::GL
 )
+if(APPLE)
+    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket)
+    set_target_properties(DigitalBreakdown PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.indrolend.digitalbreakdown.native"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+    )
+endif()
 
 add_executable(
     Pass7ParityTest
