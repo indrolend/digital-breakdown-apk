@@ -489,8 +489,8 @@ void Renderer::draw(const GameState& state) {
     const float shadow[4]={0.012f,0.018f,0.022f,0.28f};
     if(!state.camera.firstPerson){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation,true);else drawBox(shadowViewProj,state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadow);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
-    for(const auto& target:state.targets)if(target.alive){if(!target.slurpable||target.soulCubeAmount<0.995f){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!target.slurpable||target.soulCubeAmount<0.995f){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
     for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};if(flowerModel_.valid())drawStaticModel(shadowViewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY),true);else drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
     for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(shadowViewProj,bullet.pos,{size,size,size},bullet.spin*1.7f,shadow);}
     for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox(shadowViewProj,{c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,shadow);}
@@ -527,8 +527,13 @@ void Renderer::draw(const GameState& state) {
     }
 
     const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
-    for (const auto& target : state.targets) {
+    const float targetTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+    for(int offset=-1;offset<=1;++offset)for (auto target : state.targets) {
         if (!target.alive) continue;
+        const float originalZ=target.pos.z;
+        target.pos.z=targetTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(originalZ-std::floor((originalZ+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
+        const float mirrorShift=target.pos.z-originalZ;
+        target.tetherAnchor.z+=mirrorShift;target.tetherDestination.z+=mirrorShift;target.latchPoint.z+=mirrorShift;
         if (!target.slurpable || target.soulCubeAmount < 0.995f) {
             if(humanModel_.valid())drawHumanModel(viewProj,target,state.time);else drawProceduralHuman(viewProj, target, state.time, targetColor);
         }
@@ -548,15 +553,16 @@ void Renderer::draw(const GameState& state) {
     const float flowerTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
-        const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin};
+        for(int offset=-1;offset<=1;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
         if(flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
         else {drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}}
+        }
     }
 
     const float captureTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
+    for(int offset=-1;offset<=1;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
-        const Vec3 capturePos=capture.pos+Vec3{0,0,captureTileOrigin};
+        const Vec3 capturePos=capture.pos+Vec3{0,0,captureTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
         const float frameColor[4]={0.36f,0.42f,0.46f,1.0f};
         const float holeColor[4]={0.02f,0.03f,0.04f,1.0f};
         drawBox(viewProj,capturePos+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0.0f,frameColor);

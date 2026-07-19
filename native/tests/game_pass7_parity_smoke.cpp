@@ -632,6 +632,18 @@ int main() {
     step(game);
     ok &= expect(game.state().player.pos.x<=2.1f-0.34f+0.001f,
         "doorway jamb stops lateral capsule motion while the phone occupies the opening");
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.debug.colliderCount=0;
+        setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,-20.90f};setup.player.vel={0,0,-14.0f};setup.player.grounded=true;
+        for(auto& target:setup.targets)target.alive=false;
+        TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={5.0f,PHONE_MODEL_HEIGHT*0.5f,0.0f};
+        enemy.walkTarget=enemy.pos;enemy.armor=1.7f;enemy.attackCooldown=100.0f;
+    }
+    step(game);
+    ok &= expect(game.state().topology.currentTileIndex==-1&&game.state().targets[0].alive&&
+                 game.state().targets[0].pos.z<-21.0f&&near(game.state().targets[0].armor,1.7f,0.001f),
+        "locked room looping re-anchors one canonical enemy simulation instead of spawning duplicate AI");
 
     game.reset();
     const int firstRoomRequired=game.state().requiredSouls;
@@ -653,6 +665,8 @@ int main() {
     {
         GameState& setup=const_cast<GameState&>(game.state());
         const int previousRoom=setup.roomIndex;
+        const int previousSeed=setup.roomSeed;
+        const Vec3 previousFirstObstacle=setup.roomColliders[0].center;
         setup.player.pos={0,PHONE_MODEL_HEIGHT*0.5f,-20.8f};
         setup.player.vel={0,0,-20.0f};
         step(game,2);
@@ -660,6 +674,8 @@ int main() {
         int filled=0; for(const auto& capture:state.captures) if(capture.filled) ++filled;
         ok &= expect(state.roomIndex==previousRoom+1 && !state.roomClear && filled==0,
             "crossing the opened doorway advances the room and resets its goal inventory");
+        ok &= expect(state.roomSeed!=previousSeed&&length(state.roomColliders[0].center-previousFirstObstacle)>0.01f,
+            "open-door advancement generates the next seeded obstacle layout only at ownership transfer");
         const int ruleStacks=state.runRules.requiredSlotStacks+state.runRules.crowdedRoomStacks+state.runRules.fasterSlurpStacks;
         ok &= expect(ruleStacks==1 && state.runRules.lastAdded>=0,
             "room advancement deterministically adds one eligible browser run rule");

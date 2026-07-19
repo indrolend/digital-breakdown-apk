@@ -441,7 +441,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     if(!state.camera.firstPerson){if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!target.slurpable||target.soulCubeAmount<0.995f){if(humanModel_.valid())drawHumanModel(target,state.time,true);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const Vec3 center=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0};const float cubeSize=0.72f*0.78f*target.scale*target.soulVisual.morphScale;drawBox(center,{cubeSize*target.soulVisual.scale.x,cubeSize*target.soulVisual.scale.y,cubeSize*target.soulVisual.scale.z},0,target.soulVisual.rotationY,0,0.012f,0.018f,0.022f,0.28f);}}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!target.slurpable||target.soulCubeAmount<0.995f){if(humanModel_.valid())drawHumanModel(target,state.time,true);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const Vec3 center=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0};const float cubeSize=0.72f*0.78f*target.scale*target.soulVisual.morphScale;drawBox(center,{cubeSize*target.soulVisual.scale.x,cubeSize*target.soulVisual.scale.y,cubeSize*target.soulVisual.scale.z},0,target.soulVisual.rotationY,0,0.012f,0.018f,0.022f,0.28f);}}
     for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};if(flowerShadowList_)drawStaticModel(flowerShadowList_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));}
     for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0.012f,0.018f,0.022f,0.24f);}
     for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox({c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,0,0,0.012f,0.018f,0.022f,0.20f);}
@@ -474,8 +474,10 @@ void DesktopRenderer::draw(const GameState& state) const {
     }
 
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for (auto target:state.targets) if (target.alive) {
-        Vec3 p=target.pos; p.z=tileOrigin + (target.pos.z - std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
+    for(int offset=-1;offset<=1;++offset)for (auto target:state.targets) if (target.alive) {
+        Vec3 p=target.pos; p.z=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
+        const float mirrorShift=p.z-target.pos.z;
+        target.tetherAnchor.z+=mirrorShift;target.tetherDestination.z+=mirrorShift;target.latchPoint.z+=mirrorShift;
         target.pos = p;
         if (!target.slurpable || target.soulCubeAmount < 0.995f) {
             if(humanModel_.valid())drawHumanModel(target,state.time);else drawProceduralHumanDesktop(target,state.time,target.slurpable?0.70f:0.14f,1.0f,target.slurpable?0.78f:0.32f);
@@ -491,9 +493,9 @@ void DesktopRenderer::draw(const GameState& state) const {
             glDepthMask(GL_TRUE); glDisable(GL_BLEND);
         }
     }
-    for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
+    for(int offset=-1;offset<=1;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
-        Vec3 p=capture.pos; p.z+=tileOrigin;
+        Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;
         drawBox(p+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0,0,0,0.36f,0.42f,0.46f);
         drawBox(p,{0.52f,0.52f,0.08f},0,0,0,0.02f,0.03f,0.04f);
         if(capture.filled) drawBox(p+Vec3{0,0,0.12f},{0.36f,0.36f,0.36f},state.time*1.5f,state.time*2.0f,state.time,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
