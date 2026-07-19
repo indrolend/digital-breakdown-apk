@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
@@ -1049,7 +1050,9 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
     if (state_.roomClear && currentTile < previousTile) {
         state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
         state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
-        state_.roomIndex += 1; state_.roomSeed += 9973 + static_cast<int>(seededRoomValue(991.0f)*1000000.0f); state_.topology.advancing = true;
+        if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
+        const std::uint32_t seedStep=9973u+static_cast<std::uint32_t>(seededRoomValue(991.0f)*1000000.0f);
+        state_.roomSeed=static_cast<int>(static_cast<std::uint32_t>(state_.roomSeed)+seedStep); state_.topology.advancing = true;
         advanceRunRulesForRoom();
         state_.roomClear=false;
         gainBattery(18.0f,BatteryReason::NextRoom);
@@ -1106,8 +1109,9 @@ void Game::awardGoalToken(CapturePointState& capture) {
 int Game::activeHumanTarget() const {
     int activePlayers=1;
     if(state_.multiplayer.authoritativeHost)for(int id=1;id<NETWORK_PLAYER_COUNT;++id)if(state_.multiplayer.peers[id].active)++activePlayers;
+    const int roomExtra=std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(0,state_.roomIndex-1));
     return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,
-        ACTIVE_HUMAN_TARGET+std::max(0,state_.roomIndex-1)+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2));
+        ACTIVE_HUMAN_TARGET+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2));
 }
 
 void Game::advanceRunRulesForRoom() {
