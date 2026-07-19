@@ -121,6 +121,7 @@ constexpr float AIR_MELEE_BODY_RADIUS = 0.72f;
 constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
+constexpr float AIR_MELEE_CAMERA_RECOVERY_RESPONSE = 11.0f;
 constexpr float AIR_MELEE_CAMERA_LAG_DECAY = 2.4f;
 constexpr float AIR_MELEE_VERTICAL_KICK = 3.2f;
 constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
@@ -1283,8 +1284,15 @@ void Game::updateCamera(float dt) {
     constrainThirdPersonCamera(desired, player.pos);
     Vec3 desiredTarget=player.pos+aimForward*10.0f;
     desiredTarget.y+=0.45f;
-    if(state_.meleeVisual.airLungeCameraLag>0.0f&&dt>0.0f){
-        const float response=1.0f-std::exp(-AIR_MELEE_CAMERA_RESPONSE*dt);
+    const MeleeVisualState& melee=state_.meleeVisual;
+    if(melee.airLungeCameraLag>0.0f&&dt>0.0f){
+        const float recoveryT=melee.landingRecoveryDuration>0.0f
+            ? 1.0f-clampf(melee.landingRecovery/melee.landingRecoveryDuration,0.0f,1.0f)
+            : 0.0f;
+        const float responseRate=melee.airLungeLandingPending
+            ? AIR_MELEE_CAMERA_RESPONSE
+            : AIR_MELEE_CAMERA_RESPONSE+(AIR_MELEE_CAMERA_RECOVERY_RESPONSE-AIR_MELEE_CAMERA_RESPONSE)*recoveryT;
+        const float response=1.0f-std::exp(-responseRate*dt);
         camera.pos+= (desired-camera.pos)*response;
         camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
     }else{
@@ -1439,7 +1447,10 @@ bool Game::damageSoulShell(int index, float amount) {
 
 void Game::updateMeleeDash(float dt) {
     MeleeVisualState& visual=state_.meleeVisual;
-    visual.airLungeCameraLag=std::max(0.0f,visual.airLungeCameraLag-dt*AIR_MELEE_CAMERA_LAG_DECAY);
+    if(visual.airLungeCameraLag>0.0f){
+        visual.airLungeCameraLag*=std::exp(-AIR_MELEE_CAMERA_LAG_DECAY*dt);
+        if(visual.airLungeCameraLag<0.001f)visual.airLungeCameraLag=0.0f;
+    }
     if(visual.airLungeLandingPending){
         visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
         visual.airLungeRotation+=visual.airLungeAngularVelocity*dt;

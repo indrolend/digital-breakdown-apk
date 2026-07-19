@@ -212,6 +212,8 @@ int main() {
     step(game,23);
     ok &= expect(game.state().player.grounded && !game.state().meleeVisual.airLungeLandingPending && game.state().player.pos.z<-4.0f,
         "ballistic lunge closes at a forward ground contact instead of recovering in midair");
+    ok &= expect(game.state().meleeVisual.airLungeCameraLag>0.0f,
+        "camera follow remains eased across physical landing instead of switching modes mid-arc");
     const float lowDropRecovery=game.state().meleeVisual.landingRecoveryDuration;
     ok &= expect(lowDropRecovery>=0.06f && game.state().player.vel.z<0.0f,
         "lunge landing retains forward momentum and enters a short recovery blend");
