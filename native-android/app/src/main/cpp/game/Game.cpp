@@ -114,11 +114,15 @@ constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
-constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 1.08f;
+constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 0.94f;
 constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
-constexpr float AIR_MELEE_VERTICAL_KICK = 2.60f;
-constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.34f;
+constexpr float AIR_MELEE_VERTICAL_KICK = 3.60f;
+constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.42f;
 constexpr float AIR_MELEE_BODY_RADIUS = 0.72f;
+constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
+constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
+constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
+constexpr float AIR_MELEE_CAMERA_LAG_DECAY = 2.4f;
 struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
 constexpr MeleeCombo MELEE_COMBOS[] = {
     {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
@@ -931,7 +935,8 @@ void Game::updatePlayer(float dt) {
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
-    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT;
+    const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
+    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT*(committedLunge?0.18f:1.0f);
     const float airSpeed = p.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
     const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
     const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
@@ -1069,11 +1074,12 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
                 // The airborne action is the phone itself travelling through a
                 // compact forward arc. It is locomotion with contact damage,
                 // not a handheld-style swing layered over ordinary movement.
-                const float settle = attackT * attackT * (3.0f - 2.0f * attackT);
-                pose.forward += 0.18f * snap;
-                pose.lift += 0.13f * snap;
+                const float horizontal=std::max(0.01f,horizontalLength(state_.player.vel));
+                const float trajectoryAngle=std::atan2(state_.player.jumpVel,horizontal);
+                pose.forward += 0.10f+0.10f*snap;
+                pose.lift += 0.06f+0.08f*snap;
                 q = quatAxisAngle({0,1,0}, state_.camera.yaw)
-                    * quatAxisAngle({1,0,0}, -0.18f - snap * 1.12f + settle * 0.18f);
+                    * quatAxisAngle({1,0,0},-0.12f-melee.airLungeRotation-trajectoryAngle*0.32f);
                 pose.actionState = 6;
                 pose.orientation = quatNormalized(q);
                 return;
@@ -1214,7 +1220,6 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
 }
 
 void Game::updateCamera(float dt) {
-    (void)dt;
     CameraState& camera = state_.camera;
     const PlayerState& player = state_.player;
     const float cp = std::cos(camera.pitch);
@@ -1228,9 +1233,16 @@ void Game::updateCamera(float dt) {
     Vec3 desired = player.pos - aimForward * 3.0f + Vec3{0, 1.1f, 0};
     if (desired.y < GROUND_Y + 0.8f) desired.y = GROUND_Y + 0.8f;
     constrainThirdPersonCamera(desired, player.pos);
-    camera.pos = desired;
-    camera.lookTarget = player.pos + aimForward * 10.0f;
-    camera.lookTarget.y += 0.45f;
+    Vec3 desiredTarget=player.pos+aimForward*10.0f;
+    desiredTarget.y+=0.45f;
+    if(state_.meleeVisual.airLungeCameraLag>0.0f&&dt>0.0f){
+        const float response=1.0f-std::exp(-AIR_MELEE_CAMERA_RESPONSE*dt);
+        camera.pos+= (desired-camera.pos)*response;
+        camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
+    }else{
+        camera.pos=desired;
+        camera.lookTarget=desiredTarget;
+    }
     camera.forward = normalized(camera.lookTarget-camera.pos);
 }
 
@@ -1316,6 +1328,7 @@ void Game::triggerMelee() {
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
     visual.airLungePending=airborne; visual.airLungeSpeed=combo.dashSpeed*AIR_MELEE_LUNGE_SPEED_MULT;
     visual.airLungeTimer=airborne?AIR_MELEE_LOCOMOTION_DURATION:0.0f;
+    visual.airLungeRotation=0.0f;visual.airLungeAngularVelocity=airborne?AIR_MELEE_ANGULAR_VELOCITY:0.0f;visual.airLungeCameraLag=airborne?1.0f:0.0f;
     if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
     visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
     visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
@@ -1373,8 +1386,11 @@ bool Game::damageSoulShell(int index, float amount) {
 
 void Game::updateMeleeDash(float dt) {
     MeleeVisualState& visual=state_.meleeVisual;
+    visual.airLungeCameraLag=std::max(0.0f,visual.airLungeCameraLag-dt*AIR_MELEE_CAMERA_LAG_DECAY);
     if(visual.airLungeTimer>0.0f){
         visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
+        visual.airLungeRotation+=visual.airLungeAngularVelocity*dt;
+        visual.airLungeAngularVelocity*=std::exp(-AIR_MELEE_ANGULAR_DAMPING*dt);
         visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
         if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
         applyMeleeHits();

@@ -306,6 +306,9 @@ struct MeleeVisualState {
     bool locomotionLunge = false;
     float airLungeSpeed = 0.0f;
     float airLungeTimer = 0.0f;
+    float airLungeRotation = 0.0f;
+    float airLungeAngularVelocity = 0.0f;
+    float airLungeCameraLag = 0.0f;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;

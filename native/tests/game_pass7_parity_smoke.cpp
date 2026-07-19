@@ -190,14 +190,18 @@ int main() {
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
     const GameState airLungeForward=game.state();
-    ok &= expect(airLungeForward.player.vel.z < -12.5f && std::abs(airLungeForward.player.vel.x) < 1.2f,
+    ok &= expect(airLungeForward.player.vel.z < -10.5f && std::abs(airLungeForward.player.vel.x) < 1.2f,
         "airborne action becomes a strong camera-forward locomotion impulse");
-    ok &= expect(airLungeForward.player.jumpVel > 2.0f && !airLungeForward.player.grounded,
+    ok &= expect(airLungeForward.player.jumpVel > 3.0f && !airLungeForward.player.grounded,
         "airborne locomotion begins a forward physical arc instead of a flat attack dash");
     ok &= expect(airLungeForward.meleeVisual.dashTimer <= 0.0f && airLungeForward.meleeVisual.airLungeTimer > 0.0f && !airLungeForward.meleeVisual.airLungePending,
         "airborne locomotion consumes one impulse instead of stacking the grounded positional dash");
     ok &= expect(airLungeForward.meleeVisual.locomotionLunge && airLungeForward.phonePose.actionState==6,
         "airborne locomotion uses the full-phone arch pose rather than the grounded swing pose");
+    ok &= expect(airLungeForward.meleeVisual.airLungeRotation>0.0f && airLungeForward.meleeVisual.airLungeAngularVelocity>0.0f,
+        "phone body arch integrates angular velocity instead of sampling a canned attack curve");
+    ok &= expect(horizontalSpeed(airLungeForward.camera.pos-airLungeForward.player.pos)>3.05f,
+        "lunge camera retains inertia so physical travel remains visible on screen");
 
     game.reset();
     {
@@ -206,7 +210,7 @@ int main() {
         setup.player.pos={0.0f,1.4f,0.0f}; setup.player.grounded=false; setup.camera.yaw=-DB_PI*0.5f;
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
-    ok &= expect(game.state().player.vel.x > 12.5f && std::abs(game.state().player.vel.z) < 0.25f,
+    ok &= expect(game.state().player.vel.x > 10.5f && std::abs(game.state().player.vel.z) < 0.25f,
         "airborne locomotion lunge follows camera heading on touch and desktop input paths");
 
     game.reset();
