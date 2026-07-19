@@ -74,7 +74,20 @@ public final class NativeBridge {
         copyModel(context, R.raw.phone, new File(dir, "phone.dbmesh"));
         copyModel(context, R.raw.flower, new File(dir, "flower.dbmesh"));
         copyModel(context, R.raw.human, new File(dir, "human.dbhuman"));
+        File tvDir = new File(dir, "tv-gifs");
+        if (!tvDir.exists()) tvDir.mkdirs();
+        for (int index = 1; index <= 15; ++index) {
+            String name = String.format(java.util.Locale.US, "tv%02d.dbgif", index);
+            copyAsset(context, name, new File(tvDir, name));
+        }
         setAssetRoot(dir.getAbsolutePath());
+    }
+
+    private static void copyAsset(Context context, String asset, File output) {
+        try (InputStream input = context.getAssets().open(asset); FileOutputStream stream = new FileOutputStream(output)) {
+            byte[] buffer = new byte[32768]; int count;
+            while ((count = input.read(buffer)) > 0) stream.write(buffer, 0, count);
+        } catch (Exception ignored) { }
     }
 
     private static void copyModel(Context context, int resource, File output) {

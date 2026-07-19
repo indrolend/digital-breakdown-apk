@@ -106,7 +106,10 @@ add_custom_command(TARGET DigitalBreakdown POST_BUILD
         "$<TARGET_FILE_DIR:DigitalBreakdown>/audio"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/../native-models"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/models")
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/models"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/../native-tv-gifs"
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/tv-gifs")
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)

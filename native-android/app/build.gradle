@@ -5,6 +5,7 @@ android {
     compileSdk 36
     ndkVersion '27.2.12479018'
     buildFeatures { buildConfig true }
+    sourceSets { main { assets.srcDirs += ['../../native-tv-gifs'] } }
 
     defaultConfig {
         applicationId 'com.indrolend.digitalbreakdown.native'

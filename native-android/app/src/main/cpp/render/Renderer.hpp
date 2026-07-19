@@ -3,12 +3,13 @@
 #include "../game/Game.hpp"
 #include "../game/ModelData.hpp"
 #include "../game/HumanModelData.hpp"
+#include "../game/TvGifWall.hpp"
 #include <string>
 
 class Renderer {
 public:
     void surfaceCreated();
-    void setAssetRoot(const std::string& root) { assetRoot_=root; }
+    void setAssetRoot(const std::string& root) { assetRoot_=root; tvGifWall_.load(std::filesystem::path(root)/"tv-gifs"); }
     void surfaceChanged(int width, int height);
     void draw(const GameState& state);
 
@@ -44,6 +45,7 @@ private:
     StaticModelData phoneModel_;
     StaticModelData flowerModel_;
     HumanModelData humanModel_;
+    TvGifWall tvGifWall_;
     std::vector<float> humanVertices_;
     std::vector<float> humanNormals_;
 

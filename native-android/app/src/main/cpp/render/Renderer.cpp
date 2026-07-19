@@ -515,8 +515,8 @@ void Renderer::draw(const GameState& state) {
         drawBox(viewProj,{36.7f,2.4f,0},{0.12f,4.8f,6.4f},0,wall);
         drawBox(viewProj,{40.4f,2.4f,-3.2f},{7.4f,4.8f,0.12f},0,wall);drawBox(viewProj,{40.4f,2.4f,3.2f},{7.4f,4.8f,0.12f},0,wall);
         drawBox(viewProj,{42.25f,0.70f,0},{1.75f,1.35f,0.82f},-1.5708f,black);
-        const float v=0.18f+0.16f*std::abs(std::sin(state.time*47.0f+state.secretTv.signal*1.7f));const float staticColor[4]={v,v+0.035f,v+0.045f,1};
-        drawBox(viewProj,{41.82f,0.78f,0},{0.035f,0.86f,1.22f},-1.5708f,staticColor);
+        if(state.secretTv.broken){const float v=0.18f+0.16f*std::abs(std::sin(state.time*47.0f+state.secretTv.signal*1.7f));const float staticColor[4]={v,v+0.035f,v+0.045f,1};drawBox(viewProj,{41.82f,0.78f,0},{0.035f,0.86f,1.22f},-1.5708f,staticColor);}
+        else {const float cellY=0.86f/TvGifWall::Rows,cellZ=1.22f/TvGifWall::Columns;for(int row=0;row<TvGifWall::Rows;++row)for(int col=0;col<TvGifWall::Columns;++col){const auto rgb=tvGifWall_.sample(col,row,state.time,state.secretTv.signal);const float color[4]={rgb.r,rgb.g,rgb.b,1};drawBox(viewProj,{41.805f,0.78f-0.43f+cellY*(row+0.5f),-0.61f+cellZ*(col+0.5f)},{0.038f,cellY*1.04f,cellZ*1.04f},-1.5708f,color);}}
         drawBox(viewProj,{41.35f,0.18f,-0.80f},{1.8f,0.055f,0.055f},0.18f,cable);drawBox(viewProj,{41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},-0.22f,cable);
     }
 

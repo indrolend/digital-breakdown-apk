@@ -168,6 +168,7 @@ unsigned int compileStaticModel(const StaticModelData& model, bool shadow = fals
 }
 
 void DesktopRenderer::setAssetRoot(const std::filesystem::path& root) {
+    tvGifWall_.load(root.parent_path()/"tv-gifs");
     StaticModelData phone;
     StaticModelData flower;
     const bool phoneLoaded=phone.load((root/"phone.dbmesh").string());
@@ -498,8 +499,16 @@ void DesktopRenderer::draw(const GameState& state) const {
         drawBox({40.4f,2.4f,-3.2f},{7.4f,4.8f,0.12f},0,0,0,0.07f,0.078f,0.082f);
         drawBox({40.4f,2.4f,3.2f},{7.4f,4.8f,0.12f},0,0,0,0.07f,0.078f,0.082f);
         drawBox({42.25f,0.70f,0},{1.75f,1.35f,0.82f},0,-1.5708f,0,0.018f,0.020f,0.021f);
-        const float staticValue=0.18f+0.16f*std::abs(std::sin(state.time*47.0f+state.secretTv.signal*1.7f));
-        drawBox({41.82f,0.78f,0},{0.035f,0.86f,1.22f},0,-1.5708f,0,staticValue,staticValue+0.035f,staticValue+0.045f);
+        if(state.secretTv.broken){
+            const float staticValue=0.18f+0.16f*std::abs(std::sin(state.time*47.0f+state.secretTv.signal*1.7f));
+            drawBox({41.82f,0.78f,0},{0.035f,0.86f,1.22f},0,-1.5708f,0,staticValue,staticValue+0.035f,staticValue+0.045f);
+        }else{
+            const float cellY=0.86f/TvGifWall::Rows,cellZ=1.22f/TvGifWall::Columns;
+            for(int row=0;row<TvGifWall::Rows;++row)for(int col=0;col<TvGifWall::Columns;++col){
+                const auto color=tvGifWall_.sample(col,row,state.time,state.secretTv.signal);
+                drawBox({41.805f,0.78f-0.43f+cellY*(row+0.5f),-0.61f+cellZ*(col+0.5f)},{0.038f,cellY*1.04f,cellZ*1.04f},0,-1.5708f,0,color.r,color.g,color.b);
+            }
+        }
         drawBox({41.35f,0.18f,-0.80f},{1.8f,0.055f,0.055f},0,0.18f,0,0.025f,0.028f,0.03f);
         drawBox({41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},0,-0.22f,0,0.025f,0.028f,0.03f);
     }

@@ -5,6 +5,7 @@
 #include "HumanModelData.hpp"
 
 #include <filesystem>
+#include "../native-android/app/src/main/cpp/game/TvGifWall.hpp"
 
 class DesktopRenderer {
 public:
@@ -15,6 +16,7 @@ public:
     void draw(const GameState& state) const;
 
 private:
+    TvGifWall tvGifWall_;
     int width_ = 1280;
     int height_ = 720;
     unsigned int phoneModelList_ = 0;
