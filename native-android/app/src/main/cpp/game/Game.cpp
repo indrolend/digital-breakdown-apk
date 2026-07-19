@@ -676,7 +676,19 @@ void Game::update(float dt) {
         return;
     }
     if(state_.cinematic.introActive) {
-        clearInputState();
+        // Freeze simulation without deleting held locomotion. Touch sticks,
+        // keyboard keys, and controller axes held through the reveal should
+        // become live on the first gameplay frame. Only transient actions and
+        // accumulated look deltas are discarded during the locked camera shot.
+        state_.input.lookDeltaX=0.0f;
+        state_.input.lookDeltaY=0.0f;
+        state_.input.primaryHeld=false;
+        state_.input.touchPrimaryHeld=false;
+        state_.input.jumpHeld=false;
+        state_.input.jumpPressed=false;
+        state_.input.meleePressed=false;
+        state_.input.shootPressed=false;
+        state_.input.cameraTogglePressed=false;
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
         updatePhoneTransform();
         updateIntroCamera(dt);

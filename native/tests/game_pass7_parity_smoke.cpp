@@ -73,6 +73,8 @@ int main() {
     step(game,70);
     ok &= expect(!game.state().cinematic.introActive && horizontalSpeed(game.state().camera.pos-game.state().player.pos)>2.45f,
         "product reveal hands off into the collision-safe gameplay chase camera before play");
+    ok &= expect(length(game.state().player.pos-introLockedPosition)>0.001f,
+        "direction held through the entrance becomes active on the first gameplay frame");
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
