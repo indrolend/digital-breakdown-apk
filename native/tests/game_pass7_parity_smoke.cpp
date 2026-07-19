@@ -149,6 +149,37 @@ int main() {
         "phone screen-forward pose returns toward neutral after vacuum release");
 
     game.reset();
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);step(game,2);
+    game.setTouchControls(0,0,0,0,true,false,false,true,false,false);step(game);
+    ok &= expect(game.state().vacuum.active&&game.state().meleeVisual.visualTimer<=0.0f,
+        "held grounded vacuum owns its action beat instead of overlapping a melee attack");
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.pos.y=1.4f;setup.player.grounded=false;setup.player.jumpVel=0.0f;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,true,false,false);step(game);
+    const int lungeAirJumps=game.state().player.airJumpsRemaining;
+    ok &= expect(game.state().meleeVisual.airLungeLandingPending&&!game.state().vacuum.active,
+        "air lunge cleanly cancels vacuum and owns the phone until physical landing");
+    game.setTouchControls(0,0,0,0,true,false,true,false,false,false);step(game,8);
+    ok &= expect(!game.state().vacuum.active&&game.state().player.airJumpsRemaining==lungeAirJumps,
+        "held vacuum and jump input cannot overlap or interrupt a committed lunge");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets)target.alive=false;
+        setup.player.pos={-13.9f,1.0f,0.0f};setup.player.vel={};setup.player.jumpVel=0.0f;setup.player.grounded=false;
+        setup.camera.yaw=0.0f;
+    }
+    game.setKey(62,true);
+    game.setTouchControls(-1,0,0,0,false,false,false,false,false,false);
+    step(game,60);
+    ok &= expect(game.state().meleeVisual.wallClimbRemaining<=0.0f&&game.state().player.jumpVel<0.0f,
+        "wall climb spends a finite airborne grip budget and returns control to gravity");
+    game.setKey(62,false);
+
+    game.reset();
     {
         GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets) target.alive=false;

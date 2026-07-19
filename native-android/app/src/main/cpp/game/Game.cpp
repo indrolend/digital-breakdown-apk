@@ -34,6 +34,7 @@ constexpr float LANDING_MOMENTUM_BOOST = 1.04f;
 constexpr float WALL_CLIMB_SPEED = 3.15f;
 constexpr float WALL_CLIMB_GRIP = 0.64f;
 constexpr float WALL_CLIMB_MAX_HEIGHT = 1.25f;
+constexpr float WALL_CLIMB_MAX_TIME = 0.48f;
 constexpr float WALL_CLIMB_PUSH_DOT = -0.18f;
 constexpr float CEILING_CLEARANCE = 0.42f;
 constexpr float PLAYER_CEILING_BODY_CLEARANCE = 0.42f;
@@ -774,7 +775,7 @@ void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float
 void Game::savePlayerContext(NetworkPeerState& c) const{c.input=state_.input;c.player=state_.player;c.energy=state_.energy;c.camera=state_.camera;c.vacuum=state_.vacuum;c.pendingShots=state_.pendingShots;c.phonePose=state_.phonePose;c.phoneTransform=state_.phoneTransform;c.phoneVisual=state_.phoneVisual;c.hud=state_.hud;c.meleeVisual=state_.meleeVisual;c.meleeCooldown=state_.meleeCooldown;c.meleePose=state_.meleePose;c.meleeComboWindow=state_.meleeComboWindow;}
 void Game::loadPlayerContext(const NetworkPeerState& c){state_.input=c.input;state_.player=c.player;state_.energy=c.energy;state_.camera=c.camera;state_.vacuum=c.vacuum;state_.pendingShots=c.pendingShots;state_.phonePose=c.phonePose;state_.phoneTransform=c.phoneTransform;state_.phoneVisual=c.phoneVisual;state_.hud=c.hud;state_.meleeVisual=c.meleeVisual;state_.meleeCooldown=c.meleeCooldown;state_.meleePose=c.meleePose;state_.meleeComboWindow=c.meleeComboWindow;}
 void Game::updateNetworkPeers(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;NetworkPeerState local;savePlayerContext(local);for(int id=1;id<NETWORK_PLAYER_COUNT;++id){auto& peer=state_.multiplayer.peers[id];if(!peer.active)continue;loadPlayerContext(peer);simulationPlayerId_=id;updateInputActions(dt);updatePlayer(dt);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();processPendingShots(dt);updateVacuum(dt);processQueuedSoulCaptures();updateBattery(dt);updateCamera(dt);savePlayerContext(peer);}simulationPlayerId_=0;loadPlayerContext(local);}
-void Game::updateNetworkGuest(float dt){simulationPlayerId_=state_.multiplayer.localPlayerId;const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;state_.input.meleePressed=false;state_.input.shootPressed=false;updateInputActions(dt);state_.input.meleePressed=melee;state_.input.shootPressed=shoot;updatePlayer(dt);state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1;state_.vacuum.power=clampf(state_.vacuum.power+(state_.vacuum.active?2.4f:-3.2f)*dt,0,1);state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*std::min(1.0f,dt*10.0f);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();updateCamera(dt);updateSoulLattices();updateCrosshair(dt);state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);state_.hud.storedSouls=state_.player.souls;state_.input.meleePressed=false;state_.input.shootPressed=false;simulationPlayerId_=0;}
+void Game::updateNetworkGuest(float dt){simulationPlayerId_=state_.multiplayer.localPlayerId;const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;state_.input.meleePressed=false;state_.input.shootPressed=false;updateInputActions(dt);state_.input.meleePressed=melee;state_.input.shootPressed=shoot;updatePlayer(dt);const bool vacuumBlocked=state_.meleeVisual.airLungeLandingPending||state_.meleeVisual.visualTimer>0.0f||state_.phonePose.doubleJumpVacuumPause>0.0f;state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1&&!vacuumBlocked;state_.vacuum.power=clampf(state_.vacuum.power+(state_.vacuum.active?2.4f:-3.2f)*dt,0,1);state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*std::min(1.0f,dt*10.0f);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();updateCamera(dt);updateSoulLattices();updateCrosshair(dt);state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);state_.hud.storedSouls=state_.player.souls;state_.input.meleePressed=false;state_.input.shootPressed=false;simulationPlayerId_=0;}
 
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
@@ -782,23 +783,42 @@ void Game::updateInputActions(float dt) {
     state_.camera.yaw -= input.lookDeltaX * 0.003f;
     state_.camera.pitch = clampf(state_.camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
     input.lookDeltaX = input.lookDeltaY = 0.0f;
-    if(input.jumpPressed&&state_.meleeVisual.wallGripTimer>0.0f){
+    MeleeVisualState& action=state_.meleeVisual;
+    const bool lungeOwned=action.airLungeLandingPending;
+    if(input.jumpPressed&&action.wallGripTimer>0.0f){
         spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
-        state_.player.vel+=state_.meleeVisual.wallNormal*6.0f;
+        state_.player.vel+=action.wallNormal*6.0f;
         state_.player.jumpVel=AIR_JUMP_SPEED;
         state_.player.grounded=false;
-        state_.meleeVisual.wallGripTimer=0.0f;
-        state_.meleeVisual.airLungeLandingPending=false;
-        state_.meleeVisual.locomotionLunge=false;
-    }else if (input.jumpPressed) { state_.player.jumpBufferTimer = JUMP_BUFFER; tryJump(); }
-    if (input.meleePressed) triggerMelee();
-    if (input.shootPressed) shootStoredSoul();
+        action.wallGripTimer=0.0f;
+        action.airLungeLandingPending=false;
+        action.locomotionLunge=false;
+        state_.vacuum.active=false;
+    }else if(input.jumpPressed&&!lungeOwned){
+        state_.vacuum.active=false;
+        state_.player.jumpBufferTimer=JUMP_BUFFER;
+        tryJump();
+    }
+    // Air melee is an evasive locomotion cancel. Ground melee waits for a held
+    // vacuum/slurp beat to finish instead of producing two actions at once.
+    if(input.meleePressed&&!lungeOwned){
+        const bool airborne=!state_.player.grounded;
+        if(airborne||!state_.vacuum.active){
+            if(airborne)state_.vacuum.active=false;
+            triggerMelee();
+        }
+    }
+    const bool committedAfterInput=action.airLungeLandingPending;
+    if(input.shootPressed&&!committedAfterInput&&!state_.vacuum.active)shootStoredSoul();
     input.cameraTogglePressed = input.jumpPressed = input.meleePressed = input.shootPressed = false;
     state_.meleeCooldown = std::max(0.0f, state_.meleeCooldown - dt);
     state_.meleeComboWindow = std::max(0.0f, state_.meleeComboWindow - dt);
     state_.meleeVisual.visualTimer = std::max(0.0f, state_.meleeVisual.visualTimer - dt);
     state_.meleePose = std::max(0.0f, state_.meleePose - dt * 5.5f);
-    state_.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && state_.player.alive && state_.player.battery > 1.0f;
+    const bool attackOwned=action.visualTimer>0.0f;
+    const bool jumpVacuumBlocked=state_.phonePose.doubleJumpVacuumPause>0.0f;
+    state_.vacuum.active=(input.primaryHeld||input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1.0f
+        && !action.airLungeLandingPending && !attackOwned && !jumpVacuumBlocked;
     if (state_.player.souls >= MAX_STORED_SOULS) state_.vacuum.active = false;
 }
 
@@ -861,7 +881,7 @@ void Game::resolvePlayerObstacleCollisions() {
 void Game::applyWallClimb(float dt) {
     PlayerState& p = state_.player;
     InputState& input = state_.input;
-    if (p.grounded || !input.jumpHeld) return;
+    if (p.grounded || !input.jumpHeld || state_.meleeVisual.wallClimbRemaining<=0.0f) return;
     const float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     const float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
     if (std::abs(forwardAxis) + std::abs(strafeAxis) <= 0.05f) return;
@@ -892,6 +912,7 @@ void Game::applyWallClimb(float dt) {
     if (p.pos.y >= climbLimit) { p.pos.y = climbLimit; if (p.jumpVel > 0) p.jumpVel = 0; return; }
     p.jumpVel = std::max(p.jumpVel, WALL_CLIMB_SPEED * batteryPower(p));
     p.vel.x *= WALL_CLIMB_GRIP; p.vel.z *= WALL_CLIMB_GRIP;
+    state_.meleeVisual.wallClimbRemaining=std::max(0.0f,state_.meleeVisual.wallClimbRemaining-dt);
     spendBattery(BATTERY_WALL_CLIMB_DRAIN * dt,BatteryReason::Climb);
 }
 
@@ -968,6 +989,7 @@ void Game::updatePlayer(float dt) {
     MeleeVisualState& lunge=state_.meleeVisual;
     lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
     lunge.wallGripTimer=std::max(0.0f,lunge.wallGripTimer-dt);
+    if(p.grounded)lunge.wallClimbRemaining=WALL_CLIMB_MAX_TIME;
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
     const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
@@ -1353,6 +1375,7 @@ void Game::startGroundJump() {
     spendBattery(BATTERY_JUMP_COST,BatteryReason::Jump);
     p.jumpVel = JUMP_SPEED; p.grounded = false; p.coyoteTimer = 0; p.jumpBufferTimer = 0; p.airJumpsRemaining = 1;
     state_.meleeVisual.landingRecovery=0.0f;
+    state_.phonePose.doubleJumpVacuumPause=std::max(state_.phonePose.doubleJumpVacuumPause,0.12f);
 }
 void Game::startAirJump() {
     PlayerState& p = state_.player;

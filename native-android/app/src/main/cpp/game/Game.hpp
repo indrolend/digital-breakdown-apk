@@ -315,6 +315,7 @@ struct MeleeVisualState {
     float landingPosePitch = 0.0f;
     float wallGripTimer = 0.0f;
     Vec3 wallNormal;
+    float wallClimbRemaining = 0.48f;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;
