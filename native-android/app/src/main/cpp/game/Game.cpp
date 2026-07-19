@@ -114,10 +114,9 @@ constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
-constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 0.94f;
 constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
-constexpr float AIR_MELEE_VERTICAL_KICK = 3.60f;
-constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.42f;
+constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.68f;
+constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = 5.40f;
 constexpr float AIR_MELEE_BODY_RADIUS = 0.72f;
 constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
@@ -956,7 +955,10 @@ void Game::updatePlayer(float dt) {
         const float forwardSpeed = dotXZ(p.vel, direction);
         const Vec3 lateral = p.vel - direction * forwardSpeed;
         p.vel = direction * std::max(forwardSpeed, melee.airLungeSpeed) + lateral * AIR_MELEE_LATERAL_RETENTION;
-        p.jumpVel = std::max(p.jumpVel, AIR_MELEE_VERTICAL_KICK);
+        const float flightTime=std::max(0.05f,melee.airLungeTimer);
+        const Vec3 predicted=p.pos+direction*(melee.airLungeSpeed*flightTime);
+        const float landingY=getPlayerSupportY(predicted.x,predicted.z);
+        p.jumpVel=(landingY-p.pos.y+0.5f*GRAVITY*flightTime*flightTime)/flightTime;
         melee.airLungePending = false;
     }
     if (!p.grounded) {
@@ -982,6 +984,12 @@ void Game::updatePlayer(float dt) {
     } else if (p.jumpVel <= 0 && p.pos.y <= supportAfter) {
         p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
         state_.phonePose.doubleJumpTimer = 0.0f;
+    }
+    if(p.grounded&&state_.meleeVisual.airLungeLandingPending){
+        state_.meleeVisual.airLungeLandingPending=false;
+        state_.meleeVisual.airLungeTimer=0.0f;
+        state_.meleeVisual.visualTimer=0.0f;
+        state_.meleeVisual.airLungeAngularVelocity=0.0f;
     }
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     if (p.pos.x < minX) { p.pos.x = minX; if (p.vel.x < 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
@@ -1326,7 +1334,8 @@ void Game::triggerMelee() {
     const bool airborne=!state_.player.grounded;
     visual.locomotionLunge=airborne;
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
-    visual.airLungePending=airborne; visual.airLungeSpeed=combo.dashSpeed*AIR_MELEE_LUNGE_SPEED_MULT;
+    visual.airLungePending=airborne;visual.airLungeLandingPending=airborne;
+    visual.airLungeSpeed=airborne?AIR_MELEE_LOCOMOTION_DISTANCE/AIR_MELEE_LOCOMOTION_DURATION:0.0f;
     visual.airLungeTimer=airborne?AIR_MELEE_LOCOMOTION_DURATION:0.0f;
     visual.airLungeRotation=0.0f;visual.airLungeAngularVelocity=airborne?AIR_MELEE_ANGULAR_VELOCITY:0.0f;visual.airLungeCameraLag=airborne?1.0f:0.0f;
     if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
@@ -1388,12 +1397,24 @@ void Game::updateMeleeDash(float dt) {
     MeleeVisualState& visual=state_.meleeVisual;
     visual.airLungeCameraLag=std::max(0.0f,visual.airLungeCameraLag-dt*AIR_MELEE_CAMERA_LAG_DECAY);
     if(visual.airLungeTimer>0.0f){
+        const float previousTimer=visual.airLungeTimer;
         visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
         visual.airLungeRotation+=visual.airLungeAngularVelocity*dt;
         visual.airLungeAngularVelocity*=std::exp(-AIR_MELEE_ANGULAR_DAMPING*dt);
         visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
         if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
         applyMeleeHits();
+        if(previousTimer>0.0f&&visual.airLungeTimer<=0.0f&&visual.airLungeLandingPending){
+            PlayerState& player=state_.player;
+            player.pos.y=getPlayerSupportY(player.pos.x,player.pos.z);
+            player.jumpVel=0.0f;
+            player.grounded=true;
+            player.coyoteTimer=COYOTE_TIME;
+            player.airJumpsRemaining=1;
+            visual.airLungeLandingPending=false;
+            visual.visualTimer=0.0f;
+            visual.airLungeAngularVelocity=0.0f;
+        }
         return;
     }
     if(visual.dashTimer<=0.0f) return;

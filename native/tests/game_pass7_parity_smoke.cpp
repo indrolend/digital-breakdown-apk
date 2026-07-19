@@ -190,9 +190,9 @@ int main() {
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
     const GameState airLungeForward=game.state();
-    ok &= expect(airLungeForward.player.vel.z < -10.5f && std::abs(airLungeForward.player.vel.x) < 1.2f,
+    ok &= expect(airLungeForward.player.vel.z < -7.0f && std::abs(airLungeForward.player.vel.x) < 1.2f,
         "airborne action becomes a strong camera-forward locomotion impulse");
-    ok &= expect(airLungeForward.player.jumpVel > 3.0f && !airLungeForward.player.grounded,
+    ok &= expect(airLungeForward.player.jumpVel > 2.0f && !airLungeForward.player.grounded,
         "airborne locomotion begins a forward physical arc instead of a flat attack dash");
     ok &= expect(airLungeForward.meleeVisual.dashTimer <= 0.0f && airLungeForward.meleeVisual.airLungeTimer > 0.0f && !airLungeForward.meleeVisual.airLungePending,
         "airborne locomotion consumes one impulse instead of stacking the grounded positional dash");
@@ -202,6 +202,9 @@ int main() {
         "phone body arch integrates angular velocity instead of sampling a canned attack curve");
     ok &= expect(horizontalSpeed(airLungeForward.camera.pos-airLungeForward.player.pos)>3.05f,
         "lunge camera retains inertia so physical travel remains visible on screen");
+    step(game,44);
+    ok &= expect(game.state().player.grounded && !game.state().meleeVisual.airLungeLandingPending && game.state().player.pos.z<-4.0f,
+        "ballistic lunge closes at a forward ground contact instead of recovering in midair");
 
     game.reset();
     {
@@ -210,7 +213,7 @@ int main() {
         setup.player.pos={0.0f,1.4f,0.0f}; setup.player.grounded=false; setup.camera.yaw=-DB_PI*0.5f;
     }
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
-    ok &= expect(game.state().player.vel.x > 10.5f && std::abs(game.state().player.vel.z) < 0.25f,
+    ok &= expect(game.state().player.vel.x > 7.0f && std::abs(game.state().player.vel.z) < 0.25f,
         "airborne locomotion lunge follows camera heading on touch and desktop input paths");
 
     game.reset();
@@ -223,7 +226,7 @@ int main() {
     game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
     ok &= expect(near(game.state().targets[0].armor,4.0f,0.001f),
         "airborne locomotion does not project the grounded melee hit volume ahead of the phone");
-    step(game,12);
+    step(game,24);
     ok &= expect(game.state().targets[0].armor<4.0f && game.state().player.vel.z<0.0f,
         "airborne locomotion deals secondary damage on body contact without cancelling travel");
 
