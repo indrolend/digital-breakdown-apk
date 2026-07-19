@@ -86,8 +86,15 @@ const char* VERT_SRC =
 const char* FRAG_SRC =
     "precision mediump float;\n"
     "uniform vec4 uColor;\n"
+    "uniform float uUseNormal;\n"
     "varying float vLight;\n"
-    "void main() { gl_FragColor = vec4(uColor.rgb * vLight, uColor.a); }\n";
+    "void main() {\n"
+    "  vec3 lit = uColor.rgb * vLight;\n"
+    "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
+    "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
+    "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
+    "  gl_FragColor = vec4(uUseNormal > -0.5 ? graded : lit, uColor.a);\n"
+    "}\n";
 
 const char* DATAMOSH_VERT="attribute vec2 aPos;attribute vec2 aUv;varying vec2 vUv;void main(){vUv=aUv;gl_Position=vec4(aPos,0.0,1.0);}";
 const char* DATAMOSH_FRAG="precision mediump float;uniform sampler2D uFrame;uniform float uAlpha;varying vec2 vUv;void main(){vec4 c=texture2D(uFrame,vUv);gl_FragColor=vec4(c.rgb,uAlpha);}";
