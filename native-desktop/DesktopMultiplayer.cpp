@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdio>
 #include <chrono>
+#include <memory>
 
 namespace {
 #ifdef _WIN32
@@ -98,8 +99,8 @@ bool DesktopMultiplayer::createRoom() {
   return true;
 #elif defined(__APPLE__)
   ix::HttpClient client;
-  ix::HttpRequestArgs args;
-  args.extraHeaders["Content-Type"]="application/json";
+  auto args=std::make_shared<ix::HttpRequestArgs>();
+  args->extraHeaders["Content-Type"]="application/json";
   const auto response=client.post(serviceUrl_+"/v1/rooms","{\"gameplayVersion\":3}",args);
   if(!response||response->statusCode<200||response->statusCode>=300)return false;
   const std::string code=jsonString(response->body,"code"),key=jsonString(response->body,"hostKey");

@@ -10,6 +10,9 @@
 #include <GL/gl.h>
 #undef near
 #undef far
+#elif defined(__APPLE__)
+#define GL_SILENCE_DEPRECATION
+#include <OpenGL/gl.h>
 #endif
 #include <GLFW/glfw3.h>
 
