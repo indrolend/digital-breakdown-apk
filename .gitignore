@@ -22,6 +22,8 @@ native-android/app/build/
 *.keystore
 *.jks
 *.mp3
+!native-desktop/audio/*.mp3
+!native-android/app/src/main/res/raw/*.mp3
 *.wav
 *.flac
 *.aiff

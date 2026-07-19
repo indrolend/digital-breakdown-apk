@@ -10,6 +10,9 @@ struct VisualColor {
 };
 
 namespace Pass7Visual {
+constexpr float CameraVerticalFovDegrees = 75.0f;
+constexpr float CameraNearPlane = 0.1f;
+constexpr float CameraFarPlane = 1000.0f;
 constexpr VisualColor Background{0x08 / 255.0f, 0x10 / 255.0f, 0x18 / 255.0f};
 constexpr VisualColor Floor{0x9a / 255.0f, 0xa7 / 255.0f, 0xad / 255.0f};
 constexpr VisualColor Wall{0x8f / 255.0f, 0x98 / 255.0f, 0xa3 / 255.0f};
@@ -21,6 +24,8 @@ constexpr VisualColor SoulEmission{0x1d / 255.0f, 0x9c / 255.0f, 1.0f};
 constexpr VisualColor HitFlash{1.0f, 1.0f, 1.0f};
 constexpr VisualColor NormalEnemy{0x22 / 255.0f, 0x2a / 255.0f, 0x30 / 255.0f};
 constexpr VisualColor BruteEnemy{0x43 / 255.0f, 0x2b / 255.0f, 0x2b / 255.0f};
+constexpr VisualColor Flower{0xcf / 255.0f, 1.0f, 0xe8 / 255.0f};
+constexpr VisualColor FlowerCore{0x1f / 255.0f, 0x5c / 255.0f, 0x3a / 255.0f};
 constexpr float HemisphereIntensity = 1.1f;
 constexpr float SunIntensity = 1.0f;
 constexpr float FillIntensity = 0.35f;

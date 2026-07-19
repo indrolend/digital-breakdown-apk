@@ -1,5 +1,6 @@
 #include <cmath>
 #include <iostream>
+#include <cstring>
 
 #include "Game.hpp"
 
@@ -27,6 +28,15 @@ float horizontalSpeed(const Vec3& v) {
 bool near(float a, float b, float eps = kEps) {
     return std::fabs(a - b) <= eps;
 }
+
+bool hasAudioCue(const GameState& state, AudioCue cue) {
+    for(const auto& event:state.audio.events) if(event.serial>0 && event.cue==cue) return true;
+    return false;
+}
+bool hasAudioCueAfter(const GameState& state, AudioCue cue, unsigned int serial) {
+    for(const auto& event:state.audio.events) if(event.serial>serial && event.cue==cue) return true;
+    return false;
+}
 }
 
 int main() {
@@ -34,9 +44,30 @@ int main() {
     Game game;
     game.reset();
     const GameState spawn = game.state();
+    ok &= expect(hasAudioCue(spawn,AudioCue::VcInvitation),"new native run queues the browser invitation cue");
     ok &= expect(near(spawn.player.pos.y, PHONE_MODEL_HEIGHT * 0.5f, 0.0001f), "spawn support y equals half Pass 7 phone height");
     ok &= expect(near(PHONE_BODY_WIDTH, 0.08f, 0.0001f) && near(PHONE_BODY_HEIGHT, 0.16f, 0.0001f) && near(PHONE_BODY_DEPTH, 0.012f, 0.0001f), "phone body dimensions match Pass 7 fallback/model normalized size");
+    ok &= expect(near(Pass7Visual::CameraVerticalFovDegrees,75.0f,0.0001f) && near(Pass7Visual::CameraNearPlane,0.1f,0.0001f) && near(Pass7Visual::CameraFarPlane,1000.0f,0.0001f), "native projection matches the browser PerspectiveCamera contract");
     ok &= expect(near(spawn.camera.pos.y - spawn.player.pos.y, 1.1f, 0.0001f), "third-person camera height is relative to corrected player support");
+    Game clearCameraGame; clearCameraGame.reset();
+    { GameState& clear=const_cast<GameState&>(clearCameraGame.state());clear.debug.colliderCount=0;clear.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,0.0f};clear.camera.yaw=0;clear.camera.pitch=0; }
+    step(clearCameraGame);const GameState clearCamera=clearCameraGame.state();
+    ok &= expect(near(clearCamera.camera.pos.x-clearCamera.player.pos.x,0.0f,0.0001f) && near(clearCamera.camera.pos.z-clearCamera.player.pos.z,3.0f,0.0001f), "unobstructed third-person boom matches the browser three-unit aim-relative offset");
+    ok &= expect(near(clearCamera.camera.lookTarget.y-clearCamera.player.pos.y,0.45f,0.0001f) && near(clearCamera.camera.lookTarget.z-clearCamera.player.pos.z,-10.0f,0.0001f), "third-person look target preserves browser aim direction and look lift");
+
+    game.prepareStartScreen();
+    const Vec3 preStartPosition=game.state().player.pos;
+    game.setTouchControls(1,1,50,50,true,true,true,true,true,true);
+    step(game,10);
+    ok &= expect(!game.state().started&&!game.state().dead&&near(length(game.state().player.pos-preStartPosition),0.0f,0.0001f)&&game.state().audio.nextSerial==1,
+        "browser start overlay freezes native gameplay and defers invitation audio until START");
+    game.restart();
+    ok &= expect(game.state().started&&hasAudioCue(game.state(),AudioCue::VcInvitation),
+        "START begins a fresh native run and queues the browser invitation cue");
+    game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
+    ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
+        "open native HUD pause freezes gameplay and releases held vacuum input");
+    game.setUiPaused(false);
 
     game.setTouchControls(0, 1, 0, 0, false, false, false, false, false, false);
     step(game);
@@ -121,9 +152,9 @@ int main() {
         setup.targets[0].attackCooldown=0; setup.targets[0].attackTimer=0;
     }
     const float batteryBeforeEnemyAttack=game.state().player.battery;
-    step(game,24);
+    step(game,42);
     ok &= expect(game.state().targets[0].attackHit && game.state().player.battery < batteryBeforeEnemyAttack,
-        "enemy attack uses the Pass 7 timed single-hit window");
+        "enemy committed lateral sweep crosses the player once after its readable windup");
 
     game.reset();
     {
@@ -137,6 +168,14 @@ int main() {
         "phone melee uses the browser directional hit volume instead of an omnidirectional radius");
     ok &= expect(game.state().meleeVisual.visualTimer > 0 && game.state().phonePose.actionState==4,
         "phone melee exposes shared attack pose and FX timing");
+    ok &= expect(hasAudioCue(game.state(),AudioCue::PhoneAttack),
+        "phone-attack audio is emitted by confirmed melee contact");
+    game.reset();
+    { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
+    const unsigned int missedMeleeSerial=game.state().audio.nextSerial-1;
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
+    ok &= expect(!hasAudioCueAfter(game.state(),AudioCue::PhoneAttack,missedMeleeSerial),
+        "missed melee does not play the phone-attack contact cue");
 
     game.reset();
     {
@@ -167,6 +206,33 @@ int main() {
     ok &= expect(vacuumState.targets[0].soulState == SoulState::Latched || vacuumState.targets[0].soulState == SoulState::Ingesting, "near slurpable target enters latched or ingesting state");
     ok &= expect(vacuumState.targets[0].vacuumPullAmount > 0.0f, "vacuum reaction amount is shared on target state");
     ok &= expect(vacuumState.targets[0].captureCollapseAmount >= 0.0f, "capture collapse amount is deterministic on target state");
+    {
+        const TargetState& soul=vacuumState.targets[0];
+        float greatestDisplacement=0.0f;
+        for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){
+            const int x=n%3,y=(n/3)%3,z=n/9;
+            const Vec3 rest{(x-1)*0.23f,(y-1)*0.23f,(z-1)*0.23f};
+            greatestDisplacement=std::max(greatestDisplacement,length(soul.latticePos[n]-rest));
+        }
+        ok &= expect(greatestDisplacement>0.01f,
+            "active vacuum deforms the browser-equivalent 27-node soul lattice");
+        ok &= expect(soul.tetherVisible && soul.tetherWidth>=0.12f &&
+            length(soul.tetherDestination-vacuumState.phoneTransform.vacuumPullPoint)<0.0001f,
+            "active soul tether narrows toward the live phone pull point");
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    step(game);
+    {
+        const TargetState& soul=game.state().targets[0];
+        bool resetExactly=true;
+        for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){
+            const int x=n%3,y=(n/3)%3,z=n/9;
+            const Vec3 rest{(x-1)*0.23f,(y-1)*0.23f,(z-1)*0.23f};
+            resetExactly=resetExactly&&length(soul.latticePos[n]-rest)<0.00001f&&length(soul.latticeVel[n])<0.00001f;
+        }
+        ok &= expect(resetExactly && !soul.tetherVisible,
+            "vacuum release immediately resets the lattice before rigid recoil");
+    }
 
     game.reset();
     {
@@ -196,6 +262,410 @@ int main() {
     step(game);
     const GameState firstPerson = game.state();
     ok &= expect(firstPerson.camera.firstPerson && near(firstPerson.player.yaw, firstPerson.camera.yaw, 0.0001f), "first-person heading remains tied to camera yaw");
+
+    game.reset();
+    step(game);
+    {
+        const GameState& state = game.state();
+        ok &= expect(near(length(state.phoneTransform.screenRight), 1.0f, 0.0001f) &&
+            near(length(state.phoneTransform.screenUp), 1.0f, 0.0001f) &&
+            near(length(state.phoneTransform.screenNormal), 1.0f, 0.0001f),
+            "shared phone transform exposes a normalized screen basis");
+        ok &= expect(std::abs(state.phoneTransform.screenNormal.x*state.phoneTransform.screenRight.x +
+            state.phoneTransform.screenNormal.y*state.phoneTransform.screenRight.y +
+            state.phoneTransform.screenNormal.z*state.phoneTransform.screenRight.z) < 0.0001f,
+            "shared screen normal remains perpendicular to screen right");
+    }
+
+    for(float pitch : {-1.2f,-0.75f,-0.35f,0.0f,0.35f,0.75f,1.2f}) {
+        game.reset();
+        game.setTouchControls(0,0,0,-pitch/0.003f,false,false,false,false,false,false);
+        step(game);
+        const GameState& state=game.state();
+        const Vec3 renderRay=normalized(state.camera.lookTarget-state.camera.pos);
+        ok &= expect(length(renderRay-state.camera.forward)<0.00001f,
+            "vacuum offer ray matches the rendered crosshair center ray across browser pitch fixtures");
+    }
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.player.pos+Vec3{0,0.5f,3.0f};
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,30);
+    ok &= expect(game.state().vacuum.target==-1 && game.state().targets[0].soulState==SoulState::Free,
+        "vacuum attraction cone rejects a soul behind the camera");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.player.pos+Vec3{0,0.5f,-4.0f};
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,30);
+    ok &= expect(game.state().vacuum.target==0, "vacuum acquires a soul before the aim-away regression path");
+    game.setTouchControls(0,0,-3.14159265f/0.003f,0,true,false,false,false,false,false);
+    step(game,2);
+    ok &= expect(game.state().vacuum.active && game.state().vacuum.power>0.95f && game.state().vacuum.fieldStrength>0.90f,
+        "pointing away does not stop or discharge the active vacuum");
+    ok &= expect(game.state().vacuum.lockStrength<1.0f && game.state().vacuum.coneTightness<1.0f,
+        "aim loss relaxes target lock separately from the active vacuum field");
+    game.setTouchControls(0,0,3.14159265f/0.003f,0,true,false,false,false,false,false);
+    step(game,3);
+    ok &= expect(game.state().vacuum.target==0,
+        "returning aim reacquires the offered soul without restarting vacuum charge");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.camera.pos+setup.camera.forward*12.0f;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    for(int i=0;i<60 && game.state().targets[0].soulState!=SoulState::Attracted;++i) step(game);
+    ok &= expect(game.state().targets[0].soulState==SoulState::Attracted && game.state().vacuum.target==0,
+        "oracle pre-latch fixture reaches attracted state");
+    const float spinBeforeAimLoss=game.state().hud.crosshairRotationDegrees;
+    game.setTouchControls(0,0,-(DB_PI*0.75f)/0.003f,0,true,false,false,false,false,false);
+    step(game);
+    ok &= expect(game.state().targets[0].soulState==SoulState::Attracted && game.state().vacuum.target==0,
+        "browser ordering retains the prior vacuum target for the first rendered aim-loss frame");
+    ok &= expect(game.state().hud.crosshairRotationDegrees!=spinBeforeAimLoss && game.state().hud.crosshairSpreadPixels>15.0f,
+        "vacuum crosshair rotor and spread continue independently through aim loss");
+    step(game);
+    ok &= expect(game.state().targets[0].soulState==SoulState::Free && game.state().vacuum.target==-1 && game.state().vacuum.active,
+        "the following vacuum frame releases attracted to free without deactivating vacuum");
+    game.setTouchControls(0,0,(DB_PI*0.75f)/0.003f,0,true,false,false,false,false,false);
+    step(game,3);
+    ok &= expect(game.state().targets[0].soulState==SoulState::Attracted && game.state().vacuum.target==0,
+        "released pre-latch soul is reacquired when the crosshair returns");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,20);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.phoneTransform.screenCenter + setup.phoneTransform.screenRight*1.0f + setup.phoneTransform.screenNormal*0.40f;
+        target.soulState=SoulState::Latched;
+    }
+    step(game);
+    {
+        const GameState& state=game.state();
+        const Vec3 local=inverseRotate(state.phoneTransform.orientation,state.targets[0].latchPoint-state.phoneTransform.screenCenter);
+        ok &= expect(std::abs(local.x)<=PHONE_SCREEN_WIDTH*0.5f*0.92f+0.0001f,
+            "screen-local latch clamps to the authoritative screen aperture");
+    }
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        BulletState& bullet=setup.bullets[0];bullet=BulletState{};bullet.alive=true;bullet.life=1.0f;
+        const float wallZ=setup.captures[0].pos.z;
+        bullet.pos={4.0f,setup.captures[0].pos.y,wallZ+0.45f};bullet.vel={0,0,-60.0f};
+    }
+    step(game);
+    ok &= expect(hasAudioCue(game.state(),AudioCue::PaymentFailure),
+        "narrow capture-wall miss emits the browser payment-failure cue once");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=24.05f;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);step(game,12);
+    ok &= expect(hasAudioCue(game.state(),AudioCue::LowPower),"crossing below 24 percent emits low-power audio");
+    { GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=99.4f; }
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game);
+    ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recharging any depleted battery to full emits connect-power audio once");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.phoneTransform.screenCenter+setup.phoneTransform.screenNormal*0.38f;
+        target.soulState=SoulState::Ingesting; target.ingestProgress=0.60f; target.latchedToScreen=true;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    step(game);
+    ok &= expect(game.state().targets[0].soulState==SoulState::Recoiling &&
+        near(game.state().targets[0].ingestProgress,0.0f,0.0001f) && game.state().targets[0].recoilTime>0.0f,
+        "interrupting ingestion immediately resets progress and enters rigid recoil");
+    ok &= expect(hasAudioCue(game.state(),AudioCue::EndCallTone),
+        "releasing a partially ingested soul queues the browser end-call tone");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
+        target.pos=setup.phoneTransform.screenCenter+setup.phoneTransform.screenNormal*0.38f;
+        target.soulState=SoulState::Ingesting; target.ingestProgress=0.92f;
+    }
+    const int soulsBeforeCommit=game.state().player.souls;
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    step(game);
+    ok &= expect(!game.state().targets[0].alive && game.state().player.souls==soulsBeforeCommit+1,
+        "release at the commit threshold completes through the capture queue");
+    ok &= expect(hasAudioCue(game.state(),AudioCue::ReceivedMessage),
+        "completed capture queues the authoritative received-message cue");
+    int captureParticles=0; for(const auto& particle:game.state().particles) if(particle.life>0.0f) ++captureParticles;
+    ok &= expect(captureParticles==22,
+        "completed capture emits the browser's 22-cube particle burst from shared state");
+    step(game,150);
+    ok &= expect(game.state().targets[0].alive,
+        "captured living-shell slot returns through the browser delayed room-population queue");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.souls=1;
+        setup.player.storedSoulBrute[0]=true;
+    }
+    const int dischargeStartFrame=game.state().frame;
+    game.setTouchControls(0,0,0,0,false,false,false,false,true,false);
+    step(game);
+    {
+        bool pending=false; for(const auto& shot:game.state().pendingShots) if(shot.active) pending=true;
+        bool launched=false; for(const auto& bullet:game.state().bullets) if(bullet.alive) launched=true;
+        ok &= expect(pending && !launched,
+            "shooting queues the stored cube while the browser discharge pose advances");
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    step(game,5);
+    {
+        const GameState& state=game.state();
+        const BulletState* fired=nullptr;
+        for(const auto& bullet:state.bullets) if(bullet.alive){fired=&bullet;break;}
+        ok &= expect(state.player.souls==0 && fired!=nullptr && fired->brute,
+            "shooting consumes the stored cube and launches that cube's type");
+        ok &= expect(hasAudioCue(state,AudioCue::SentMessage),
+            "released projectile queues the authoritative sent-message cue");
+        ok &= expect(fired && horizontalSpeed(fired->vel)<23.0f,
+            "stored brute soul uses the browser's heavier launch speed");
+        ok &= expect(state.hud.shootJoinTimer>0.0f && state.hud.crosshairSpreadPixels<15.0f,
+            "successful discharge starts the browser crosshair join cue");
+        ok &= expect(state.frame-dischargeStartFrame==6 && fired!=nullptr,
+            "fresh discharge releases on the oracle sixth frame after its 0.09-second hold");
+        ok &= expect(std::strstr(state.hud.energyTicker.data(),"SHOOT")!=nullptr && state.time<state.hud.energyTickerUntil,
+            "discrete discharge publishes the browser sequential energy ticker contract");
+    }
+
+    game.reset();
+    const int firstRoomRequired=game.state().requiredSouls;
+    for(int shot=0;shot<firstRoomRequired;++shot){
+        GameState& setup=const_cast<GameState&>(game.state());
+        BulletState& bullet=setup.bullets[0]; bullet=BulletState{}; bullet.alive=true; bullet.life=1.0f;
+        bullet.pos=setup.captures[shot].pos+Vec3{0,0,1.9f}; bullet.vel={0,0,-25.0f};
+        step(game);
+    }
+    {
+        const GameState& state=game.state();
+        int filled=0; for(const auto& capture:state.captures) if(capture.filled) ++filled;
+        ok &= expect(filled==firstRoomRequired && state.roomClear,
+            "fired soul cubes fill the wall goals sequentially and open the room");
+        ok &= expect(hasAudioCue(state,AudioCue::PaymentSuccess),
+            "final room deposit queues the authoritative payment-success cue");
+    }
+
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        const int previousRoom=setup.roomIndex;
+        setup.player.pos={0,PHONE_MODEL_HEIGHT*0.5f,-20.8f};
+        setup.player.vel={0,0,-20.0f};
+        step(game,2);
+        const GameState& state=game.state();
+        int filled=0; for(const auto& capture:state.captures) if(capture.filled) ++filled;
+        ok &= expect(state.roomIndex==previousRoom+1 && !state.roomClear && filled==0,
+            "crossing the opened doorway advances the room and resets its goal inventory");
+        const int ruleStacks=state.runRules.requiredSlotStacks+state.runRules.crowdedRoomStacks+state.runRules.fasterSlurpStacks;
+        ok &= expect(ruleStacks==1 && state.runRules.lastAdded>=0,
+            "room advancement deterministically adds one eligible browser run rule");
+        ok &= expect(state.requiredSouls==5+state.runRules.requiredSlotStacks,
+            "required-slot run rules rebuild the following room goal inventory");
+        ok &= expect(state.doorTransition.active && state.doorTransition.progress>0.75f,
+            "open-door crossing starts the browser distance-owned datamosh transition state");
+    }
+    {
+        const_cast<GameState&>(game.state()).player.vel={};
+        const float heldProgress=game.state().doorTransition.progress;
+        game.setTouchControls(0,0,0,0,false,false,false,false,false,false);step(game,30);
+        ok &= expect(near(game.state().doorTransition.progress,heldProgress,0.0001f),
+            "door datamosh remains frozen while the player stops moving");
+        GameState& setup=const_cast<GameState&>(game.state());setup.player.pos.x+=3.1f;step(game);
+        ok &= expect(!game.state().doorTransition.active&&near(game.state().doorTransition.progress,0.0f,0.0001f),
+            "three meters of traversal resolves the browser doorway prediction-frame effect");
+    }
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        const float hitZ=setup.player.pos.z-4.0f;
+        for(int i=0;i<2;++i) {
+            TargetState& target=setup.targets[i]; target=TargetState{}; target.alive=true;
+            target.armor=4.0f; target.pos={setup.player.pos.x,0.08f,hitZ}; target.walkTarget=target.pos;
+        }
+        BulletState& bullet=setup.bullets[0]; bullet=BulletState{}; bullet.alive=true; bullet.life=1.0f;
+        bullet.pos={setup.player.pos.x,0.65f,hitZ+0.50f}; bullet.vel={0,0,-25.0f};
+    }
+    step(game);
+    ok &= expect(near(game.state().targets[0].armor,3.1f,0.001f) &&
+        near(game.state().targets[1].armor,4.0f,0.001f) && !game.state().bullets[0].alive,
+        "normal fired cube damages only the first living shell on its swept path and is consumed");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.brute=true;
+        target.armor=4.0f; target.pos={setup.player.pos.x+0.85f,0.08f,setup.player.pos.z-4.0f}; target.walkTarget=target.pos;
+        BulletState& bullet=setup.bullets[0]; bullet=BulletState{}; bullet.alive=true; bullet.life=1.0f; bullet.brute=true;
+        bullet.pos={setup.player.pos.x,0.65f,target.pos.z+0.50f}; bullet.vel={0,0,-20.0f};
+    }
+    step(game);
+    ok &= expect(near(game.state().targets[0].armor,2.35f,0.001f) && !game.state().bullets[0].alive,
+        "brute fired cube uses the browser's wider 0.95 shell radius and 1.65 damage");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.battery=50.0f;
+    }
+    step(game,60);
+    ok &= expect(near(game.state().player.battery,72.0f,0.001f),
+        "idle native battery reproduces the browser 22-per-second regeneration");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.battery=1.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
+    step(game);
+    const Vec3 deadPosition=game.state().player.pos;
+    const float deadTargetPhase=game.state().targets[0].visualWalkPhase;
+    ok &= expect(game.state().dead && !game.state().started && !game.state().player.alive &&
+        game.state().hud.gameOver && near(game.state().player.battery,0.0f,0.0001f),
+        "battery exhaustion enters the browser run-death lifecycle and exposes game-over HUD state");
+    ok &= expect(hasAudioCue(game.state(),AudioCue::VcEnded),
+        "run death queues the authoritative call-ended cue");
+    game.setTouchControls(1,1,20,20,true,true,true,true,true,true);
+    step(game,10);
+    ok &= expect(near(game.state().player.pos.x,deadPosition.x,0.0001f) && near(game.state().player.pos.z,deadPosition.z,0.0001f) &&
+        near(game.state().targets[0].visualWalkPhase,deadTargetPhase,0.0001f),
+        "dead lifecycle freezes gameplay simulation despite held movement and actions");
+    game.restart();
+    ok &= expect(!game.state().dead && game.state().started && game.state().player.alive &&
+        near(game.state().player.battery,100.0f,0.0001f) && game.state().roomIndex==1,
+        "restart creates a clean browser run with reset progression and battery");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.battery=50.0f;
+        setup.energy.flowerStacks=2;
+        setup.energy.supplementalActive=true;
+        setup.energy.supplementalValue=92.0f;
+        setup.energy.supplementalMax=117.0f;
+        for(auto& target:setup.targets) target.alive=false;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,60);
+    ok &= expect(near(game.state().player.battery,50.0f,0.0001f) &&
+        near(game.state().energy.supplementalValue,90.812f,0.0002f),
+        "native supplemental power matches the oracle one-second 60 FPS vacuum trace");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.battery=50.0f;
+        setup.player.souls=5;
+        setup.energy.flowerStacks=1;
+        setup.energy.supplementalActive=true;
+        setup.energy.supplementalValue=85.0f;
+        setup.energy.supplementalMax=85.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,false,true,false);
+    step(game);
+    ok &= expect(near(game.state().energy.supplementalValue,85.0f-7.0f/1.8f,0.0002f),
+        "stored-soul efficiency is applied before native supplemental discharge cost");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        setup.player.battery=50.0f;
+        setup.energy.flowerStacks=1;
+        setup.energy.supplementalActive=true;
+        setup.energy.supplementalValue=2.0f;
+        setup.energy.supplementalMax=85.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);
+    step(game);
+    ok &= expect(game.state().energy.flowerStacks==0 && !game.state().energy.supplementalActive &&
+        near(game.state().energy.supplementalValue,0.0f,0.0001f) && near(game.state().energy.supplementalMax,85.0f,0.0001f),
+        "supplemental depletion clears native flower stacks and restores the 85-point base maximum");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& brute=setup.targets[0]; brute=TargetState{}; brute.alive=true; brute.brute=true;
+        brute.armor=0.1f; brute.pos=setup.player.pos+Vec3{0,0,-1.5f};
+        setup.flowerRandomState=1u;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
+    step(game);
+    int droppedFlowers=0; float dropDistance=0.0f;
+    for(const auto& flower:game.state().flowers) if(flower.active){
+        ++droppedFlowers;
+        const Vec3 d=flower.pos-game.state().targets[0].pos;
+        dropDistance=std::sqrt(d.x*d.x+d.z*d.z);
+    }
+    ok &= expect(game.state().targets[0].slurpable && droppedFlowers==1 && dropDistance>=1.05f,
+        "brute shell conversion performs one drop roll and separates the flower from its source");
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false); step(game,20);
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
+    int repeatedDrops=0; for(const auto& flower:game.state().flowers) if(flower.active) ++repeatedDrops;
+    ok &= expect(repeatedDrops==1,
+        "subsequent hits on an already slurpable brute do not roll duplicate flowers");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        FlowerPowerupState& flower=setup.flowers[0]; flower.active=true; flower.baseY=0.38f;
+        flower.pos=setup.player.pos+Vec3{0.5f,0.30f,0.0f};
+    }
+    step(game);
+    ok &= expect(!game.state().flowers[0].active && game.state().energy.flowerStacks==1 &&
+        near(game.state().energy.supplementalValue,46.0f,0.0001f) && near(game.state().energy.supplementalMax,85.0f,0.0001f),
+        "three-dimensional flower pickup activates the first 46-of-85 supplemental stack");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        FlowerPowerupState& flower=setup.flowers[0]; flower.active=true; flower.baseY=0.50f;
+        flower.pos={8.0f,0.50f,0.0f}; flower.rotationY=0.25f;
+    }
+    step(game,30);
+    ok &= expect(near(game.state().flowers[0].age,0.5f,0.0001f) &&
+        near(game.state().flowers[0].pos.y,0.50f+std::sin(1.6f)*0.16f,0.0001f) &&
+        near(game.state().flowers[0].rotationY,0.25f+0.5f*1.35f,0.0001f),
+        "flower bob and rotation reproduce the browser 60 FPS motion equations");
 
     std::cout << "numeric forward0=(" << forward0.player.vel.x << "," << forward0.player.vel.z << ")"
               << " forward90=(" << forward90.player.vel.x << "," << forward90.player.vel.z << ")"

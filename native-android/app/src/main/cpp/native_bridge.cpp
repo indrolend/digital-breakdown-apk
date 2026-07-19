@@ -2,9 +2,15 @@
 #include <android/log.h>
 #include <algorithm>
 #include <chrono>
+#include <algorithm>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <vector>
 
 #include "game/Game.hpp"
 #include "render/Renderer.hpp"
+#include "MultiplayerProtocol.hpp"
 
 #ifndef DIGITAL_BREAKDOWN_SOURCE_COMMIT
 #define DIGITAL_BREAKDOWN_SOURCE_COMMIT "unknown"
@@ -18,13 +24,47 @@ constexpr int MAX_STEPS_PER_FRAME = 4;
 Game gGame;
 Renderer gRenderer;
 auto gLastFrame = std::chrono::steady_clock::now();
+<<<<<<< Updated upstream
 double gAccumulatorSeconds = 0.0;
+=======
+unsigned int gLastAudioSerial = 0;
+jclass gBridgeClass = nullptr;
+jmethodID gPlayAudioCue = nullptr;
+jmethodID gSyncMusic = nullptr;
+jmethodID gSendNetworkPacket = nullptr;
+struct NetworkEvent { enum Kind { Solo, Configure, Control, Binary } kind; bool host=false; int playerId=0; std::string room,status,text; std::vector<std::uint8_t> bytes; };
+std::mutex gNetworkMutex;
+std::deque<NetworkEvent> gNetworkEvents;
+bool gNetworkHost=false;
+bool gNetworkConfigured=false;
+int gNetworkPlayerId=0;
+std::uint32_t gNetworkSequence=0;
+std::uint32_t gLastSnapshotTick=0;
+
+int jsonInt(const std::string& json,const char* key,int fallback=-1){const std::string needle=std::string("\"")+key+"\"";std::size_t at=json.find(needle);if(at==std::string::npos)return fallback;at=json.find(':',at+needle.size());if(at==std::string::npos)return fallback;try{return std::stoi(json.substr(at+1));}catch(...){return fallback;}}
+bool jsonType(const std::string& json,const char* type){return json.find(std::string("\"type\":\"")+type+"\"")!=std::string::npos;}
+void sendPacket(JNIEnv* env,const std::vector<std::uint8_t>& packet){if(!gBridgeClass||!gSendNetworkPacket||packet.empty())return;jbyteArray bytes=env->NewByteArray(static_cast<jsize>(packet.size()));env->SetByteArrayRegion(bytes,0,static_cast<jsize>(packet.size()),reinterpret_cast<const jbyte*>(packet.data()));env->CallStaticVoidMethod(gBridgeClass,gSendNetworkPacket,bytes);env->DeleteLocalRef(bytes);}
+
+void updateNetwork(JNIEnv* env){
+    std::deque<NetworkEvent> events;{std::lock_guard<std::mutex> lock(gNetworkMutex);events.swap(gNetworkEvents);}
+    for(auto& event:events){
+        if(event.kind==NetworkEvent::Solo){gNetworkConfigured=false;gGame.restart();}
+        else if(event.kind==NetworkEvent::Configure){gGame.restart();gNetworkHost=event.host;gNetworkPlayerId=event.playerId;gNetworkConfigured=true;if(gNetworkHost)gGame.configureNetworkHost();else gGame.configureNetworkGuest(gNetworkPlayerId);gGame.setNetworkRoom(event.room.c_str(),event.status.c_str(),true);}
+        else if(event.kind==NetworkEvent::Control){if(jsonType(event.text,"player_joined")&&gNetworkHost)gGame.setNetworkPeerActive(jsonInt(event.text,"playerId"),true);else if(jsonType(event.text,"player_left"))gGame.setNetworkPeerActive(jsonInt(event.text,"playerId"),false);else if(jsonType(event.text,"match_closed"))gGame.setNetworkRoom("","HOST LEFT",false);}
+        else if(event.kind==NetworkEvent::Binary&&gNetworkConfigured){dbnet::PacketHeader header;if(!dbnet::decodeHeader(event.bytes.data(),event.bytes.size(),header))continue;if(gNetworkHost&&header.type==dbnet::MessageType::Input){dbnet::InputCommand input;if(dbnet::decodeInput(event.bytes.data(),event.bytes.size(),header,input))gGame.setNetworkPeerInput(header.playerId,input.sequence,input.moveX,input.moveZ,input.yaw,input.pitch,input.buttons);}else if(!gNetworkHost&&header.type==dbnet::MessageType::Snapshot){dbnet::WorldSnapshot snapshot;if(dbnet::decodeSnapshot(event.bytes.data(),event.bytes.size(),header,snapshot))dbnet::applyWorld(gGame.networkMutableState(),snapshot,static_cast<std::uint8_t>(gNetworkPlayerId));}}
+    }
+    if(!gNetworkConfigured)return;const GameState& state=gGame.state();
+    if(!gNetworkHost&&state.frame%2==0){dbnet::InputCommand input;input.sequence=++gNetworkSequence;input.tick=static_cast<std::uint32_t>(std::max(0,state.frame));input.moveX=clampf((state.input.right?1.0f:0.0f)-(state.input.left?1.0f:0.0f)+state.input.touchMoveX,-1,1);input.moveZ=clampf((state.input.forward?1.0f:0.0f)-(state.input.back?1.0f:0.0f)+state.input.touchMoveZ,-1,1);input.yaw=state.camera.yaw;input.pitch=state.camera.pitch;if(state.input.sprint||state.input.touchSprint)input.buttons|=dbnet::Sprint;if(state.input.jumpPressed)input.buttons|=dbnet::Jump;if(state.input.primaryHeld||state.input.touchPrimaryHeld)input.buttons|=dbnet::Vacuum;if(state.input.meleePressed)input.buttons|=dbnet::Melee;if(state.input.shootPressed)input.buttons|=dbnet::Shoot;if(state.input.cameraTogglePressed)input.buttons|=dbnet::CameraToggle;sendPacket(env,dbnet::encodeInput(static_cast<std::uint8_t>(gNetworkPlayerId),input));}
+    else if(gNetworkHost&&static_cast<std::uint32_t>(state.frame)>=gLastSnapshotTick+3){gLastSnapshotTick=static_cast<std::uint32_t>(state.frame);sendPacket(env,dbnet::encodeSnapshot(0,dbnet::captureWorld(state,dbnet::capturePlayers(state),gLastSnapshotTick),++gNetworkSequence));}
+}
+>>>>>>> Stashed changes
 
 void resetFrameClock() {
     gLastFrame = std::chrono::steady_clock::now();
     gAccumulatorSeconds = 0.0;
 }
 
+<<<<<<< Updated upstream
 void advanceSimulation() {
     const auto now = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = now - gLastFrame;
@@ -42,19 +82,35 @@ void advanceSimulation() {
         gAccumulatorSeconds = 0.0;
     }
 }
+=======
+>>>>>>> Stashed changes
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv*, jclass) {
+Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv* env, jclass bridgeClass) {
     __android_log_print(
         ANDROID_LOG_INFO,
         "DBNATIVE",
         "surface created native_source=%s",
         DIGITAL_BREAKDOWN_SOURCE_COMMIT
     );
-    gGame.reset();
+    gGame.prepareStartScreen();
+    gLastAudioSerial=0;
+    if(!gBridgeClass) gBridgeClass=static_cast<jclass>(env->NewGlobalRef(bridgeClass));
+    if(!gPlayAudioCue) gPlayAudioCue=env->GetStaticMethodID(gBridgeClass,"playAudioCue","(IF)V");
+    if(!gSyncMusic) gSyncMusic=env->GetStaticMethodID(gBridgeClass,"syncMusic","(ZZ)V");
+    if(!gSendNetworkPacket) gSendNetworkPacket=env->GetStaticMethodID(gBridgeClass,"sendNetworkPacket","([B)V");
     gRenderer.surfaceCreated();
     resetFrameClock();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_indrolend_digitalbreakdown_NativeBridge_setAssetRoot(JNIEnv* env, jclass, jstring path) {
+    if (!path) return;
+    const char* value = env->GetStringUTFChars(path, nullptr);
+    if (!value) return;
+    gRenderer.setAssetRoot(value);
+    env->ReleaseStringUTFChars(path, value);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -64,11 +120,25 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceChanged(JNIEnv*, jclas
 }
 
 extern "C" JNIEXPORT void JNICALL
+<<<<<<< Updated upstream
 Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv*, jclass) {
     advanceSimulation();
+=======
+Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv* env, jclass) {
+    const float dt = nextDt();
+    updateNetwork(env);
+    gGame.update(dt);
+>>>>>>> Stashed changes
     gRenderer.draw(gGame.state());
 
     const GameState& s = gGame.state();
+    if(gBridgeClass&&gSyncMusic)env->CallStaticVoidMethod(gBridgeClass,gSyncMusic,s.started?JNI_TRUE:JNI_FALSE,s.dead?JNI_TRUE:JNI_FALSE);
+    if(gBridgeClass && gPlayAudioCue) {
+        const unsigned int newest=s.audio.nextSerial>0?s.audio.nextSerial-1:0;
+        const unsigned int first=std::max(gLastAudioSerial+1,newest>=AUDIO_EVENT_COUNT?newest-AUDIO_EVENT_COUNT+1:1u);
+        for(unsigned int serial=first;serial<=newest;++serial){const AudioEventState& event=s.audio.events[(serial-1u)%AUDIO_EVENT_COUNT];if(event.serial==serial)env->CallStaticVoidMethod(gBridgeClass,gPlayAudioCue,static_cast<jint>(event.cue),event.volume);}
+        gLastAudioSerial=newest;
+    }
     if ((s.frame % 180) == 0) {
         __android_log_print(
             ANDROID_LOG_INFO,
@@ -130,4 +200,13 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onTouchControls(
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint keyCode, jboolean down) {
     gGame.setKey(keyCode, down == JNI_TRUE);
+<<<<<<< Updated upstream
 }
+=======
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_startSolo(JNIEnv*,jclass){NetworkEvent event;event.kind=NetworkEvent::Solo;std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.clear();gNetworkEvents.push_back(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_configureNetwork(JNIEnv* env,jclass,jboolean host,jint playerId,jstring room,jstring status){const char* r=env->GetStringUTFChars(room,nullptr);const char* s=env->GetStringUTFChars(status,nullptr);NetworkEvent event;event.kind=NetworkEvent::Configure;event.host=host==JNI_TRUE;event.playerId=playerId;event.room=r?r:"";event.status=s?s:"";if(r)env->ReleaseStringUTFChars(room,r);if(s)env->ReleaseStringUTFChars(status,s);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkControl(JNIEnv* env,jclass,jstring value){const char* chars=env->GetStringUTFChars(value,nullptr);NetworkEvent event;event.kind=NetworkEvent::Control;event.text=chars?chars:"";if(chars)env->ReleaseStringUTFChars(value,chars);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkPacket(JNIEnv* env,jclass,jbyteArray value){NetworkEvent event;event.kind=NetworkEvent::Binary;const jsize size=env->GetArrayLength(value);event.bytes.resize(static_cast<std::size_t>(size));env->GetByteArrayRegion(value,0,size,reinterpret_cast<jbyte*>(event.bytes.data()));std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
+>>>>>>> Stashed changes

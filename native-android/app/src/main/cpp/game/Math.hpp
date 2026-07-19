@@ -79,6 +79,14 @@ inline Vec3 rotate(const Quat& q, const Vec3& v) {
     return v + uv*(2.0f*q.w) + uuv*2.0f;
 }
 
+inline Quat quatConjugate(const Quat& q) {
+    return {-q.x, -q.y, -q.z, q.w};
+}
+
+inline Vec3 inverseRotate(const Quat& q, const Vec3& v) {
+    return rotate(quatConjugate(quatNormalized(q)), v);
+}
+
 inline float clampf(float v, float lo, float hi) {
     return std::max(lo, std::min(hi, v));
 }

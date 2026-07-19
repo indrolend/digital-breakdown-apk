@@ -4,6 +4,10 @@
 
 #include "Math.hpp"
 
+constexpr float HUMAN_SWING_ATTACK_DURATION = 0.86f;
+constexpr float HUMAN_SWING_COMMIT_PHASE = 0.30f;
+constexpr float HUMAN_SWING_END_PHASE = 0.72f;
+
 struct HumanVisualSpec {
     float totalHeight;
     float shoulderWidth;
@@ -144,17 +148,18 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
     pose.rightLegSwing = counterStride * 0.36f * active - pose.collapse * 0.24f;
     pose.hitLean = reaction.hitAmount * 0.08f;
     if (aliveHuman && reaction.attackTimer > 0.0f) {
-        const float t = 1.0f - clampf(reaction.attackTimer / 0.48f, 0.0f, 1.0f);
-        const float windup = std::sin(clampf(t / 0.28f, 0.0f, 1.0f) * DB_PI) * (t < 0.35f ? 1.0f : 0.0f);
-        const float strike = std::sin(clampf((t - 0.18f) / 0.38f, 0.0f, 1.0f) * DB_PI);
-        const float recover = std::sin(clampf((t - 0.48f) / 0.52f, 0.0f, 1.0f) * DB_PI);
+        const float t = 1.0f - clampf(reaction.attackTimer / HUMAN_SWING_ATTACK_DURATION, 0.0f, 1.0f);
+        const float windup = std::sin(clampf(t / HUMAN_SWING_COMMIT_PHASE, 0.0f, 1.0f) * DB_PI * 0.5f) * (t < HUMAN_SWING_COMMIT_PHASE ? 1.0f : 0.0f);
+        const float sweepT=clampf((t-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
+        const float strike = std::sin(sweepT * DB_PI);
+        const float recover = std::sin(clampf((t - HUMAN_SWING_END_PHASE) / (1.0f-HUMAN_SWING_END_PHASE), 0.0f, 1.0f) * DB_PI);
         const float impact = std::max(strike, recover * 0.35f);
         const float side = reaction.attackVariant % 2 == 0 ? 1.0f : -1.0f;
         const float low = reaction.attackVariant >= 2 ? 1.0f : 0.0f;
         pose.torsoPitch += -impact * (0.30f + low * 0.08f) + windup * 0.12f;
-        pose.torsoRoll += side * (strike * 0.18f - windup * 0.08f);
+        pose.torsoRoll += side * (strike * 0.30f - windup * 0.20f);
         pose.headPitch += -impact * 0.12f;
-        const float lead = strike * (1.35f + low * 0.28f) - windup * 0.55f;
+        const float lead = strike * (1.65f + low * 0.20f) - windup * 0.82f;
         const float rear = -strike * 0.38f + windup * 0.20f;
         if (side > 0) { pose.rightArmSwing -= lead; pose.leftArmSwing += rear; }
         else { pose.leftArmSwing -= lead; pose.rightArmSwing += rear; }
