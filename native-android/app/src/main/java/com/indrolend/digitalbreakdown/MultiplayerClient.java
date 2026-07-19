@@ -34,7 +34,7 @@ public final class MultiplayerClient {
     public void host() {
         close(); host = true; status("CREATING ROOM", "", false);
         Request request = new Request.Builder().url(serviceUrl + "/v1/rooms")
-            .post(RequestBody.create("{\"gameplayVersion\":2}", JSON)).build();
+            .post(RequestBody.create("{\"gameplayVersion\":3}", JSON)).build();
         http.newCall(request).enqueue(new Callback() {
             @Override public void onFailure(Call call, java.io.IOException error) { status("ROOM CREATE FAILED", "", false); }
             @Override public void onResponse(Call call, Response response) {
@@ -59,7 +59,7 @@ public final class MultiplayerClient {
         String wsBase = serviceUrl.startsWith("https://") ? "wss://" + serviceUrl.substring(8)
             : "ws://" + serviceUrl.substring("http://".length());
         String url = wsBase + "/v1/rooms/" + roomCode + "/connect?role=" + role
-            + "&build=pass7-native-android&gameplay=2" + (key.isEmpty() ? "" : "&key=" + key);
+            + "&build=pass7-native-android&gameplay=3" + (key.isEmpty() ? "" : "&key=" + key);
         socket = http.newWebSocket(new Request.Builder().url(url).build(), new WebSocketListener() {
             @Override public void onMessage(WebSocket webSocket, String text) {
                 NativeBridge.onNetworkControl(text);

@@ -48,6 +48,26 @@ int main() {
         "versioned permanent progression survives run reset and clamps upgrade tracks safely");
     ok &= expect(progressionFixture.state().progression.run.temporaryLevels==std::array<int,3>{},
         "run-only progression resets independently from permanent shop state");
+    Game precisionBuild;precisionBuild.setPersistentProgression(0,2,2,0);precisionBuild.reset();step(precisionBuild);
+    ok &= expect(std::strstr(precisionBuild.state().hud.buildLabel.data(),"PINBALL SNIPER")!=nullptr,
+        "paired shot and lunge levels unlock a visible precision-mobility build identity");
+    Game relayBuild;relayBuild.setPersistentProgression(0,2,0,2);relayBuild.reset();
+    {
+        GameState& setup=const_cast<GameState&>(relayBuild.state());for(auto& target:setup.targets)target.alive=false;
+        TargetState& target=setup.targets[0];target=TargetState{};target.alive=true;target.armor=2.0f;target.pos={setup.player.pos.x,0.08f,setup.player.pos.z-4.0f};target.walkTarget=target.pos;target.attackCooldown=999.0f;
+        BulletState& bullet=setup.bullets[0];bullet=BulletState{};bullet.alive=true;bullet.life=1.0f;bullet.pos={target.pos.x,0.65f,target.pos.z+0.5f};bullet.vel={0,0,-25.0f};
+    }
+    step(relayBuild);
+    ok &= expect(relayBuild.state().progression.run.relayPrimerStacks==1&&relayBuild.state().progression.run.relayPrimerTimer>3.0f,
+        "a body shot in the shot-attack pairing primes the next melee contact instead of acting as an isolated stat bonus");
+    Game cockroachBuild;cockroachBuild.setPersistentProgression(0,2,2,2);cockroachBuild.reset();
+    {
+        GameState& setup=const_cast<GameState&>(cockroachBuild.state());for(auto& target:setup.targets)target.alive=false;
+        setup.player.battery=5.0f;TargetState& target=setup.targets[0];target=TargetState{};target.alive=true;target.armor=2.0f;target.pos=setup.player.pos+Vec3{0,0,-1.0f};target.walkTarget=target.pos;target.attackCooldown=0.0f;
+    }
+    step(cockroachBuild,90);
+    ok &= expect(cockroachBuild.state().player.alive&&cockroachBuild.state().progression.run.lastStandCooldown>0.0f,
+        "the balanced low-damage survival circuit catches one otherwise lethal enemy swing on a bounded cooldown");
     Game game;
     game.reset();
     const GameState spawn = game.state();

@@ -296,6 +296,7 @@ struct PermanentProgressionState {
 
 struct RunProgressionState {
     std::array<int,3> temporaryLevels{};
+    std::array<int,3> networkSharedPermanentLevels{};
     int accuracyStacks = 0;
     float accuracyMultiplier = 1.0f;
     float accuracyDecayTimer = 0.0f;
@@ -304,6 +305,10 @@ struct RunProgressionState {
     float roomHeat = 0.0f;
     float roomElapsed = 0.0f;
     int roomCaptures = 0;
+    int relayPrimerStacks = 0;
+    float relayPrimerTimer = 0.0f;
+    float impactGuardTimer = 0.0f;
+    float lastStandCooldown = 0.0f;
 };
 
 struct ProgressionState {
@@ -407,6 +412,7 @@ struct HudState {
     int energyTickerType = 0;
     float headshotPulse = 0.0f;
     float perfectPulse = 0.0f;
+    std::array<char,32> buildLabel{};
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
@@ -556,7 +562,7 @@ private:
     Vec3 targetHeadCenter(const TargetState& target) const;
     float headshotDamage(const TargetState& target) const;
     void continueLungeFromHeadshot();
-    void rewardHeadshot(const Vec3& position, bool critical);
+    void rewardHeadshot(const Vec3& position, bool critical, bool fromLunge);
     void updateVacuum(float dt);
     void updateCrosshair(float dt);
     void updateSoulLattices();
@@ -573,6 +579,11 @@ private:
     void spawnShellShatter(const TargetState& target);
 
     float batteryDrainMultiplier() const;
+    int upgradeLevel(UpgradeTrack track) const;
+    int pairSynergyTier(UpgradeTrack a, UpgradeTrack b) const;
+    int survivalSynergyTier() const;
+    float outgoingDamageMultiplier() const;
+    void updateBuildLabel();
     float consumeSupplementalBattery(float cost);
     bool spendBattery(float amount,BatteryReason reason=BatteryReason::Continuous);
     void gainBattery(float amount,BatteryReason reason=BatteryReason::Continuous);

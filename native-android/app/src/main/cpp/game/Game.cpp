@@ -129,6 +129,12 @@ constexpr float HEADSHOT_PERFECT_WINDOW = 0.055f;
 constexpr float ACCURACY_STACK_BONUS = 0.08f;
 constexpr int ACCURACY_STACK_CAP = 15;
 constexpr float ACCURACY_CHAIN_TIMEOUT = 3.2f;
+constexpr int SYNERGY_LEVEL_STEP = 2;
+constexpr int RELAY_PRIMER_STACK_CAP = 5;
+constexpr float RELAY_PRIMER_SECONDS = 3.2f;
+constexpr float RELAY_PRIMER_DAMAGE_PER_STACK = 0.12f;
+constexpr float IMPACT_GUARD_SECONDS = 0.42f;
+constexpr float LAST_STAND_COOLDOWN = 18.0f;
 constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
@@ -307,6 +313,44 @@ float Game::batteryDrainMultiplier() const {
     return 1.0f / (1.0f + static_cast<float>(state_.player.souls) * BATTERY_SOUL_EFFICIENCY);
 }
 
+int Game::upgradeLevel(UpgradeTrack track) const {
+    const int i=static_cast<int>(track);
+    const int permanent=(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)
+        ? state_.progression.run.networkSharedPermanentLevels[i]
+        : state_.progression.permanent.levels[i];
+    return state_.progression.run.temporaryLevels[i]+permanent;
+}
+
+int Game::pairSynergyTier(UpgradeTrack a,UpgradeTrack b) const {
+    return std::min(5,std::min(upgradeLevel(a),upgradeLevel(b))/SYNERGY_LEVEL_STEP);
+}
+
+int Game::survivalSynergyTier() const {
+    const int shot=upgradeLevel(UpgradeTrack::Shot),lunge=upgradeLevel(UpgradeTrack::Lunge),attack=upgradeLevel(UpgradeTrack::Attack);
+    return std::min(5,std::min(shot,std::min(lunge,attack))/SYNERGY_LEVEL_STEP);
+}
+
+float Game::outgoingDamageMultiplier() const {
+    const int survival=survivalSynergyTier();
+    if(survival<=0||state_.player.battery>=24.0f)return 1.0f;
+    // The balanced "cockroach" circuit exchanges lethality for staying power
+    // only while critically discharged; it never penalizes normal play.
+    return std::max(0.72f,1.0f-0.055f*static_cast<float>(survival));
+}
+
+void Game::updateBuildLabel(){
+    const int precision=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Lunge);
+    const int relay=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Attack);
+    const int momentum=pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack);
+    const int survival=survivalSynergyTier();
+    const char* label="OPEN CIRCUIT";
+    if(survival>0&&state_.player.battery<24.0f)label="COCKROACH CIRCUIT";
+    else if(precision>=relay&&precision>=momentum&&precision>0)label="PINBALL SNIPER";
+    else if(relay>=momentum&&relay>0)label="RELAY BRAWLER";
+    else if(momentum>0)label="MOMENTUM BRUISER";
+    std::snprintf(state_.hud.buildLabel.data(),state_.hud.buildLabel.size(),"%s",label);
+}
+
 void Game::clearActivePowerups() {
     state_.energy.flowerStacks = 0;
     state_.energy.supplementalActive = false;
@@ -454,6 +498,11 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
     PlayerState& player = state_.player;
     if (!player.alive) return false;
     const float before=player.battery;
+    if(reason==BatteryReason::Hit){
+        const int survival=survivalSynergyTier();
+        const float guard=state_.progression.run.impactGuardTimer>0.0f?0.42f:1.0f;
+        amount*=guard*std::max(0.35f,1.0f-0.11f*static_cast<float>(survival));
+    }
     const float remaining = consumeSupplementalBattery(std::max(0.0f, amount) * batteryDrainMultiplier());
     player.battery = clampf(player.battery - remaining, 0.0f, 100.0f);
     if(reason!=BatteryReason::Continuous){
@@ -461,6 +510,12 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
         const float spent=before-player.battery;if(spent>0.001f)std::snprintf(message,sizeof(message),"-%.1F %s",spent,label);else std::snprintf(message,sizeof(message),"FLOWER %s",label);setEnergyTicker(message,spent>0.001f?1:0);
     }
     updateBatteryAudio(before);
+    if (player.battery <= 0.0f && reason==BatteryReason::Hit && survivalSynergyTier()>0 && state_.progression.run.lastStandCooldown<=0.0f) {
+        player.battery=1.0f;
+        state_.progression.run.lastStandCooldown=LAST_STAND_COOLDOWN;
+        setEnergyTicker("LAST SIGNAL",2);
+        return true;
+    }
     if (player.battery <= 0.0f) {
         player.battery = 0.0f;
         triggerRunDeath();
@@ -531,6 +586,10 @@ void Game::updateBattery(float dt) {
     if (!state_.player.alive) return;
     state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
     state_.progression.run.headshotRegenTax = std::max(0.0f, state_.progression.run.headshotRegenTax - dt * 0.11f);
+    state_.progression.run.relayPrimerTimer=std::max(0.0f,state_.progression.run.relayPrimerTimer-dt);
+    if(state_.progression.run.relayPrimerTimer<=0.0f)state_.progression.run.relayPrimerStacks=0;
+    state_.progression.run.impactGuardTimer=std::max(0.0f,state_.progression.run.impactGuardTimer-dt);
+    state_.progression.run.lastStandCooldown=std::max(0.0f,state_.progression.run.lastStandCooldown-dt);
     EnergyState& energy = state_.energy;
     if (energy.comboHits > 0 && state_.time - energy.lastComboHitTime > BATTERY_COMBO_TIMEOUT) {
         energy.comboHits = 0;
@@ -550,7 +609,10 @@ void Game::updateBattery(float dt) {
     if (state_.vacuum.active) { drain += BATTERY_VACUUM_DRAIN * std::max(0.35f, state_.vacuum.power); active = true; }
     if (state_.meleeVisual.visualTimer > 0.0f || energy.dischargeTimer > 0.0f) active = true;
     if (drain > 0.0f) spendBattery(drain * dt);
-    else if(state_.progression.run.batteryRegenLock<=0.0f) gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * (1.0f-state_.progression.run.headshotRegenTax) * dt);
+    else if(state_.progression.run.batteryRegenLock<=0.0f) {
+        const float survivalRegen=(survivalSynergyTier()>0&&state_.player.battery<24.0f)?1.0f+0.10f*survivalSynergyTier():1.0f;
+        gainBattery((active ? BATTERY_ACTIVE_REGEN : BATTERY_IDLE_REGEN) * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
+    }
 }
 
 void Game::triggerRunDeath() {
@@ -787,6 +849,7 @@ void Game::update(float dt) {
     }
     state_.hud.headshotPulse=std::max(0.0f,state_.hud.headshotPulse-dt*5.5f);
     state_.hud.perfectPulse=std::max(0.0f,state_.hud.perfectPulse-dt*3.8f);
+    updateBuildLabel();
     auto& runProgression=state_.progression.run;
     if(runProgression.accuracyStacks>0){
         runProgression.accuracyDecayTimer=std::max(0.0f,runProgression.accuracyDecayTimer-dt);
@@ -1153,7 +1216,8 @@ void Game::updatePlayer(float dt) {
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
     const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
-    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT*(committedLunge?0.18f:1.0f);
+    const float lungeInfluence=std::min(0.42f,0.025f*static_cast<float>(upgradeLevel(UpgradeTrack::Lunge)));
+    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT*(committedLunge?0.18f+lungeInfluence:1.0f);
     const float airSpeed = p.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
     const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
     const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
@@ -1563,13 +1627,15 @@ void Game::triggerMelee() {
     const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
     const bool airborne=!state_.player.grounded;
     const float upwardAim=airborne?clampf(state_.camera.pitch/0.62f,0.0f,1.0f):0.0f;
-    if (!spendBattery(combo.cost+upwardAim*5.5f,BatteryReason::Melee)) return;
+    const int lungeLevel=upgradeLevel(UpgradeTrack::Lunge);
+    const float altitudeEfficiency=1.0f/(1.0f+0.045f*static_cast<float>(lungeLevel));
+    if (!spendBattery(combo.cost+upwardAim*5.5f*altitudeEfficiency,BatteryReason::Melee)) return;
     state_.meleeComboWindow = MELEE_COMBO_WINDOW;
-    const int lungeLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Lunge)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Lunge)];
     state_.meleeCooldown = combo.cooldown/(1.0f+0.045f*static_cast<float>(lungeLevel)); state_.meleePose = 1.0f;
     MeleeVisualState& visual = state_.meleeVisual;
-    const int attackLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Attack)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Attack)];
-    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel));
+    const int attackLevel=upgradeLevel(UpgradeTrack::Attack);
+    const float comboEscalation=airborne?1.0f:1.0f+0.035f*static_cast<float>(attackLevel*comboIndex);
+    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel))*comboEscalation;
     visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
     visual.locomotionLunge=airborne;
     visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
@@ -1607,13 +1673,27 @@ int Game::applyMeleeHits() {
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
-        damageSoulShell(i,headshot?headshotDamage(t):visual.damage*(1.0f+std::min(0.75f,totalHits*0.12f)));
+        float synergyDamage=1.0f;
+        if(visual.locomotionLunge){
+            const int momentum=pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack);
+            synergyDamage+=static_cast<float>(momentum)*0.07f*clampf(horizontalLength(state_.player.vel)/AIR_MELEE_LOCOMOTION_DISTANCE,0.0f,2.0f);
+        }else if(state_.progression.run.relayPrimerStacks>0){
+            synergyDamage+=state_.progression.run.relayPrimerStacks*RELAY_PRIMER_DAMAGE_PER_STACK;
+        }
+        damageSoulShell(i,headshot?headshotDamage(t):visual.damage*synergyDamage*outgoingDamageMultiplier()*(1.0f+std::min(0.75f,totalHits*0.12f)));
         if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
         if(headshot){const float armorMax=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;headshotPositions[headshots]=headCenter;headshotCritical[headshots]=t.slurpable||t.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION;++headshots;}
         spawnFlameBurst(t.pos+Vec3{0,0.65f,0},newHits>0?0.95f+static_cast<float>(newHits+1)*0.18f:0.55f);
         visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
-    if(newHits>0){emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);for(int hit=0;hit<headshots;++hit)rewardHeadshot(headshotPositions[hit],headshotCritical[hit]);if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}}
+    if(newHits>0){
+        emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);
+        for(int hit=0;hit<headshots;++hit)rewardHeadshot(headshotPositions[hit],headshotCritical[hit],visual.locomotionLunge);
+        if(visual.locomotionLunge&&pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack)>0)state_.progression.run.impactGuardTimer=IMPACT_GUARD_SECONDS;
+        if(!visual.locomotionLunge&&state_.progression.run.relayPrimerStacks>0){state_.progression.run.relayPrimerStacks=0;state_.progression.run.relayPrimerTimer=0.0f;setEnergyTicker("RELAY CLOSED",2);}
+        if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();
+        if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
+    }
     return newHits;
 }
 
@@ -1641,15 +1721,16 @@ void Game::continueLungeFromHeadshot() {
     state_.player.jumpVel=std::max(state_.player.jumpVel,lunge.airLungeVerticalKick);
 }
 
-void Game::rewardHeadshot(const Vec3& position, bool critical) {
+void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge) {
     auto& run=state_.progression.run;
     run.accuracyStacks=std::min(ACCURACY_STACK_CAP,run.accuracyStacks+1);
     run.accuracyMultiplier=1.0f+static_cast<float>(run.accuracyStacks)*ACCURACY_STACK_BONUS;
     run.accuracyDecayTimer=ACCURACY_CHAIN_TIMEOUT;
-    run.headshotRegenTax=std::min(0.65f,run.headshotRegenTax+0.12f);
+    const int precision=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Lunge);
+    run.headshotRegenTax=std::min(0.65f,run.headshotRegenTax+0.12f*std::max(0.55f,1.0f-0.08f*precision));
     const float beatPhase=std::fmod(std::max(0.0f,state_.time),HEADSHOT_BEAT_SECONDS);
     const float beatDistance=std::min(beatPhase,HEADSHOT_BEAT_SECONDS-beatPhase);
-    const bool perfect=beatDistance<=HEADSHOT_PERFECT_WINDOW;
+    const bool perfect=beatDistance<=HEADSHOT_PERFECT_WINDOW+0.004f*static_cast<float>(precision);
     gainBattery(HEADSHOT_BATTERY_GAIN*run.accuracyMultiplier*(perfect?1.20f:1.0f),BatteryReason::Headshot);
     char ticker[48]{};
     std::snprintf(ticker,sizeof(ticker),perfect?"PERFECT HEADSHOT X%.2F":"HEADSHOT CHAIN X%.2F",run.accuracyMultiplier);
@@ -1659,6 +1740,10 @@ void Game::rewardHeadshot(const Vec3& position, bool critical) {
     spawnFlameBurst(position,1.35f);
     spawnParticleBurst(position);
     emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.62f:0.50f);
+    if(precision>0){
+        state_.meleeCooldown=std::max(0.0f,state_.meleeCooldown-0.035f*static_cast<float>(precision));
+        if(!fromLunge&&perfect&&state_.player.airJumpsRemaining<1)state_.player.airJumpsRemaining=1;
+    }
 }
 
 bool Game::damageSoulShell(int index, float amount) {
@@ -1720,6 +1805,7 @@ void Game::finishAirLungeLanding(float impactSpeed){
     visual.landingRecovery=visual.landingRecoveryDuration;
     visual.landingPosePitch=clampf(visual.airLungeRotation,0.28f,1.15f);
     state_.player.vel*=AIR_MELEE_LANDING_RETENTION;
+    if(pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack)>0)state_.progression.run.impactGuardTimer=std::max(state_.progression.run.impactGuardTimer,IMPACT_GUARD_SECONDS*0.65f);
 }
 void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
@@ -2313,11 +2399,15 @@ void Game::updateBullets(float dt) {
             const bool headshot=pointSegmentDistanceSq(headCenter,previous,b.pos)<=headRadius*headRadius;
             const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
             if(!bodyHit&&!headshot)continue;
-            const int shotLevel=state_.progression.run.temporaryLevels[static_cast<int>(UpgradeTrack::Shot)]+state_.progression.permanent.levels[static_cast<int>(UpgradeTrack::Shot)];
-            const float shotDamage=(b.brute?1.65f:0.9f)*(1.0f+0.07f*static_cast<float>(shotLevel));
+            const int shotLevel=upgradeLevel(UpgradeTrack::Shot);
+            const float shotDamage=(b.brute?1.65f:0.9f)*(1.0f+0.07f*static_cast<float>(shotLevel))*outgoingDamageMultiplier();
             if(!damageSoulShell(i,headshot?headshotDamage(target):shotDamage)) continue;
             if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
-            if(headshot){const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION);}
+            if(headshot){const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION,false);}
+            else {
+                const int relay=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Attack);
+                if(relay>0){state_.progression.run.relayPrimerStacks=std::min(RELAY_PRIMER_STACK_CAP,state_.progression.run.relayPrimerStacks+1);state_.progression.run.relayPrimerTimer=RELAY_PRIMER_SECONDS+0.2f*relay;}
+            }
             target.vel+=b.vel*(0.08f+0.004f*static_cast<float>(shotLevel));
             target.vel.y=std::max(target.vel.y,1.0f);
             b.alive=false;

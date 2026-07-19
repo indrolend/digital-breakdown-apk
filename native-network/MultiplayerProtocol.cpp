@@ -66,6 +66,8 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
   p.u8(s.upgradeMenuActive ? 1 : 0);
   for (auto level : s.temporaryUpgradeLevels)
     p.i32(level);
+  for (auto level : s.sharedPermanentUpgradeLevels)
+    p.i32(level);
   p.f32(s.roomHeat);
   for (const auto &player : s.players)
     writePlayer(p, player);
@@ -101,6 +103,9 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
     return false;
   s.upgradeMenuActive = upgradeMenu != 0;
   for (auto &level : s.temporaryUpgradeLevels)
+    if (!r.i32(level))
+      return false;
+  for (auto &level : s.sharedPermanentUpgradeLevels)
     if (!r.i32(level))
       return false;
   if (!r.f32(s.roomHeat))
@@ -176,6 +181,8 @@ captureWorld(const GameState &state,
   s.upgradeMenuActive = state.upgradeMenu.active;
   for (int i = 0; i < 3; ++i)
     s.temporaryUpgradeLevels[i] = state.progression.run.temporaryLevels[i];
+  for (int i = 0; i < 3; ++i)
+    s.sharedPermanentUpgradeLevels[i] = state.progression.permanent.levels[i];
   s.roomHeat = state.progression.run.roomHeat;
   s.players = players;
   for (int i = 0; i < TARGET_COUNT; ++i) {
@@ -235,6 +242,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   state.uiPaused = s.upgradeMenuActive;
   for (int i = 0; i < 3; ++i)
     state.progression.run.temporaryLevels[i] = s.temporaryUpgradeLevels[i];
+  for (int i = 0; i < 3; ++i)
+    state.progression.run.networkSharedPermanentLevels[i] = s.sharedPermanentUpgradeLevels[i];
   state.progression.run.roomHeat = s.roomHeat;
   for (auto &peer : state.multiplayer.peers)
     peer = NetworkPeerState{};
