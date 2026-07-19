@@ -310,6 +310,11 @@ struct MeleeVisualState {
     float airLungeRotation = 0.0f;
     float airLungeAngularVelocity = 0.0f;
     float airLungeCameraLag = 0.0f;
+    float landingRecovery = 0.0f;
+    float landingRecoveryDuration = 0.0f;
+    float landingPosePitch = 0.0f;
+    float wallGripTimer = 0.0f;
+    Vec3 wallNormal;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;
@@ -498,6 +503,7 @@ private:
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;
     bool isHumanPointBlocked(float x, float z, float radius) const;
     void updateMeleeDash(float dt);
+    void finishAirLungeLanding(float impactSpeed);
     int applyMeleeHits();
     bool damageSoulShell(int index, float amount);
     void updateVacuum(float dt);

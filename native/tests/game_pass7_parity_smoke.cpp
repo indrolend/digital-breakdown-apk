@@ -212,6 +212,28 @@ int main() {
     step(game,23);
     ok &= expect(game.state().player.grounded && !game.state().meleeVisual.airLungeLandingPending && game.state().player.pos.z<-4.0f,
         "ballistic lunge closes at a forward ground contact instead of recovering in midair");
+    const float lowDropRecovery=game.state().meleeVisual.landingRecoveryDuration;
+    ok &= expect(lowDropRecovery>=0.06f && game.state().player.vel.z<0.0f,
+        "lunge landing retains forward momentum and enters a short recovery blend");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.pos={0.0f,4.5f,0.0f};setup.player.vel={0,0,0};
+        setup.player.jumpVel=-0.5f;setup.player.grounded=false;setup.camera.yaw=0.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false);step(game);
+    step(game,44);
+    ok &= expect(!game.state().player.grounded && game.state().meleeVisual.airLungeLandingPending && game.state().meleeVisual.airLungeTimer<=0.0f,
+        "a high-drop lunge keeps falling after its powered phase instead of snapping to a timed landing");
+    step(game,35);
+    ok &= expect(game.state().player.grounded && !game.state().meleeVisual.airLungeLandingPending &&
+                 game.state().meleeVisual.landingRecoveryDuration>lowDropRecovery,
+        "higher-impact lunge landings receive a proportionally longer recovery blend");
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(!game.state().player.grounded && game.state().meleeVisual.landingRecovery<=0.0f,
+        "jump input cancels lunge landing recovery directly into continued locomotion");
 
     game.reset();
     {

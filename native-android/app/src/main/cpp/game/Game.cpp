@@ -122,6 +122,9 @@ constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
 constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
 constexpr float AIR_MELEE_CAMERA_RESPONSE = 5.2f;
 constexpr float AIR_MELEE_CAMERA_LAG_DECAY = 2.4f;
+constexpr float AIR_MELEE_VERTICAL_KICK = 3.2f;
+constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
+constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
 struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
 constexpr MeleeCombo MELEE_COMBOS[] = {
     {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
@@ -778,7 +781,15 @@ void Game::updateInputActions(float dt) {
     state_.camera.yaw -= input.lookDeltaX * 0.003f;
     state_.camera.pitch = clampf(state_.camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
     input.lookDeltaX = input.lookDeltaY = 0.0f;
-    if (input.jumpPressed) { state_.player.jumpBufferTimer = JUMP_BUFFER; tryJump(); }
+    if(input.jumpPressed&&state_.meleeVisual.wallGripTimer>0.0f){
+        spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
+        state_.player.vel+=state_.meleeVisual.wallNormal*6.0f;
+        state_.player.jumpVel=AIR_JUMP_SPEED;
+        state_.player.grounded=false;
+        state_.meleeVisual.wallGripTimer=0.0f;
+        state_.meleeVisual.airLungeLandingPending=false;
+        state_.meleeVisual.locomotionLunge=false;
+    }else if (input.jumpPressed) { state_.player.jumpBufferTimer = JUMP_BUFFER; tryJump(); }
     if (input.meleePressed) triggerMelee();
     if (input.shootPressed) shootStoredSoul();
     input.cameraTogglePressed = input.jumpPressed = input.meleePressed = input.shootPressed = false;
@@ -824,15 +835,24 @@ void Game::resolvePlayerObstacleCollisions() {
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {
+            const Vec3 incoming=player.vel;
             const float pushes[4] = {
                 std::abs(player.pos.x - (c.minX - radius)), std::abs((c.maxX + radius) - player.pos.x),
                 std::abs(localPlayerZ - (c.minZ - radius)), std::abs((c.maxZ + radius) - localPlayerZ)
             };
             int axis = 0; for (int p = 1; p < 4; ++p) if (pushes[p] < pushes[axis]) axis = p;
-            if (axis == 0) { player.pos.x = c.minX - radius; if (player.vel.x > 0) player.vel.x = 0; }
-            else if (axis == 1) { player.pos.x = c.maxX + radius; if (player.vel.x < 0) player.vel.x = 0; }
-            else if (axis == 2) { localPlayerZ = c.minZ - radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z > 0) player.vel.z = 0; }
-            else { localPlayerZ = c.maxZ + radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z < 0) player.vel.z = 0; }
+            Vec3 normal;
+            if (axis == 0) { normal={-1,0,0};player.pos.x = c.minX - radius; if (player.vel.x > 0) player.vel.x = 0; }
+            else if (axis == 1) { normal={1,0,0};player.pos.x = c.maxX + radius; if (player.vel.x < 0) player.vel.x = 0; }
+            else if (axis == 2) { normal={0,0,-1};localPlayerZ = c.minZ - radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z > 0) player.vel.z = 0; }
+            else { normal={0,0,1};localPlayerZ = c.maxZ + radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z < 0) player.vel.z = 0; }
+            if(state_.meleeVisual.airLungeLandingPending){
+                const float headOn=std::abs(dotXZ(normalized(incoming),normal));
+                const Vec3 tangent=incoming-normal*dotXZ(incoming,normal);
+                player.vel=tangent*(headOn>0.72f?0.62f:0.88f);
+                state_.meleeVisual.wallNormal=normal;
+                if(headOn>0.72f)state_.meleeVisual.wallGripTimer=AIR_MELEE_WALL_GRIP_TIME;
+            }
         }
     }
 }
@@ -944,6 +964,9 @@ void Game::updatePlayer(float dt) {
     const float previousZ = p.pos.z;
     if (p.jumpBufferTimer > 0) p.jumpBufferTimer = std::max(0.0f, p.jumpBufferTimer - dt);
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
+    MeleeVisualState& lunge=state_.meleeVisual;
+    lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
+    lunge.wallGripTimer=std::max(0.0f,lunge.wallGripTimer-dt);
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
     const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
@@ -967,10 +990,9 @@ void Game::updatePlayer(float dt) {
         const float forwardSpeed = dotXZ(p.vel, direction);
         const Vec3 lateral = p.vel - direction * forwardSpeed;
         p.vel = direction * std::max(forwardSpeed, melee.airLungeSpeed) + lateral * AIR_MELEE_LATERAL_RETENTION;
-        const float flightTime=std::max(0.05f,melee.airLungeTimer);
-        const Vec3 predicted=p.pos+direction*(melee.airLungeSpeed*flightTime);
-        const float landingY=getPlayerSupportY(predicted.x,predicted.z);
-        p.jumpVel=(landingY-p.pos.y+0.5f*GRAVITY*flightTime*flightTime)/flightTime;
+        // This is a physical kick, not a trajectory fitted to an animation
+        // duration. Gravity and the actual support below decide when it lands.
+        p.jumpVel=std::max(p.jumpVel,AIR_MELEE_VERTICAL_KICK);
         melee.airLungePending = false;
     }
     if (!p.grounded) {
@@ -980,9 +1002,11 @@ void Game::updatePlayer(float dt) {
         if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }
         const float support = getPlayerSupportY(p.pos.x, p.pos.z);
         if (p.pos.y <= support) {
+            const float impactSpeed=std::max(0.0f,-p.jumpVel);
             p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
             state_.phonePose.doubleJumpTimer = 0.0f;
-            if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
+            if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
+            else if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
         }
     }
     if (p.grounded && p.jumpBufferTimer > 0) startGroundJump();
@@ -994,14 +1018,10 @@ void Game::updatePlayer(float dt) {
     if (p.grounded) {
         if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else p.pos.y = supportAfter;
     } else if (p.jumpVel <= 0 && p.pos.y <= supportAfter) {
+        const float impactSpeed=std::max(0.0f,-p.jumpVel);
         p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
         state_.phonePose.doubleJumpTimer = 0.0f;
-    }
-    if(p.grounded&&state_.meleeVisual.airLungeLandingPending){
-        state_.meleeVisual.airLungeLandingPending=false;
-        state_.meleeVisual.airLungeTimer=0.0f;
-        state_.meleeVisual.visualTimer=0.0f;
-        state_.meleeVisual.airLungeAngularVelocity=0.0f;
+        if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
     }
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     if (p.pos.x < minX) { p.pos.x = minX; if (p.vel.x < 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
@@ -1050,7 +1070,7 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
     PhonePoseState& pose = state_.phonePose;
     pose.doubleJumpVacuumPause = std::max(0.0f, pose.doubleJumpVacuumPause - dt);
     pose.doubleJumpTimer = std::max(0.0f, pose.doubleJumpTimer - dt);
-    const bool locomotionLunge = state_.meleeVisual.locomotionLunge && state_.meleeVisual.visualTimer > 0.0f;
+    const bool locomotionLunge = state_.meleeVisual.locomotionLunge && state_.meleeVisual.airLungeLandingPending;
     const bool jumpFlip = pose.doubleJumpTimer > 0.0f && !locomotionLunge;
     const bool dischargeFacing = state_.energy.dischargeTimer > 0.0f;
     state_.energy.dischargePositionAmount += ((dischargeFacing ? 1.0f : 0.0f) - state_.energy.dischargePositionAmount) * std::min(1.0f, dt * 12.0f);
@@ -1087,7 +1107,7 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
         q = q * quatAxisAngle({0,0,1}, wobble + pose.roll);
         pose.actionState = dischargeFacing ? 3 : (vacuumFacing ? 2 : (pose.energy > 0.01f ? 1 : 0));
         const MeleeVisualState& melee = state_.meleeVisual;
-        if (melee.visualTimer > 0.0f) {
+        if (melee.visualTimer > 0.0f || locomotionLunge) {
             const float attackT = 1.0f - clampf(melee.visualTimer / std::max(0.001f, melee.visualDuration), 0.0f, 1.0f);
             const float snap = std::sin(attackT * DB_PI);
             if (melee.locomotionLunge) {
@@ -1114,6 +1134,14 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
             q = q * quatAxisAngle({0,0,1}, MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
             q = q * quatAxisAngle({0,1,0}, MELEE_VARIANT_YAW[variant] * snap * hitWeight);
             pose.actionState = 4;
+        }
+        if(!locomotionLunge&&melee.landingRecovery>0.0f){
+            const float recovery=clampf(melee.landingRecovery/std::max(0.001f,melee.landingRecoveryDuration),0.0f,1.0f);
+            const float compression=recovery*recovery;
+            pose.lift-=0.055f*compression;
+            pose.forward+=0.045f*compression;
+            q=quatAxisAngle({0,1,0},state_.camera.yaw)*quatAxisAngle({1,0,0},-melee.landingPosePitch*recovery-0.22f*compression);
+            pose.actionState=7;
         }
     }
     pose.orientation = quatNormalized(q);
@@ -1316,6 +1344,7 @@ void Game::startGroundJump() {
     PlayerState& p = state_.player;
     spendBattery(BATTERY_JUMP_COST,BatteryReason::Jump);
     p.jumpVel = JUMP_SPEED; p.grounded = false; p.coyoteTimer = 0; p.jumpBufferTimer = 0; p.airJumpsRemaining = 1;
+    state_.meleeVisual.landingRecovery=0.0f;
 }
 void Game::startAirJump() {
     PlayerState& p = state_.player;
@@ -1411,25 +1440,13 @@ bool Game::damageSoulShell(int index, float amount) {
 void Game::updateMeleeDash(float dt) {
     MeleeVisualState& visual=state_.meleeVisual;
     visual.airLungeCameraLag=std::max(0.0f,visual.airLungeCameraLag-dt*AIR_MELEE_CAMERA_LAG_DECAY);
-    if(visual.airLungeTimer>0.0f){
-        const float previousTimer=visual.airLungeTimer;
+    if(visual.airLungeLandingPending){
         visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
         visual.airLungeRotation+=visual.airLungeAngularVelocity*dt;
         visual.airLungeAngularVelocity*=std::exp(-AIR_MELEE_ANGULAR_DAMPING*dt);
         visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
         if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
         applyMeleeHits();
-        if(previousTimer>0.0f&&visual.airLungeTimer<=0.0f&&visual.airLungeLandingPending){
-            PlayerState& player=state_.player;
-            player.pos.y=getPlayerSupportY(player.pos.x,player.pos.z);
-            player.jumpVel=0.0f;
-            player.grounded=true;
-            player.coyoteTimer=COYOTE_TIME;
-            player.airJumpsRemaining=1;
-            visual.airLungeLandingPending=false;
-            visual.visualTimer=0.0f;
-            visual.airLungeAngularVelocity=0.0f;
-        }
         return;
     }
     if(visual.dashTimer<=0.0f) return;
@@ -1439,6 +1456,20 @@ void Game::updateMeleeDash(float dt) {
     visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
     applyMeleeHits();
+}
+
+void Game::finishAirLungeLanding(float impactSpeed){
+    MeleeVisualState& visual=state_.meleeVisual;
+    visual.airLungeLandingPending=false;
+    visual.locomotionLunge=false;
+    visual.airLungeTimer=0.0f;
+    visual.visualTimer=0.0f;
+    visual.airLungeAngularVelocity=0.0f;
+    visual.wallGripTimer=0.0f;
+    visual.landingRecoveryDuration=clampf(0.06f+std::max(0.0f,impactSpeed-2.0f)*0.018f,0.06f,0.24f);
+    visual.landingRecovery=visual.landingRecoveryDuration;
+    visual.landingPosePitch=clampf(visual.airLungeRotation,0.28f,1.15f);
+    state_.player.vel*=AIR_MELEE_LANDING_RETENTION;
 }
 void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
