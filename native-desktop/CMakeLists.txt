@@ -6,7 +6,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(DigitalBreakdownDesktop LANGUAGES CXX)
+project(DigitalBreakdownDesktop LANGUAGES C CXX)
 
 include(FetchContent)
 
