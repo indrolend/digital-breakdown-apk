@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <algorithm>
 #include <chrono>
 
 #include "game/Game.hpp"
@@ -10,19 +11,36 @@
 #endif
 
 namespace {
+constexpr double FIXED_STEP_SECONDS = 1.0 / 60.0;
+constexpr double MAX_FRAME_SECONDS = 0.25;
+constexpr int MAX_STEPS_PER_FRAME = 4;
+
 Game gGame;
 Renderer gRenderer;
 auto gLastFrame = std::chrono::steady_clock::now();
+double gAccumulatorSeconds = 0.0;
 
-float nextDt() {
-    const auto now = std::chrono::steady_clock::now();
-    const std::chrono::duration<float> elapsed = now - gLastFrame;
-    gLastFrame = now;
-    return elapsed.count();
+void resetFrameClock() {
+    gLastFrame = std::chrono::steady_clock::now();
+    gAccumulatorSeconds = 0.0;
 }
 
-void logLine(const char* msg) {
-    __android_log_print(ANDROID_LOG_INFO, "DBNATIVE", "%s", msg);
+void advanceSimulation() {
+    const auto now = std::chrono::steady_clock::now();
+    const std::chrono::duration<double> elapsed = now - gLastFrame;
+    gLastFrame = now;
+    gAccumulatorSeconds += std::min(elapsed.count(), MAX_FRAME_SECONDS);
+
+    int steps = 0;
+    while (gAccumulatorSeconds >= FIXED_STEP_SECONDS && steps < MAX_STEPS_PER_FRAME) {
+        gGame.update(static_cast<float>(FIXED_STEP_SECONDS));
+        gAccumulatorSeconds -= FIXED_STEP_SECONDS;
+        ++steps;
+    }
+
+    if (steps == MAX_STEPS_PER_FRAME && gAccumulatorSeconds >= FIXED_STEP_SECONDS) {
+        gAccumulatorSeconds = 0.0;
+    }
 }
 }
 
@@ -36,7 +54,7 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv*, jclas
     );
     gGame.reset();
     gRenderer.surfaceCreated();
-    gLastFrame = std::chrono::steady_clock::now();
+    resetFrameClock();
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -47,8 +65,7 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceChanged(JNIEnv*, jclas
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv*, jclass) {
-    const float dt = nextDt();
-    gGame.update(dt);
+    advanceSimulation();
     gRenderer.draw(gGame.state());
 
     const GameState& s = gGame.state();
