@@ -17,8 +17,8 @@ public:
 
 private:
     TvGifWall tvGifWall_;
-    int width_ = 1280;
-    int height_ = 720;
+    mutable int width_ = 1280;
+    mutable int height_ = 720;
     unsigned int phoneModelList_ = 0;
     unsigned int flowerModelList_ = 0;
     unsigned int phoneShadowList_ = 0;

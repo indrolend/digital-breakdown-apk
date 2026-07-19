@@ -281,6 +281,15 @@ void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
 }
 
 void DesktopRenderer::drawHud(const GameState& state) const {
+    // GLFW reports the Retina backing framebuffer here, not macOS logical
+    // points. Render HUD geometry on a bounded logical canvas so a 2x backing
+    // scale does not make every label and meter appear half-sized. Keeping the
+    // aspect ratio intact also makes the same rule useful at 1440p and 4K.
+    const int framebufferWidth=width_,framebufferHeight=height_;
+    const float hudScale=clampf(std::min(static_cast<float>(framebufferWidth)/1280.0f,static_cast<float>(framebufferHeight)/720.0f),1.0f,2.5f);
+    struct RestoreFramebufferSize { int& width;int& height;int oldWidth;int oldHeight;~RestoreFramebufferSize(){width=oldWidth;height=oldHeight;} } restore{width_,height_,framebufferWidth,framebufferHeight};
+    width_=std::max(1,static_cast<int>(std::lround(framebufferWidth/hudScale)));
+    height_=std::max(1,static_cast<int>(std::lround(framebufferHeight/hudScale)));
     float overlayAlpha=1.0f;
     const auto quad=[&](float x,float y,float w,float h,float r,float g,float b,float a) {
         glColor4f(r,g,b,a*overlayAlpha);

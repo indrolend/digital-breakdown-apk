@@ -141,7 +141,10 @@ void setMenuSelection(HostState& host,int selection) {
 
 int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double windowY) {
     int ww=1,wh=1,fw=1,fh=1;glfwGetWindowSize(window,&ww,&wh);glfwGetFramebufferSize(window,&fw,&fh);
-    const float uiScale=clampf(std::min(static_cast<float>(fw)/1280.0f,static_cast<float>(fh)/720.0f),0.55f,1.8f);
+    // Match DesktopRenderer's Retina logical-canvas scale followed by its
+    // bounded menu scale (2.5 * 1.8 at the extreme), so visual and clickable
+    // button rectangles stay identical on high-density displays.
+    const float uiScale=clampf(std::min(static_cast<float>(fw)/1280.0f,static_cast<float>(fh)/720.0f),0.55f,4.5f);
     const float canvasW=fw/uiScale,canvasH=fh/uiScale;
     const float x=static_cast<float>(windowX)*fw/std::max(1,ww)/uiScale,y=static_cast<float>(windowY)*fh/std::max(1,wh)/uiScale;
     const GameState& state=host.game.state();
