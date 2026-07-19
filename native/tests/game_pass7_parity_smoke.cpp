@@ -68,6 +68,7 @@ int main() {
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
     game.setUiPaused(false);
+    game.reset();
 
     game.setTouchControls(0, 1, 0, 0, false, false, false, false, false, false);
     step(game);
@@ -170,6 +171,33 @@ int main() {
         "phone melee exposes shared attack pose and FX timing");
     ok &= expect(hasAudioCue(game.state(),AudioCue::PhoneAttack),
         "phone-attack audio is emitted by confirmed melee contact");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.pos={0.0f,1.4f,0.0f}; setup.player.vel={2.0f,0.0f,0.0f};
+        setup.player.jumpVel=-0.4f; setup.player.grounded=false; setup.camera.yaw=0.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
+    const GameState airLungeForward=game.state();
+    ok &= expect(airLungeForward.player.vel.z < -9.5f && std::abs(airLungeForward.player.vel.x) < 1.0f,
+        "airborne melee converts the attack into a strong camera-forward physics impulse");
+    ok &= expect(airLungeForward.player.jumpVel > 1.0f && !airLungeForward.player.grounded,
+        "airborne melee adds a small ball-like lift while preserving airborne state");
+    ok &= expect(airLungeForward.meleeVisual.dashTimer <= 0.0f && airLungeForward.meleeVisual.airLungeTimer > 0.0f && !airLungeForward.meleeVisual.airLungePending,
+        "airborne melee consumes one impulse instead of stacking the grounded positional dash");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        setup.player.pos={0.0f,1.4f,0.0f}; setup.player.grounded=false; setup.camera.yaw=-DB_PI*0.5f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,true,false,false); step(game);
+    ok &= expect(game.state().player.vel.x > 9.5f && std::abs(game.state().player.vel.z) < 0.25f,
+        "airborne melee lunge follows camera heading on touch and desktop input paths");
+
     game.reset();
     { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
     const unsigned int missedMeleeSerial=game.state().audio.nextSerial-1;

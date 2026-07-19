@@ -3,12 +3,7 @@ package com.indrolend.digitalbreakdown;
 import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
-<<<<<<< Updated upstream
 import android.view.Surface;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.FrameLayout;
-=======
 import android.graphics.Color;
 import android.text.InputFilter;
 import android.view.Gravity;
@@ -19,7 +14,6 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
->>>>>>> Stashed changes
 
 public final class MainActivity extends Activity {
     private GameView gameView;
@@ -43,8 +37,9 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         gameView = new GameView(this);
-<<<<<<< Updated upstream
         ControlOverlayView controls = new ControlOverlayView(this, gameView);
+        multiplayer = new MultiplayerClient(this, BuildConfig.MULTIPLAYER_URL, this::onNetworkStatus);
+        NativeBridge.setMultiplayerClient(multiplayer);
         FrameLayout root = new FrameLayout(this);
         root.addView(gameView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -54,21 +49,6 @@ public final class MainActivity extends Activity {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ));
-        setContentView(root);
-
-        gameView.post(() -> requestSixtyHertz(gameView.getHolder().getSurface()));
-    }
-
-    private static void requestSixtyHertz(Surface surface) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && surface != null && surface.isValid()) {
-            surface.setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
-        }
-=======
-        multiplayer = new MultiplayerClient(this, BuildConfig.MULTIPLAYER_URL, this::onNetworkStatus);
-        NativeBridge.setMultiplayerClient(multiplayer);
-
-        FrameLayout root = new FrameLayout(this);
-        root.addView(gameView, new FrameLayout.LayoutParams(-1, -1));
         menu = new LinearLayout(this);
         menu.setOrientation(LinearLayout.VERTICAL); menu.setGravity(Gravity.CENTER); menu.setPadding(48, 32, 48, 32);
         menu.setBackgroundColor(0xDD061419);
@@ -80,7 +60,14 @@ public final class MainActivity extends Activity {
         Button join = button("JOIN ROOM"); join.setOnClickListener(v -> multiplayer.join(code.getText().toString())); menu.addView(join);
         FrameLayout.LayoutParams panel = new FrameLayout.LayoutParams(620, -2, Gravity.CENTER); root.addView(menu, panel);
         setContentView(root);
->>>>>>> Stashed changes
+
+        gameView.post(() -> requestSixtyHertz(gameView.getHolder().getSurface()));
+    }
+
+    private static void requestSixtyHertz(Surface surface) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && surface != null && surface.isValid()) {
+            surface.setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
+        }
     }
 
     @Override

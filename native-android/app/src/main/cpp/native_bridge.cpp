@@ -1,6 +1,5 @@
 #include <jni.h>
 #include <android/log.h>
-#include <algorithm>
 #include <chrono>
 #include <algorithm>
 #include <deque>
@@ -24,9 +23,7 @@ constexpr int MAX_STEPS_PER_FRAME = 4;
 Game gGame;
 Renderer gRenderer;
 auto gLastFrame = std::chrono::steady_clock::now();
-<<<<<<< Updated upstream
 double gAccumulatorSeconds = 0.0;
-=======
 unsigned int gLastAudioSerial = 0;
 jclass gBridgeClass = nullptr;
 jmethodID gPlayAudioCue = nullptr;
@@ -57,15 +54,13 @@ void updateNetwork(JNIEnv* env){
     if(!gNetworkHost&&state.frame%2==0){dbnet::InputCommand input;input.sequence=++gNetworkSequence;input.tick=static_cast<std::uint32_t>(std::max(0,state.frame));input.moveX=clampf((state.input.right?1.0f:0.0f)-(state.input.left?1.0f:0.0f)+state.input.touchMoveX,-1,1);input.moveZ=clampf((state.input.forward?1.0f:0.0f)-(state.input.back?1.0f:0.0f)+state.input.touchMoveZ,-1,1);input.yaw=state.camera.yaw;input.pitch=state.camera.pitch;if(state.input.sprint||state.input.touchSprint)input.buttons|=dbnet::Sprint;if(state.input.jumpPressed)input.buttons|=dbnet::Jump;if(state.input.primaryHeld||state.input.touchPrimaryHeld)input.buttons|=dbnet::Vacuum;if(state.input.meleePressed)input.buttons|=dbnet::Melee;if(state.input.shootPressed)input.buttons|=dbnet::Shoot;if(state.input.cameraTogglePressed)input.buttons|=dbnet::CameraToggle;sendPacket(env,dbnet::encodeInput(static_cast<std::uint8_t>(gNetworkPlayerId),input));}
     else if(gNetworkHost&&static_cast<std::uint32_t>(state.frame)>=gLastSnapshotTick+3){gLastSnapshotTick=static_cast<std::uint32_t>(state.frame);sendPacket(env,dbnet::encodeSnapshot(0,dbnet::captureWorld(state,dbnet::capturePlayers(state),gLastSnapshotTick),++gNetworkSequence));}
 }
->>>>>>> Stashed changes
 
 void resetFrameClock() {
     gLastFrame = std::chrono::steady_clock::now();
     gAccumulatorSeconds = 0.0;
 }
 
-<<<<<<< Updated upstream
-void advanceSimulation() {
+void advanceSimulation(JNIEnv* env) {
     const auto now = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = now - gLastFrame;
     gLastFrame = now;
@@ -73,6 +68,7 @@ void advanceSimulation() {
 
     int steps = 0;
     while (gAccumulatorSeconds >= FIXED_STEP_SECONDS && steps < MAX_STEPS_PER_FRAME) {
+        updateNetwork(env);
         gGame.update(static_cast<float>(FIXED_STEP_SECONDS));
         gAccumulatorSeconds -= FIXED_STEP_SECONDS;
         ++steps;
@@ -82,9 +78,8 @@ void advanceSimulation() {
         gAccumulatorSeconds = 0.0;
     }
 }
-=======
->>>>>>> Stashed changes
-}
+
+} // namespace
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv* env, jclass bridgeClass) {
@@ -120,15 +115,8 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceChanged(JNIEnv*, jclas
 }
 
 extern "C" JNIEXPORT void JNICALL
-<<<<<<< Updated upstream
-Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv*, jclass) {
-    advanceSimulation();
-=======
 Java_com_indrolend_digitalbreakdown_NativeBridge_onDrawFrame(JNIEnv* env, jclass) {
-    const float dt = nextDt();
-    updateNetwork(env);
-    gGame.update(dt);
->>>>>>> Stashed changes
+    advanceSimulation(env);
     gRenderer.draw(gGame.state());
 
     const GameState& s = gGame.state();
@@ -200,13 +188,9 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onTouchControls(
 extern "C" JNIEXPORT void JNICALL
 Java_com_indrolend_digitalbreakdown_NativeBridge_onKey(JNIEnv*, jclass, jint keyCode, jboolean down) {
     gGame.setKey(keyCode, down == JNI_TRUE);
-<<<<<<< Updated upstream
-}
-=======
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_startSolo(JNIEnv*,jclass){NetworkEvent event;event.kind=NetworkEvent::Solo;std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.clear();gNetworkEvents.push_back(std::move(event));}
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_configureNetwork(JNIEnv* env,jclass,jboolean host,jint playerId,jstring room,jstring status){const char* r=env->GetStringUTFChars(room,nullptr);const char* s=env->GetStringUTFChars(status,nullptr);NetworkEvent event;event.kind=NetworkEvent::Configure;event.host=host==JNI_TRUE;event.playerId=playerId;event.room=r?r:"";event.status=s?s:"";if(r)env->ReleaseStringUTFChars(room,r);if(s)env->ReleaseStringUTFChars(status,s);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkControl(JNIEnv* env,jclass,jstring value){const char* chars=env->GetStringUTFChars(value,nullptr);NetworkEvent event;event.kind=NetworkEvent::Control;event.text=chars?chars:"";if(chars)env->ReleaseStringUTFChars(value,chars);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkPacket(JNIEnv* env,jclass,jbyteArray value){NetworkEvent event;event.kind=NetworkEvent::Binary;const jsize size=env->GetArrayLength(value);event.bytes.resize(static_cast<std::size_t>(size));env->GetByteArrayRegion(value,0,size,reinterpret_cast<jbyte*>(event.bytes.data()));std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
->>>>>>> Stashed changes

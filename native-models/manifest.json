@@ -1,0 +1,28 @@
+{
+  "format": "DBM1 texture-baked/DBH1",
+  "source": "reference/browser-pass7/assets/embedded-assets.js",
+  "phone": {
+    "vertices": 253740,
+    "batches": 30,
+    "bytes": 3045612
+  },
+  "flower": {
+    "vertices": 11628,
+    "batches": 2,
+    "bytes": 139596
+  },
+  "human": {
+    "vertices": 4164,
+    "bones": 33,
+    "frames": 60,
+    "bytes": 231716,
+    "minY": -0.8560909559267502,
+    "unitScale": 0.006614684994733711,
+    "color": [
+      0.6038273590529664,
+      0.6038273590529664,
+      0.6038273590529664,
+      1
+    ]
+  }
+}

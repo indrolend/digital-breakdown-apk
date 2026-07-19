@@ -111,6 +111,9 @@ constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
+constexpr float AIR_MELEE_LUNGE_SPEED_MULT = 0.82f;
+constexpr float AIR_MELEE_LATERAL_RETENTION = 0.35f;
+constexpr float AIR_MELEE_VERTICAL_KICK = 1.40f;
 struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
 constexpr MeleeCombo MELEE_COMBOS[] = {
     {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
@@ -898,6 +901,18 @@ void Game::updatePlayer(float dt) {
     Vec3 move = cameraForwardFlat() * forwardAxis + cameraRightFlat() * strafeAxis;
     if (lengthSq(move) > 0.0f) { move = normalized(move); p.vel += move * (accel * vacuumSlow * dt); }
     limitHorizontal(p.vel, maxSpeed * vacuumSlow);
+    // Ground melee retains the browser's short positional dash. Air melee is
+    // a one-shot physical impulse, after ordinary air-speed limiting, so its
+    // arc is subsequently governed by gravity, drag and collision response.
+    if (state_.meleeVisual.airLungePending) {
+        MeleeVisualState& melee = state_.meleeVisual;
+        const Vec3 direction = normalized(Vec3{melee.direction.x, 0.0f, melee.direction.z});
+        const float forwardSpeed = dotXZ(p.vel, direction);
+        const Vec3 lateral = p.vel - direction * forwardSpeed;
+        p.vel = direction * std::max(forwardSpeed, melee.airLungeSpeed) + lateral * AIR_MELEE_LATERAL_RETENTION;
+        p.jumpVel = std::max(p.jumpVel, AIR_MELEE_VERTICAL_KICK);
+        melee.airLungePending = false;
+    }
     if (!p.grounded) {
         p.jumpVel -= GRAVITY * dt;
         applyWallClimb(dt);
@@ -1199,7 +1214,9 @@ void Game::triggerMelee() {
     MeleeVisualState& visual = state_.meleeVisual;
     visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage;
     visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
-    visual.dashTimer=combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
+    const bool airborne=!state_.player.grounded;
+    visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
+    visual.airLungePending=airborne; visual.airLungeSpeed=combo.dashSpeed*AIR_MELEE_LUNGE_SPEED_MULT; visual.airLungeTimer=airborne?combo.dash:0.0f;
     visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
     visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
@@ -1251,6 +1268,13 @@ bool Game::damageSoulShell(int index, float amount) {
 
 void Game::updateMeleeDash(float dt) {
     MeleeVisualState& visual=state_.meleeVisual;
+    if(visual.airLungeTimer>0.0f){
+        visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
+        visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+        if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
+        applyMeleeHits();
+        return;
+    }
     if(visual.dashTimer<=0.0f) return;
     const float step=std::min(visual.dashSpeed*dt,std::max(0.0f,visual.range-visual.travel));
     visual.dashTimer=std::max(0.0f,visual.dashTimer-dt); visual.travel+=step;

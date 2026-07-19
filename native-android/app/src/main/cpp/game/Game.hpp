@@ -293,6 +293,9 @@ struct MeleeVisualState {
     float visualDuration = 0.20f;
     float dashTimer = 0.0f;
     float dashSpeed = 12.5f;
+    bool airLungePending = false;
+    float airLungeSpeed = 0.0f;
+    float airLungeTimer = 0.0f;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;

@@ -6,7 +6,6 @@ import android.os.SystemClock;
 import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.util.SparseIntArray;
 
 public final class GameView extends GLSurfaceView implements Choreographer.FrameCallback {
     private static final long FRAME_INTERVAL_NANOS = 1_000_000_000L / 60L;
@@ -16,25 +15,6 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private final NativeRenderer renderer;
     private int viewWidth = 1;
     private int viewHeight = 1;
-<<<<<<< Updated upstream
-=======
-    private int activeLookPointerId = -1;
-    private float lastLookX = 0.0f;
-    private float lastLookY = 0.0f;
-    private int activeMovePointerId = -1;
-    private float moveAnchorX = 0.0f;
-    private float moveAnchorY = 0.0f;
-    private final SparseIntArray pointerRoles = new SparseIntArray();
-
-    private static final int ROLE_NONE = 0;
-    private static final int ROLE_MOVE = 1;
-    private static final int ROLE_LOOK = 2;
-    private static final int ROLE_JUMP = 3;
-    private static final int ROLE_MELEE = 4;
-    private static final int ROLE_SHOOT = 5;
-    private static final int ROLE_CAMERA = 6;
-    private static final int ROLE_VACUUM = 7;
->>>>>>> Stashed changes
 
     private int movePointerId = -1;
     private int actionPointerId = -1;
@@ -52,12 +32,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
 
     public GameView(Context context) {
         super(context);
-<<<<<<< Updated upstream
-=======
         NativeBridge.initializeAudio(context);
         NativeBridge.initializeModels(context);
-
->>>>>>> Stashed changes
         setEGLContextClientVersion(2);
         setFocusable(true);
         setFocusableInTouchMode(true);
@@ -110,7 +86,6 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final int action = event.getActionMasked();
         final int actionIndex = event.getActionIndex();
         final int pointerId = event.getPointerId(actionIndex);
-<<<<<<< Updated upstream
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
 
@@ -137,24 +112,6 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
                 actionTravel = 0.0f;
                 actionDownMillis = SystemClock.uptimeMillis();
                 postDelayed(actionHoldRunnable, ACTION_HOLD_MILLIS);
-=======
-        final float actionX = event.getX(actionIndex);
-        final float actionY = event.getY(actionIndex);
-        NativeBridge.onTouch(action, actionX, actionY, event.getPointerCount());
-
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-            final int role = chooseRole(actionX, actionY);
-            pointerRoles.put(pointerId, role);
-            if (role == ROLE_MOVE && activeMovePointerId < 0) {
-                activeMovePointerId = pointerId;
-                final float minSide = Math.max(1.0f, Math.min(viewWidth, viewHeight));
-                moveAnchorX = minSide * 0.18f;
-                moveAnchorY = viewHeight - minSide * 0.20f;
-            } else if (role == ROLE_LOOK && activeLookPointerId < 0) {
-                activeLookPointerId = pointerId;
-                lastLookX = actionX;
-                lastLookY = actionY;
->>>>>>> Stashed changes
             }
         }
 
@@ -194,11 +151,6 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
                 actionPointerId = -1;
                 vacuumHeld = false;
             }
-            if (pointerId == activeMovePointerId || action == MotionEvent.ACTION_CANCEL) {
-                activeMovePointerId = -1;
-            }
-            if (action == MotionEvent.ACTION_CANCEL) pointerRoles.clear();
-            else pointerRoles.delete(pointerId);
         }
 
         if (action == MotionEvent.ACTION_CANCEL) {
@@ -323,114 +275,6 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         return true;
     }
 
-<<<<<<< Updated upstream
-=======
-    private TouchControls readTouchControls(MotionEvent event) {
-        TouchControls controls = new TouchControls();
-        final float minSide = Math.max(1.0f, Math.min(viewWidth, viewHeight));
-        final float moveRadius = minSide * 0.18f;
-
-        for (int i = 0; i < event.getPointerCount(); ++i) {
-            final float x = event.getX(i);
-            final float y = event.getY(i);
-
-            switch (pointerRoles.get(event.getPointerId(i), ROLE_NONE)) {
-                case ROLE_MOVE:
-                    if (event.getPointerId(i) == activeMovePointerId) {
-                        float dx = (x - moveAnchorX) / moveRadius;
-                        float dz = (moveAnchorY - y) / moveRadius;
-                        final float magnitude = (float)Math.sqrt(dx * dx + dz * dz);
-                        if (magnitude < 0.10f) { dx = 0.0f; dz = 0.0f; }
-                        else if (magnitude > 1.0f) { dx /= magnitude; dz /= magnitude; }
-                        controls.moveX = dx; controls.moveZ = dz;
-                        controls.sprintHeld = magnitude > 0.82f;
-                    }
-                    break;
-                case ROLE_JUMP: controls.jumpHeld = true; break;
-                case ROLE_MELEE: controls.meleeHeld = true; break;
-                case ROLE_SHOOT: controls.shootHeld = true; break;
-                case ROLE_CAMERA: controls.cameraHeld = true; break;
-                case ROLE_VACUUM: controls.vacuumHeld = true; break;
-                default: break;
-            }
-        }
-
-        return controls;
-    }
-
-    private boolean isLookZone(float x, float y) {
-        return x >= viewWidth * 0.45f
-            && !inJumpButton(x, y)
-            && !inMeleeButton(x, y)
-            && !inShootButton(x, y)
-            && !inCameraButton(x, y)
-            && !inVacuumButton(x, y);
-    }
-
-    private int chooseRole(float x, float y) {
-        if (inJumpButton(x, y)) return ROLE_JUMP;
-        if (inMeleeButton(x, y)) return ROLE_MELEE;
-        if (inShootButton(x, y)) return ROLE_SHOOT;
-        if (inCameraButton(x, y)) return ROLE_CAMERA;
-        if (inVacuumButton(x, y)) return ROLE_VACUUM;
-        if (x < viewWidth * 0.48f && y > viewHeight * 0.28f && activeMovePointerId < 0) return ROLE_MOVE;
-        if (isLookZone(x, y) && activeLookPointerId < 0) return ROLE_LOOK;
-        return ROLE_NONE;
-    }
-
-    private boolean inJumpButton(float x, float y) {
-        final float r = buttonRadius();
-        return inside(x, y, viewWidth - r * 1.40f, viewHeight - r * 3.70f, r);
-    }
-
-    private boolean inMeleeButton(float x, float y) {
-        final float r = buttonRadius();
-        return inside(x, y, viewWidth - r * 3.70f, viewHeight - r * 1.40f, r);
-    }
-
-    private boolean inShootButton(float x, float y) {
-        final float r = buttonRadius();
-        return inside(x, y, viewWidth - r * 3.70f, viewHeight - r * 3.70f, r);
-    }
-
-    private boolean inCameraButton(float x, float y) {
-        final float r = buttonRadius();
-        return inside(x, y, viewWidth - r * 6.00f, viewHeight - r * 1.40f, r * 0.82f);
-    }
-
-    private boolean inVacuumButton(float x, float y) {
-        final float r = buttonRadius();
-        return inside(x, y, viewWidth - r * 1.40f, viewHeight - r * 1.40f, r * 1.12f);
-    }
-
-    private float buttonRadius() {
-        return Math.max(44.0f, Math.min(viewWidth, viewHeight) * 0.070f);
-    }
-
-    private static boolean inside(float x, float y, float cx, float cy, float r) {
-        final float dx = x - cx;
-        final float dy = y - cy;
-        return dx * dx + dy * dy <= r * r;
-    }
-
-    private static float clamp(float v, float lo, float hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static final class TouchControls {
-        float moveX = 0.0f;
-        float moveZ = 0.0f;
-        float lookDx = 0.0f;
-        float lookDy = 0.0f;
-        boolean vacuumHeld = false;
-        boolean sprintHeld = false;
-        boolean jumpHeld = false;
-        boolean meleeHeld = false;
-        boolean shootHeld = false;
-        boolean cameraHeld = false;
-    }
-
->>>>>>> Stashed changes
     private static final class NativeRenderer implements GLSurfaceView.Renderer {
         @Override
         public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 gl, javax.microedition.khronos.egl.EGLConfig config) {
