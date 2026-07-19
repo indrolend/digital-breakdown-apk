@@ -21,6 +21,7 @@
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
+constexpr int ROOM_VISUAL_HORIZON = 2;
 constexpr float ROOM_WALL_HEIGHT = 7.2f;
 constexpr float GROUND_Y = 0.08f;
 constexpr float PI = 3.14159265358979323846f;
@@ -431,7 +432,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
-    for (int tile=state.topology.currentTileIndex-1; tile<=state.topology.currentTileIndex+1; ++tile) drawRoomTile(state,tile);
+    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile);
 
     // Directional planar shadows: project each caster's real geometry along the
     // browser sun vector onto the floor. Silhouette, length and motion therefore
@@ -493,7 +494,7 @@ void DesktopRenderer::draw(const GameState& state) const {
             glDepthMask(GL_TRUE); glDisable(GL_BLEND);
         }
     }
-    for(int offset=-1;offset<=1;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
+    for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;
         drawBox(p+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0,0,0,0.36f,0.42f,0.46f);
@@ -501,7 +502,7 @@ void DesktopRenderer::draw(const GameState& state) const {
         if(capture.filled) drawBox(p+Vec3{0,0,0.12f},{0.36f,0.36f,0.36f},state.time*1.5f,state.time*2.0f,state.time,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
     }
     for(const auto& flower:state.flowers) if(flower.active){
-        for(int offset=-1;offset<=1;++offset){
+        for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){
             const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+static_cast<float>(state.topology.currentTileIndex+offset)*ROOM_DEPTH};
             if(flowerModelList_) drawStaticModel(flowerModelList_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
             else {

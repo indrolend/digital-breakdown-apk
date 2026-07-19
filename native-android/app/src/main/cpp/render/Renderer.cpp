@@ -12,6 +12,7 @@
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
+constexpr int ROOM_VISUAL_HORIZON = 2;
 
 constexpr int ROUNDED_SEGMENTS = 7;
 constexpr int ROUNDED_RINGS = 5;
@@ -478,7 +479,7 @@ void Renderer::draw(const GameState& state) {
     lookAt(view, state.camera.pos, state.camera.lookTarget, {0.0f, 1.0f, 0.0f});
     multiply(viewProj, proj, view);
 
-    for(int tile=state.topology.currentTileIndex-1;tile<=state.topology.currentTileIndex+1;++tile) drawRoomTile(viewProj,state,tile);
+    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(viewProj,state,tile);
 
     // Project every caster's geometry along the browser sun vector (30,60,25)
     // onto the floor. This preserves physical direction, length and silhouette
@@ -553,14 +554,14 @@ void Renderer::draw(const GameState& state) {
     const float flowerTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
-        for(int offset=-1;offset<=1;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
+        for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
         if(flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
         else {drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}}
         }
     }
 
     const float captureTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
+    for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         const Vec3 capturePos=capture.pos+Vec3{0,0,captureTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
         const float frameColor[4]={0.36f,0.42f,0.46f,1.0f};
