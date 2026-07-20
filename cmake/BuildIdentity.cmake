@@ -3,13 +3,7 @@ function(db_configure_build_identity repository_root output_directory)
 
     string(JSON DB_GAME_VERSION GET "${DB_VERSION_JSON}" gameVersion)
     string(JSON DB_RELEASE_STAGE GET "${DB_VERSION_JSON}" releaseStage)
-    string(JSON DB_MILESTONE GET "${DB_VERSION_JSON}" milestone)
     string(JSON DB_PROTOCOL_VERSION GET "${DB_VERSION_JSON}" protocolVersion)
-    string(JSON DB_GAMEPLAY_VERSION GET "${DB_VERSION_JSON}" gameplayVersion)
-    string(JSON DB_MINIMUM_COMPATIBLE_PROTOCOL GET "${DB_VERSION_JSON}" minimumCompatibleProtocol)
-    string(JSON DB_SAVE_SCHEMA_VERSION GET "${DB_VERSION_JSON}" saveSchemaVersion)
-    string(JSON DB_ASSET_SCHEMA_VERSION GET "${DB_VERSION_JSON}" assetSchemaVersion)
-    string(JSON DB_RELEASE_CHANNEL GET "${DB_VERSION_JSON}" releaseChannel)
 
     set(DB_BUILD_NUMBER "1")
     if(DEFINED DIGITAL_BREAKDOWN_BUILD_NUMBER AND NOT DIGITAL_BREAKDOWN_BUILD_NUMBER STREQUAL "")
