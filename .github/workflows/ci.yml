@@ -1,0 +1,78 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-hygiene:
+    name: Source hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject tracked generated files and whitespace errors
+        run: |
+          set -euo pipefail
+          git diff --check
+          forbidden=$(git ls-files | grep -E '(^|/)(build|playtest-logs|debug-sessions|node_modules|\.wrangler)/|\.(apk|aab|keystore|jks)$' || true)
+          if [[ -n "$forbidden" ]]; then
+            echo "$forbidden"
+            echo 'Generated or secret-bearing files are tracked.' >&2
+            exit 1
+          fi
+
+  native-tests:
+    name: Shared native tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S native-desktop -B build/ci -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/ci --config Release --parallel
+      - name: Run parity and protocol tests
+        run: |
+          set -euo pipefail
+          build/ci/Pass7ParityTest
+          build/ci/MultiplayerProtocolTest
+
+  backend-tests:
+    name: Multiplayer backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: multiplayer-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: multiplayer-server/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run deploy:dry
+
+  android-compile:
+    name: Android compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+      - run: echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
+      - run: ./android/gradlew -p native-android assembleDebug --stacktrace
