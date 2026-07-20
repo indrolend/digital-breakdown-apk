@@ -1,0 +1,18 @@
+#pragma once
+
+#include <cstdint>
+
+namespace dbbuild {
+inline constexpr const char* GAME_VERSION = "@DB_GAME_VERSION@";
+inline constexpr const char* RELEASE_STAGE = "@DB_RELEASE_STAGE@";
+inline constexpr const char* MILESTONE = "@DB_MILESTONE@";
+inline constexpr const char* RELEASE_CHANNEL = "@DB_RELEASE_CHANNEL@";
+inline constexpr const char* SOURCE_COMMIT = "@DB_SOURCE_COMMIT@";
+inline constexpr std::uint32_t BUILD_NUMBER = @DB_BUILD_NUMBER@u;
+inline constexpr std::uint16_t PROTOCOL_VERSION = @DB_PROTOCOL_VERSION@u;
+inline constexpr std::uint16_t GAMEPLAY_VERSION = @DB_GAMEPLAY_VERSION@u;
+inline constexpr std::uint16_t MINIMUM_COMPATIBLE_PROTOCOL = @DB_MINIMUM_COMPATIBLE_PROTOCOL@u;
+inline constexpr std::uint32_t SAVE_SCHEMA_VERSION = @DB_SAVE_SCHEMA_VERSION@u;
+inline constexpr std::uint32_t ASSET_SCHEMA_VERSION = @DB_ASSET_SCHEMA_VERSION@u;
+inline constexpr bool SOURCE_DIRTY = @DB_SOURCE_DIRTY@ != 0;
+}
