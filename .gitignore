@@ -1,6 +1,10 @@
-﻿node_modules/
+node_modules/
 
 /build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
 /DigitalBreakdownDev.exe
 
 /reference/browser-pass7/
@@ -22,6 +26,23 @@ native/build/
 
 multiplayer-server/node_modules/
 multiplayer-server/.wrangler/
+multiplayer-server/.dev.vars
+multiplayer-server/.env
+multiplayer-server/.env.*
+
+playtest-logs/
+debug-sessions/
+runtime-diagnostics.csv
+debug-events.csv
+failure-snapshots.jsonl
+stress-tests.csv
+
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
 
 *.apk
 *.aab
