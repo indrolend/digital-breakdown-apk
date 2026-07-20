@@ -27,7 +27,6 @@ android {
         buildConfigField 'String', 'RELEASE_STAGE', '"' + versionManifest.releaseStage + '"'
         buildConfigField 'int', 'BUILD_NUMBER', buildNumber.toString()
         buildConfigField 'int', 'PROTOCOL_VERSION', versionManifest.protocolVersion.toString()
-        buildConfigField 'int', 'SAVE_SCHEMA_VERSION', versionManifest.saveSchemaVersion.toString()
         buildConfigField 'String', 'MULTIPLAYER_URL', '"' + (System.getenv('DIGITAL_BREAKDOWN_MULTIPLAYER_URL') ?: 'https://digital-breakdown-multiplayer.indrolend.workers.dev') + '"'
 
         externalNativeBuild {
