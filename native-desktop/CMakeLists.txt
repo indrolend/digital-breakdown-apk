@@ -8,6 +8,10 @@ endif()
 
 project(DigitalBreakdownDesktop LANGUAGES C CXX)
 
+get_filename_component(DB_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+include("${DB_REPOSITORY_ROOT}/cmake/BuildIdentity.cmake")
+db_configure_build_identity("${DB_REPOSITORY_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
 include(FetchContent)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -63,6 +67,7 @@ target_include_directories(
     "${DB_SHARED_ROOT}/game"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
+    "${DB_GENERATED_INCLUDE_DIR}"
     "${miniaudio_SOURCE_DIR}"
 )
 
@@ -81,8 +86,8 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.indrolend.digitalbreakdown.native"
-        MACOSX_BUNDLE_BUNDLE_VERSION "1"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${DB_BUILD_NUMBER}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${DB_GAME_VERSION}"
     )
 endif()
 
@@ -91,11 +96,24 @@ add_executable(
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/game_pass7_parity_smoke.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
-target_include_directories(Pass7ParityTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(Pass7ParityTest PRIVATE "${DB_SHARED_ROOT}/game" "${DB_GENERATED_INCLUDE_DIR}")
 target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
-add_executable(MultiplayerProtocolTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
+
+add_executable(
+    MultiplayerProtocolTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(
+    MultiplayerProtocolTest
+    PRIVATE
+    "${DB_SHARED_ROOT}/game"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
+    "${DB_GENERATED_INCLUDE_DIR}"
+)
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
 endif()
