@@ -3,6 +3,8 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
     "lib": ["ES2022"],
     "strict": true,
     "noEmit": true,
@@ -10,6 +12,6 @@
     "noImplicitOverride": true,
     "types": []
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
+  "include": ["src/**/*.ts", "worker-configuration.d.ts", "../version.json"],
   "exclude": ["test/**/*.ts"]
 }
