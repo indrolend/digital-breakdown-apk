@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "0.9.0",
+  "releaseStage": "alpha",
+  "milestone": "Pass 7 Native Parity",
+  "protocolVersion": 4,
+  "gameplayVersion": 4,
+  "minimumCompatibleProtocol": 4,
+  "saveSchemaVersion": 1,
+  "assetSchemaVersion": 1,
+  "androidVersionCodeBase": 900000,
+  "releaseChannel": "development"
+}
