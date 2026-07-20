@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the authoritative Digital Breakdown version manifest."""
+"""Validate the small set of version fields the project currently uses."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "version.json"
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 STAGES = {"development", "alpha", "beta", "rc", "stable"}
-CHANNELS = {"development", "playtest", "preview", "stable"}
 
 
 def fail(message: str) -> None:
@@ -26,56 +25,34 @@ def main() -> None:
         "schemaVersion",
         "gameVersion",
         "releaseStage",
-        "milestone",
         "protocolVersion",
-        "gameplayVersion",
-        "minimumCompatibleProtocol",
-        "saveSchemaVersion",
-        "assetSchemaVersion",
         "androidVersionCodeBase",
-        "releaseChannel",
     }
     missing = sorted(required - data.keys())
     if missing:
         fail(f"missing fields: {', '.join(missing)}")
 
+    unknown = sorted(set(data) - required)
+    if unknown:
+        fail(f"unknown fields: {', '.join(unknown)}")
+
     if not SEMVER.fullmatch(str(data["gameVersion"])):
         fail("gameVersion must be MAJOR.MINOR.PATCH without a suffix")
     if data["releaseStage"] not in STAGES:
         fail(f"releaseStage must be one of {sorted(STAGES)}")
-    if data["releaseChannel"] not in CHANNELS:
-        fail(f"releaseChannel must be one of {sorted(CHANNELS)}")
-    if data["releaseStage"] == "stable" and data["releaseChannel"] != "stable":
-        fail("stable releases must use the stable channel")
-    if data["releaseStage"] != "stable" and data["releaseChannel"] == "stable":
-        fail("non-stable releases cannot use the stable channel")
 
-    integer_fields = [
-        "schemaVersion",
-        "protocolVersion",
-        "gameplayVersion",
-        "minimumCompatibleProtocol",
-        "saveSchemaVersion",
-        "assetSchemaVersion",
-        "androidVersionCodeBase",
-    ]
-    for field in integer_fields:
+    for field in ("schemaVersion", "protocolVersion", "androidVersionCodeBase"):
         value = data[field]
         if not isinstance(value, int) or value < 1:
             fail(f"{field} must be a positive integer")
 
-    if data["minimumCompatibleProtocol"] > data["protocolVersion"]:
-        fail("minimumCompatibleProtocol cannot exceed protocolVersion")
     if data["androidVersionCodeBase"] % 1000 != 0:
-        fail("androidVersionCodeBase must reserve the final three digits for CI builds")
-    if not str(data["milestone"]).strip():
-        fail("milestone cannot be blank")
+        fail("androidVersionCodeBase must reserve the final three digits for builds")
 
     print(
         "version manifest OK: "
         f"{data['gameVersion']}-{data['releaseStage']} "
-        f"protocol={data['protocolVersion']} save={data['saveSchemaVersion']} "
-        f"assets={data['assetSchemaVersion']}"
+        f"protocol={data['protocolVersion']}"
     )
 
 
