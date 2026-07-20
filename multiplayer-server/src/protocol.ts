@@ -3,7 +3,6 @@ import version from "../../version.json";
 export const PROTOCOL_VERSION = version.protocolVersion;
 export const GAME_VERSION = version.gameVersion;
 export const RELEASE_STAGE = version.releaseStage;
-export const MINIMUM_COMPATIBLE_PROTOCOL = version.minimumCompatibleProtocol;
 export const MAX_PLAYERS = 4;
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const ROOM_CODE_LENGTH = 6;
@@ -49,7 +48,7 @@ export function parseEnvelope(message: string): WireEnvelope | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   if (record.v !== PROTOCOL_VERSION) return null;
-  if (!( ["input", "snapshot", "event", "ping", "pong"] as const).includes(record.type as ClientMessageType)) return null;
+  if (!(["input", "snapshot", "event", "ping", "pong"] as const).includes(record.type as ClientMessageType)) return null;
   if (!Number.isSafeInteger(record.seq) || (record.seq as number) < 0) return null;
   if (!Number.isSafeInteger(record.tick) || (record.tick as number) < 0) return null;
   return { v: PROTOCOL_VERSION, type: record.type as ClientMessageType, seq: record.seq as number, tick: record.tick as number, payload: record.payload };
