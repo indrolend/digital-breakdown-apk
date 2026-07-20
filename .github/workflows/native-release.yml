@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'version.json'
+      - 'cmake/**'
       - 'native-desktop/**'
       - 'native-android/**'
       - 'native-network/**'
@@ -33,6 +35,7 @@ jobs:
         working-directory: multiplayer-server
     steps:
       - uses: actions/checkout@v4
+      - run: python3 ../tools/release/validate-version.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -48,13 +51,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S native-desktop -B build/windows-release -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S native-desktop -B build/windows-release -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DDIGITAL_BREAKDOWN_BUILD_NUMBER=${{ github.run_number }}
+          -DDIGITAL_BREAKDOWN_SOURCE_COMMIT=${{ github.sha }}
       - name: Build
         run: cmake --build build/windows-release --config Release --parallel
       - name: Test and package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $version = Get-Content version.json -Raw | ConvertFrom-Json
           $exe = @(
             'build/windows-release/bin/Release/DigitalBreakdown.exe',
             'build/windows-release/bin/DigitalBreakdown.exe'
@@ -65,9 +73,16 @@ jobs:
           $stage = 'dist/windows/DigitalBreakdown'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item $exe "$stage/DigitalBreakdown.exe"
+          Copy-Item version.json "$stage/version.json"
           @{
-            schemaVersion = 1
+            schemaVersion = 2
+            gameVersion = $version.gameVersion
+            releaseStage = $version.releaseStage
+            buildNumber = [int]'${{ github.run_number }}'
             commit = '${{ github.sha }}'
+            protocolVersion = $version.protocolVersion
+            saveSchemaVersion = $version.saveSchemaVersion
+            assetSchemaVersion = $version.assetSchemaVersion
             platform = 'windows-x64'
             configuration = 'Release'
             workflowRunId = '${{ github.run_id }}'
@@ -128,6 +143,7 @@ jobs:
           grep -q 'lib/arm64-v8a/libdigitalbreakdown.so' dist/apk-contents.txt
           cp "$APK" dist/DigitalBreakdown-Android.apk
           printf '%s\n' "$ANDROID_BUILD_VARIANT" > dist/android-variant.txt
+          cp version.json dist/version.json
       - uses: actions/upload-artifact@v4
         with:
           name: native-android-package
@@ -135,6 +151,7 @@ jobs:
             dist/DigitalBreakdown-Android.apk
             dist/android-variant.txt
             dist/apk-contents.txt
+            dist/version.json
           if-no-files-found: error
           retention-days: 30
 
@@ -149,6 +166,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DDIGITAL_BREAKDOWN_BUILD_NUMBER=${{ github.run_number }}
+          -DDIGITAL_BREAKDOWN_SOURCE_COMMIT=${{ github.sha }}
       - name: Build and test
         run: |
           cmake --build build/macos-release --config Release --parallel
@@ -162,6 +181,7 @@ jobs:
           file "$APP/Contents/MacOS/DigitalBreakdown" | tee macos-binary.txt
           grep -q x86_64 macos-binary.txt
           grep -q arm64 macos-binary.txt
+          cp version.json "$APP/Contents/Resources/version.json"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$APP" dist/DigitalBreakdown-macOS-Universal.zip
       - uses: actions/upload-artifact@v4
@@ -178,6 +198,7 @@ jobs:
     needs: [backend-check, windows, android, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*-package
@@ -186,6 +207,7 @@ jobs:
       - name: Verify complete artifact set
         run: |
           set -euo pipefail
+          python3 tools/release/validate-version.py
           test -f release/DigitalBreakdown-Windows.zip
           test -f release/DigitalBreakdown-Android.apk
           test -f release/DigitalBreakdown-macOS-Universal.zip
@@ -199,11 +221,23 @@ jobs:
           ANDROID_SHA=$(awk '/Android/{print $1}' checksums.txt)
           MACOS_SHA=$(awk '/macOS/{print $1}' checksums.txt)
           ANDROID_VARIANT=$(cat android-variant.txt)
+          GAME_VERSION=$(jq -r .gameVersion ../version.json)
+          RELEASE_STAGE=$(jq -r .releaseStage ../version.json)
+          PROTOCOL_VERSION=$(jq -r .protocolVersion ../version.json)
+          SAVE_SCHEMA=$(jq -r .saveSchemaVersion ../version.json)
+          ASSET_SCHEMA=$(jq -r .assetSchemaVersion ../version.json)
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_CHANNEL}"
+          cp ../version.json version.json
           cat > build-manifest.json <<EOF
           {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
+            "gameVersion": "${GAME_VERSION}",
+            "releaseStage": "${RELEASE_STAGE}",
+            "buildNumber": ${GITHUB_RUN_NUMBER},
             "commit": "${GITHUB_SHA}",
+            "protocolVersion": ${PROTOCOL_VERSION},
+            "saveSchemaVersion": ${SAVE_SCHEMA},
+            "assetSchemaVersion": ${ASSET_SCHEMA},
             "channel": "${RELEASE_CHANNEL}",
             "workflowRunId": "${GITHUB_RUN_ID}",
             "windows": {"file":"DigitalBreakdown-Windows.zip","sha256":"${WINDOWS_SHA}","url":"${BASE}/DigitalBreakdown-Windows.zip"},
@@ -224,9 +258,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          GAME_VERSION=$(jq -r .gameVersion version.json)
+          RELEASE_STAGE=$(jq -r .releaseStage version.json)
+          TITLE="Digital Breakdown ${GAME_VERSION}-${RELEASE_STAGE} Build ${GITHUB_RUN_NUMBER}"
+          NOTES="Automated Windows, Android, macOS, and backend-verified build ${GITHUB_RUN_NUMBER} from ${GITHUB_SHA}. This rolling channel is mutable; historical public versions must use immutable version tags."
           if gh release view "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Digital Breakdown Native Latest" --notes "Automated Windows, Android, macOS, and backend-verified build from ${GITHUB_SHA}."
+            gh release edit "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES"
           else
-            gh release create "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Digital Breakdown Native Latest" --notes "Automated Windows, Android, macOS, and backend-verified build from ${GITHUB_SHA}."
+            gh release create "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES"
           fi
           gh release upload "$RELEASE_CHANNEL" release/* --repo "$GITHUB_REPOSITORY" --clobber
