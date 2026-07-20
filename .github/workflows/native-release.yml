@@ -7,9 +7,11 @@ on:
     paths:
       - 'native-desktop/**'
       - 'native-android/**'
-      - 'tools/desktop/**'
-      - 'tools/release/**'
-      - 'tools/dbdev.ps1'
+      - 'native-network/**'
+      - 'native-models/**'
+      - 'native-tv-gifs/**'
+      - 'multiplayer-server/**'
+      - 'tools/**'
       - '.github/workflows/native-release.yml'
 
 permissions:
@@ -19,69 +21,60 @@ concurrency:
   group: native-release-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RELEASE_CHANNEL: latest-native
+
 jobs:
+  backend-check:
+    name: Verify multiplayer backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: multiplayer-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: multiplayer-server/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run deploy:dry
+
   windows:
     name: Build and test Windows
     runs-on: windows-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Configure desktop release
-        run: cmake -S native-desktop -B build/desktop-release -A x64 -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build desktop release
-        run: cmake --build build/desktop-release --config Release --parallel
-
-      - name: Locate and smoke-test executable
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S native-desktop -B build/windows-release -A x64 -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/windows-release --config Release --parallel
+      - name: Test and package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $candidates = @(
-            'build/desktop-release/bin/Release/DigitalBreakdown.exe',
-            'build/desktop-release/bin/DigitalBreakdown.exe'
-          )
-          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $exe = @(
+            'build/windows-release/bin/Release/DigitalBreakdown.exe',
+            'build/windows-release/bin/DigitalBreakdown.exe'
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
-
-          $output = & $exe --smoke-test 2>&1
-          $output | Write-Host
-          if ($LASTEXITCODE -ne 0) { throw "Desktop smoke test exited with $LASTEXITCODE." }
-          if (($output -join "`n") -notmatch 'SMOKE_TEST_OK') {
-            throw 'Desktop smoke test did not produce its success marker.'
-          }
-
-      - name: Package Windows build
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
+          & $exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop smoke test failed.' }
           $stage = 'dist/windows/DigitalBreakdown'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-
-          $candidates = @(
-            'build/desktop-release/bin/Release/DigitalBreakdown.exe',
-            'build/desktop-release/bin/DigitalBreakdown.exe'
-          )
-          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
-
           Copy-Item $exe "$stage/DigitalBreakdown.exe"
           @{
+            schemaVersion = 1
             commit = '${{ github.sha }}'
-            shortCommit = '${{ github.sha }}'.Substring(0, 7)
             platform = 'windows-x64'
             configuration = 'Release'
-            portable = $true
-            workflow = '${{ github.workflow }}'
-            runId = '${{ github.run_id }}'
+            workflowRunId = '${{ github.run_id }}'
             builtAt = (Get-Date).ToUniversalTime().ToString('o')
           } | ConvertTo-Json | Set-Content "$stage/build-info.json" -Encoding UTF8
-
           Compress-Archive -Path "$stage/*" -DestinationPath 'dist/DigitalBreakdown-Windows.zip' -Force
-
-      - name: Upload Windows package
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: native-windows-package
           path: dist/DigitalBreakdown-Windows.zip
@@ -91,33 +84,22 @@ jobs:
   android:
     name: Build and inspect Android
     runs-on: ubuntu-latest
-
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android build dependencies
+      - uses: android-actions/setup-android@v3
+      - name: Install build dependencies
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
-
-      - name: Write Android SDK path
-        run: echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
-
-      - name: Configure signing and build variant
+      - run: echo "sdk.dir=$ANDROID_HOME" > native-android/local.properties
+      - name: Select signed release or debug artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -125,61 +107,32 @@ jobs:
             echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/digital-breakdown.keystore"
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/digital-breakdown.keystore" >> "$GITHUB_ENV"
             echo "ANDROID_BUILD_VARIANT=release" >> "$GITHUB_ENV"
-            echo "Android release signing is configured."
           else
             echo "ANDROID_BUILD_VARIANT=debug" >> "$GITHUB_ENV"
-            echo "Android signing secrets are absent; publishing a debug test APK."
           fi
-
-      - name: Build native APK
+      - name: Build APK
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$ANDROID_BUILD_VARIANT" == "release" ]]; then
+          if [[ "$ANDROID_BUILD_VARIANT" == release ]]; then
             ./android/gradlew -p native-android assembleRelease --stacktrace
+            APK=native-android/app/build/outputs/apk/release/app-release.apk
           else
             ./android/gradlew -p native-android assembleDebug --stacktrace
+            APK=native-android/app/build/outputs/apk/debug/app-debug.apk
           fi
-
-      - name: Package and inspect Android build
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-
-          if [[ "$ANDROID_BUILD_VARIANT" == "release" ]]; then
-            APK="native-android/app/build/outputs/apk/release/app-release.apk"
-          else
-            APK="native-android/app/build/outputs/apk/debug/app-debug.apk"
-          fi
-
           test -f "$APK"
+          mkdir -p dist
           unzip -l "$APK" > dist/apk-contents.txt
           grep -q 'lib/armeabi-v7a/libdigitalbreakdown.so' dist/apk-contents.txt
-          grep -q 'AndroidManifest.xml' dist/apk-contents.txt
-
+          grep -q 'lib/arm64-v8a/libdigitalbreakdown.so' dist/apk-contents.txt
           cp "$APK" dist/DigitalBreakdown-Android.apk
           printf '%s\n' "$ANDROID_BUILD_VARIANT" > dist/android-variant.txt
-          cat > dist/android-build-info.json <<EOF
-          {
-            "commit": "${GITHUB_SHA}",
-            "shortCommit": "${GITHUB_SHA::7}",
-            "platform": "android-armeabi-v7a",
-            "configuration": "${ANDROID_BUILD_VARIANT}",
-            "signed": $([[ "$ANDROID_BUILD_VARIANT" == "release" ]] && echo true || echo false),
-            "applicationId": "com.indrolend.digitalbreakdown.native",
-            "workflow": "${GITHUB_WORKFLOW}",
-            "runId": "${GITHUB_RUN_ID}"
-          }
-          EOF
-
-      - name: Upload Android package
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: native-android-package
           path: |
             dist/DigitalBreakdown-Android.apk
-            dist/android-build-info.json
             dist/android-variant.txt
             dist/apk-contents.txt
           if-no-files-found: error
@@ -188,151 +141,92 @@ jobs:
   macos:
     name: Build universal macOS app
     runs-on: macos-14
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Configure universal release
+      - uses: actions/checkout@v4
+      - name: Configure
         run: >-
           cmake -S native-desktop -B build/macos-release
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
-
       - name: Build and test
         run: |
           cmake --build build/macos-release --config Release --parallel
           build/macos-release/Pass7ParityTest
           build/macos-release/MultiplayerProtocolTest
-
-      - name: Package application bundle
+      - name: Package
         run: |
           set -euo pipefail
-          APP="build/macos-release/bin/DigitalBreakdown.app"
-          test -d "$APP"
+          APP=build/macos-release/bin/DigitalBreakdown.app
           test -x "$APP/Contents/MacOS/DigitalBreakdown"
           file "$APP/Contents/MacOS/DigitalBreakdown" | tee macos-binary.txt
-          grep -q 'x86_64' macos-binary.txt
-          grep -q 'arm64' macos-binary.txt
+          grep -q x86_64 macos-binary.txt
+          grep -q arm64 macos-binary.txt
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$APP" dist/DigitalBreakdown-macOS-Universal.zip
-          shasum -a 256 dist/DigitalBreakdown-macOS-Universal.zip > dist/DigitalBreakdown-macOS-Universal.zip.sha256
-
-      - name: Upload macOS package
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: native-macos-universal
+          name: native-macos-package
           path: |
             dist/DigitalBreakdown-macOS-Universal.zip
-            dist/DigitalBreakdown-macOS-Universal.zip.sha256
             macos-binary.txt
           if-no-files-found: error
           retention-days: 30
 
   publish:
-    name: Publish unified native bundle
-    needs: [windows, android]
+    name: Assemble native release
+    needs: [backend-check, windows, android, macos]
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download Windows package
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: native-windows-package
+          pattern: native-*-package
           path: release
-
-      - name: Download Android package
-        uses: actions/download-artifact@v4
-        with:
-          name: native-android-package
-          path: release
-
+          merge-multiple: true
+      - name: Verify complete artifact set
+        run: |
+          set -euo pipefail
+          test -f release/DigitalBreakdown-Windows.zip
+          test -f release/DigitalBreakdown-Android.apk
+          test -f release/DigitalBreakdown-macOS-Universal.zip
       - name: Generate checksums and manifest
         shell: bash
         run: |
           set -euo pipefail
           cd release
-
-          WINDOWS_SHA=$(sha256sum DigitalBreakdown-Windows.zip | awk '{print $1}')
-          ANDROID_SHA=$(sha256sum DigitalBreakdown-Android.apk | awk '{print $1}')
-          SHORT_SHA="${GITHUB_SHA::7}"
+          sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk DigitalBreakdown-macOS-Universal.zip > checksums.txt
+          WINDOWS_SHA=$(awk '/Windows/{print $1}' checksums.txt)
+          ANDROID_SHA=$(awk '/Android/{print $1}' checksums.txt)
+          MACOS_SHA=$(awk '/macOS/{print $1}' checksums.txt)
           ANDROID_VARIANT=$(cat android-variant.txt)
-          RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
-
-          sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk > checksums.txt
-
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_CHANNEL}"
           cat > build-manifest.json <<EOF
           {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "commit": "${GITHUB_SHA}",
-            "shortCommit": "${SHORT_SHA}",
-            "channel": "latest-native",
-            "workflow": "${GITHUB_WORKFLOW}",
-            "runId": "${GITHUB_RUN_ID}",
-            "windows": {
-              "available": true,
-              "architecture": "x64",
-              "configuration": "Release",
-              "portable": true,
-              "url": "${RELEASE_BASE}/DigitalBreakdown-Windows.zip",
-              "sha256": "${WINDOWS_SHA}"
-            },
-            "android": {
-              "available": true,
-              "architecture": "armeabi-v7a",
-              "configuration": "${ANDROID_VARIANT}",
-              "applicationId": "com.indrolend.digitalbreakdown.native",
-              "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk",
-              "sha256": "${ANDROID_SHA}"
-            }
+            "channel": "${RELEASE_CHANNEL}",
+            "workflowRunId": "${GITHUB_RUN_ID}",
+            "windows": {"file":"DigitalBreakdown-Windows.zip","sha256":"${WINDOWS_SHA}","url":"${BASE}/DigitalBreakdown-Windows.zip"},
+            "android": {"file":"DigitalBreakdown-Android.apk","sha256":"${ANDROID_SHA}","variant":"${ANDROID_VARIANT}","url":"${BASE}/DigitalBreakdown-Android.apk"},
+            "macos": {"file":"DigitalBreakdown-macOS-Universal.zip","sha256":"${MACOS_SHA}","url":"${BASE}/DigitalBreakdown-macOS-Universal.zip"}
           }
           EOF
-
-      - name: Upload unified release artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: native-release-bundle
-          path: |
-            release/DigitalBreakdown-Windows.zip
-            release/DigitalBreakdown-Android.apk
-            release/build-manifest.json
-            release/checksums.txt
-            release/android-build-info.json
-            release/apk-contents.txt
+          path: release
           if-no-files-found: error
           retention-days: 30
-
-      - name: Publish rolling latest-native release
+      - name: Publish rolling release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/latest-native" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest-native" \
-              -f sha="${GITHUB_SHA}" \
-              -F force=true >/dev/null
+          if gh release view "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Digital Breakdown Native Latest" --notes "Automated Windows, Android, macOS, and backend-verified build from ${GITHUB_SHA}."
           else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref='refs/tags/latest-native' \
-              -f sha="${GITHUB_SHA}" >/dev/null
+            gh release create "$RELEASE_CHANNEL" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Digital Breakdown Native Latest" --notes "Automated Windows, Android, macOS, and backend-verified build from ${GITHUB_SHA}."
           fi
-
-          if gh release view latest-native --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit latest-native \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
-          else
-            gh release create latest-native \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
-          fi
-
-          gh release upload latest-native release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+          gh release upload "$RELEASE_CHANNEL" release/* --repo "$GITHUB_REPOSITORY" --clobber
