@@ -1,4 +1,14 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+def repositoryRoot = rootProject.projectDir.parentFile
+def versionManifest = new JsonSlurper().parse(new File(repositoryRoot, 'version.json'))
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int
+def publicVersionName = versionManifest.releaseStage == 'stable'
+        ? versionManifest.gameVersion
+        : "${versionManifest.gameVersion}-${versionManifest.releaseStage}"
+def androidVersionCode = (versionManifest.androidVersionCodeBase as int) + buildNumber
 
 android {
     namespace 'com.indrolend.digitalbreakdown'
@@ -11,13 +21,20 @@ android {
         applicationId 'com.indrolend.digitalbreakdown.native'
         minSdk 27
         targetSdk 35
-        versionCode 1
-        versionName '0.1-native'
+        versionCode androidVersionCode
+        versionName publicVersionName
+        buildConfigField 'String', 'GAME_VERSION', '"' + versionManifest.gameVersion + '"'
+        buildConfigField 'String', 'RELEASE_STAGE', '"' + versionManifest.releaseStage + '"'
+        buildConfigField 'int', 'BUILD_NUMBER', buildNumber.toString()
+        buildConfigField 'int', 'PROTOCOL_VERSION', versionManifest.protocolVersion.toString()
+        buildConfigField 'int', 'SAVE_SCHEMA_VERSION', versionManifest.saveSchemaVersion.toString()
         buildConfigField 'String', 'MULTIPLAYER_URL', '"' + (System.getenv('DIGITAL_BREAKDOWN_MULTIPLAYER_URL') ?: 'https://digital-breakdown-multiplayer.indrolend.workers.dev') + '"'
 
         externalNativeBuild {
             cmake {
                 cppFlags '-std=c++17 -Wall -Wextra'
+                arguments "-DDIGITAL_BREAKDOWN_BUILD_NUMBER=${buildNumber}",
+                          "-DDIGITAL_BREAKDOWN_SOURCE_COMMIT=${System.getenv('GITHUB_SHA') ?: 'unknown'}"
             }
         }
 
