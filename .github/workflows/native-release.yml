@@ -10,6 +10,8 @@ on:
       - 'tools/desktop/**'
       - 'tools/release/**'
       - 'tools/dbdev.ps1'
+      - 'VERSION'
+      - 'RELEASE_HISTORY.md'
       - '.github/workflows/native-release.yml'
 
 permissions:
@@ -57,6 +59,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $stage = 'dist/windows/DigitalBreakdown'
+          $version = (Get-Content 'VERSION' -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION is not valid semantic versioning.' }
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
           $candidates = @(
@@ -67,9 +71,21 @@ jobs:
           if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
 
           Copy-Item $exe "$stage/DigitalBreakdown.exe"
+          foreach ($assetDirectory in @('audio', 'models', 'tv-gifs')) {
+            $source = Join-Path (Split-Path $exe) $assetDirectory
+            if (-not (Test-Path $source -PathType Container)) {
+              throw "Required runtime asset directory is missing: $source"
+            }
+            Copy-Item $source "$stage/$assetDirectory" -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path "$stage/updater" | Out-Null
+          Copy-Item 'tools/release/get-latest-native.ps1' "$stage/updater/get-latest-native.ps1"
+          Copy-Item 'tools/release/DigitalBreakdown-Update-And-Play.cmd' "$stage/Update And Play Digital Breakdown.cmd"
+          Copy-Item 'RELEASE_HISTORY.md' "$stage/RELEASE_HISTORY.md"
           @{
             commit = '${{ github.sha }}'
             shortCommit = '${{ github.sha }}'.Substring(0, 7)
+            version = $version
             platform = 'windows-x64'
             configuration = 'Release'
             portable = $true
@@ -77,6 +93,25 @@ jobs:
             runId = '${{ github.run_id }}'
             builtAt = (Get-Date).ToUniversalTime().ToString('o')
           } | ConvertTo-Json | Set-Content "$stage/build-info.json" -Encoding UTF8
+
+          $required = @(
+            "$stage/DigitalBreakdown.exe",
+            "$stage/build-info.json",
+            "$stage/Update And Play Digital Breakdown.cmd",
+            "$stage/updater/get-latest-native.ps1",
+            "$stage/RELEASE_HISTORY.md",
+            "$stage/audio/menu_music.mp3",
+            "$stage/audio/game_music.mp3",
+            "$stage/audio/tv_room_pad.mp3"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Packaged runtime is missing: $path" }
+          }
+          foreach ($directory in @("$stage/models", "$stage/tv-gifs")) {
+            if (-not (Get-ChildItem $directory -File | Select-Object -First 1)) {
+              throw "Packaged runtime has no assets in: $directory"
+            }
+          }
 
           Compress-Archive -Path "$stage/*" -DestinationPath 'dist/DigitalBreakdown-Windows.zip' -Force
 
@@ -236,6 +271,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v4
+
       - name: Download Windows package
         uses: actions/download-artifact@v4
         with:
@@ -258,13 +296,15 @@ jobs:
           ANDROID_SHA=$(sha256sum DigitalBreakdown-Android.apk | awk '{print $1}')
           SHORT_SHA="${GITHUB_SHA::7}"
           ANDROID_VARIANT=$(cat android-variant.txt)
+          VERSION=$(cat ../VERSION)
           RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
 
           sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk > checksums.txt
 
           cat > build-manifest.json <<EOF
           {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
+            "version": "${VERSION}",
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${SHORT_SHA}",
             "channel": "latest-native",
@@ -325,12 +365,12 @@ jobs:
             gh release edit latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes-file RELEASE_HISTORY.md
           else
             gh release create latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes-file RELEASE_HISTORY.md
           fi
 
           gh release upload latest-native release/* \

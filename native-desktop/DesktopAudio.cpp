@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 #include <string>
 #include "miniaudio.h"
@@ -27,10 +28,12 @@ struct DesktopAudio::Impl {
     bool initialized=false;
     std::array<Voice,16> voices{};
     Voice slurp;
+    Voice menuMusic;
     Voice music;
     Voice tvRoomPad;
     Voice gameOver;
     bool musicActive=false;
+    bool menuMusicActive=false;
     float tvRoomMix=0.0f;
     float rewardDuck=0.0f;
     bool deadPrevious=false;
@@ -64,10 +67,14 @@ namespace {
 void stopVoice(DesktopAudio::Impl::Voice& voice){if(!voice.initialized)return;ma_sound_stop(&voice.sound);ma_sound_uninit(&voice.sound);voice.initialized=false;}
 bool startVoice(DesktopAudio::Impl& impl,DesktopAudio::Impl::Voice& voice,const std::filesystem::path& path,float volume,bool loop){
     stopVoice(voice);
-    if(!impl.initialized||!std::filesystem::exists(path))return false;
+    if(!impl.initialized||!std::filesystem::exists(path)){std::fprintf(stderr,"AUDIO_ASSET_MISSING %s\n",path.string().c_str());return false;}
     const std::string utf8=path.u8string();
-    if(ma_sound_init_from_file(&impl.engine,utf8.c_str(),0,nullptr,nullptr,&voice.sound)!=MA_SUCCESS)return false;
-    voice.initialized=true;ma_sound_set_volume(&voice.sound,volume);ma_sound_set_looping(&voice.sound,loop?MA_TRUE:MA_FALSE);ma_sound_start(&voice.sound);return true;
+    const ma_result result=ma_sound_init_from_file(&impl.engine,utf8.c_str(),0,nullptr,nullptr,&voice.sound);
+    if(result!=MA_SUCCESS){std::fprintf(stderr,"AUDIO_DECODE_FAILED %s code=%d %s\n",utf8.c_str(),static_cast<int>(result),ma_result_description(result));return false;}
+    voice.initialized=true;ma_sound_set_volume(&voice.sound,volume);ma_sound_set_looping(&voice.sound,loop?MA_TRUE:MA_FALSE);
+    const ma_result startResult=ma_sound_start(&voice.sound);
+    if(startResult!=MA_SUCCESS){std::fprintf(stderr,"AUDIO_START_FAILED %s code=%d %s\n",utf8.c_str(),static_cast<int>(startResult),ma_result_description(startResult));stopVoice(voice);return false;}
+    std::fprintf(stderr,"AUDIO_READY %s\n",utf8.c_str());return true;
 }
 }
 
@@ -87,16 +94,21 @@ void DesktopAudio::update(const GameState& state) {
     sfxLevel_=state.localSettings.sfxMuted?0.0f:clampf(state.localSettings.sfxVolume,0.0f,1.0f);
     const float musicLevel=state.localSettings.musicMuted?0.0f:clampf(state.localSettings.musicVolume,0.0f,1.0f);
     if(impl_&&impl_->initialized&&!root_.empty()){
-        const bool shouldPlayMusic=state.started&&!state.dead;
-        if(shouldPlayMusic&&!impl_->musicActive){stopVoice(impl_->gameOver);startVoice(*impl_,impl_->music,root_/"game_music.mp3",0.52f,true);startVoice(*impl_,impl_->tvRoomPad,root_/"tv_room_pad.mp3",0.0f,true);if(impl_->menuFilterInitialized){if(impl_->music.initialized)ma_node_attach_output_bus(&impl_->music.sound,0,&impl_->menuFilter,0);if(impl_->tvRoomPad.initialized)ma_node_attach_output_bus(&impl_->tvRoomPad.sound,0,&impl_->menuFilter,0);}impl_->musicActive=true;}
+        const bool menuState=!state.started||state.uiPaused||state.upgradeMenu.active;
+        const bool shouldPlayMenuMusic=menuState&&!state.dead;
+        const bool shouldPlayMusic=state.started&&!menuState&&!state.dead;
+        if(shouldPlayMenuMusic&&!impl_->menuMusicActive){const bool ready=startVoice(*impl_,impl_->menuMusic,root_/"menu_music.mp3",0.58f,true);impl_->menuMusicActive=ready;}
+        else if(!shouldPlayMenuMusic&&impl_->menuMusicActive){stopVoice(impl_->menuMusic);impl_->menuMusicActive=false;}
+        if(shouldPlayMusic&&!impl_->musicActive){stopVoice(impl_->gameOver);const bool musicReady=startVoice(*impl_,impl_->music,root_/"game_music.mp3",0.52f,true);startVoice(*impl_,impl_->tvRoomPad,root_/"tv_room_pad.mp3",0.0f,true);impl_->musicActive=musicReady;}
         else if(!shouldPlayMusic&&impl_->musicActive){stopVoice(impl_->music);stopVoice(impl_->tvRoomPad);impl_->musicActive=false;impl_->tvRoomMix=0.0f;}
-        if(state.dead&&!impl_->deadPrevious){stopVoice(impl_->music);impl_->musicActive=false;startVoice(*impl_,impl_->gameOver,root_/"game_over.mp3",0.62f*musicLevel,false);}
+        if(state.dead&&!impl_->deadPrevious){stopVoice(impl_->menuMusic);impl_->menuMusicActive=false;stopVoice(impl_->music);impl_->musicActive=false;startVoice(*impl_,impl_->gameOver,root_/"game_over.mp3",0.62f*musicLevel,false);}
         else if(!state.dead&&impl_->deadPrevious)stopVoice(impl_->gameOver);
         impl_->deadPrevious=state.dead;
-        if(impl_->menuFilterInitialized&&impl_->musicActive){const double target=(state.uiPaused||state.upgradeMenu.active)?900.0:20000.0;impl_->menuCutoff+=(target-impl_->menuCutoff)*0.085;const auto filter=ma_lpf_config_init(ma_format_f32,ma_engine_get_channels(&impl_->engine),ma_engine_get_sample_rate(&impl_->engine),impl_->menuCutoff,2);ma_lpf_node_reinit(&filter,&impl_->menuFilter);}
-        if(impl_->musicActive){impl_->rewardDuck=std::max(0.0f,impl_->rewardDuck-0.006f);const float duck=1.0f-impl_->rewardDuck,tvTarget=state.player.inSecretRoom?1.0f:0.0f;impl_->tvRoomMix+=(tvTarget-impl_->tvRoomMix)*0.035f;impl_->tvRoomMix=clampf(impl_->tvRoomMix,0.0f,1.0f);const float crush=clampf(state.hud.headshotPulse+state.hud.perfectPulse*0.22f,0.0f,1.0f),step=(state.frame%3)==0?1.0f:0.0f;if(impl_->music.initialized){ma_sound_set_volume(&impl_->music.sound,(0.52f-crush*(0.010f+step*0.018f))*musicLevel*(1.0f-impl_->tvRoomMix)*duck);ma_sound_set_pitch(&impl_->music.sound,1.0f-crush*step*0.006f);}if(impl_->tvRoomPad.initialized){const Vec3 tv{41.82f,0.78f,0};float proximity=state.player.inSecretRoom?1.0f-clampf(length(state.player.pos-tv)/6.0f,0.0f,1.0f):0.0f;if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.player.inSecretRoom)proximity=std::max(proximity,1.0f-clampf(length(peer.player.pos-tv)/6.0f,0.0f,1.0f));const float warble=proximity*(-0.012f+std::sin(state.time*2.7f)*0.018f+std::sin(state.time*0.61f)*0.010f);ma_sound_set_volume(&impl_->tvRoomPad.sound,0.48f*musicLevel*impl_->tvRoomMix*duck);ma_sound_set_pitch(&impl_->tvRoomPad.sound,1.0f+std::sin(state.time*0.19f)*0.0025f+warble);}}
+        if(impl_->menuMusic.initialized)ma_sound_set_volume(&impl_->menuMusic.sound,0.58f*musicLevel);
+        if(impl_->musicActive){impl_->rewardDuck=std::max(0.0f,impl_->rewardDuck-0.006f);const float duck=1.0f-impl_->rewardDuck,menuGain=(state.uiPaused||state.upgradeMenu.active)?0.72f:1.0f,tvTarget=state.player.inSecretRoom?1.0f:0.0f;impl_->tvRoomMix+=(tvTarget-impl_->tvRoomMix)*0.035f;impl_->tvRoomMix=clampf(impl_->tvRoomMix,0.0f,1.0f);const float crush=clampf(state.hud.headshotPulse+state.hud.perfectPulse*0.22f,0.0f,1.0f),step=(state.frame%3)==0?1.0f:0.0f;if(impl_->music.initialized){ma_sound_set_volume(&impl_->music.sound,(0.52f-crush*(0.010f+step*0.018f))*musicLevel*(1.0f-impl_->tvRoomMix)*duck*menuGain);ma_sound_set_pitch(&impl_->music.sound,1.0f-crush*step*0.006f);}if(impl_->tvRoomPad.initialized){const Vec3 tv{41.82f,0.78f,0};float proximity=state.player.inSecretRoom?1.0f-clampf(length(state.player.pos-tv)/6.0f,0.0f,1.0f):0.0f;if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.player.inSecretRoom)proximity=std::max(proximity,1.0f-clampf(length(peer.player.pos-tv)/6.0f,0.0f,1.0f));const float warble=proximity*(-0.012f+std::sin(state.time*2.7f)*0.018f+std::sin(state.time*0.61f)*0.010f);ma_sound_set_volume(&impl_->tvRoomPad.sound,0.48f*musicLevel*impl_->tvRoomMix*duck*menuGain);ma_sound_set_pitch(&impl_->tvRoomPad.sound,1.0f+std::sin(state.time*0.19f)*0.0025f+warble);}}
     }
     const unsigned int newest=state.audio.nextSerial>0?state.audio.nextSerial-1:0;
+    if(newest<lastSerial_)lastSerial_=0; // GameState resets event serials on a new run.
     const unsigned int first=std::max(lastSerial_+1,newest>=AUDIO_EVENT_COUNT?newest-AUDIO_EVENT_COUNT+1:1u);
     for(unsigned int serial=first;serial<=newest;++serial){const AudioEventState& event=state.audio.events[(serial-1u)%AUDIO_EVENT_COUNT];if(event.serial==serial)play(event);}
     lastSerial_=newest;
@@ -105,7 +117,7 @@ void DesktopAudio::update(const GameState& state) {
 void DesktopAudio::stopAll() {
     if(!impl_)return;
     for(auto& voice:impl_->voices)stopVoice(voice);
-    stopVoice(impl_->slurp);stopVoice(impl_->music);stopVoice(impl_->tvRoomPad);stopVoice(impl_->gameOver);
+    stopVoice(impl_->slurp);stopVoice(impl_->menuMusic);stopVoice(impl_->music);stopVoice(impl_->tvRoomPad);stopVoice(impl_->gameOver);
     for(auto& voice:impl_->uiVoices)stopVoice(voice);
-    impl_->musicActive=false;impl_->tvRoomMix=0.0f;slurpPlaying_=false;
+    impl_->menuMusicActive=false;impl_->musicActive=false;impl_->tvRoomMix=0.0f;slurpPlaying_=false;
 }

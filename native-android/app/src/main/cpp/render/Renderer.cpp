@@ -503,7 +503,10 @@ void Renderer::draw(const GameState& state) {
     // 62-degree mobile projection made the same chase-camera transform feel
     // zoomed, slow, and substantially less spatial than the browser's camera.
     perspective(proj, state.camera.verticalFovDegrees * DB_PI / 180.0f, static_cast<float>(width_) / static_cast<float>(height_), Pass7Visual::CameraNearPlane, Pass7Visual::CameraFarPlane);
-    lookAt(view, state.camera.pos, state.camera.lookTarget, {0.0f, 1.0f, 0.0f});
+    const Vec3 cameraEye=state.camera.visualCameraActive?state.camera.visualPos:state.camera.pos,cameraTarget=state.camera.visualCameraActive?state.camera.visualLookTarget:state.camera.lookTarget;
+    const Vec3 cameraForward=normalized(cameraTarget-cameraEye),cameraRight=normalized(cross(cameraForward,{0,1,0})),cameraUp=normalized(cross(cameraRight,cameraForward));
+    const Vec3 rolledCameraUp=cameraUp*std::cos(state.camera.roll)+cameraRight*std::sin(state.camera.roll);
+    lookAt(view,cameraEye,cameraTarget,rolledCameraUp);
     multiply(viewProj, proj, view);
     const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;return lengthSq(delta)<55.0f*55.0f&&dot(delta,state.camera.forward)>-8.0f;};
 

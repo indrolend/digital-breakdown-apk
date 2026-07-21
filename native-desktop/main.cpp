@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 #include <GL/gl.h>
 #undef near
 #undef far
@@ -28,6 +29,10 @@
 #include <string>
 #include <cstdlib>
 #include <thread>
+
+#ifndef DB_VERSION
+#define DB_VERSION "0.0.0"
+#endif
 
 namespace {
 constexpr double PRESENTATION_STEP_SECONDS = 1.0 / 60.0;
@@ -66,8 +71,15 @@ struct HostState {
     bool previousGamepadMenuRight = false;
     bool previousGamepadMenuUp = false;
     bool previousGamepadMenuDown = false;
+    bool previousGamepadLeftTrigger = false;
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
+    bool updateCheckStarted = false;
+    bool updateStatusRead = false;
+    bool updateAvailable = false;
+    std::string updateVersion;
+    std::filesystem::path executableRoot;
+    std::filesystem::path updateStatusPath;
 };
 
 struct DesktopGamepadInput {
@@ -86,6 +98,11 @@ struct DesktopGamepadInput {
 float gamepadAxis(float value,float deadzone=0.18f){const float magnitude=std::abs(value);if(magnitude<=deadzone)return 0.0f;return std::copysign((magnitude-deadzone)/(1.0f-deadzone),value);}
 
 std::filesystem::path progressionSavePath(){const char* local=std::getenv("LOCALAPPDATA");const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();return root/"DigitalBreakdown"/"progression.v1";}
+#ifdef _WIN32
+std::filesystem::path updateStatusPath(){const char* local=std::getenv("LOCALAPPDATA");const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();return root/"DigitalBreakdown"/"update-status-v3.txt";}
+bool startUpdateCheck(HostState& host){const auto script=host.executableRoot/"updater"/"get-latest-native.ps1";if(!std::filesystem::exists(script))return false;std::error_code error;std::filesystem::create_directories(host.updateStatusPath.parent_path(),error);std::filesystem::remove(host.updateStatusPath,error);std::wstring parameters=L"-NoLogo -NoProfile -ExecutionPolicy Bypass -File \""+script.wstring()+L"\" -Platform Windows -CheckOnly -InstalledVersion "+std::wstring(DB_VERSION,DB_VERSION+std::strlen(DB_VERSION))+L" -StatusPath \""+host.updateStatusPath.wstring()+L"\"";return reinterpret_cast<std::intptr_t>(ShellExecuteW(nullptr,L"open",L"powershell.exe",parameters.c_str(),host.executableRoot.c_str(),SW_HIDE))>32;}
+void pollUpdateStatus(HostState& host){if(host.updateStatusRead||!host.updateCheckStarted||!std::filesystem::exists(host.updateStatusPath))return;std::ifstream input(host.updateStatusPath);std::string line;bool available=false;std::string version;while(std::getline(input,line)){const auto split=line.find('=');if(split==std::string::npos)continue;const std::string key=line.substr(0,split),value=line.substr(split+1);if(key=="available")available=value=="1";else if(key=="version")version=value;}if(input.eof()&&!version.empty()){host.updateAvailable=available;host.updateVersion=version;host.updateStatusRead=true;host.renderer.setReleaseStatus(DB_VERSION,available,version);}}
+#endif
 void loadProgression(Game& game,const std::filesystem::path& path){std::ifstream input(path);std::string magic;int version=0,shot=0,lunge=0,attack=0;long long tokens=0;if(input>>magic>>version>>tokens>>shot>>lunge>>attack&&magic=="DBPROG"&&version==1)game.setPersistentProgression(tokens,shot,lunge,attack);}
 bool saveProgression(const PermanentProgressionState& progression,const std::filesystem::path& path){
     std::error_code error;std::filesystem::create_directories(path.parent_path(),error);
@@ -110,12 +127,12 @@ HostState* stateFor(GLFWwindow* window) {
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured);
 
-int menuItemCount(const GameState& state) {
+int menuItemCount(const GameState& state,bool updateAvailable=false) {
     if(state.upgradeMenu.active)return 6;
     if(!state.started){
         if(state.dead)return 2;
         switch(state.localSettings.menuPage){
-            case LocalMenuPage::Main:return 4;
+            case LocalMenuPage::Main:return updateAvailable?5:4;
             case LocalMenuPage::Online:return 3;
             case LocalMenuPage::JoinCode:return 0;
             case LocalMenuPage::Settings:return 4;
@@ -133,7 +150,7 @@ void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game
 bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const int item=state.hud.menuSelection;if(settings.menuPage==LocalMenuPage::Audio){if(item==0)settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);else if(item==1)settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);else return false;state.cinematic.textInteraction=0.65f;return true;}if(settings.menuPage==LocalMenuPage::Graphics&&item==0){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
 
 void setMenuSelection(HostState& host,int selection) {
-    const int count=menuItemCount(host.game.state());
+    const int count=menuItemCount(host.game.state(),host.updateAvailable);
     if(count<=0)return;
     GameState& state=host.game.networkMutableState();const int next=(selection%count+count)%count;
     if(state.hud.menuSelection!=next){state.hud.menuSelection=next;state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);}
@@ -157,8 +174,11 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
     if(!state.started){
         const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;const float pw=std::min(520.0f,canvasW*0.72f),ph=controls?500.0f:430.0f,px=(canvasW-pw)*0.5f,py=(canvasH-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
         if(x<buttonX||x>buttonX+buttonW)return -1;
-        const int count=menuItemCount(state);
-        const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;
+        const int count=menuItemCount(state,host.updateAvailable);
+        const bool hasHeading=!state.dead&&state.localSettings.menuPage!=LocalMenuPage::Main;
+        const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f,stackHeight=count>0?height+(count-1)*step:0.0f;
+        const float startY=py+(ph-stackHeight)*0.5f+(hasHeading?16.0f:0.0f);
+        for(int row=0;row<count;++row)if(y>=startY+row*step&&y<startY+height+row*step)return row;
         return -1;
     }
     if(state.uiPaused){const float pw=360.0f,px=canvasW-pw-12.0f,py=48.0f;if(x>=px+12&&x<=px+pw-12&&y>=py+34&&y<=py+92)return 0;}
@@ -176,7 +196,12 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
     if(!state.started){
         if(state.dead){if(selection==1){glfwSetWindowShouldClose(window,GLFW_TRUE);return;}host.game.restart();setMouseCaptured(window,host,true);return;}
         auto& settings=state.localSettings;
-        if(settings.menuPage==LocalMenuPage::Main){if(selection==0){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Online);else if(selection==2)openMenuPage(host,LocalMenuPage::Settings);else glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        if(settings.menuPage==LocalMenuPage::Main){if(selection==0){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Online);else if(selection==2)openMenuPage(host,LocalMenuPage::Settings);else if(selection==3)glfwSetWindowShouldClose(window,GLFW_TRUE);else if(selection==4&&host.updateAvailable){
+#ifdef _WIN32
+            const auto script=host.executableRoot/"updater"/"get-latest-native.ps1";const auto fallback=host.executableRoot/"DigitalBreakdown.exe";
+            if(std::filesystem::exists(script)){std::wstring parameters=L"-NoLogo -NoProfile -ExecutionPolicy Bypass -File \""+script.wstring()+L"\" -Platform Windows -Launch -FallbackExecutable \""+fallback.wstring()+L"\"";if(reinterpret_cast<std::intptr_t>(ShellExecuteW(nullptr,L"open",L"powershell.exe",parameters.c_str(),host.executableRoot.c_str(),SW_SHOWNORMAL))>32)glfwSetWindowShouldClose(window,GLFW_TRUE);}
+#endif
+        }}
         else if(settings.menuPage==LocalMenuPage::Online){if(selection==0){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(selection==1){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Settings){if(selection==0)openMenuPage(host,LocalMenuPage::Controls);else if(selection==1)openMenuPage(host,LocalMenuPage::Audio);else if(selection==2)openMenuPage(host,LocalMenuPage::Graphics);else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Controls){if(selection<10){settings.rebindingAction=selection;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(selection==10){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};}else openMenuPage(host,LocalMenuPage::Settings);}
@@ -204,17 +229,17 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     if(jid<GLFW_JOYSTICK_1||jid>GLFW_JOYSTICK_LAST||!glfwJoystickIsGamepad(jid)){
         jid=-1;
         for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickIsGamepad(candidate)){jid=candidate;break;}
-        if(jid!=host.gamepadId){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;host.gamepadId=jid;if(jid>=0)std::printf("Controller connected: %s\n",glfwGetGamepadName(jid));}
+        if(jid!=host.gamepadId){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=host.previousGamepadLeftTrigger=false;host.gamepadId=jid;if(jid>=0)std::printf("Controller connected: %s\n",glfwGetGamepadName(jid));}
     }
     if(jid<0)return input;
     GLFWgamepadstate pad{};
-    if(!glfwGetGamepadState(jid,&pad)){host.gamepadId=-1;host.previousGamepadButtons.fill(GLFW_RELEASE);return input;}
+    if(!glfwGetGamepadState(jid,&pad)){host.gamepadId=-1;host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;return input;}
     const auto pressed=[&](int button){return pad.buttons[button]==GLFW_PRESS&&host.previousGamepadButtons[button]!=GLFW_PRESS;};
     const float leftX=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_LEFT_X]);
     const float leftY=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_LEFT_Y]);
     const float rightX=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_X]);
     const float rightY=gamepadAxis(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y]);
-    const bool menuActive=menuItemCount(host.game.state())>0;
+    const bool menuActive=menuItemCount(host.game.state(),host.updateAvailable)>0;
     const bool menuLeft=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]==GLFW_PRESS||leftX<-0.55f;
     const bool menuRight=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]==GLFW_PRESS||leftX>0.55f;
     const bool menuUp=pad.buttons[GLFW_GAMEPAD_BUTTON_DPAD_UP]==GLFW_PRESS||leftY<-0.55f;
@@ -231,16 +256,18 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
     }else{
         input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*12.0f;input.lookY=rightY*12.0f;
-        input.vacuumHeld=pad.buttons[GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER]==GLFW_PRESS||pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]>0.25f;
-        input.sprintHeld=pad.buttons[GLFW_GAMEPAD_BUTTON_LEFT_BUMPER]==GLFW_PRESS||pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]>0.25f;
-        input.jumpPressed=pressed(GLFW_GAMEPAD_BUTTON_A);
-        input.meleePressed=pressed(GLFW_GAMEPAD_BUTTON_B)||pressed(GLFW_GAMEPAD_BUTTON_Y);
-        input.shootPressed=pressed(GLFW_GAMEPAD_BUTTON_X);
+        const bool leftTrigger=pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]>0.25f;
+        input.vacuumHeld=pad.buttons[GLFW_GAMEPAD_BUTTON_B]==GLFW_PRESS||pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]>0.25f;
+        input.sprintHeld=false;
+        input.jumpPressed=pressed(GLFW_GAMEPAD_BUTTON_A)||pressed(GLFW_GAMEPAD_BUTTON_LEFT_BUMPER);
+        input.meleePressed=pressed(GLFW_GAMEPAD_BUTTON_X)||(leftTrigger&&!host.previousGamepadLeftTrigger);
+        input.shootPressed=pressed(GLFW_GAMEPAD_BUTTON_Y)||pressed(GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER);
         input.cameraPressed=pressed(GLFW_GAMEPAD_BUTTON_RIGHT_THUMB);
         if(pressed(GLFW_GAMEPAD_BUTTON_START))setMouseCaptured(window,host,!host.mouseCaptured);
         if(host.game.state().player.grabbedByTarget>=0&&std::abs(leftX)>0.35f)host.game.setWiggle(leftX*12.0f);
     }
     host.previousGamepadMenuLeft=menuLeft;host.previousGamepadMenuRight=menuRight;host.previousGamepadMenuUp=menuUp;host.previousGamepadMenuDown=menuDown;
+    host.previousGamepadLeftTrigger=pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]>0.25f;
     for(int button=0;button<=GLFW_GAMEPAD_BUTTON_LAST;++button)host.previousGamepadButtons[button]=pad.buttons[button];
     return input;
 }
@@ -264,7 +291,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
 
     if(action==GLFW_PRESS&&!host->game.state().started&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;settings.pendingBinding=-1;settings.conflictingAction=-1;return;}if(settings.pendingBinding>=0){if(key==GLFW_KEY_ENTER){const int actionIndex=settings.rebindingAction,other=settings.conflictingAction,old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=settings.pendingBinding;if(other>=0)settings.keyboardBindings[other]=old;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;}else if(key==GLFW_KEY_BACKSPACE){settings.pendingBinding=settings.conflictingAction=-1;}return;}int conflict=-1;for(int i=0;i<10;++i)if(i!=settings.rebindingAction&&settings.keyboardBindings[i]==key){conflict=i;break;}if(conflict>=0){settings.pendingBinding=key;settings.conflictingAction=conflict;}else{settings.keyboardBindings[settings.rebindingAction]=key;settings.rebindingAction=-1;}return;}
 
-    const bool menuActive=menuItemCount(host->game.state())>0;
+    const bool menuActive=menuItemCount(host->game.state(),host->updateAvailable)>0;
     if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
@@ -344,7 +371,7 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     HostState* host = stateFor(window);
     if (!host || action != GLFW_PRESS) return;
-    if(menuItemCount(host->game.state())>0){
+    if(menuItemCount(host->game.state(),host->updateAvailable)>0){
         double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
         if(button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)activateMenuSelection(window,*host);
@@ -544,6 +571,13 @@ int main(int argc, char** argv) {
     }
 
     HostState host;
+    host.executableRoot=std::filesystem::absolute(argv[0]).parent_path();
+    host.renderer.setReleaseStatus(DB_VERSION,false,"");
+    if(const char* testUpdate=argValue(argc,argv,"--test-update-version")){host.updateAvailable=true;host.updateVersion=testUpdate;host.updateStatusRead=true;host.renderer.setReleaseStatus(DB_VERSION,true,testUpdate);}
+#ifdef _WIN32
+    host.updateStatusPath=updateStatusPath();
+    if(!capturePath&&!host.updateStatusRead)host.updateCheckStarted=startUpdateCheck(host);
+#endif
     host.progressionPath=progressionSavePath();
     loadProgression(host.game,host.progressionPath);
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
@@ -581,7 +615,8 @@ int main(int argc, char** argv) {
     if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
 
     std::printf("Digital Breakdown native desktop host running.\n");
-    std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
+    std::printf("WASD move | Shift run | Space jump | Mouse look | Left mouse vacuum | C/F lunge | Q shoot | V camera | Tab release mouse | Esc quit\n");
+    std::printf("Controller: LS move | RS look | A/LB jump | X/LT melee | B/RT vacuum | Y/RB shoot | Start pause | D-pad reserved\n");
 
     auto previous = std::chrono::steady_clock::now();
     auto nextPresentation = previous;
@@ -593,6 +628,9 @@ int main(int argc, char** argv) {
             if (beforePacing < nextPresentation) std::this_thread::sleep_until(nextPresentation);
         }
         glfwPollEvents();
+#ifdef _WIN32
+        pollUpdateStatus(host);
+#endif
 
         const auto now = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(now - previous).count();

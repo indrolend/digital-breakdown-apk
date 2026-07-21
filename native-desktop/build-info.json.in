@@ -1,0 +1,7 @@
+{
+  "version": "@DB_VERSION@",
+  "commit": "@DB_BUILD_COMMIT@",
+  "platform": "desktop-local",
+  "configuration": "@CMAKE_BUILD_TYPE@",
+  "portable": true
+}

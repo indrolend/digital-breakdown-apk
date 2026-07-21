@@ -8,6 +8,16 @@ endif()
 
 project(DigitalBreakdownDesktop LANGUAGES C CXX)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" DB_VERSION LIMIT_COUNT 1)
+if(NOT DB_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain one semantic version such as 0.9.0")
+endif()
+execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.." OUTPUT_VARIABLE DB_BUILD_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT DB_BUILD_COMMIT MATCHES "^[0-9a-fA-F]{40}$")
+    set(DB_BUILD_COMMIT "0000000000000000000000000000000000000000")
+endif()
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build-info.json.in" "${CMAKE_BINARY_DIR}/build-info.json" @ONLY)
+
 include(FetchContent)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -67,7 +77,7 @@ target_include_directories(
 )
 
 target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
-target_compile_definitions(DigitalBreakdown PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(DigitalBreakdown PRIVATE GLFW_INCLUDE_NONE DB_VERSION="${DB_VERSION}")
 
 target_link_libraries(
     DigitalBreakdown
@@ -97,7 +107,7 @@ add_executable(MultiplayerProtocolTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/te
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
 if(WIN32)
-    target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
+    target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp shell32)
 endif()
 
 add_custom_command(TARGET DigitalBreakdown POST_BUILD
@@ -109,7 +119,20 @@ add_custom_command(TARGET DigitalBreakdown POST_BUILD
         "$<TARGET_FILE_DIR:DigitalBreakdown>/models"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/../native-tv-gifs"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/tv-gifs")
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/tv-gifs"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/build-info.json"
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/build-info.json"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/../RELEASE_HISTORY.md"
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/RELEASE_HISTORY.md")
+
+if(WIN32)
+    add_custom_command(TARGET DigitalBreakdown POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:DigitalBreakdown>/updater"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../tools/release/get-latest-native.ps1" "$<TARGET_FILE_DIR:DigitalBreakdown>/updater/get-latest-native.ps1"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../tools/release/DigitalBreakdown-Update-And-Play.cmd" "$<TARGET_FILE_DIR:DigitalBreakdown>/Update And Play Digital Breakdown.cmd")
+endif()
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)

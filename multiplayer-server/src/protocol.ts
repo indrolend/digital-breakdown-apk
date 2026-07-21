@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_PLAYERS = 4;
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const ROOM_CODE_LENGTH = 6;

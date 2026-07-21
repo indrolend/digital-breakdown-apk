@@ -43,9 +43,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private float controllerLookX = 0.0f;
     private float controllerLookY = 0.0f;
     private boolean controllerTriggerVacuumHeld = false;
-    private boolean controllerBumperVacuumHeld = false;
-    private boolean controllerTriggerSprintHeld = false;
-    private boolean controllerBumperSprintHeld = false;
+    private boolean controllerButtonVacuumHeld = false;
+    private boolean controllerTriggerMeleeHeld = false;
     private boolean controllerDpadLeft = false;
     private boolean controllerDpadRight = false;
     private boolean controllerDpadUp = false;
@@ -245,8 +244,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     }
 
     private void sendControls(float lookDx, float lookDy, boolean jumpPressed, boolean meleePressed, boolean shootPressed, boolean cameraPressed) {
-        float combinedMoveX = moveX + controllerMoveX + (controllerDpadRight ? 1.0f : 0.0f) - (controllerDpadLeft ? 1.0f : 0.0f);
-        float combinedMoveZ = moveZ + controllerMoveZ + (controllerDpadUp ? 1.0f : 0.0f) - (controllerDpadDown ? 1.0f : 0.0f);
+        float combinedMoveX = moveX + controllerMoveX;
+        float combinedMoveZ = moveZ + controllerMoveZ;
         final float length = (float)Math.sqrt(combinedMoveX * combinedMoveX + combinedMoveZ * combinedMoveZ);
         if (length > 1.0f) { combinedMoveX /= length; combinedMoveZ /= length; }
         final boolean nextJump = jumpPressed || controllerJumpPressed;
@@ -259,8 +258,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             combinedMoveZ,
             lookDx,
             lookDy,
-            vacuumHeld || controllerTriggerVacuumHeld || controllerBumperVacuumHeld,
-            sprintHeld || controllerTriggerSprintHeld || controllerBumperSprintHeld,
+            vacuumHeld || controllerTriggerVacuumHeld || controllerButtonVacuumHeld,
+            sprintHeld,
             nextJump,
             nextMelee,
             nextShoot,
@@ -290,9 +289,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         controllerLookX = 0.0f;
         controllerLookY = 0.0f;
         controllerTriggerVacuumHeld = false;
-        controllerBumperVacuumHeld = false;
-        controllerTriggerSprintHeld = false;
-        controllerBumperSprintHeld = false;
+        controllerButtonVacuumHeld = false;
+        controllerTriggerMeleeHeld = false;
         controllerDpadLeft = false;
         controllerDpadRight = false;
         controllerDpadUp = false;
@@ -307,11 +305,15 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     public boolean onGenericMotionEvent(MotionEvent event) {
         if (event.getAction() != MotionEvent.ACTION_MOVE || !isController(event)) return super.onGenericMotionEvent(event);
         controllerMoveX = axis(event, MotionEvent.AXIS_X, MotionEvent.AXIS_HAT_X);
-        controllerMoveZ = axis(event, MotionEvent.AXIS_Y, MotionEvent.AXIS_HAT_Y);
+        // Android reports forward stick travel as negative Y. Shared gameplay
+        // expects positive Z intent for forward, matching GLFW on macOS/Windows.
+        controllerMoveZ = -axis(event, MotionEvent.AXIS_Y, MotionEvent.AXIS_HAT_Y);
         controllerLookX = axis(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX);
         controllerLookY = axis(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY);
         controllerTriggerVacuumHeld = trigger(event, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS);
-        controllerTriggerSprintHeld = trigger(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE);
+        final boolean nextTriggerMelee=trigger(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE);
+        if(nextTriggerMelee&&!controllerTriggerMeleeHeld)controllerMeleePressed=true;
+        controllerTriggerMeleeHeld=nextTriggerMelee;
         return true;
     }
 
@@ -423,11 +425,12 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private boolean setControllerKey(int keyCode, boolean down) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BUTTON_A: if (down) controllerJumpPressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_B: if (down) controllerMeleePressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_X: if (down) controllerShootPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_B: controllerButtonVacuumHeld = down; return true;
+            case KeyEvent.KEYCODE_BUTTON_X: if (down) controllerMeleePressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_Y: if (down) controllerShootPressed = true; return true;
             case KeyEvent.KEYCODE_BUTTON_THUMBR: if (down) controllerCameraPressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_R1: controllerBumperVacuumHeld = down; return true;
-            case KeyEvent.KEYCODE_BUTTON_L1: controllerBumperSprintHeld = down; return true;
+            case KeyEvent.KEYCODE_BUTTON_R1: if (down) controllerShootPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_L1: if (down) controllerJumpPressed = true; return true;
             case KeyEvent.KEYCODE_DPAD_LEFT: controllerDpadLeft = down; return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT: controllerDpadRight = down; return true;
             case KeyEvent.KEYCODE_DPAD_UP: controllerDpadUp = down; return true;

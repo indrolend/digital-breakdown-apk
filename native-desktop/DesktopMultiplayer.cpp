@@ -60,7 +60,7 @@ bool DesktopMultiplayer::createRoom() {
                                WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                url.secure ? WINHTTP_FLAG_SECURE : 0)
           : nullptr;
-  const char body[] = "{\"gameplayVersion\":3}";
+  const char body[] = "{\"gameplayVersion\":5}";
   BOOL ok = request &&
             WinHttpSendRequest(request, L"Content-Type: application/json\r\n",
                                static_cast<DWORD>(-1), const_cast<char *>(body),
@@ -101,7 +101,7 @@ bool DesktopMultiplayer::createRoom() {
   ix::HttpClient client;
   auto args=std::make_shared<ix::HttpRequestArgs>();
   args->extraHeaders["Content-Type"]="application/json";
-  const auto response=client.post(serviceUrl_+"/v1/rooms","{\"gameplayVersion\":3}",args);
+  const auto response=client.post(serviceUrl_+"/v1/rooms","{\"gameplayVersion\":5}",args);
   if(!response||response->statusCode<200||response->statusCode>=300)return false;
   const std::string code=jsonString(response->body,"code"),key=jsonString(response->body,"hostKey");
   if(code.size()!=6||key.empty())return false;
@@ -116,7 +116,7 @@ bool DesktopMultiplayer::connectWebSocket() {
   const std::string code = roomCode();
   std::string url = serviceUrl_ + "/v1/rooms/" + code + "/connect?role=" +
                     (role_ == Role::Host ? "host" : "guest") +
-                    "&build=pass7-native&gameplay=3";
+                    "&build=pass7-native&gameplay=5";
   if (role_ == Role::Host) {
     std::lock_guard<std::mutex> lock(stateMutex_);
     url += "&key=" + hostKey_;

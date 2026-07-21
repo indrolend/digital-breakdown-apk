@@ -19,6 +19,7 @@ public final class NativeBridge {
     private static Context audioContext;
     private static MediaPlayer slurpPlayer;
     private static MediaPlayer musicPlayer;
+    private static MediaPlayer menuMusicPlayer;
     private static MediaPlayer tvRoomPlayer;
     private static MediaPlayer gameOverPlayer;
     private static SoundPool soundPool;
@@ -26,6 +27,7 @@ public final class NativeBridge {
     private static final SparseArray<Boolean> loadedSamples = new SparseArray<>();
     private static final SparseArray<Float> pendingSamples = new SparseArray<>();
     private static boolean musicStarted;
+    private static boolean menuMusicStarted;
     private static boolean gameOverStarted;
     private static Equalizer musicEqualizer;
     private static float menuFilterAmount;
@@ -132,12 +134,19 @@ public final class NativeBridge {
 
     public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush, float phoneProximity) {
         if (audioContext == null) return;
-        if (started && !dead) {
+        final boolean menuState=!started||menuFiltered;
+        if (menuState && !dead) {
             stopGameOver();
+            if (musicStarted) { releaseMusicEqualizer(); if(musicPlayer!=null){musicPlayer.stop();musicPlayer.release();musicPlayer=null;}if(tvRoomPlayer!=null){tvRoomPlayer.stop();tvRoomPlayer.release();tvRoomPlayer=null;}musicStarted=false;tvRoomMix=0.0f; }
+            if (!menuMusicStarted) { menuMusicStarted=true; menuMusicPlayer=createNamedPlayer("menu_music",true,0.58f); }
+            if(menuMusicPlayer!=null){float gain=0.58f*localMusicLevel;menuMusicPlayer.setVolume(gain,gain);}
+        } else if (started && !dead) {
+            stopGameOver();
+            if(menuMusicStarted){if(menuMusicPlayer!=null){menuMusicPlayer.stop();menuMusicPlayer.release();menuMusicPlayer=null;}menuMusicStarted=false;}
             if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); tvRoomPlayer=createNamedPlayer("tv_room_pad",true,0.0f);initializeMusicEqualizer(); }
             updateMusicFilter(menuFiltered, headshotCrush);
             rewardDuck=Math.max(0.0f,rewardDuck-0.006f);float duck=1.0f-rewardDuck;tvRoomMix+=((inTvRoom?1.0f:0.0f)-tvRoomMix)*0.035f;if(tvRoomPlayer!=null){float pad=0.48f*localMusicLevel*tvRoomMix*duck;tvRoomPlayer.setVolume(pad,pad);long now=System.nanoTime();if(now-tvRoomPitchUpdateNs>50000000L){tvRoomPitchUpdateNs=now;float t=now*0.000000001f,p=Math.max(0.0f,Math.min(1.0f,phoneProximity)),pitch=1.0f+p*(-0.012f+(float)Math.sin(t*2.7f)*0.018f+(float)Math.sin(t*0.61f)*0.010f);try{tvRoomPlayer.setPlaybackParams(new PlaybackParams().allowDefaults().setSpeed(1.0f).setPitch(pitch));}catch(Exception ignored){}}}if(musicPlayer!=null){float base=(0.52f-Math.max(0.0f,Math.min(1.0f,headshotCrush))*0.018f)*localMusicLevel*(1.0f-tvRoomMix)*duck;musicPlayer.setVolume(base,base);}
-        } else if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; }if(tvRoomPlayer!=null){tvRoomPlayer.stop();tvRoomPlayer.release();tvRoomPlayer=null;}tvRoomMix=0.0f;musicStarted = false; }
+        } else { if(menuMusicStarted){if(menuMusicPlayer!=null){menuMusicPlayer.stop();menuMusicPlayer.release();menuMusicPlayer=null;}menuMusicStarted=false;}if (musicStarted) { releaseMusicEqualizer(); if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.release(); musicPlayer = null; }if(tvRoomPlayer!=null){tvRoomPlayer.stop();tvRoomPlayer.release();tvRoomPlayer=null;}tvRoomMix=0.0f;musicStarted = false;} }
         if (dead && !gameOverStarted) { gameOverStarted = true; gameOverPlayer = createNamedPlayer("game_over", false, 0.62f * localMusicLevel); }
         else if (!dead) stopGameOver();
     }

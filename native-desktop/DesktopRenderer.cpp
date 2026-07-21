@@ -247,6 +247,8 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,bool s
     for(std::size_t i=0;i+8<humanVertices_.size();i+=9){const std::size_t triangle=i/9;const Vec3 rawA{humanVertices_[i],humanVertices_[i+1],humanVertices_[i+2]},rawB{humanVertices_[i+3],humanVertices_[i+4],humanVertices_[i+5]},rawC{humanVertices_[i+6],humanVertices_[i+7],humanVertices_[i+8]},center=(rawA+rawB+rawC)*(1.0f/3.0f);if(humanShellTriangleMissingTowardCrit(triangle,thinning,center))continue;const Vec3 a=humanShellAbsorbTowardCrit(rawA,triangle,thinning),b=humanShellAbsorbTowardCrit(rawB,triangle,thinning),c=humanShellAbsorbTowardCrit(rawC,triangle,thinning),n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);}glEnd();glPopMatrix();
 }
 
+void DesktopRenderer::setReleaseStatus(const std::string& version,bool updateAvailable,const std::string& updateVersion){appVersion_=version;updateAvailable_=updateAvailable;updateVersion_=updateVersion;}
+
 void DesktopRenderer::drawSoulFlesh(const TargetState& target,const Vec3& center){
     auto index=[](int x,int y,int z){return x+y*3+z*9;};
     auto emitQuad=[&](int ia,int ib,int ic,int id){const Vec3 a=center+target.latticeSurfacePos[ia],b=center+target.latticeSurfacePos[ib],c=center+target.latticeSurfacePos[ic],d=center+target.latticeSurfacePos[id];Vec3 n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);n=normalized(cross3(c-a,d-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(c.x,c.y,c.z);glVertex3f(d.x,d.y,d.z);};
@@ -284,7 +286,10 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
     glMatrixMode(GL_PROJECTION); glLoadIdentity(); perspective(state.camera.verticalFovDegrees, aspect, Pass7Visual::CameraNearPlane, Pass7Visual::CameraFarPlane);
-    glMatrixMode(GL_MODELVIEW); glLoadIdentity(); lookAt(state.camera.pos, state.camera.lookTarget, {0,1,0});
+    const Vec3 eye=state.camera.visualCameraActive?state.camera.visualPos:state.camera.pos,target=state.camera.visualCameraActive?state.camera.visualLookTarget:state.camera.lookTarget;
+    const Vec3 forward=normalized(target-eye),right=normalized(cross3(forward,{0,1,0})),baseUp=normalized(cross3(right,forward));
+    const Vec3 rolledUp=baseUp*std::cos(state.camera.roll)+right*std::sin(state.camera.roll);
+    glMatrixMode(GL_MODELVIEW); glLoadIdentity(); lookAt(eye,target,rolledUp);
 }
 
 void DesktopRenderer::drawHud(const GameState& state) const {
@@ -345,22 +350,25 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         const float panelX=(menuCanvasW-panelW)*0.5f;
         const float panelY=(menuCanvasH-panelH)*0.5f;
         const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;
-        const std::string status=state.dead?"AGAIN?":state.localSettings.menuPage==LocalMenuPage::Main?"READY":state.localSettings.menuPage==LocalMenuPage::Online?"ONLINE":state.localSettings.menuPage==LocalMenuPage::JoinCode?"ENTER CODE":state.localSettings.menuPage==LocalMenuPage::Settings?"SETTINGS":state.localSettings.menuPage==LocalMenuPage::Controls?"CONTROLS":state.localSettings.menuPage==LocalMenuPage::Audio?"AUDIO":"GRAPHICS";
-        const float statusScale=3.0f,statusW=status.size()*6*statusScale;
-        floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*menuAlpha);
+        const std::string status=state.dead||state.localSettings.menuPage==LocalMenuPage::Main?"":state.localSettings.menuPage==LocalMenuPage::Online?"ONLINE":state.localSettings.menuPage==LocalMenuPage::JoinCode?"ENTER CODE":state.localSettings.menuPage==LocalMenuPage::Settings?"SETTINGS":state.localSettings.menuPage==LocalMenuPage::Controls?"CONTROLS":state.localSettings.menuPage==LocalMenuPage::Audio?"AUDIO":"GRAPHICS";
+        if(!status.empty()){const float statusScale=2.1f,statusW=status.size()*6*statusScale;floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+24,statusScale,0.82f,0.96f,1.0f,0.88f*menuAlpha);}
         const std::string networkStatus=state.multiplayer.status[0]?state.multiplayer.status.data():"";
         const std::string room=state.multiplayer.roomCode[0]?state.multiplayer.roomCode.data():"";
-        const float buttonW=std::min(360.0f,panelW-48.0f);const auto menuText=[&](int item,const std::string& label,float y,float rowH=44.0f,float scale=2.25f){const bool selected=state.hud.menuSelection==item;const float breath=selected?(0.5f+0.5f*std::sin(state.time*1.18f+item*0.11f)):0.0f,cx=panelX+panelW*0.5f;rotatedQuad(cx,y+rowH*0.5f,buttonW,rowH,0,selected?0.12f:0.02f,selected?0.72f:0.08f,selected?0.82f:0.11f,(selected?0.12f+breath*0.025f:0.075f)*menuAlpha);rotatedQuad(cx,y+rowH-1,buttonW-24,1,0,0.62f,0.96f,1.0f,(selected?0.48f+breath*0.10f:0.22f)*menuAlpha);const float tw=label.size()*6.0f*scale;floatingText(label,cx-tw*0.5f,y+(rowH-7*scale)*0.5f,scale,selected?0.96f:0.75f,selected?1.0f:0.96f,1.0f,menuAlpha);};
+        const float buttonW=std::min(360.0f,panelW-48.0f);const auto menuText=[&](int item,const std::string& label,float y,float rowH=44.0f,float scale=2.25f){const bool selected=state.hud.menuSelection==item,updateItem=updateAvailable_&&state.localSettings.menuPage==LocalMenuPage::Main&&item==4;const float breath=selected?(0.5f+0.5f*std::sin(state.time*1.18f+item*0.11f)):0.0f,cx=panelX+panelW*0.5f;const float baseR=updateItem?0.26f:0.12f,baseG=updateItem?0.62f:0.72f,baseB=updateItem?0.22f:0.82f;rotatedQuad(cx,y+rowH*0.5f,buttonW,rowH,0,selected?baseR:0.02f,selected?baseG:(updateItem?0.16f:0.08f),selected?baseB:(updateItem?0.05f:0.11f),(selected?0.12f+breath*0.025f:0.075f)*menuAlpha);rotatedQuad(cx,y+rowH-1,buttonW-24,1,0,updateItem?0.72f:0.62f,updateItem?1.0f:0.96f,updateItem?0.45f:1.0f,(selected?0.48f+breath*0.10f:0.22f)*menuAlpha);const float tw=label.size()*6.0f*scale;floatingText(label,cx-tw*0.5f,y+(rowH-7*scale)*0.5f,scale,selected?0.96f:(updateItem?0.82f:0.75f),selected?1.0f:0.96f,updateItem?0.72f:1.0f,menuAlpha);};
         std::vector<std::string> items;
         if(state.dead)items={"RESTART","EXIT"};
-        else if(state.localSettings.menuPage==LocalMenuPage::Main)items={"SOLO","ONLINE","SETTINGS","EXIT"};
+        else if(state.localSettings.menuPage==LocalMenuPage::Main){items={"SOLO","ONLINE","SETTINGS","EXIT"};if(updateAvailable_)items.push_back("UPDATE  V"+updateVersion_);}
         else if(state.localSettings.menuPage==LocalMenuPage::Online)items={"HOST","JOIN","BACK"};
         else if(state.localSettings.menuPage==LocalMenuPage::JoinCode)items={};
         else if(state.localSettings.menuPage==LocalMenuPage::Settings)items={"CONTROLS","AUDIO","GRAPHICS","BACK"};
         else if(state.localSettings.menuPage==LocalMenuPage::Controls){const char* actions[]={"FORWARD","BACK","LEFT","RIGHT","RUN","JUMP","LUNGE","SHOOT","CAMERA","ALT"};const auto keyName=[](int key){if(key>=65&&key<=90)return std::string(1,static_cast<char>(key));if(key>=48&&key<=57)return std::string(1,static_cast<char>(key));if(key==32)return std::string("SPACE");if(key==340)return std::string("SHIFT");return std::string("KEY ")+std::to_string(key);};for(int i=0;i<10;++i)items.push_back(std::string(actions[i])+"   "+keyName(state.localSettings.keyboardBindings[i]));items.push_back("DEFAULTS");items.push_back("BACK");}
         else if(state.localSettings.menuPage==LocalMenuPage::Audio){items={"MUSIC  "+std::to_string(static_cast<int>(std::round(state.localSettings.musicVolume*100)))+"%","SFX  "+std::to_string(static_cast<int>(std::round(state.localSettings.sfxVolume*100)))+"%",state.localSettings.musicMuted?"MUSIC ON":"MUSIC MUTE",state.localSettings.sfxMuted?"SFX ON":"SFX MUTE","BACK"};}
         else {const char* presets[]={"LEGACY","NORMAL","PRETTY"};items={std::string("PRESET  ")+presets[std::max(0,std::min(2,state.localSettings.graphicsPreset))],state.localSettings.shadows?"SHADOWS ON":"SHADOWS OFF",state.localSettings.particles?"PARTICLES ON":"PARTICLES OFF",state.localSettings.fpsCounter?"FPS ON":"FPS OFF","BACK"};}
-        for(int i=0;i<static_cast<int>(items.size());++i)menuText(i,items[i],panelY+82+i*(controlsPage?32.0f:52.0f),controlsPage?27.0f:44.0f,controlsPage?1.35f:2.25f);
+        const float rowStep=controlsPage?32.0f:52.0f,rowHeight=controlsPage?27.0f:44.0f;
+        const float stackHeight=items.empty()?0.0f:rowHeight+(items.size()-1)*rowStep;
+        const float menuStartY=panelY+(panelH-stackHeight)*0.5f+(status.empty()?0.0f:16.0f);
+        for(int i=0;i<static_cast<int>(items.size());++i)menuText(i,items[i],menuStartY+i*rowStep,rowHeight,controlsPage?1.35f:2.25f);
+        if(state.localSettings.menuPage==LocalMenuPage::Main&&!state.dead){const std::string version="V"+appVersion_;const float scale=1.05f,tw=version.size()*6.0f*scale;text(version,menuCanvasW-tw-14.0f,14.0f,scale,0.58f,0.78f,0.82f,0.62f);}
         if(state.localSettings.menuPage==LocalMenuPage::JoinCode){std::string typed;for(int i=0;i<6;++i){typed+=i<static_cast<int>(room.size())?room[i]:'_';if(i<5)typed+=' ';}const float scale=3.0f,tw=typed.size()*6*scale;floatingText(typed,panelX+(panelW-tw)*0.5f,panelY+142,scale,0.88f,1.0f,1.0f,menuAlpha);floatingText("ESC BACK",panelX+panelW*0.5f-48,panelY+224,1.2f,0.62f,0.90f,0.94f,0.72f*menuAlpha);}
         if(controlsPage&&state.localSettings.rebindingAction>=0){const std::string prompt=state.localSettings.pendingBinding>=0?"ENTER SWAP   BACKSPACE CANCEL":"PRESS INPUT   ESC CANCEL";const float tw=prompt.size()*6.0f*1.15f;floatingText(prompt,panelX+(panelW-tw)*0.5f,panelY+468,1.15f,0.82f,1.0f,1.0f,menuAlpha);}
         if(!networkStatus.empty()&&state.localSettings.menuPage==LocalMenuPage::Online){const float tw=networkStatus.size()*6.0f*1.2f;floatingText(networkStatus,panelX+(panelW-tw)*0.5f,panelY+274,1.2f,0.65f,1.0f,0.88f*menuAlpha);}

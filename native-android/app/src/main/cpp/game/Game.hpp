@@ -94,6 +94,9 @@ struct PlayerState {
     float ledgeHangTime = 0.0f;
     float ledgeGrabCooldown = 0.0f;
     float ledgeMantleTimer = 0.0f;
+    float wallContactTimer = 0.0f;
+    Vec3 wallContactNormal;
+    bool wallSliding = false;
 };
 
 enum class AudioCue : unsigned char {
@@ -133,11 +136,16 @@ struct EnergyState {
 struct CameraState {
     float yaw = 0.0f;
     float pitch = 0.0f;
+    float roll = 0.0f;
+    float rollVelocity = 0.0f;
     float verticalFovDegrees = 60.0f;
     bool firstPerson = false;
     Vec3 pos {0.0f, 1.18f, 3.0f};
     Vec3 forward {0.0f, 0.0f, -1.0f};
     Vec3 lookTarget {0.0f, 0.53f, 0.0f};
+    Vec3 visualPos {0.0f, 1.18f, 3.0f};
+    Vec3 visualLookTarget {0.0f, 0.53f, 0.0f};
+    bool visualCameraActive = false;
 };
 
 struct CinematicState {
