@@ -32,8 +32,8 @@ private: const std::uint8_t* data;std::size_t size=0,at=0;
 
 void header(Writer& w,MessageType type,std::uint8_t playerId,std::uint32_t seq,std::uint32_t tick,std::uint32_t payload){w.u32(MAGIC);w.u16(PROTOCOL_VERSION);w.u8(static_cast<std::uint8_t>(type));w.u8(playerId);w.u32(seq);w.u32(tick);w.u32(payload);}
 
-void writePlayer(Writer& w,const PlayerSnapshot& p){w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);w.f32(p.yaw);w.f32(p.pitch);w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.i8(p.vacuumTarget);w.f32(p.meleeTimer);w.f32(p.dischargeAmount);w.f32(p.bleedoutTimer);w.f32(p.reviveCharge);w.f32(p.grabEscape);w.i8(p.grabbedByTarget);w.i32(p.secretVisitRoom);w.f32(p.secretVisitTimer);}
-bool readPlayer(Reader& r,PlayerSnapshot& p){std::uint8_t active=0;return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&r.f32(p.yaw)&&r.f32(p.pitch)&&r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.i8(p.vacuumTarget)&&r.f32(p.meleeTimer)&&r.f32(p.dischargeAmount)&&r.f32(p.bleedoutTimer)&&r.f32(p.reviveCharge)&&r.f32(p.grabEscape)&&r.i8(p.grabbedByTarget)&&r.i32(p.secretVisitRoom)&&r.f32(p.secretVisitTimer);}
+void writePlayer(Writer& w,const PlayerSnapshot& p){w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);w.f32(p.yaw);w.f32(p.pitch);w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.i8(p.vacuumTarget);w.f32(p.meleeTimer);w.f32(p.dischargeAmount);w.f32(p.bleedoutTimer);w.f32(p.reviveCharge);w.f32(p.grabEscape);w.i8(p.grabbedByTarget);w.i32(p.secretVisitRoom);w.f32(p.secretVisitTimer);w.u8(p.commSignal);w.f32(p.commSignalTimer);}
+bool readPlayer(Reader& r,PlayerSnapshot& p){std::uint8_t active=0;return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&r.f32(p.yaw)&&r.f32(p.pitch)&&r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.i8(p.vacuumTarget)&&r.f32(p.meleeTimer)&&r.f32(p.dischargeAmount)&&r.f32(p.bleedoutTimer)&&r.f32(p.reviveCharge)&&r.f32(p.grabEscape)&&r.i8(p.grabbedByTarget)&&r.i32(p.secretVisitRoom)&&r.f32(p.secretVisitTimer)&&r.u8(p.commSignal)&&r.f32(p.commSignalTimer);}
 void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);}
 bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown);}
 void writeBullet(Writer& w,const BulletSnapshot& b){w.u8(b.active?1:0);w.u8(b.brute?1:0);w.vec(b.pos);w.vec(b.vel);w.f32(b.life);w.f32(b.spin);}
@@ -157,6 +157,8 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
     out.dischargeAmount = energy.dischargePositionAmount;
     out.bleedoutTimer=player.bleedoutTimer;out.reviveCharge=player.reviveCharge;out.grabEscape=player.grabEscape;out.grabbedByTarget=static_cast<std::int8_t>(player.grabbedByTarget);
     out.secretVisitRoom=player.secretVisitRoom;out.secretVisitTimer=player.secretVisitTimer;
+    out.commSignal=static_cast<std::uint8_t>(std::max(0,std::min(4,player.commSignal)));
+    out.commSignalTimer=std::max(0.0f,player.commSignalTimer);
   };
   const int local =
       state.multiplayer.enabled ? state.multiplayer.localPlayerId : 0;
@@ -267,6 +269,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.player.alive = (p.flags & 4) != 0;
         state.player.downed=(p.flags&8)!=0;state.player.bleedoutTimer=p.bleedoutTimer;state.player.reviveCharge=p.reviveCharge;state.player.grabEscape=p.grabEscape;state.player.grabbedByTarget=p.grabbedByTarget;
         state.player.inSecretRoom=(p.flags&16)!=0;state.player.secretVisitRoom=p.secretVisitRoom;state.player.secretVisitTimer=p.secretVisitTimer;
+        state.player.commSignal=p.commSignal;state.player.commSignalTimer=p.commSignalTimer;
         state.camera.pitch = p.pitch;
         state.camera.firstPerson = (p.flags & 2) != 0;
         state.vacuum.power = p.vacuumPower;
@@ -287,6 +290,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.player.alive = (p.flags & 4) != 0;
         peer.player.downed=(p.flags&8)!=0;peer.player.bleedoutTimer=p.bleedoutTimer;peer.player.reviveCharge=p.reviveCharge;peer.player.grabEscape=p.grabEscape;peer.player.grabbedByTarget=p.grabbedByTarget;
         peer.player.inSecretRoom=(p.flags&16)!=0;peer.player.secretVisitRoom=p.secretVisitRoom;peer.player.secretVisitTimer=p.secretVisitTimer;
+        peer.player.commSignal=p.commSignal;peer.player.commSignalTimer=p.commSignalTimer;
         peer.camera.pitch = p.pitch;
         peer.vacuum.power = p.vacuumPower;
         peer.vacuum.pose = p.vacuumPose;

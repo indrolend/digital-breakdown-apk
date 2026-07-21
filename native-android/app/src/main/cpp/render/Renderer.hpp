@@ -58,6 +58,7 @@ private:
     void drawRoomTile(const float* viewProj, const GameState& state, int tileIndex);
     void drawHud(const GameState& state);
     void drawStaticModel(const float* viewProj,const StaticModelData& model,unsigned int vbo,unsigned int normalVbo,const Vec3& pos,const Vec3& scale,const Quat& orientation,bool shadow=false);
+    void drawCheapHuman(const float* viewProj, const TargetState& target, const float color[4]);
     void drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]);
     void drawHumanModel(const float* viewProj,const TargetState& target,float time,bool shadow=false);
     void drawSoulFlesh(const float* viewProj,const TargetState& target,const Vec3& center);

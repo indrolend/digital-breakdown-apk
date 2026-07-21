@@ -221,6 +221,10 @@ constexpr int KEY_F = 34;
 constexpr int KEY_SHIFT_LEFT = 59;
 constexpr int KEY_SHIFT_RIGHT = 60;
 constexpr int KEY_SPACE = 62;
+constexpr int KEY_ENTER = 66;
+constexpr int KEY_R = 46;
+constexpr int KEY_1 = 8;
+constexpr int KEY_4 = 11;
 constexpr int TOUCH_DOWN = 0;
 constexpr int TOUCH_UP = 1;
 constexpr int TOUCH_MOVE = 2;
@@ -772,6 +776,10 @@ void Game::resetRoom() {
 
 void Game::setKey(int keyCode, bool down) {
     InputState& input = state_.input;
+    if (down && !state_.started && (keyCode == KEY_SPACE || keyCode == KEY_ENTER || keyCode == KEY_R || keyCode == KEY_F)) {
+        restart();
+        return;
+    }
     if (keyCode == KEY_W) input.forward = down;
     if (keyCode == KEY_S) input.back = down;
     if (keyCode == KEY_A) input.left = down;
@@ -785,6 +793,7 @@ void Game::setKey(int keyCode, bool down) {
     if (keyCode == KEY_Q && down) input.shootPressed = true;
     if (keyCode == KEY_C && down) input.meleePressed = true;
     if (keyCode == KEY_V && down) input.cameraTogglePressed = true;
+    if (down && keyCode >= KEY_1 && keyCode <= KEY_4) setCommSignal(keyCode - KEY_1 + 1);
 }
 
 void Game::clearInputState() {
@@ -803,6 +812,7 @@ void Game::clearInputState() {
     input.lookDeltaX = 0.0f;
     input.lookDeltaY = 0.0f;
     input.wiggleAxis = 0.0f;
+    input.commSignalPressed = 0;
     input.jumpPressed = false;
     input.meleePressed = false;
     input.shootPressed = false;
@@ -965,7 +975,7 @@ void Game::configureNetworkGuest(int localPlayerId){state_.multiplayer=Multiplay
 void Game::disableNetwork(){state_.multiplayer=MultiplayerRuntimeState{};}
 void Game::setNetworkRoom(const char* code,const char* status,bool connected){const bool changed=(code&&std::strncmp(state_.multiplayer.roomCode.data(),code,6)!=0)||(status&&std::strncmp(state_.multiplayer.status.data(),status,63)!=0)||state_.multiplayer.connected!=connected;if(code)std::snprintf(state_.multiplayer.roomCode.data(),state_.multiplayer.roomCode.size(),"%.6s",code);if(status)std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"%.63s",status);state_.multiplayer.connected=connected;if(changed)state_.cinematic.textInteraction=0.42f;}
 void Game::setNetworkPeerActive(int playerId,bool active){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT||playerId==state_.multiplayer.localPlayerId)return;auto& peer=state_.multiplayer.peers[playerId];if(active&&!peer.active){peer=NetworkPeerState{};peer.active=true;peer.playerId=playerId;peer.player.pos=state_.player.pos+Vec3{static_cast<float>(playerId)*0.75f,0,0};peer.camera=state_.camera;peer.energy=state_.energy;}else if(!active)peer=NetworkPeerState{};}
-void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
+void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;for(int signal=1;signal<=4;++signal){const unsigned short bit=static_cast<unsigned short>(1u<<(11+signal));if((buttons&bit)!=0&&(previous&bit)==0)peer.input.commSignalPressed=signal;}peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
 void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float pitch,float vacuumPower,float vacuumPose,int vacuumTarget,float meleeTimer,float dischargeAmount){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT)return;if(playerId==state_.multiplayer.localPlayerId){state_.player=player;state_.camera.pitch=pitch;state_.vacuum.power=vacuumPower;state_.vacuum.pose=vacuumPose;state_.vacuum.target=vacuumTarget;state_.meleeVisual.visualTimer=meleeTimer;state_.energy.dischargePositionAmount=dischargeAmount;updatePhoneTransform();return;}setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];peer.player=player;peer.camera.pitch=pitch;peer.vacuum.power=vacuumPower;peer.vacuum.pose=vacuumPose;peer.vacuum.target=vacuumTarget;peer.meleeVisual.visualTimer=meleeTimer;peer.energy.dischargePositionAmount=dischargeAmount;peer.phoneVisual=makePhoneVisualState(vacuumPose,vacuumPower,0,state_.time,false);peer.phoneTransform.position=player.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},player.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}
 
 void Game::savePlayerContext(NetworkPeerState& c) const{c.input=state_.input;c.player=state_.player;c.energy=state_.energy;c.camera=state_.camera;c.vacuum=state_.vacuum;c.pendingShots=state_.pendingShots;c.phonePose=state_.phonePose;c.phoneTransform=state_.phoneTransform;c.phoneVisual=state_.phoneVisual;c.hud=state_.hud;c.meleeVisual=state_.meleeVisual;c.meleeCooldown=state_.meleeCooldown;c.meleePose=state_.meleePose;c.meleeComboWindow=state_.meleeComboWindow;}
@@ -983,10 +993,21 @@ void Game::setWiggle(float axis) {
     if(std::abs(axis)<0.001f)axis=state_.player.grabLastDirection>=0?-1.0f:1.0f;
     input.wiggleAxis=axis>0.0f?1.0f:-1.0f;
 }
+void Game::setCommSignal(int signal) {
+    if(signal<1||signal>4)return;
+    state_.input.commSignalPressed=signal;
+}
 void Game::updateNetworkGuest(float dt){simulationPlayerId_=state_.multiplayer.localPlayerId;const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;state_.input.meleePressed=false;state_.input.shootPressed=false;updateInputActions(dt);state_.input.meleePressed=melee;state_.input.shootPressed=shoot;updatePlayer(dt);const bool vacuumBlocked=state_.player.ledgeHanging||state_.player.ledgeMantleTimer>0.0f||state_.meleeVisual.airLungeLandingPending||state_.meleeVisual.visualTimer>0.0f||state_.phonePose.doubleJumpVacuumPause>0.0f;state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1&&!vacuumBlocked;state_.vacuum.power=clampf(state_.vacuum.power+(state_.vacuum.active?2.4f:-3.2f)*dt,0,1);state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*std::min(1.0f,dt*10.0f);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();updateCamera(dt);updateSoulLattices();updateCrosshair(dt);state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);state_.hud.storedSouls=state_.player.souls;state_.input.meleePressed=false;state_.input.shootPressed=false;simulationPlayerId_=0;}
 
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
+    state_.player.commSignalTimer=std::max(0.0f,state_.player.commSignalTimer-dt);
+    if(state_.player.commSignalTimer<=0.0f)state_.player.commSignal=0;
+    if(input.commSignalPressed>=1&&input.commSignalPressed<=4){
+        state_.player.commSignal=input.commSignalPressed;
+        state_.player.commSignalTimer=2.4f;
+        input.commSignalPressed=0;
+    }
     if(state_.player.grabbedByTarget>=0){input.jumpPressed=false;input.meleePressed=false;input.shootPressed=false;input.cameraTogglePressed=false;input.primaryHeld=false;input.touchPrimaryHeld=false;input.lookDeltaX=input.lookDeltaY=0.0f;return;}
     if (input.cameraTogglePressed) state_.camera.firstPerson = !state_.camera.firstPerson;
     state_.camera.yaw -= input.lookDeltaX * 0.003f;
@@ -1745,7 +1766,8 @@ void Game::updateCamera(float dt) {
     const Vec3 aimForward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
     const float horizontalSpeed=std::sqrt(player.vel.x*player.vel.x+player.vel.z*player.vel.z);
     const float motionFov=clampf((horizontalSpeed-2.5f)*1.05f,0.0f,9.0f)+(!player.grounded?2.2f:0.0f)+(state_.meleeVisual.airLungeLandingPending?4.8f:0.0f);
-    const float targetFov=camera.firstPerson?64.0f:60.0f+motionFov;
+    const bool mobile = state_.localSettings.mobileFraming;
+    const float targetFov=camera.firstPerson?(mobile?60.0f:64.0f):(mobile?56.0f:60.0f)+motionFov*(mobile?0.72f:1.0f);
     if(dt>0.0f)camera.verticalFovDegrees+=(targetFov-camera.verticalFovDegrees)*(1.0f-std::exp(-(targetFov>camera.verticalFovDegrees?5.2f:2.8f)*dt));else camera.verticalFovDegrees=targetFov;
     if (camera.firstPerson) {
         camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;
@@ -1755,11 +1777,14 @@ void Game::updateCamera(float dt) {
     }
     const float leadAmount=clampf((horizontalSpeed-2.0f)*0.0045f,0.0f,0.038f);
     const Vec3 motionLead{player.vel.x*leadAmount,clampf(player.jumpVel*0.022f,-0.18f,0.14f),player.vel.z*leadAmount};
-    Vec3 desired = player.pos+motionLead*0.25f - aimForward * 3.0f + Vec3{0, 1.1f, 0};
+    const float leadScale = mobile ? 0.20f : 0.25f;
+    const float boom = mobile ? 3.22f : 3.0f;
+    const float height = mobile ? 1.18f : 1.1f;
+    Vec3 desired = player.pos+motionLead*leadScale - aimForward * boom + Vec3{0, height, 0};
     if (desired.y < GROUND_Y + 0.8f) desired.y = GROUND_Y + 0.8f;
     constrainThirdPersonCamera(desired, player.pos);
     Vec3 desiredTarget=player.pos+motionLead+aimForward*10.0f;
-    desiredTarget.y+=0.45f;
+    desiredTarget.y+=mobile?0.42f:0.45f;
     const MeleeVisualState& melee=state_.meleeVisual;
     if(melee.airLungeCameraLag>0.0f&&dt>0.0f){
         const float recoveryT=melee.landingRecoveryDuration>0.0f
@@ -1883,7 +1908,12 @@ void Game::triggerMelee() {
     if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
     visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
     visual.previousContactPosition=state_.phoneTransform.position;visual.contactPositionValid=airborne;
-    visual.direction=cameraForwardFlat(); visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+    visual.direction=cameraForwardFlat();
+    const Vec3 assistOrigin=state_.player.pos+Vec3{0,airborne?0.70f:0.42f,0};
+    visual.direction=assistedActionDirection(assistOrigin,visual.direction,airborne?4.2f:3.1f,airborne?0.76f:0.80f,airborne?0.36f:0.28f,true);
+    visual.direction.y=0.0f;
+    if(lengthSq(visual.direction)<0.0001f)visual.direction=cameraForwardFlat();else visual.direction=normalized(visual.direction);
+    visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
     if(!airborne) applyMeleeHits();
 }
@@ -1953,6 +1983,36 @@ Vec3 Game::targetHeadCenter(const TargetState& target) const {
 float Game::headshotDamage(const TargetState& target) const {
     const float fullArmor=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
     return fullArmor/static_cast<float>(std::max(1,state_.requiredSouls));
+}
+
+Vec3 Game::assistedActionDirection(const Vec3& origin, const Vec3& direction, float maxDistance, float minDot, float maxBlend, bool preferHead) const {
+    Vec3 base=normalized(direction);
+    if(!state_.localSettings.mobileFraming || lengthSq(base)<0.0001f) return base;
+    int best=-1;
+    float bestScore=0.0f;
+    Vec3 bestDirection=base;
+    for(int i=0;i<TARGET_COUNT;++i){
+        const TargetState& target=state_.targets[i];
+        if(!target.alive||target.captureQueued||target.captureCommitted)continue;
+        if(target.slurpable)continue;
+        const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+        const float damage=1.0f-clampf(target.armor/std::max(0.001f,armorMax),0.0f,1.0f);
+        const Vec3 body{target.pos.x,(0.66f+0.08f*damage)*target.scale,target.pos.z};
+        const Vec3 aimPoint=preferHead&&damage>0.18f?targetHeadCenter(target):body;
+        Vec3 toTarget=aimPoint-origin;
+        const float distance=length(toTarget);
+        if(distance<=0.001f||distance>maxDistance)continue;
+        toTarget=toTarget*(1.0f/distance);
+        const float alignment=dot3(base,toTarget);
+        if(alignment<minDot)continue;
+        const float distanceScore=1.0f-clampf(distance/maxDistance,0.0f,1.0f);
+        const float alignmentScore=clampf((alignment-minDot)/std::max(0.001f,1.0f-minDot),0.0f,1.0f);
+        const float score=alignmentScore*0.74f+distanceScore*0.26f+damage*0.08f;
+        if(score>bestScore){bestScore=score;best=i;bestDirection=toTarget;}
+    }
+    if(best<0)return base;
+    const float blend=clampf(bestScore*maxBlend,0.0f,maxBlend);
+    return normalized(base*(1.0f-blend)+bestDirection*blend);
 }
 
 void Game::continueLungeFromHeadshot() {
@@ -2088,6 +2148,16 @@ void Game::processPendingShots(float dt) {
             continue;
         }
         Vec3 direction=state_.camera.forward;
+        direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
+        direction=normalized(direction);
+        direction=assistedActionDirection(
+            state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f),
+            direction,
+            pending.brute?15.0f:13.0f,
+            pending.brute?0.94f:0.955f,
+            pending.brute?0.34f:0.26f,
+            true
+        );
         direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
         direction=normalized(direction);
         *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute;

@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 4;
-constexpr std::uint16_t GAMEPLAY_VERSION = 4;
+constexpr std::uint16_t PROTOCOL_VERSION = 5;
+constexpr std::uint16_t GAMEPLAY_VERSION = 5;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr int MAX_PLAYERS = 4;
@@ -20,7 +20,8 @@ enum class MessageType : std::uint8_t { Input = 1, Snapshot = 2, Event = 3, Ping
 enum InputButton : std::uint16_t {
     Forward = 1u << 0, Back = 1u << 1, Left = 1u << 2, Right = 1u << 3,
     Sprint = 1u << 4, Jump = 1u << 5, Vacuum = 1u << 6, Melee = 1u << 7,
-    Shoot = 1u << 8, CameraToggle = 1u << 9, WiggleLeft = 1u << 10, WiggleRight = 1u << 11
+    Shoot = 1u << 8, CameraToggle = 1u << 9, WiggleLeft = 1u << 10, WiggleRight = 1u << 11,
+    CommHelp = 1u << 12, CommPing = 1u << 13, CommGroup = 1u << 14, CommOk = 1u << 15
 };
 
 struct PacketHeader {
@@ -62,6 +63,8 @@ struct PlayerSnapshot {
     std::int8_t grabbedByTarget = -1;
     std::int32_t secretVisitRoom = -1;
     float secretVisitTimer = 0.0f;
+    std::uint8_t commSignal = 0;
+    float commSignalTimer = 0.0f;
 };
 
 struct TargetSnapshot {

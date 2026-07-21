@@ -70,13 +70,15 @@ export class MatchRoom extends DurableObject<Env> {
   }
 
   private send(socket: WebSocket, value: unknown): void {
-    socket.send(JSON.stringify(value));
+    try { socket.send(JSON.stringify(value)); } catch { socket.close(1011, "send_failed"); }
   }
 
   private broadcast(value: unknown, exceptPlayer = -1): void {
     const encoded = JSON.stringify(value);
     for (const { socket, attachment } of this.sockets()) {
-      if (attachment.playerId !== exceptPlayer) socket.send(encoded);
+      if (attachment.playerId !== exceptPlayer) {
+        try { socket.send(encoded); } catch { socket.close(1011, "send_failed"); }
+      }
     }
   }
 
@@ -114,7 +116,7 @@ export class MatchRoom extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ playerId, role, build } satisfies SocketAttachment);
     this.send(server, { type: "welcome", protocol: PROTOCOL_VERSION, gameplayVersion, room: metadata.code, playerId, role, players: [...used, playerId].sort() });
-    this.broadcast({ type: "player_joined", playerId, build }, playerId);
+    this.broadcast({ type: role === "host" ? "host_reconnected" : "player_joined", playerId, build }, playerId);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -130,7 +132,7 @@ export class MatchRoom extends DurableObject<Env> {
       for (const peer of this.sockets()) {
         if (peer.attachment.playerId === attachment.playerId) continue;
         if (attachment.role === "guest" && peer.attachment.role !== "host") continue;
-        peer.socket.send(message);
+        try { peer.socket.send(message); } catch { peer.socket.close(1011, "send_failed"); }
       }
       return;
     }
@@ -144,20 +146,23 @@ export class MatchRoom extends DurableObject<Env> {
     for (const peer of this.sockets()) {
       if (peer.attachment.playerId === attachment.playerId) continue;
       if (attachment.role === "guest" && peer.attachment.role !== "host") continue;
-      peer.socket.send(outbound);
+      try { peer.socket.send(outbound); } catch { peer.socket.close(1011, "send_failed"); }
     }
   }
 
   override async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
     if (!attachment) return;
-    if (attachment.role === "host") this.closeMatch("host_left");
+    if (attachment.role === "host") {
+      if (code === 1000 && reason === "leaving") this.closeMatch("host_left");
+      else this.broadcast({ type: "host_disconnected", reason: reason || "connection_lost" }, attachment.playerId);
+    }
     else this.broadcast({ type: "player_left", playerId: attachment.playerId, code, reason }, attachment.playerId);
   }
 
   override async webSocketError(socket: WebSocket): Promise<void> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-    if (attachment?.role === "host") this.closeMatch("host_connection_error");
+    if (attachment?.role === "host") this.broadcast({ type: "host_disconnected", reason: "connection_error" }, attachment.playerId);
   }
 
   override async alarm(): Promise<void> {

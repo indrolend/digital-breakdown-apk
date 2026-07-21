@@ -19,6 +19,7 @@ public final class NativeBridge {
     private static Context audioContext;
     private static MediaPlayer slurpPlayer;
     private static MediaPlayer musicPlayer;
+    private static MediaPlayer menuMusicPlayer;
     private static MediaPlayer tvRoomPlayer;
     private static MediaPlayer gameOverPlayer;
     private static SoundPool soundPool;
@@ -26,9 +27,12 @@ public final class NativeBridge {
     private static final SparseArray<Boolean> loadedSamples = new SparseArray<>();
     private static final SparseArray<Float> pendingSamples = new SparseArray<>();
     private static boolean musicStarted;
+    private static boolean menuMusicStarted;
     private static boolean gameOverStarted;
     private static Equalizer musicEqualizer;
     private static float menuFilterAmount;
+    private static float menuCuePulse;
+    private static float menuCueBend;
     private static float tvRoomMix;
     private static long tvRoomPitchUpdateNs;
     private static float rewardDuck;
@@ -132,6 +136,18 @@ public final class NativeBridge {
 
     public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush, float phoneProximity) {
         if (audioContext == null) return;
+        if (!started && !dead) {
+            if (!menuMusicStarted) { menuMusicStarted = true; menuMusicPlayer = createNamedPlayer("menu_music", true, 0.0f); }
+            if (menuMusicPlayer != null) {
+                menuCuePulse = Math.max(0.0f, menuCuePulse - 0.018f);
+                menuCueBend *= 0.92f;
+                float t = System.nanoTime() * 0.000000001f;
+                float breath = 0.5f + 0.5f * (float)Math.sin(t * 0.42f);
+                float volume = (0.34f + breath * 0.045f + menuCuePulse * 0.075f) * localMusicLevel;
+                menuMusicPlayer.setVolume(volume, volume);
+                try { menuMusicPlayer.setPlaybackParams(new PlaybackParams().allowDefaults().setSpeed(1.0f).setPitch(1.0f + (float)Math.sin(t * 0.17f) * 0.0025f + menuCueBend + menuCuePulse * 0.0035f)); } catch(Exception ignored) {}
+            }
+        } else stopMenuMusic();
         if (started && !dead) {
             stopGameOver();
             if (!musicStarted) { musicStarted = true; musicPlayer = createNamedPlayer("game_music", true, 0.52f); tvRoomPlayer=createNamedPlayer("tv_room_pad",true,0.0f);initializeMusicEqualizer(); }
@@ -144,7 +160,7 @@ public final class NativeBridge {
 
     private static short[] makeMenuPluck(float frequency){final int rate=22050,frames=2867,reflection=640,bottomOut=154;short[] result=new short[frames];float[] work=new float[frames];int noise=0x53A91;for(int i=0;i<frames;++i){float t=(float)i/rate,phase=t*frequency;noise=noise*1664525+1013904223;float grain=((noise>>>24)&255)/127.5f-1.0f;float contact=grain*(float)Math.exp(-t*125.0f),body=((float)Math.sin(phase*6.2831853f)*0.62f+(float)Math.sin(phase*12.5663706f)*0.16f)*(float)Math.exp(-t*34.0f);float dry=contact*0.24f+body;if(i>=bottomOut){float bt=(float)(i-bottomOut)/rate;dry+=work[i-bottomOut]*0.18f*(float)Math.exp(-bt*70.0f);}dry=Math.round(Math.tanh(dry*1.18f)*48.0f)/48.0f;work[i]=dry*0.18f+(i>=reflection?work[i-reflection]*0.13f:0.0f);result[i]=(short)Math.max(-32767,Math.min(32767,Math.round(work[i]*32767.0f)));}return result;}
 
-    public static synchronized void playMenuCue(boolean confirm){if(localSfxLevel<=0)return;final float[] ratios={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};int variation=menuVariation++;for(AudioTrack track:menuVoices)if(track!=null)try{track.pause();track.flush();track.stop();}catch(Exception ignored){}AudioTrack voice=menuVoices[confirm?1:0];if(voice==null)return;try{voice.setPlaybackHeadPosition(0);voice.setPlaybackRate(Math.round(22050*ratios[(variation+(confirm?2:0))%ratios.length]));voice.setVolume(localSfxLevel*(confirm?0.76f:0.54f)*(0.96f+(variation%3)*0.018f));voice.play();}catch(Exception ignored){}}
+    public static synchronized void playMenuCue(boolean confirm){if(localSfxLevel<=0)return;menuCuePulse=Math.max(menuCuePulse,confirm?0.34f:0.22f);menuCueBend=confirm?0.010f:-0.006f;final float[] ratios={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};int variation=menuVariation++;for(AudioTrack track:menuVoices)if(track!=null)try{track.pause();track.flush();track.stop();}catch(Exception ignored){}AudioTrack voice=menuVoices[confirm?1:0];if(voice==null)return;try{voice.setPlaybackHeadPosition(0);voice.setPlaybackRate(Math.round(22050*ratios[(variation+(confirm?2:0))%ratios.length]));voice.setVolume(localSfxLevel*(confirm?0.76f:0.54f)*(0.96f+(variation%3)*0.018f));voice.play();}catch(Exception ignored){}}
     private static void initializeMusicEqualizer() { try { if(musicPlayer==null)return;musicEqualizer=new Equalizer(0,musicPlayer.getAudioSessionId());musicEqualizer.setEnabled(true); } catch(Exception ignored){musicEqualizer=null;} }
     private static void updateMusicFilter(boolean filtered, float headshotCrush) { menuFilterAmount+=((filtered?1.0f:0.0f)-menuFilterAmount)*0.085f;float crush=Math.max(0.0f,Math.min(1.0f,headshotCrush));float step=(System.nanoTime()/16000000L)%3L==0L?1.0f:0.0f;if(musicPlayer!=null){float volume=(0.52f-crush*(0.010f+step*0.018f))*localMusicLevel;musicPlayer.setVolume(volume,volume);}if(musicEqualizer==null)return;try{short bands=musicEqualizer.getNumberOfBands();short minimum=musicEqualizer.getBandLevelRange()[0];for(short band=0;band<bands;++band){float high=bands<=1?1.0f:(float)band/(float)(bands-1);float shaped=high*high;float attenuation=menuFilterAmount*shaped+crush*step*0.08f*high;musicEqualizer.setBandLevel(band,(short)(minimum*Math.min(1.0f,attenuation)));}}catch(Exception ignored){} }
     public static synchronized void applyLocalSettings(float music,float sfx,boolean musicMuted,boolean sfxMuted,int preset,boolean shadows,boolean portal,boolean particles,boolean fps){localMusicLevel=musicMuted?0.0f:Math.max(0.0f,Math.min(1.0f,music));localSfxLevel=sfxMuted?0.0f:Math.max(0.0f,Math.min(1.0f,sfx));setLocalSettings(music,sfx,musicMuted,sfxMuted,preset,shadows,portal,particles,fps);}
@@ -160,6 +176,12 @@ public final class NativeBridge {
         if (gameOverPlayer != null) { gameOverPlayer.stop(); gameOverPlayer.release(); gameOverPlayer = null; }
         gameOverStarted = false;
     }
+    private static void stopMenuMusic() {
+        if (menuMusicPlayer != null) { menuMusicPlayer.stop(); menuMusicPlayer.release(); menuMusicPlayer = null; }
+        menuMusicStarted = false;
+        menuCuePulse = 0.0f;
+        menuCueBend = 0.0f;
+    }
 
     public static native void onSurfaceCreated();
     public static native void setPersistentProgression(long tokens, int shot, int lunge, int attack);
@@ -168,6 +190,7 @@ public final class NativeBridge {
     public static native void onDrawFrame();
     public static native void onTouch(int action, float x, float y, int pointerCount);
     public static native void onWiggle(float axis);
+    public static native void onCommSignal(int signal);
     public static native boolean isGrabbed();
     public static native void onTouchControls(
         float moveX,
@@ -182,8 +205,11 @@ public final class NativeBridge {
         boolean cameraTogglePressed
     );
     public static native void onKey(int keyCode, boolean down);
+    public static native void restart();
     public static native boolean isIntroActive();
+    public static native boolean isStarted();
     public static native int getMenuMode();
+    public static native void setPaused(boolean paused);
     public static native void chooseUpgrade(int track, boolean permanent);
     private static native void setLocalSettings(float music,float sfx,boolean musicMuted,boolean sfxMuted,int preset,boolean shadows,boolean portal,boolean particles,boolean fps);
     public static native void startSolo();

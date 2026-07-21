@@ -35,48 +35,58 @@ public final class ControlOverlayView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (NativeBridge.isIntroActive()) {
-            postInvalidateOnAnimation();
+        final int menuMode = NativeBridge.getMenuMode();
+        if (!NativeBridge.isStarted() || NativeBridge.isIntroActive() || menuMode != 0) {
             return;
         }
 
-        final float joystickRadius = gameView.joystickRadius();
-        final float joystickX = gameView.joystickCenterX();
-        final float joystickY = gameView.joystickCenterY();
-        drawCircleControl(canvas, joystickX, joystickY, joystickRadius, "");
-
-        final float knobRadius = joystickRadius * 0.43f;
-        final float knobX = joystickX + gameView.getMoveX() * joystickRadius * 0.62f;
-        final float knobY = joystickY - gameView.getMoveZ() * joystickRadius * 0.62f;
-        fillPaint.setColor(Color.argb(150, 205, 243, 255));
-        canvas.drawCircle(knobX, knobY, knobRadius, fillPaint);
-
         final float r = gameView.buttonRadius();
-        drawCircleControl(canvas, gameView.actionCenterX(), gameView.actionCenterY(), r * 1.10f,
-            gameView.isVacuumHeld() ? "VAC" : "HIT");
-        drawCircleControl(canvas, gameView.jumpCenterX(), gameView.jumpCenterY(), r, "JUMP");
-        drawCircleControl(canvas, gameView.shootCenterX(), gameView.shootCenterY(), r, "SOUL");
-        drawCircleControl(canvas, gameView.cameraCenterX(), gameView.cameraCenterY(), r, "CAM");
+        if (gameView.isMoveActive()) {
+            final float joystickRadius = gameView.joystickRadius();
+            final float joystickX = gameView.joystickCenterX();
+            final float joystickY = gameView.joystickCenterY();
+            drawCircleControl(canvas, joystickX, joystickY, joystickRadius, "");
 
-        textPaint.setTextSize(r * 0.27f);
-        textPaint.setColor(Color.argb(190, 220, 245, 255));
-        canvas.drawText("tap", gameView.actionCenterX(), gameView.actionCenterY() + r * 0.43f, textPaint);
-        canvas.drawText("hold + slide", gameView.actionCenterX(), gameView.actionCenterY() + r * 0.72f, textPaint);
+            final float knobRadius = joystickRadius * 0.43f;
+            final float knobX = joystickX + gameView.getMoveX() * joystickRadius * 0.62f;
+            final float knobY = joystickY - gameView.getMoveZ() * joystickRadius * 0.62f;
+            fillPaint.setColor(Color.argb(150, 120, 213, 225));
+            canvas.drawCircle(knobX, knobY, knobRadius, fillPaint);
+        }
 
-        postInvalidateOnAnimation();
+        if (gameView.isActionActive()) {
+            drawCircleControl(canvas, gameView.actionCenterX(), gameView.actionCenterY(), r * 1.02f,
+                gameView.isVacuumHeld() ? "VAC" : "HIT");
+        }
+        drawOptionsControl(canvas);
     }
 
     private void drawCircleControl(Canvas canvas, float cx, float cy, float radius, String label) {
-        fillPaint.setColor(Color.argb(72, 8, 20, 28));
-        strokePaint.setColor(Color.argb(185, 150, 225, 245));
+        fillPaint.setColor(Color.argb(48, 24, 12, 28));
+        strokePaint.setColor(Color.argb(150, 120, 213, 225));
         canvas.drawCircle(cx, cy, radius, fillPaint);
         canvas.drawCircle(cx, cy, radius, strokePaint);
         if (!label.isEmpty()) {
             textPaint.setTextSize(radius * 0.31f);
-            textPaint.setColor(Color.argb(225, 235, 250, 255));
+            textPaint.setColor(Color.argb(190, 235, 250, 255));
             final Paint.FontMetrics fm = textPaint.getFontMetrics();
             final float baseline = cy - (fm.ascent + fm.descent) * 0.5f;
             canvas.drawText(label, cx, baseline, textPaint);
+        }
+    }
+
+    private void drawOptionsControl(Canvas canvas) {
+        final float cx = gameView.optionsCenterX();
+        final float cy = gameView.optionsCenterY();
+        final float radius = gameView.optionsRadius();
+        drawCircleControl(canvas, cx, cy, radius, "");
+        strokePaint.setStyle(Paint.Style.STROKE);
+        strokePaint.setStrokeWidth(dp(1.6f));
+        strokePaint.setColor(Color.argb(145, 120, 213, 225));
+        final float w = radius * 0.58f;
+        for (int i = -1; i <= 1; ++i) {
+            final float y = cy + i * radius * 0.28f;
+            canvas.drawLine(cx - w * 0.5f, y, cx + w * 0.5f, y, strokePaint);
         }
     }
 

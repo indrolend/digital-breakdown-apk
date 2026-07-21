@@ -16,12 +16,12 @@ int mobileFpsFrames=0;
 auto mobileFpsWindowStart=std::chrono::steady_clock::now();
 constexpr float ROOM_WIDTH = 30.0f;
 constexpr float ROOM_DEPTH = 42.0f;
-constexpr int ROOM_VISUAL_HORIZON = 2;
+constexpr int ROOM_VISUAL_HORIZON = 0;
 
 constexpr int ROUNDED_SEGMENTS = 7;
 constexpr int ROUNDED_RINGS = 5;
 constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * (ROUNDED_RINGS - 1) * 6;
-constexpr int FX_SEGMENTS=24;
+constexpr int FX_SEGMENTS=12;
 constexpr int FX_STRIP_VERTICES=(FX_SEGMENTS+1)*2;
 
 std::array<float,FX_STRIP_VERTICES*3> makeRibbon(float inner,float outer,float sweep){std::array<float,FX_STRIP_VERTICES*3> out{}; int n=0;
@@ -89,7 +89,7 @@ const char* FRAG_SRC =
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
     "void main() {\n"
-    "  vec3 lit = uColor.rgb * vLight;\n"
+    "  vec3 lit = uUseNormal > 0.5 ? uColor.rgb * vLight : uColor.rgb;\n"
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
@@ -330,6 +330,38 @@ void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, cons
     glDrawArrays(GL_TRIANGLES, 0, roundedVertexCount_);
 }
 
+void Renderer::drawCheapHuman(const float* viewProj, const TargetState& target, const float color[4]) {
+    const float s = target.scale;
+    const float yaw = target.visualYaw + DB_PI;
+    const float bob = target.slurpable ? 0.0f : std::sin(target.phase) * 0.018f;
+    const Vec3 root = target.pos + Vec3{0.0f, 0.06f + bob, 0.0f};
+    const bool brute = target.brute;
+    const VisualColor body = brute ? Pass7Visual::BruteEnemy : Pass7Visual::NormalEnemy;
+    const float armorMax=brute?4.0f:2.0f;
+    const float damage=1.0f-clampf(target.armor/std::max(0.001f,armorMax),0.0f,1.0f);
+    const float flash=clampf(target.hitFlash,0.0f,1.0f);
+    const float shellAlpha=color[3]*(0.94f-damage*0.48f);
+    const float bodyColor[4] = {
+        body.r+(1.0f-body.r)*flash*0.42f,
+        body.g+(0.86f-body.g)*flash*0.38f,
+        body.b+(0.62f-body.b)*flash*0.30f,
+        shellAlpha
+    };
+    if(shellAlpha<0.995f){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}
+    drawBox(viewProj, root + Vec3{0.0f, 0.54f * s, 0.0f}, {0.24f * s, 0.56f * s, 0.18f * s}, yaw, bodyColor);
+    drawBox(viewProj, root + Vec3{0.0f, 1.02f * s, 0.0f}, {0.18f * s, 0.18f * s, 0.16f * s}, yaw, bodyColor);
+    if (brute) drawBox(viewProj, root + Vec3{0.0f, 0.78f * s, 0.0f}, {0.34f * s, 0.18f * s, 0.20f * s}, yaw, bodyColor);
+    if(shellAlpha<0.995f){glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
+    if(damage>0.06f||target.attackTimer>0.0f){
+        const float pulse=0.68f+0.32f*std::sin(target.phase*1.9f);
+        const float weak[4]={Pass7Visual::ElectricMagenta.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.58f+damage*0.34f+flash*0.08f};
+        const Vec3 forward{-std::sin(yaw),0.0f,-std::cos(yaw)};
+        glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+        drawBox(viewProj, root + Vec3{0.0f, (1.02f+0.02f*pulse) * s, 0.0f} + forward*(0.095f*s), {0.075f * s*(1.0f+damage*0.22f), 0.075f * s*(1.0f+damage*0.22f), 0.026f * s}, yaw, weak);
+        glDepthMask(GL_TRUE);glDisable(GL_BLEND);
+    }
+}
+
 
 void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& target, float time, const float color[4]) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
@@ -373,10 +405,10 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
 
 void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int tileIndex) {
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;
-    const float groundColor[4] = {Pass7Visual::Floor.r, Pass7Visual::Floor.g, Pass7Visual::Floor.b, 1.0f};
+    const float groundColor[4] = {Pass7Visual::RoomFloor.r, Pass7Visual::RoomFloor.g, Pass7Visual::RoomFloor.b, 1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
 
-    const float wallColor[4] = {Pass7Visual::Wall.r, Pass7Visual::Wall.g, Pass7Visual::Wall.b, 1.0f};
+    const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
     const float doorWidth=5.35f,doorHeight=3.95f,wallHeight=7.2f;
     const float sideWidth=(ROOM_WIDTH-doorWidth)*0.5f;
     const float sideX=doorWidth*0.5f+sideWidth*0.5f;
@@ -390,13 +422,14 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     }
     drawBox(viewProj,{-ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
-    const float obstacleColor[4]={0.43f,0.49f,0.53f,1.0f};
+    const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
     for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
 }
 
 void Renderer::drawHud(const GameState& state) {
     float identity[16]; ident(identity);
     float overlayAlpha=1.0f;
+    const bool cheapVisuals = state.localSettings.graphicsPreset <= 0;
     glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     const auto quad=[&](float x,float y,float w,float h,const float color[4],float angle=0.0f){
         const Vec3 center{-1.0f+(x+w*0.5f)*2.0f/static_cast<float>(width_),1.0f-(y+h*0.5f)*2.0f/static_cast<float>(height_),0.0f};
@@ -413,46 +446,46 @@ void Renderer::drawHud(const GameState& state) {
     const auto text=[&](const std::string& value,float x,float y,float scale,const float color[4]){float pen=x;for(char c:value){if(c==' '){pen+=6*scale;continue;}const auto rows=bitmapGlyph(c);for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const float px=pen+col*scale,py=y+row*scale;if(overlayAlpha<0.999f){const float outline[4]={0,0,0,color[3]};quad(px-1,py,scale,scale,outline);quad(px+1,py,scale,scale,outline);quad(px,py-1,scale,scale,outline);quad(px,py+1,scale,scale,outline);}quad(px,py,scale,scale,color);}pen+=6*scale;}};
     const auto floatingText=[&](const std::string& value,float x,float y,float scale,const float color[4]){const float pulse=clampf(state.cinematic.textInteraction,0.0f,1.0f),tracking=pulse*0.9f*std::min(scale,2.0f),wave=0.48f+pulse*0.78f;const float shadow[4]={0,0,0,0.72f*color[3]};float pen=x-tracking*std::max(0.0f,(static_cast<float>(value.size())-1.0f)*0.5f);for(std::size_t i=0;i<value.size();++i){const float offset=std::sin(state.time*4.2f+static_cast<float>(i)*0.68f)*wave;const std::string glyph(1,value[i]);text(glyph,pen+2.0f,y+offset+2.0f,scale,shadow);text(glyph,pen,y+offset,scale,color);pen+=6.0f*scale+tracking;}};
     const auto rainbow=[&](float hue){hue-=std::floor(hue);const float x=hue*6.0f,i=std::floor(x),f=x-i,q=1.0f-f;switch(static_cast<int>(i)%6){case 0:return Vec3{1,f,0};case 1:return Vec3{q,1,0};case 2:return Vec3{0,1,f};case 3:return Vec3{0,q,1};case 4:return Vec3{f,0,1};default:return Vec3{1,0,q};}};
-    const float panel[4]={0.005f,0.012f,0.016f,0.72f}, cyan[4]={0.50f,0.91f,1.0f,0.95f};
-    if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedMobileFps)));const float whiteFps[4]={0.72f,1.0f,0.90f,0.94f};text(fps,width_-fps.size()*7.2f-12,68,1.2f,whiteFps);}
+    const float panel[4]={0.005f,0.012f,0.016f,0.72f}, cyan[4]={Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.95f};
+    if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedMobileFps)));const float whiteFps[4]={Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b,0.94f};text(fps,width_-fps.size()*7.2f-12,68,1.2f,whiteFps);}
     if(state.cinematic.introActive){const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f,ss=std::max(2.0f,std::min(width_,height_)/240.0f);const float fading[4]={0.92f,0.97f,1,0.94f*alpha};const std::string status="READY",action="START";floatingText(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,fading);const float startScale=ss*0.8f;floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.60f+10,startScale,fading);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;}
     if(!state.started) {
         const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
-        const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;const float white[4]={0.92f,0.97f,1,0.94f*menuAlpha};const std::string status=state.dead?"AGAIN?":"READY";const float ss=std::max(2.0f,std::min(width_,height_)/240.0f);floatingText(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,white);const std::string action=state.dead?"TAP TO RESTART":"START";const float startScale=ss*0.8f;floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.60f+10,startScale,white);
+        const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;const float white[4]={0.92f,0.97f,1,0.94f*menuAlpha};const std::string action=state.dead?"TAP TO RESTART":"START";const float startScale=std::max(2.0f,std::min(width_,height_)/240.0f)*(state.dead?1.0f:0.8f);floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.46f,startScale,white);
         glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST); return;
     }
     const int goals=std::max(1,state.hud.requiredGoals); const float gs=22,gap=8,total=goals*gs+(goals-1)*gap,start=(width_-total)*0.5f;
-    for(int i=0;i<goals;++i){const float empty[4]={0.01f,0.02f,0.025f,0.90f}; const float filled[4]={0.18f,0.88f,1,0.95f}; quad(start+i*(gs+gap),18,gs,gs,cyan); quad(start+i*(gs+gap)+2,20,gs-4,gs-4,i<state.hud.filledGoals?filled:empty);}
+    for(int i=0;i<goals;++i){const float empty[4]={0.01f,0.02f,0.025f,0.90f}; const float filled[4]={Pass7Visual::AcidChartreuse.r,Pass7Visual::AcidChartreuse.g,Pass7Visual::AcidChartreuse.b,0.95f}; quad(start+i*(gs+gap),18,gs,gs,cyan); quad(start+i*(gs+gap)+2,20,gs-4,gs-4,i<state.hud.filledGoals?filled:empty);}
     quad(12,74,120,82,panel);
     const int filledSoulPixels=state.hud.storedSouls<=0?0:std::max(1,static_cast<int>(std::ceil(state.hud.storedSouls/30.0f*18.0f)));
     const Vec3 hudRight{std::cos(state.camera.yaw),0,-std::sin(state.camera.yaw)},hudForward{-std::sin(state.camera.yaw),0,-std::cos(state.camera.yaw)};
     const float lateral=state.player.vel.x*hudRight.x+state.player.vel.z*hudRight.z,forward=state.player.vel.x*hudForward.x+state.player.vel.z*hudForward.z;
     const float inertiaX=clampf(-lateral*1.35f,-7.0f,7.0f),inertiaY=clampf(forward*0.75f-state.player.jumpVel*0.12f,-5.0f,5.0f);
-    for(int i=0;i<filledSoulPixels;++i){const float angle=i/18.0f*DB_PI*2.0f,ring=0.38f+((i*7)%10)/26.0f,sx=34.0f*ring*std::cos(angle)+((i*13)%7-3),sy=14.0f*ring*std::sin(angle)+((i*17)%5-2),dx=((i*11)%9-4)*0.9f,dy=((i*19)%7-3)*0.8f,drift=0.5f+0.5f*std::sin(state.time*(1.35f+i%6*0.08f)-i*0.41f);const float full[4]={0.80f,1,1,0.92f};quad(67+sx+dx*drift+inertiaX,119+sy+dy*drift+inertiaY,6,6,full);}
-    const float white[4]={1,1,1,0.94f},soft[4]={0.78f,0.94f,1,0.82f},green[4]={0.72f,1,0.74f,0.94f};text("SOULS "+std::to_string(state.hud.storedSouls),20,80,1.2f,soft);text("ROOM: "+std::to_string(state.roomIndex),12,170,1.5f,white);text("GOALS: "+std::to_string(state.hud.filledGoals)+"/"+std::to_string(state.hud.requiredGoals),12,187,1.5f,white);text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?green:white);text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,green);
+    for(int i=0;i<filledSoulPixels;++i){const float angle=i/18.0f*DB_PI*2.0f,ring=0.38f+((i*7)%10)/26.0f,sx=34.0f*ring*std::cos(angle)+((i*13)%7-3),sy=14.0f*ring*std::sin(angle)+((i*17)%5-2),dx=((i*11)%9-4)*0.9f,dy=((i*19)%7-3)*0.8f,drift=0.5f+0.5f*std::sin(state.time*(1.35f+i%6*0.08f)-i*0.41f);const Vec3 soulHue=rainbow(static_cast<float>((i*5)%18)/18.0f+state.time*0.025f);const float full[4]={soulHue.x,soulHue.y,soulHue.z,0.88f};quad(67+sx+dx*drift+inertiaX,119+sy+dy*drift+inertiaY,6,6,full);}
+    const float white[4]={1,1,1,0.94f},soft[4]={0.78f,0.94f,1,0.82f},green[4]={Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b,0.94f};text("SOULS "+std::to_string(state.hud.storedSouls),20,80,1.2f,soft);text("ROOM: "+std::to_string(state.roomIndex),12,170,1.5f,white);text("GOALS: "+std::to_string(state.hud.filledGoals)+"/"+std::to_string(state.hud.requiredGoals),12,187,1.5f,white);text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?green:white);text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,green);
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,green);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));const float warm[4]={1.0f,0.72f,0.62f,0.94f};text(tax,12,320,1.05f,warm);}
     if(state.hud.buildLabel[0])text(state.hud.buildLabel.data(),12,336,1.0f,soft);
     overlayAlpha=state.hud.critMarkerOpacity;
-    {const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos),right=normalized(cross(forward,{0,1,0})),up=cross(right,forward);const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);constexpr char glyphs[]="01ABCDEFHIKMNPRSTXYZ+-/:";for(int i=0;i<TARGET_COUNT;++i){const TargetState& target=state.targets[i];if(!target.alive||target.slurpable)continue;const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0,1):-1.0f,attackBob=target.attackTimer>0?std::sin(attackT*DB_PI)*0.035f*(target.attackVariant>=2?1.0f:0.0f):0;const Vec3 world{target.pos.x,(PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius)*target.scale+attackBob,target.pos.z},delta=world-state.camera.pos;const float depth=dot(delta,forward);if(depth<=0.18f||depth>16.0f)continue;const float nx=dot(delta,right)/(depth*tanHalf*aspect),ny=dot(delta,up)/(depth*tanHalf);if(std::abs(nx)>1.04f||std::abs(ny)>1.04f)continue;const float armorMax=target.brute?4.0f:2.0f,damage=1.0f-clampf(target.armor/armorMax,0,1);const bool perfectReady=attackT>=0.22f&&attackT<=0.46f;const Vec3 rgb=rainbow(0.51f+damage*0.38f);const int cycle=(static_cast<int>(state.time*10.0f)+i*7+state.roomIndex*3)%static_cast<int>(sizeof(glyphs)-1);const float perspectiveScale=clampf(8.0f/depth,0.82f,1.55f),marker=(11.0f+damage*4.0f+(perfectReady?3.0f:0))*perspectiveScale,scale=(1.35f+damage*0.28f+(perfectReady?0.18f:0))*perspectiveScale,sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,alpha=0.72f+damage*0.20f+(perfectReady?0.08f:0),spin=state.time*0.9f+i*0.37f;const float core[4]={rgb.x,rgb.y,rgb.z,0.10f+damage*0.08f},line[4]={rgb.x,rgb.y,rgb.z,alpha},shadow[4]={0,0,0,alpha*0.85f};pixelRotatedQuad(sx,sy,marker,marker,DB_PI*0.25f+spin,core);pixelRotatedQuad(sx-marker,sy,marker*0.52f,2,spin*0.08f,line);pixelRotatedQuad(sx+marker,sy,marker*0.52f,2,spin*0.08f,line);pixelRotatedQuad(sx,sy-marker,2,marker*0.52f,spin*0.08f,line);pixelRotatedQuad(sx,sy+marker,2,marker*0.52f,spin*0.08f,line);const float color[4]={rgb.x,rgb.y,rgb.z,alpha};text(std::string(1,glyphs[cycle]),sx-2.5f*scale+1,sy-3.5f*scale+1,scale,shadow);text(std::string(1,glyphs[cycle]),sx-2.5f*scale,sy-3.5f*scale,scale,color);}}
+    if(!cheapVisuals){const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos),right=normalized(cross(forward,{0,1,0})),up=cross(right,forward);const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);constexpr char glyphs[]="01ABCDEFHIKMNPRSTXYZ+-/:";for(int i=0;i<TARGET_COUNT;++i){const TargetState& target=state.targets[i];if(!target.alive||target.slurpable)continue;const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0,1):-1.0f,attackBob=target.attackTimer>0?std::sin(attackT*DB_PI)*0.035f*(target.attackVariant>=2?1.0f:0.0f):0;const Vec3 world{target.pos.x,(PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius)*target.scale+attackBob,target.pos.z},delta=world-state.camera.pos;const float depth=dot(delta,forward);if(depth<=0.18f||depth>16.0f)continue;const float nx=dot(delta,right)/(depth*tanHalf*aspect),ny=dot(delta,up)/(depth*tanHalf);if(std::abs(nx)>1.04f||std::abs(ny)>1.04f)continue;const float armorMax=target.brute?4.0f:2.0f,damage=1.0f-clampf(target.armor/armorMax,0,1);const bool perfectReady=attackT>=0.22f&&attackT<=0.46f;const Vec3 rgb=rainbow(0.51f+damage*0.38f);const int cycle=(static_cast<int>(state.time*10.0f)+i*7+state.roomIndex*3)%static_cast<int>(sizeof(glyphs)-1);const float perspectiveScale=clampf(8.0f/depth,0.82f,1.55f),marker=(11.0f+damage*4.0f+(perfectReady?3.0f:0))*perspectiveScale,scale=(1.35f+damage*0.28f+(perfectReady?0.18f:0))*perspectiveScale,sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,alpha=0.72f+damage*0.20f+(perfectReady?0.08f:0),spin=state.time*0.9f+i*0.37f;const float core[4]={rgb.x,rgb.y,rgb.z,0.10f+damage*0.08f},line[4]={rgb.x,rgb.y,rgb.z,alpha},shadow[4]={0,0,0,alpha*0.85f};pixelRotatedQuad(sx,sy,marker,marker,DB_PI*0.25f+spin,core);pixelRotatedQuad(sx-marker,sy,marker*0.52f,2,spin*0.08f,line);pixelRotatedQuad(sx+marker,sy,marker*0.52f,2,spin*0.08f,line);pixelRotatedQuad(sx,sy-marker,2,marker*0.52f,spin*0.08f,line);pixelRotatedQuad(sx,sy+marker,2,marker*0.52f,spin*0.08f,line);const float color[4]={rgb.x,rgb.y,rgb.z,alpha};text(std::string(1,glyphs[cycle]),sx-2.5f*scale+1,sy-3.5f*scale+1,scale,shadow);text(std::string(1,glyphs[cycle]),sx-2.5f*scale,sy-3.5f*scale,scale,color);}}
     overlayAlpha=1.0f;
+    {const auto labelFor=[](int signal)->const char*{switch(signal){case 1:return "HELP";case 2:return "PING";case 3:return "GROUP";case 4:return "OK";default:return "";}};const auto colorFor=[](int signal)->VisualColor{switch(signal){case 1:return Pass7Visual::ElectricMagenta;case 2:return Pass7Visual::ElectricCyan;case 3:return Pass7Visual::AcidChartreuse;case 4:return Pass7Visual::WarmGold;default:return Pass7Visual::ElectricCyan;}};const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos),right=normalized(cross(forward,{0,1,0})),up=cross(right,forward);const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);const auto drawSignal=[&](const PlayerState& player){if(player.commSignal<1||player.commSignal>4||player.commSignalTimer<=0.0f)return;const Vec3 world=player.pos+Vec3{0,1.05f,0},delta=world-state.camera.pos;const float depth=dot(delta,forward);if(depth<=0.18f||depth>24.0f)return;const float nx=dot(delta,right)/(depth*tanHalf*aspect),ny=dot(delta,up)/(depth*tanHalf);if(std::abs(nx)>1.08f||std::abs(ny)>1.08f)return;const char* label=labelFor(player.commSignal);const VisualColor c=colorFor(player.commSignal);const float sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,fade=clampf(player.commSignalTimer/0.35f,0.0f,1.0f),scale=clampf(9.0f/depth,1.15f,2.15f),tw=std::strlen(label)*6.0f*scale,pw=tw+18.0f*scale,ph=13.0f*scale,pulse=0.5f+0.5f*std::sin(state.time*8.0f);const float panelCallout[4]={Pass7Visual::DeepPlum.r*0.12f,Pass7Visual::DeepPlum.g*0.12f,Pass7Visual::DeepPlum.b*0.12f,0.52f*fade},edgeCallout[4]={c.r,c.g,c.b,(0.58f+0.18f*pulse)*fade},labelCallout[4]={c.r,c.g,c.b,0.96f*fade};quad(sx-pw*0.5f,sy-ph*0.5f,pw,ph,panelCallout);quad(sx-pw*0.5f,sy-ph*0.5f,pw,1.4f*scale,edgeCallout);text(label,sx-tw*0.5f,sy-3.5f*scale,scale,labelCallout);};drawSignal(state.player);for(const auto& peer:state.multiplayer.peers)if(peer.active)drawSignal(peer.player);}
     if(state.hud.headshotPulse>0.001f){const float charge=clampf(state.hud.headshotKillCharge,0,1),alpha=state.hud.headshotPulse*(0.18f+charge*0.34f),edge=2.0f+state.hud.perfectPulse*2.0f+charge*2.0f;const Vec3 rgb=rainbow(0.51f+charge*0.40f+state.progression.run.accuracyStacks*0.012f);const float pulse[4]={rgb.x,rgb.y,rgb.z,alpha};quad(0,0,width_,edge,pulse);quad(0,height_-edge,width_,edge,pulse);quad(0,0,edge,height_,pulse);quad(width_-edge,0,edge,height_,pulse);}
     quad(12,236,148,30,panel); const float track[4]={0.025f,0.035f,0.04f,0.95f}; quad(21,250,132,6,track);
     const float battery[4]={state.hud.lowBattery?1.0f:0.92f,state.hud.lowBattery?0.18f:0.97f,state.hud.lowBattery?0.12f:1.0f,0.98f}; quad(21,250,132*clampf(state.hud.batteryFill,0,1),6,battery);
     text("BATTERY",20,240,1.1f,state.hud.lowBattery?battery:white);
     if(state.energy.comboHits>0&&state.time-state.energy.lastComboHitTime<=1.8f){char multiplier[16]{};std::snprintf(multiplier,sizeof(multiplier),"X%.2F",state.energy.comboMultiplier);text(multiplier,112,240,1.0f,green);}
     if(state.hud.flowerStacks>0 || state.hud.supplementalFill>0.001f){const float flower[4]={0.35f,1,0.68f,0.98f};quad(12,274,148,24,panel);quad(21,283,132,6,track);quad(21,283,132*clampf(state.hud.supplementalFill,0,1),6,flower);text("POWER X"+std::to_string(state.hud.flowerStacks),20,276,1.0f,flower);}
-    if(state.hud.energyTicker[0]&&state.time<state.hud.energyTickerUntil){const std::string ticker=state.hud.energyTicker.data();const float scale=1.35f,tw=ticker.size()*6*scale,pw=std::max(118.0f,tw+16.0f),px=(width_-pw)*0.5f;const float gain[4]={0.81f,1,0.91f,0.94f},cost[4]={1,0.69f,0.62f,0.94f};quad(px,72,pw,18,panel);text(ticker,(width_-tw)*0.5f,77,scale,state.hud.energyTickerType==1?cost:gain);}
+    if(state.hud.energyTicker[0]&&state.time<state.hud.energyTickerUntil){const std::string ticker=state.hud.energyTicker.data();const float scale=1.35f,tw=ticker.size()*6*scale,pw=std::max(118.0f,tw+16.0f),px=(width_-pw)*0.5f;const VisualColor tc=state.hud.energyTickerType==1?Pass7Visual::Copper:(state.hud.energyTickerType==0?Pass7Visual::SignalGreen:Pass7Visual::ElectricCyan);const float tickerColor[4]={tc.r,tc.g,tc.b,0.94f};quad(px,72,pw,18,panel);text(ticker,(width_-tw)*0.5f,77,scale,tickerColor);}
     if(state.player.grabbedByTarget>=0){const std::string hint="WIGGLE  LEFT  RIGHT";const float s=1.7f,warm[4]={1.0f,0.82f,0.68f,0.94f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.69f,s,warm);}
     if(state.player.downed){const std::string hint="SIGNAL DOWN  "+std::to_string(static_cast<int>(std::ceil(state.player.bleedoutTimer)));const float s=1.8f,cost[4]={1.0f,0.48f,0.42f,0.96f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.55f,s,cost);}
     if(state.player.inSecretRoom){const std::string hint=state.secretTv.broken?"NO SIGNAL":"SIGNAL "+std::to_string(state.secretTv.signal)+"   SHOOT TO DONATE";const float s=1.35f,tv[4]={0.72f,0.94f,0.96f,0.88f};text(hint,(width_-hint.size()*6*s)*0.5f,54,s,tv);}
-    if(!state.uiPaused){const float minSide=static_cast<float>(std::min(width_,height_)),r=std::max(44.0f,minSide*0.070f),moveR=minSide*0.18f;const float control[4]={0.50f,0.91f,1.0f,0.22f},label[4]={0.88f,0.98f,1.0f,0.82f};const auto circle=[&](float cx,float cy,float radius){const Vec3 c{-1+cx*2.0f/width_,1-cy*2.0f/height_,0};drawRoundedEllipsoid(identity,c,{radius*4.0f/width_,radius*4.0f/height_,0.01f},0,control);};const auto button=[&](float cx,float cy,float radius,const char* name){circle(cx,cy,radius);const float s=1.5f,w=std::strlen(name)*6*s;text(name,cx-w*0.5f,cy-5*s,s,label);};circle(minSide*0.18f,height_-minSide*0.20f,moveR);button(width_-r*1.40f,height_-r*3.70f,r,"J");button(width_-r*3.70f,height_-r*1.40f,r,"M");button(width_-r*3.70f,height_-r*3.70f,r,"S");button(width_-r*6.00f,height_-r*1.40f,r*0.82f,"C");button(width_-r*1.40f,height_-r*1.40f,r*1.12f,"V");}
     const float cx=width_*0.5f,cy=height_*0.5f,spread=state.hud.crosshairSpreadPixels,arm=14,thick=3,angle=state.hud.crosshairRotationDegrees*DB_PI/180.0f;
     const float reticle[4]={state.hud.shootJoinTimer>0?1.0f:0.498f,state.hud.shootJoinTimer>0?1.0f:0.906f,1,0.98f*clampf(state.hud.crosshairOpacity,0.0f,1.0f)};
     const auto armQuad=[&](float ox,float oy,float w,float h){const float c=std::cos(angle),s=std::sin(angle);pixelRotatedQuad(cx+ox*c-oy*s,cy+ox*s+oy*c,w,h,angle,reticle);};
     armQuad(0,-spread,thick,arm); armQuad(0,spread,thick,arm); armQuad(-spread,0,arm,thick); armQuad(spread,0,arm,thick);
     if(state.upgradeMenu.active){const float pw=std::min(680.0f,width_-24.0f),ph=300.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f,cellW=(pw-24)/3;const float glass[4]={0.01f,0.03f,0.04f,0.16f},edge[4]={0.62f,0.96f,1.0f,0.62f},button[4]={0.16f,0.86f,1.0f,0.13f};quad(px,py,pw,ph,glass);quad(px,py,pw,1,edge);quad(px,py+ph-1,pw,1,edge);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f,white);text("RUN",px+18,py+42,1.35f,green);const char* labels[3]={"SHOT","LUNGE","ATTACK"};for(int i=0;i<3;++i){const float cx=px+12+i*cellW+cellW*0.5f,scale=2.15f;quad(px+14+i*cellW,py+66,cellW-8,76,button);text(labels[i],cx-std::strlen(labels[i])*6*scale*0.5f,py+94,scale,white);}text("PERMANENT  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+158,1.2f,green);for(int i=0;i<3;++i){const float cx=px+12+i*cellW+cellW*0.5f,scale=2.05f;quad(px+14+i*cellW,py+184,cellW-8,66,button);text(labels[i],cx-std::strlen(labels[i])*6*scale*0.5f,py+207,scale,white);const std::string level=std::to_string(state.progression.permanent.levels[i])+"/5";text(level,px+12+(i+1)*cellW-level.size()*6*0.9f-10,py+256,0.9f,soft);}text("COST 1 TOKEN",px+18,py+278,1.05f,soft);}
-    else if(state.uiPaused){const float pw=std::min(360.0f,width_-24.0f),ph=220.0f,px=width_-pw-12.0f,py=48.0f;const float glass[4]={0.01f,0.03f,0.04f,0.16f},button[4]={0.16f,0.86f,1.0f,0.16f};quad(px,py,pw,ph,glass);quad(px,py,pw,1,cyan);text("PAUSED",px+12,py+12,2.0f,white);quad(px+12,py+38,pw-24,58,button);const float rs=2.35f;text("RESUME",px+pw*0.5f-6*6*rs*0.5f,py+57,rs,white);text("MOVE  LOOK  VACUUM",px+12,py+122,1.2f,white);text("JUMP  ATTACK  SHOOT",px+12,py+142,1.2f,white);text("CAMERA",px+12,py+162,1.2f,white);}
+    else if(state.uiPaused){const float pw=std::min(360.0f,width_-24.0f),ph=116.0f,px=width_-pw-12.0f,py=48.0f;const float glass[4]={0.01f,0.03f,0.04f,0.16f},button[4]={0.16f,0.86f,1.0f,0.16f};quad(px,py,pw,ph,glass);quad(px,py,pw,1,cyan);text("PAUSED",px+12,py+12,2.0f,white);quad(px+12,py+38,pw-24,58,button);const float rs=2.35f;text("RESUME",px+pw*0.5f-6*6*rs*0.5f,py+57,rs,white);}
     glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST);
 }
 
@@ -477,13 +510,13 @@ void Renderer::drawSoulFlesh(const float* viewProj,const TargetState& target,con
     for(int y=0;y<2;++y)for(int z=0;z<2;++z){quad(index(0,y,z),index(0,y+1,z),index(0,y+1,z+1),index(0,y,z+1));quad(index(2,y,z),index(2,y,z+1),index(2,y+1,z+1),index(2,y+1,z));}
     for(int x=0;x<2;++x)for(int z=0;z<2;++z){quad(index(x,0,z),index(x,0,z+1),index(x+1,0,z+1),index(x+1,0,z));quad(index(x,2,z),index(x+1,2,z),index(x+1,2,z+1),index(x,2,z+1));}
     for(int x=0;x<2;++x)for(int y=0;y<2;++y){quad(index(x,y,0),index(x+1,y,0),index(x+1,y+1,0),index(x,y+1,0));quad(index(x,y,2),index(x,y+1,2),index(x+1,y+1,2),index(x+1,y,2));}
-    float identity[16];ident(identity);const float flesh[4]={224.0f/255.0f,160.0f/255.0f,143.0f/255.0f,1.0f};
+    float identity[16];ident(identity);const float flesh[4]={Pass7Visual::SoulFlesh.r,Pass7Visual::SoulFlesh.g,Pass7Visual::SoulFlesh.b,1.0f};
     glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glBindBuffer(GL_ARRAY_BUFFER,soulSurfaceVbo_);glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(out*sizeof(float)),vertices.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,flesh);glDrawArrays(GL_TRIANGLES,0,out/3);
-    if(target.tetherVisible){const Vec3 delta=target.tetherDestination-target.tetherAnchor;const float len=length(delta);if(len>0.001f){const float yaw=std::atan2(delta.x,delta.z),pitch=-std::asin(clampf(delta.y/len,-1.0f,1.0f));const Quat orientation=quaternionFromEulerXYZ(pitch,yaw,0);const float tether[4]={1.0f,183.0f/255.0f,166.0f/255.0f,0.34f};glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);drawBox(viewProj,target.tetherAnchor+delta*0.5f,{0.13f*target.tetherWidth,0.13f*target.tetherWidth,std::min(len,4.5f)},orientation,tether);glDepthMask(GL_TRUE);glDisable(GL_BLEND);}}
+    if(target.tetherVisible){const Vec3 delta=target.tetherDestination-target.tetherAnchor;const float len=length(delta);if(len>0.001f){const float yaw=std::atan2(delta.x,delta.z),pitch=-std::asin(clampf(delta.y/len,-1.0f,1.0f));const Quat orientation=quaternionFromEulerXYZ(pitch,yaw,0);const float tether[4]={Pass7Visual::Tether.r,Pass7Visual::Tether.g,Pass7Visual::Tether.b,0.34f};glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);drawBox(viewProj,target.tetherAnchor+delta*0.5f,{0.13f*target.tetherWidth,0.13f*target.tetherWidth,std::min(len,4.5f)},orientation,tether);glDepthMask(GL_TRUE);glDisable(GL_BLEND);}}
 }
 
 void Renderer::drawDoorDataMosh(const GameState& state){
-    if(!datamoshProgram_||!datamoshTexture_)return;glBindTexture(GL_TEXTURE_2D,datamoshTexture_);
+    if(!state.localSettings.portalWindow||!datamoshProgram_||!datamoshTexture_)return;glBindTexture(GL_TEXTURE_2D,datamoshTexture_);
     if(!state.doorTransition.active||state.doorTransition.progress<=0.018f){glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGB,0,0,width_,height_,0);datamoshFrameReady_=true;return;}if(!datamoshFrameReady_)return;
     constexpr int strips=24,passes=3,floatsPerVertex=4,verticesPerQuad=6;std::array<float,strips*passes*verticesPerQuad*floatsPerVertex> data{};int out=0;const float strength=clampf(state.doorTransition.progress,0,1);
     const auto vertex=[&](float x,float y,float u,float v){data[out++]=x;data[out++]=y;data[out++]=u;data[out++]=v;};
@@ -505,19 +538,20 @@ void Renderer::draw(const GameState& state) {
     perspective(proj, state.camera.verticalFovDegrees * DB_PI / 180.0f, static_cast<float>(width_) / static_cast<float>(height_), Pass7Visual::CameraNearPlane, Pass7Visual::CameraFarPlane);
     lookAt(view, state.camera.pos, state.camera.lookTarget, {0.0f, 1.0f, 0.0f});
     multiply(viewProj, proj, view);
-    const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;return lengthSq(delta)<55.0f*55.0f&&dot(delta,state.camera.forward)>-8.0f;};
+    const bool cheapVisuals = state.localSettings.graphicsPreset <= 0;
+    const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;const float maxDist=cheapVisuals?38.0f:55.0f;return lengthSq(delta)<maxDist*maxDist&&dot(delta,state.camera.forward)>-8.0f;};
 
     for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(viewProj,state,tile);
 
     if(state.secretTv.available){
-        const float membrane[4]={0.45f,0.86f,0.91f,state.secretTv.broken?0.12f:0.25f};
+        const float membrane[4]={Pass7Visual::TvMembrane.r,Pass7Visual::TvMembrane.g,Pass7Visual::TvMembrane.b,state.secretTv.broken?0.12f:0.25f};
         const float breathe=0.04f+0.035f*std::sin(state.time*2.1f);
         glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
         drawBox(viewProj,{14.73f,3.38f,4.80f},{0.07f,1.38f+breathe,1.34f+breathe},0,membrane);
         glDepthMask(GL_TRUE);glDisable(GL_BLEND);
     }
     if(state.player.inSecretRoom){
-        const float floor[4]={0.055f,0.065f,0.068f,1},wall[4]={0.075f,0.082f,0.085f,1},black[4]={0.018f,0.020f,0.021f,1},cable[4]={0.025f,0.028f,0.03f,1};
+        const float floor[4]={Pass7Visual::SecretFloor.r,Pass7Visual::SecretFloor.g,Pass7Visual::SecretFloor.b,1},wall[4]={Pass7Visual::SecretWall.r,Pass7Visual::SecretWall.g,Pass7Visual::SecretWall.b,1},black[4]={Pass7Visual::SecretBlack.r,Pass7Visual::SecretBlack.g,Pass7Visual::SecretBlack.b,1},cable[4]={Pass7Visual::SecretCable.r,Pass7Visual::SecretCable.g,Pass7Visual::SecretCable.b,1};
         drawBox(viewProj,{40.4f,-0.04f,0},{7.4f,0.08f,6.4f},0,floor);
         drawBox(viewProj,{36.7f,2.4f,0},{0.12f,4.8f,6.4f},0,wall);
         drawBox(viewProj,{40.4f,2.4f,-3.2f},{7.4f,4.8f,0.12f},0,wall);drawBox(viewProj,{40.4f,2.4f,3.2f},{7.4f,4.8f,0.12f},0,wall);
@@ -550,31 +584,31 @@ void Renderer::draw(const GameState& state) {
     if (state.phoneVisual.visible) {
         const Vec3 phonePos = state.phoneTransform.position;
         const Quat phoneOrientation = state.phoneTransform.orientation;
-        if(phoneModel_.valid()) drawStaticModel(viewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,phonePos,state.phoneVisual.bodyScale,phoneOrientation);
+        if(!cheapVisuals&&phoneModel_.valid()) drawStaticModel(viewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,phonePos,state.phoneVisual.bodyScale,phoneOrientation);
         else drawBox(viewProj, phonePos, {PHONE_BODY_WIDTH * state.phoneVisual.bodyScale.x, PHONE_BODY_HEIGHT * state.phoneVisual.bodyScale.y, PHONE_BODY_DEPTH}, phoneOrientation, phoneBody);
         drawBox(viewProj, state.phoneTransform.screenCenter, {PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x, PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y, PHONE_SCREEN_DEPTH}, phoneOrientation, phoneScreen);
     }
-    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){const float remoteBody[4]={0.32f,0.86f,1.0f,1.0f},remoteScreen[4]={0.05f,0.55f,0.78f,1.0f};if(phoneModel_.valid())drawStaticModel(viewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(viewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,remoteBody);drawBox(viewProj,peer.phoneTransform.screenCenter,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},peer.phoneTransform.orientation,remoteScreen);}
+    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){const float remoteBody[4]={0.32f,0.86f,1.0f,1.0f},remoteScreen[4]={0.05f,0.55f,0.78f,1.0f};if(!cheapVisuals&&phoneModel_.valid())drawStaticModel(viewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(viewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,remoteBody);drawBox(viewProj,peer.phoneTransform.screenCenter,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},peer.phoneTransform.orientation,remoteScreen);}
 
     const MeleeVisualState& melee=state.meleeVisual;
     if(melee.visualTimer>0.0f && !melee.locomotionLunge){
         const float t=1.0f-clampf(melee.visualTimer/std::max(0.001f,melee.visualDuration),0.0f,1.0f);
         const float hitBoost=melee.visualHit?1.25f:0.72f;
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-        const float cyan[4]={0.56f,0.97f,1.0f,(1.0f-t)*0.72f};
+        const float cyan[4]={Pass7Visual::ElectricMagenta.r,Pass7Visual::ElectricMagenta.g,Pass7Visual::ElectricMagenta.b,(1.0f-t)*0.66f};
         const float slashScale=(0.75f+t*0.72f)*hitBoost;
         const Quat slashQ=quatAxisAngle({0,1,0},state.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)*quatAxisAngle({0,0,1},-DB_PI*0.28f+t*DB_PI*1.15f);
         drawFxStrip(viewProj,melee.origin+melee.direction*(0.66f+0.22f*t),{slashScale,slashScale,1},slashQ,cyan,FX_ARC.data(),FX_STRIP_VERTICES);
         const Vec3 delta=melee.impact-melee.origin; const float len=std::max(0.3f,length(delta));
         const float yaw=std::atan2(delta.x,delta.z); const float pitch=-std::asin(clampf(delta.y/std::max(len,0.001f),-1.0f,1.0f));
-        const Quat lineQ=quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},pitch); const float streak[4]={0.33f,0.84f,1.0f,(1.0f-t)*0.42f};
+        const Quat lineQ=quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},pitch); const float streak[4]={Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,(1.0f-t)*0.44f};
         const float strike=std::sin(t*DB_PI); drawFxStrip(viewProj,melee.origin+delta*0.46f,{1+strike*1.2f,1+strike*1.2f,len*(0.70f+strike*0.18f)},lineQ,streak,FX_STREAK.data(),FX_STRIP_VERTICES);
-        const float white[4]={1,1,1,melee.visualHit?(1.0f-t)*0.9f:(1.0f-t)*0.26f};
+        const float white[4]={Pass7Visual::AcidChartreuse.r,Pass7Visual::AcidChartreuse.g,Pass7Visual::AcidChartreuse.b,melee.visualHit?(1.0f-t)*0.82f:(1.0f-t)*0.24f};
         const float ringScale=(0.45f+t*1.45f)*hitBoost; drawFxStrip(viewProj,melee.impact,{ringScale,ringScale,1},{},white,FX_RING.data(),FX_STRIP_VERTICES);
         glDisable(GL_BLEND);
     }
 
-    const float targetColor[4] = {0.14f, 1.0f, 0.32f, 1.0f};
+    const float targetColor[4] = {Pass7Visual::NormalEnemy.r, Pass7Visual::NormalEnemy.g, Pass7Visual::NormalEnemy.b, 1.0f};
     const float targetTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for (auto target : state.targets) {
         if (!target.alive) continue;
@@ -584,12 +618,14 @@ void Renderer::draw(const GameState& state) {
         const float mirrorShift=target.pos.z-originalZ;
         target.tetherAnchor.z+=mirrorShift;target.tetherDestination.z+=mirrorShift;target.latchPoint.z+=mirrorShift;
         if (!target.slurpable) {
-            if(humanModel_.valid())drawHumanModel(viewProj,target,state.time);else drawProceduralHuman(viewProj, target, state.time, targetColor);
+            if(cheapVisuals)drawCheapHuman(viewProj,target,targetColor);
+            else if(humanModel_.valid())drawHumanModel(viewProj,target,state.time);
+            else drawProceduralHuman(viewProj, target, state.time, targetColor);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             if (!target.soulVisual.visible) continue;
             const auto& sv=target.soulVisual; const Vec3 soulCenter=target.pos+Vec3{0.0f,0.57f+sv.verticalOffset,0.0f}; const float cube=0.72f*0.78f*target.scale*sv.morphScale;
-            drawSoulFlesh(viewProj,target,soulCenter);
+            if(!cheapVisuals)drawSoulFlesh(viewProj,target,soulCenter);
             const float soulColor[4] = {sv.color.r, sv.color.g, sv.color.b, 0.68f};
             glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
             drawBox(viewProj, soulCenter, {cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z}, sv.rotationY, soulColor);
@@ -603,7 +639,8 @@ void Renderer::draw(const GameState& state) {
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        if(flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
+        if(!cheapVisuals&&flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
+        else if(cheapVisuals)drawBox(viewProj,center,{0.36f,0.18f,0.36f},flower.rotationY,flowerColor);
         else {drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}}
         }
     }
@@ -612,14 +649,14 @@ void Renderer::draw(const GameState& state) {
     for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         const Vec3 capturePos=capture.pos+Vec3{0,0,captureTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        const float frameColor[4]={0.36f,0.42f,0.46f,1.0f};
+        const float frameColor[4]={Pass7Visual::MetallicTeal.r*0.74f,Pass7Visual::MetallicTeal.g*0.74f,Pass7Visual::MetallicTeal.b*0.74f,1.0f};
         const float holeColor[4]={0.02f,0.03f,0.04f,1.0f};
         drawBox(viewProj,capturePos+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0.0f,frameColor);
         drawBox(viewProj,capturePos,{0.52f,0.52f,0.08f},0.0f,holeColor);
         if(capture.filled){const float soul[4]={Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,1.0f}; drawBox(viewProj,capturePos+Vec3{0,0,0.12f},{0.36f,0.36f,0.36f},state.time*2.0f,soul);}
     }
 
-    const float bulletColor[4] = {1.0f, 0.92f, 0.45f, 1.0f};
+    const float bulletColor[4] = {Pass7Visual::SoulBase.r, Pass7Visual::SoulBase.g, Pass7Visual::SoulBase.b, 0.68f};
     for (const auto& bullet : state.bullets) {
         if (!bullet.alive) continue;
         const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);
@@ -633,6 +670,6 @@ void Renderer::draw(const GameState& state) {
         const float* particleColor=particle.kind==1?shellColor:flameColor;
         drawBox(viewProj,particle.pos,{size,size,size},particle.life*4.0f,particleColor);
     }
-    drawDoorDataMosh(state);
+    if(state.localSettings.portalWindow)drawDoorDataMosh(state);
     drawHud(state);
 }

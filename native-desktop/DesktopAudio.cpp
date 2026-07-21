@@ -28,9 +28,13 @@ struct DesktopAudio::Impl {
     std::array<Voice,16> voices{};
     Voice slurp;
     Voice music;
+    Voice menuMusic;
     Voice tvRoomPad;
     Voice gameOver;
     bool musicActive=false;
+    bool menuMusicActive=false;
+    float menuCuePulse=0.0f;
+    float menuCueBend=0.0f;
     float tvRoomMix=0.0f;
     float rewardDuck=0.0f;
     bool deadPrevious=false;
@@ -81,12 +85,16 @@ void DesktopAudio::play(const AudioEventState& event) {
     startVoice(*impl_,voice,root_/filename,event.volume*sfxLevel_,false);
 }
 
-void DesktopAudio::playMenuCue(bool confirm){if(!impl_||!impl_->initialized||sfxLevel_<=0)return;constexpr float ratios[]={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};const unsigned int variation=impl_->uiVariation++;for(auto& voice:impl_->uiVoices)if(voice.initialized)ma_sound_stop(&voice.sound);auto& voice=impl_->uiVoices[confirm?1:0];if(!voice.initialized)return;ma_sound_seek_to_pcm_frame(&voice.sound,0);ma_sound_set_pitch(&voice.sound,ratios[(variation+(confirm?2u:0u))%7u]);ma_sound_set_pan(&voice.sound,((static_cast<int>(variation%5u)-2)*0.018f));ma_sound_set_volume(&voice.sound,sfxLevel_*(confirm?0.76f:0.54f)*(0.96f+static_cast<float>(variation%3u)*0.018f));ma_sound_start(&voice.sound);}
+void DesktopAudio::playMenuCue(bool confirm){if(!impl_||!impl_->initialized||sfxLevel_<=0)return;constexpr float ratios[]={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};const unsigned int variation=impl_->uiVariation++;impl_->menuCuePulse=std::max(impl_->menuCuePulse,confirm?0.34f:0.22f);impl_->menuCueBend=confirm?0.010f:-0.006f;for(auto& voice:impl_->uiVoices)if(voice.initialized)ma_sound_stop(&voice.sound);auto& voice=impl_->uiVoices[confirm?1:0];if(!voice.initialized)return;ma_sound_seek_to_pcm_frame(&voice.sound,0);ma_sound_set_pitch(&voice.sound,ratios[(variation+(confirm?2u:0u))%7u]);ma_sound_set_pan(&voice.sound,((static_cast<int>(variation%5u)-2)*0.018f));ma_sound_set_volume(&voice.sound,sfxLevel_*(confirm?0.76f:0.54f)*(0.96f+static_cast<float>(variation%3u)*0.018f));ma_sound_start(&voice.sound);}
 
 void DesktopAudio::update(const GameState& state) {
     sfxLevel_=state.localSettings.sfxMuted?0.0f:clampf(state.localSettings.sfxVolume,0.0f,1.0f);
     const float musicLevel=state.localSettings.musicMuted?0.0f:clampf(state.localSettings.musicVolume,0.0f,1.0f);
     if(impl_&&impl_->initialized&&!root_.empty()){
+        const bool shouldPlayMenuMusic=!state.started&&!state.dead;
+        if(shouldPlayMenuMusic&&!impl_->menuMusicActive){startVoice(*impl_,impl_->menuMusic,root_/"menu_music.mp3",0.0f,true);impl_->menuMusicActive=true;}
+        else if(!shouldPlayMenuMusic&&impl_->menuMusicActive){stopVoice(impl_->menuMusic);impl_->menuMusicActive=false;impl_->menuCuePulse=0.0f;impl_->menuCueBend=0.0f;}
+        if(impl_->menuMusicActive&&impl_->menuMusic.initialized){impl_->menuCuePulse=std::max(0.0f,impl_->menuCuePulse-0.018f);impl_->menuCueBend*=0.92f;const float pulse=impl_->menuCuePulse,breath=0.5f+0.5f*std::sin(state.time*0.42f);ma_sound_set_volume(&impl_->menuMusic.sound,(0.34f+breath*0.045f+pulse*0.075f)*musicLevel);ma_sound_set_pitch(&impl_->menuMusic.sound,1.0f+std::sin(state.time*0.17f)*0.0025f+impl_->menuCueBend+pulse*0.0035f);}
         const bool shouldPlayMusic=state.started&&!state.dead;
         if(shouldPlayMusic&&!impl_->musicActive){stopVoice(impl_->gameOver);startVoice(*impl_,impl_->music,root_/"game_music.mp3",0.52f,true);startVoice(*impl_,impl_->tvRoomPad,root_/"tv_room_pad.mp3",0.0f,true);if(impl_->menuFilterInitialized){if(impl_->music.initialized)ma_node_attach_output_bus(&impl_->music.sound,0,&impl_->menuFilter,0);if(impl_->tvRoomPad.initialized)ma_node_attach_output_bus(&impl_->tvRoomPad.sound,0,&impl_->menuFilter,0);}impl_->musicActive=true;}
         else if(!shouldPlayMusic&&impl_->musicActive){stopVoice(impl_->music);stopVoice(impl_->tvRoomPad);impl_->musicActive=false;impl_->tvRoomMix=0.0f;}
@@ -105,7 +113,7 @@ void DesktopAudio::update(const GameState& state) {
 void DesktopAudio::stopAll() {
     if(!impl_)return;
     for(auto& voice:impl_->voices)stopVoice(voice);
-    stopVoice(impl_->slurp);stopVoice(impl_->music);stopVoice(impl_->tvRoomPad);stopVoice(impl_->gameOver);
+    stopVoice(impl_->slurp);stopVoice(impl_->music);stopVoice(impl_->menuMusic);stopVoice(impl_->tvRoomPad);stopVoice(impl_->gameOver);
     for(auto& voice:impl_->uiVoices)stopVoice(voice);
-    impl_->musicActive=false;impl_->tvRoomMix=0.0f;slurpPlaying_=false;
+    impl_->musicActive=false;impl_->menuMusicActive=false;impl_->menuCuePulse=0.0f;impl_->menuCueBend=0.0f;impl_->tvRoomMix=0.0f;slurpPlaying_=false;
 }

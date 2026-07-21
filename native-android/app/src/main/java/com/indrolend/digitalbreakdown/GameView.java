@@ -12,16 +12,22 @@ import android.view.MotionEvent;
 
 public final class GameView extends GLSurfaceView implements Choreographer.FrameCallback {
     private static final long FRAME_INTERVAL_NANOS = 1_000_000_000L / 60L;
-    private static final long ACTION_HOLD_MILLIS = 180L;
+    private static final long ACTION_HOLD_MILLIS = 90L;
     private static final float ACTION_LOOK_SCALE = 0.24f;
     private static final float CONTROLLER_LOOK_DELTA_PER_FRAME = 12.0f;
     private float touchLookMultiplier = 1.0f;
     private float controllerLookMultiplier = 1.0f;
-    private static final float CONTROLLER_DEAD_ZONE = 0.14f;
+    private static final float TOUCH_MOVE_DEAD_ZONE = 0.10f;
+    private static final float CONTROLLER_MOVE_DEAD_ZONE = 0.12f;
+    private static final float CONTROLLER_LOOK_DEAD_ZONE = 0.10f;
+    private static final float TRIGGER_PRESS_THRESHOLD = 0.28f;
+    private final MainActivity activity;
 
     private final NativeRenderer renderer;
     private int viewWidth = 1;
     private int viewHeight = 1;
+    private int surfaceBufferWidth = 0;
+    private int surfaceBufferHeight = 0;
 
     private int movePointerId = -1;
     private int actionPointerId = -1;
@@ -44,12 +50,10 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     private float controllerLookY = 0.0f;
     private boolean controllerTriggerVacuumHeld = false;
     private boolean controllerBumperVacuumHeld = false;
-    private boolean controllerTriggerSprintHeld = false;
-    private boolean controllerBumperSprintHeld = false;
-    private boolean controllerDpadLeft = false;
-    private boolean controllerDpadRight = false;
-    private boolean controllerDpadUp = false;
-    private boolean controllerDpadDown = false;
+    private boolean controllerLeftTriggerDown = false;
+    private boolean controllerStickSprintHeld = false;
+    private int controllerHatX = 0;
+    private int controllerHatY = 0;
     private boolean controllerJumpPressed = false;
     private boolean controllerMeleePressed = false;
     private boolean controllerShootPressed = false;
@@ -57,9 +61,11 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
 
     private boolean frameLoopRunning = false;
     private long nextRenderedFrameNanos = 0L;
+    private long lastImmediateRenderMillis = 0L;
 
     public GameView(Context context) {
         super(context);
+        activity = context instanceof MainActivity ? (MainActivity)context : null;
         NativeBridge.initializeAudio(context);
         NativeBridge.initializeProgression(context);
         NativeBridge.initializeModels(context);
@@ -70,7 +76,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
 
         renderer = new NativeRenderer();
         setRenderer(renderer);
-        setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+        setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
     }
 
     @Override
@@ -78,6 +84,24 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         viewWidth = Math.max(1, width);
         viewHeight = Math.max(1, height);
+        configureRenderBuffer();
+    }
+
+    private void configureRenderBuffer() {
+        final int maxLong = 960;
+        final int maxShort = 540;
+        final boolean landscape = viewWidth >= viewHeight;
+        final int longSide = Math.max(viewWidth, viewHeight);
+        final int shortSide = Math.min(viewWidth, viewHeight);
+        float scale = Math.min(1.0f, Math.min((float)maxLong / Math.max(1, longSide), (float)maxShort / Math.max(1, shortSide)));
+        int bufferW = Math.max(1, Math.round(viewWidth * scale));
+        int bufferH = Math.max(1, Math.round(viewHeight * scale));
+        if (landscape && bufferW < bufferH) { final int tmp = bufferW; bufferW = bufferH; bufferH = tmp; }
+        if (bufferW != surfaceBufferWidth || bufferH != surfaceBufferHeight) {
+            surfaceBufferWidth = bufferW;
+            surfaceBufferHeight = bufferH;
+            getHolder().setFixedSize(bufferW, bufferH);
+        }
     }
 
     void resumeGameLoop() {
@@ -126,6 +150,14 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final float x = event.getX(actionIndex);
         final float y = event.getY(actionIndex);
 
+        if (!NativeBridge.isStarted()) {
+            clearTouchState();
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                restartRun();
+            }
+            return true;
+        }
+
         if (NativeBridge.isGrabbed()) {
             clearTouchState();
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
@@ -135,7 +167,17 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             return true;
         }
 
-        if (NativeBridge.getMenuMode() == 1) {
+        final int menuMode = NativeBridge.getMenuMode();
+        if (menuMode == 2) {
+            clearTouchState();
+            if (action == MotionEvent.ACTION_DOWN) {
+                if (activity != null) activity.resumeFromPauseMenu();
+                else NativeBridge.setPaused(false);
+            }
+            return true;
+        }
+
+        if (menuMode == 1) {
             clearTouchState();
             if (action == MotionEvent.ACTION_DOWN && SystemClock.uptimeMillis() >= menuInputBlockedUntil) {
                 final float panelWidth = Math.min(680.0f, viewWidth - 24.0f);
@@ -154,7 +196,14 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         float lookDx = 0.0f;
 
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-            if (inJumpButton(x, y)) {
+            final int commSignal = commSignalAt(x, y);
+            if (inOptionsButton(x, y)) {
+                clearTouchState();
+                showPauseMenu();
+                return true;
+            } else if (commSignal > 0) {
+                sendCommSignal(commSignal);
+            } else if (inJumpButton(x, y)) {
                 jumpPressed = true;
             } else if (inShootButton(x, y)) {
                 shootPressed = true;
@@ -215,14 +264,14 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             clearTouchState();
         }
 
-        sendControls(lookDx, 0.0f, jumpPressed, meleePressed, shootPressed, cameraPressed);
+        flushControlsNow(lookDx, 0.0f, jumpPressed, meleePressed, shootPressed, cameraPressed);
         return true;
     }
 
     private final Runnable actionHoldRunnable = () -> {
         if (actionPointerId >= 0 && !vacuumHeld) {
             vacuumHeld = true;
-            sendControls(0.0f, 0.0f, false, false, false, false);
+            flushControlsNow(0.0f, 0.0f, false, false, false, false);
         }
     };
 
@@ -230,23 +279,15 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final float radius = joystickRadius();
         float dx = (x - joystickCenterX()) / radius;
         float dz = (joystickCenterY() - y) / radius;
-        final float length = (float)Math.sqrt(dx * dx + dz * dz);
-        if (length > 1.0f) {
-            dx /= length;
-            dz /= length;
-        }
-        if (length < 0.10f) {
-            dx = 0.0f;
-            dz = 0.0f;
-        }
-        moveX = dx;
-        moveZ = dz;
-        sprintHeld = length > 0.86f;
+        final float[] stick = radialStick(dx, dz, TOUCH_MOVE_DEAD_ZONE, false);
+        moveX = stick[0];
+        moveZ = stick[1];
+        sprintHeld = stick[2] > 0.86f;
     }
 
     private void sendControls(float lookDx, float lookDy, boolean jumpPressed, boolean meleePressed, boolean shootPressed, boolean cameraPressed) {
-        float combinedMoveX = moveX + controllerMoveX + (controllerDpadRight ? 1.0f : 0.0f) - (controllerDpadLeft ? 1.0f : 0.0f);
-        float combinedMoveZ = moveZ + controllerMoveZ + (controllerDpadUp ? 1.0f : 0.0f) - (controllerDpadDown ? 1.0f : 0.0f);
+        float combinedMoveX = moveX + controllerMoveX;
+        float combinedMoveZ = moveZ + controllerMoveZ;
         final float length = (float)Math.sqrt(combinedMoveX * combinedMoveX + combinedMoveZ * combinedMoveZ);
         if (length > 1.0f) { combinedMoveX /= length; combinedMoveZ /= length; }
         final boolean nextJump = jumpPressed || controllerJumpPressed;
@@ -254,18 +295,37 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         final boolean nextShoot = shootPressed || controllerShootPressed;
         final boolean nextCamera = cameraPressed || controllerCameraPressed;
         controllerJumpPressed = controllerMeleePressed = controllerShootPressed = controllerCameraPressed = false;
-        NativeBridge.onTouchControls(
-            combinedMoveX,
-            combinedMoveZ,
-            lookDx,
-            lookDy,
-            vacuumHeld || controllerTriggerVacuumHeld || controllerBumperVacuumHeld,
-            sprintHeld || controllerTriggerSprintHeld || controllerBumperSprintHeld,
+        final float nativeMoveX = combinedMoveX;
+        final float nativeMoveZ = combinedMoveZ;
+        final float nativeLookDx = lookDx;
+        final float nativeLookDy = lookDy;
+        final boolean nativeVacuum = vacuumHeld || controllerTriggerVacuumHeld || controllerBumperVacuumHeld;
+        final boolean nativeSprint = sprintHeld || controllerStickSprintHeld;
+        queueEvent(() -> NativeBridge.onTouchControls(
+            nativeMoveX,
+            nativeMoveZ,
+            nativeLookDx,
+            nativeLookDy,
+            nativeVacuum,
+            nativeSprint,
             nextJump,
             nextMelee,
             nextShoot,
             nextCamera
-        );
+        ));
+    }
+
+    private void flushControlsNow(float lookDx, float lookDy, boolean jumpPressed, boolean meleePressed, boolean shootPressed, boolean cameraPressed) {
+        sendControls(lookDx, lookDy, jumpPressed, meleePressed, shootPressed, cameraPressed);
+        requestLowLatencyFrame();
+    }
+
+    private void requestLowLatencyFrame() {
+        if (!frameLoopRunning) return;
+        final long now = SystemClock.uptimeMillis();
+        if (now == lastImmediateRenderMillis) return;
+        lastImmediateRenderMillis = now;
+        requestRender();
     }
 
     private void clearTouchState() {
@@ -276,7 +336,7 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         moveZ = 0.0f;
         sprintHeld = false;
         vacuumHeld = false;
-        sendControls(0.0f, 0.0f, false, false, false, false);
+        flushControlsNow(0.0f, 0.0f, false, false, false, false);
     }
 
     void setLookSensitivity(float touch, float controller) {
@@ -291,12 +351,10 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
         controllerLookY = 0.0f;
         controllerTriggerVacuumHeld = false;
         controllerBumperVacuumHeld = false;
-        controllerTriggerSprintHeld = false;
-        controllerBumperSprintHeld = false;
-        controllerDpadLeft = false;
-        controllerDpadRight = false;
-        controllerDpadUp = false;
-        controllerDpadDown = false;
+        controllerLeftTriggerDown = false;
+        controllerStickSprintHeld = false;
+        controllerHatX = 0;
+        controllerHatY = 0;
         controllerJumpPressed = false;
         controllerMeleePressed = false;
         controllerShootPressed = false;
@@ -306,12 +364,35 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         if (event.getAction() != MotionEvent.ACTION_MOVE || !isController(event)) return super.onGenericMotionEvent(event);
-        controllerMoveX = axis(event, MotionEvent.AXIS_X, MotionEvent.AXIS_HAT_X);
-        controllerMoveZ = axis(event, MotionEvent.AXIS_Y, MotionEvent.AXIS_HAT_Y);
-        controllerLookX = axis(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX);
-        controllerLookY = axis(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY);
+        final float[] moveStick = radialStick(
+            centeredAxis(event, MotionEvent.AXIS_X),
+            -centeredAxis(event, MotionEvent.AXIS_Y),
+            CONTROLLER_MOVE_DEAD_ZONE,
+            false
+        );
+        controllerMoveX = moveStick[0];
+        controllerMoveZ = moveStick[1];
+        final float[] lookStick = radialStick(
+            rawAxis(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX),
+            rawAxis(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY),
+            CONTROLLER_LOOK_DEAD_ZONE,
+            true
+        );
+        controllerLookX = lookStick[0];
+        controllerLookY = lookStick[1];
         controllerTriggerVacuumHeld = trigger(event, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS);
-        controllerTriggerSprintHeld = trigger(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE);
+        final boolean nextLeftTriggerDown = trigger(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE);
+        if (nextLeftTriggerDown && !controllerLeftTriggerDown) controllerMeleePressed = true;
+        controllerLeftTriggerDown = nextLeftTriggerDown;
+        final int nextHatX = hatDirection(event.getAxisValue(MotionEvent.AXIS_HAT_X));
+        final int nextHatY = hatDirection(event.getAxisValue(MotionEvent.AXIS_HAT_Y));
+        if (nextHatY < 0 && controllerHatY >= 0) sendCommSignal(1);
+        else if (nextHatX > 0 && controllerHatX <= 0) sendCommSignal(2);
+        else if (nextHatY > 0 && controllerHatY <= 0) sendCommSignal(3);
+        else if (nextHatX < 0 && controllerHatX >= 0) sendCommSignal(4);
+        controllerHatX = nextHatX;
+        controllerHatY = nextHatY;
+        flushControlsNow(0.0f, 0.0f, false, false, false, false);
         return true;
     }
 
@@ -321,10 +402,10 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             || (source & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
     }
 
-    private float axis(MotionEvent event, int preferredAxis, int fallbackAxis) {
+    private float rawAxis(MotionEvent event, int preferredAxis, int fallbackAxis) {
         float value = centeredAxis(event, preferredAxis);
-        if (Math.abs(value) < CONTROLLER_DEAD_ZONE) value = centeredAxis(event, fallbackAxis);
-        return Math.abs(value) < CONTROLLER_DEAD_ZONE ? 0.0f : clamp(value, -1.0f, 1.0f);
+        if (Math.abs(value) < CONTROLLER_LOOK_DEAD_ZONE) value = centeredAxis(event, fallbackAxis);
+        return clamp(value, -1.0f, 1.0f);
     }
 
     private float centeredAxis(MotionEvent event, int axis) {
@@ -335,25 +416,59 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     }
 
     private boolean trigger(MotionEvent event, int preferredAxis, int fallbackAxis) {
-        return Math.max(event.getAxisValue(preferredAxis), event.getAxisValue(fallbackAxis)) > 0.35f;
+        return Math.max(event.getAxisValue(preferredAxis), event.getAxisValue(fallbackAxis)) > TRIGGER_PRESS_THRESHOLD;
     }
 
-    float joystickCenterX() { return Math.min(viewWidth, viewHeight) * 0.18f; }
-    float joystickCenterY() { return viewHeight - Math.min(viewWidth, viewHeight) * 0.20f; }
-    float joystickRadius() { return Math.min(viewWidth, viewHeight) * 0.145f; }
-    float buttonRadius() { return Math.max(42.0f, Math.min(viewWidth, viewHeight) * 0.062f); }
+    private float[] radialStick(float x, float y, float deadZone, boolean lookStick) {
+        final float rawMagnitude = (float)Math.sqrt(x * x + y * y);
+        if (rawMagnitude <= deadZone) return new float[]{0.0f, 0.0f, 0.0f};
+        final float clampedMagnitude = Math.min(1.0f, rawMagnitude);
+        float magnitude = (clampedMagnitude - deadZone) / (1.0f - deadZone);
+        magnitude = clamp(magnitude, 0.0f, 1.0f);
+        if (lookStick) {
+            magnitude = (float)Math.pow(magnitude, 1.35f);
+        }
+        final float scale = magnitude / rawMagnitude;
+        return new float[]{clamp(x * scale, -1.0f, 1.0f), clamp(y * scale, -1.0f, 1.0f), magnitude};
+    }
+
+    private int hatDirection(float value) {
+        return value > 0.5f ? 1 : value < -0.5f ? -1 : 0;
+    }
+
+    float joystickCenterX() { return Math.min(viewWidth, viewHeight) * 0.17f; }
+    float joystickCenterY() { return viewHeight - Math.min(viewWidth, viewHeight) * 0.18f; }
+    float joystickRadius() { return Math.min(viewWidth, viewHeight) * 0.128f; }
+    float buttonRadius() { return Math.max(40.0f, Math.min(60.0f, Math.min(viewWidth, viewHeight) * 0.055f)); }
     float getMoveX() { return moveX; }
     float getMoveZ() { return moveZ; }
     boolean isVacuumHeld() { return vacuumHeld; }
+    boolean isMoveActive() { return movePointerId >= 0; }
+    boolean isActionActive() { return actionPointerId >= 0 || vacuumHeld; }
 
-    float actionCenterX() { return viewWidth - buttonRadius() * 2.2f; }
-    float actionCenterY() { return viewHeight - buttonRadius() * 1.55f; }
-    float jumpCenterX() { return viewWidth - buttonRadius() * 1.35f; }
-    float jumpCenterY() { return viewHeight - buttonRadius() * 3.35f; }
-    float shootCenterX() { return viewWidth - buttonRadius() * 3.25f; }
-    float shootCenterY() { return viewHeight - buttonRadius() * 3.35f; }
-    float cameraCenterX() { return viewWidth - buttonRadius() * 5.15f; }
-    float cameraCenterY() { return viewHeight - buttonRadius() * 3.35f; }
+    float actionCenterX() { return viewWidth - buttonRadius() * 1.62f; }
+    float actionCenterY() { return viewHeight - buttonRadius() * 1.52f; }
+    float jumpCenterX() { return viewWidth - buttonRadius() * 1.18f; }
+    float jumpCenterY() { return viewHeight - buttonRadius() * 3.78f; }
+    float shootCenterX() { return viewWidth - buttonRadius() * 3.62f; }
+    float shootCenterY() { return viewHeight - buttonRadius() * 2.78f; }
+    float cameraCenterX() { return viewWidth - buttonRadius() * 5.16f; }
+    float cameraCenterY() { return viewHeight - buttonRadius() * 1.10f; }
+    float optionsCenterX() { return viewWidth - buttonRadius() * 0.86f; }
+    float optionsCenterY() { return buttonRadius() * 0.92f; }
+    float optionsRadius() { return buttonRadius() * 0.46f; }
+    float commCenterX(int signal) { return viewWidth * 0.5f + (signal - 2.5f) * buttonRadius() * 1.18f; }
+    float commCenterY() { return buttonRadius() * 0.88f; }
+    float commRadius() { return buttonRadius() * 0.46f; }
+    String commLabel(int signal) {
+        switch (signal) {
+            case 1: return "H";
+            case 2: return "P";
+            case 3: return "G";
+            case 4: return "OK";
+            default: return "";
+        }
+    }
 
     private boolean isMoveZone(float x, float y) {
         return x < viewWidth * 0.46f && y > viewHeight * 0.35f;
@@ -364,7 +479,8 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             && y > viewHeight * 0.28f
             && !inJumpButton(x, y)
             && !inShootButton(x, y)
-            && !inCameraButton(x, y);
+            && !inCameraButton(x, y)
+            && commSignalAt(x, y) == 0;
     }
 
     private boolean inJumpButton(float x, float y) {
@@ -377,6 +493,18 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
 
     private boolean inCameraButton(float x, float y) {
         return inside(x, y, cameraCenterX(), cameraCenterY(), buttonRadius());
+    }
+
+    private boolean inOptionsButton(float x, float y) {
+        return inside(x, y, optionsCenterX(), optionsCenterY(), optionsRadius());
+    }
+
+    private int commSignalAt(float x, float y) {
+        final float r = commRadius();
+        for (int signal = 1; signal <= 4; ++signal) {
+            if (inside(x, y, commCenterX(signal), commCenterY(), r)) return signal;
+        }
+        return 0;
     }
 
     private static boolean inside(float x, float y, float cx, float cy, float r) {
@@ -392,18 +520,30 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (isController(event)) {
-            if (setControllerKey(keyCode, true)) { sendControls(0.0f, 0.0f, false, false, false, false); return true; }
+            if (!NativeBridge.isStarted()) {
+                if (event.getRepeatCount() == 0 && isControllerStartKey(keyCode)) restartRun();
+                return true;
+            }
+            if (NativeBridge.getMenuMode() == 2) {
+                if (keyCode == KeyEvent.KEYCODE_BUTTON_A || keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_BUTTON_START) {
+                    if (activity != null) activity.resumeFromPauseMenu();
+                    else NativeBridge.setPaused(false);
+                    return true;
+                }
+            }
+            if (event.getRepeatCount() > 0 && isControllerTapKey(keyCode)) return true;
+            if (setControllerKey(keyCode, true)) { flushControlsNow(0.0f, 0.0f, false, false, false, false); return true; }
         }
-        NativeBridge.onKey(keyCode, true);
+        sendNativeKey(keyCode, true);
         return true;
     }
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         if (isController(event)) {
-            if (setControllerKey(keyCode, false)) { sendControls(0.0f, 0.0f, false, false, false, false); return true; }
+            if (setControllerKey(keyCode, false)) { flushControlsNow(0.0f, 0.0f, false, false, false, false); return true; }
         }
-        NativeBridge.onKey(keyCode, false);
+        sendNativeKey(keyCode, false);
         return true;
     }
 
@@ -420,20 +560,77 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
             || (source & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK;
     }
 
+    private boolean isControllerTapKey(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_BUTTON_X:
+            case KeyEvent.KEYCODE_BUTTON_Y:
+            case KeyEvent.KEYCODE_BUTTON_L1:
+            case KeyEvent.KEYCODE_BUTTON_R1:
+            case KeyEvent.KEYCODE_BUTTON_L2:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_BUTTON_THUMBR:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isControllerStartKey(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_BUTTON_B:
+            case KeyEvent.KEYCODE_BUTTON_X:
+            case KeyEvent.KEYCODE_BUTTON_Y:
+            case KeyEvent.KEYCODE_BUTTON_START:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private boolean setControllerKey(int keyCode, boolean down) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BUTTON_A: if (down) controllerJumpPressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_B: if (down) controllerMeleePressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_X: if (down) controllerShootPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_B: controllerBumperVacuumHeld = down; return true;
+            case KeyEvent.KEYCODE_BUTTON_X: if (down) controllerMeleePressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_Y: if (down) controllerShootPressed = true; return true;
             case KeyEvent.KEYCODE_BUTTON_THUMBR: if (down) controllerCameraPressed = true; return true;
-            case KeyEvent.KEYCODE_BUTTON_R1: controllerBumperVacuumHeld = down; return true;
-            case KeyEvent.KEYCODE_BUTTON_L1: controllerBumperSprintHeld = down; return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT: controllerDpadLeft = down; return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: controllerDpadRight = down; return true;
-            case KeyEvent.KEYCODE_DPAD_UP: controllerDpadUp = down; return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN: controllerDpadDown = down; return true;
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: controllerStickSprintHeld = down; return true;
+            case KeyEvent.KEYCODE_BUTTON_START: if (down) { if (NativeBridge.getMenuMode() == 2) { if (activity != null) activity.resumeFromPauseMenu(); else NativeBridge.setPaused(false); } else showPauseMenu(); } return true;
+            case KeyEvent.KEYCODE_BUTTON_R1: if (down) controllerShootPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_L1: if (down) controllerJumpPressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_L2: if (down) controllerMeleePressed = true; return true;
+            case KeyEvent.KEYCODE_BUTTON_R2: controllerTriggerVacuumHeld = down; return true;
+            case KeyEvent.KEYCODE_DPAD_UP: if (down) sendCommSignal(1); return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: if (down) sendCommSignal(2); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN: if (down) sendCommSignal(3); return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT: if (down) sendCommSignal(4); return true;
             default: return false;
         }
+    }
+
+    private void sendCommSignal(int signal) {
+        queueEvent(() -> NativeBridge.onCommSignal(signal));
+        requestLowLatencyFrame();
+    }
+
+    private void sendNativeKey(int keyCode, boolean down) {
+        queueEvent(() -> NativeBridge.onKey(keyCode, down));
+        requestLowLatencyFrame();
+    }
+
+    private void restartRun() {
+        queueEvent(NativeBridge::restart);
+        requestLowLatencyFrame();
+    }
+
+    private void showPauseMenu() {
+        NativeBridge.setPaused(true);
+        if (activity != null) activity.showPauseMenu();
     }
 
     private final class NativeRenderer implements GLSurfaceView.Renderer {

@@ -59,6 +59,7 @@ struct InputState {
     float lookDeltaX = 0.0f;
     float lookDeltaY = 0.0f;
     float wiggleAxis = 0.0f;
+    int commSignalPressed = 0;
     bool touching = false;
 };
 
@@ -94,6 +95,8 @@ struct PlayerState {
     float ledgeHangTime = 0.0f;
     float ledgeGrabCooldown = 0.0f;
     float ledgeMantleTimer = 0.0f;
+    int commSignal = 0;
+    float commSignalTimer = 0.0f;
 };
 
 enum class AudioCue : unsigned char {
@@ -362,6 +365,10 @@ struct LocalSettingsState {
     bool portalWindow = true;
     bool particles = true;
     bool fpsCounter = false;
+    float mouseLookSensitivity = 1.0f;
+    float touchLookSensitivity = 1.0f;
+    float controllerLookSensitivity = 1.0f;
+    bool mobileFraming = false;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
     std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
@@ -580,6 +587,7 @@ public:
         bool cameraTogglePressed
     );
     void setWiggle(float axis);
+    void setCommSignal(int signal);
     void configureNetworkHost();
     void configureNetworkGuest(int localPlayerId);
     void disableNetwork();
@@ -702,4 +710,5 @@ private:
     void clampRoom(Vec3& pos);
     Vec3 cameraForwardFlat() const;
     Vec3 cameraRightFlat() const;
+    Vec3 assistedActionDirection(const Vec3& origin, const Vec3& direction, float maxDistance, float minDot, float maxBlend, bool preferHead) const;
 };

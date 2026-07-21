@@ -3,6 +3,7 @@
 #include "Game.hpp"
 #include "MultiplayerProtocol.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -35,6 +36,8 @@ private:
     std::deque<Incoming> incoming_;
     void* webSocket_=nullptr;
     std::uint32_t outgoingSequence_=0,lastSnapshotTick_=0;
+    std::uint32_t lastSnapshotSequence_=0;
+    std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
     bool configuredGame_=false;
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
