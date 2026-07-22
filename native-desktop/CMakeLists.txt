@@ -112,7 +112,15 @@ add_executable(
 target_include_directories(GameplayRoleAndSoulMotionTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(GameplayRoleAndSoulMotionTest PRIVATE cxx_std_17)
 
+add_executable(
+    GameplayGeometryAndConfigTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_geometry_and_config_test.cpp"
+)
+target_include_directories(GameplayGeometryAndConfigTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(GameplayGeometryAndConfigTest PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
+add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
