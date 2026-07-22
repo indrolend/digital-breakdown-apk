@@ -8,9 +8,12 @@ on:
     paths:
       - tools/apply_gameplay_modularization_pass2.py
       - native-android/app/src/main/cpp/game/gameplay/MeleeConfig.hpp
+      - native-android/app/src/main/cpp/game/gameplay/TargetLifecycle.hpp
       - native-android/app/src/main/cpp/game/gameplay/VacuumGeometry.hpp
       - native-android/app/src/main/cpp/game/world/RoomCoordinates.hpp
       - native/tests/gameplay_geometry_and_config_test.cpp
+      - native/tests/target_lifecycle_test.cpp
+      - native-desktop/CMakeLists.txt
 
 permissions:
   contents: write
@@ -31,12 +34,13 @@ jobs:
         run: cmake -S native-desktop -B build/gameplay -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build focused tests
-        run: cmake --build build/gameplay --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest Pass7ParityTest MultiplayerProtocolTest --parallel
+        run: cmake --build build/gameplay --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest Pass7ParityTest MultiplayerProtocolTest --parallel
 
       - name: Run focused tests
         run: |
           build/gameplay/GameplayRoleAndSoulMotionTest
           build/gameplay/GameplayGeometryAndConfigTest
+          build/gameplay/TargetLifecycleTest
           build/gameplay/Pass7ParityTest
           build/gameplay/MultiplayerProtocolTest
           git diff --check
