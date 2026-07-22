@@ -72,6 +72,29 @@ native-android/app/src/main/cpp/game/
 5. Extract combat systems separately; do not combine melee and projectile rewrites.
 6. Keep networking and capture transaction structure stable until focused tests exist.
 
+## Focused verification
+
+Run one canonical command before considering a gameplay edit complete:
+
+```bash
+bash scripts/verify-gameplay.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+./scripts/verify-gameplay.ps1
+```
+
+The focused suite builds and runs:
+
+- `GameplayRoleAndSoulMotionTest`
+- `Pass7ParityTest`
+- `MultiplayerProtocolTest`
+- `git diff --check`
+
+`.github/workflows/gameplay-checks.yml` runs the same contract for gameplay-related pushes and pull requests.
+
 ## Review checklist
 
 For each extraction:
