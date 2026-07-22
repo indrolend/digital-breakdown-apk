@@ -8,6 +8,8 @@ endif()
 
 project(DigitalBreakdownDesktop LANGUAGES C CXX)
 
+enable_testing()
+
 include(FetchContent)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -93,9 +95,25 @@ add_executable(
 )
 target_include_directories(Pass7ParityTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
-add_executable(MultiplayerProtocolTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
+
+add_executable(
+    MultiplayerProtocolTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+
+add_executable(
+    GameplayRoleAndSoulMotionTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_role_and_soul_motion_test.cpp"
+)
+target_include_directories(GameplayRoleAndSoulMotionTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(GameplayRoleAndSoulMotionTest PRIVATE cxx_std_17)
+
+add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
+
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
 endif()
