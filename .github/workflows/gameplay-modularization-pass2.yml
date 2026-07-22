@@ -1,0 +1,54 @@
+name: Gameplay modularization pass 2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/loose-soul-normalization
+    paths:
+      - tools/apply_gameplay_modularization_pass2.py
+      - native-android/app/src/main/cpp/game/gameplay/MeleeConfig.hpp
+      - native-android/app/src/main/cpp/game/gameplay/VacuumGeometry.hpp
+      - native-android/app/src/main/cpp/game/world/RoomCoordinates.hpp
+      - native/tests/gameplay_geometry_and_config_test.cpp
+
+permissions:
+  contents: write
+
+jobs:
+  modularize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/loose-soul-normalization
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply modularization
+        run: python3 tools/apply_gameplay_modularization_pass2.py
+
+      - name: Configure
+        run: cmake -S native-desktop -B build/gameplay -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build focused tests
+        run: cmake --build build/gameplay --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest Pass7ParityTest MultiplayerProtocolTest --parallel
+
+      - name: Run focused tests
+        run: |
+          build/gameplay/GameplayRoleAndSoulMotionTest
+          build/gameplay/GameplayGeometryAndConfigTest
+          build/gameplay/Pass7ParityTest
+          build/gameplay/MultiplayerProtocolTest
+          git diff --check
+
+      - name: Commit extracted runtime usage
+        run: |
+          if git diff --quiet; then
+            echo "No runtime changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native-android/app/src/main/cpp/game/Game.cpp
+          git commit -m "Adopt vacuum geometry and melee config modules"
+          git push origin HEAD:agent/loose-soul-normalization
