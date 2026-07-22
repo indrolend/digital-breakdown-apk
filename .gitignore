@@ -16,12 +16,20 @@ native-android/local.properties
 native-android/.gradle/
 native-android/build/
 native-android/app/build/
+native-android/app/.cxx/
+native-desktop/build/
+native/build/
+
+multiplayer-server/node_modules/
+multiplayer-server/.wrangler/
 
 *.apk
 *.aab
 *.keystore
 *.jks
 *.mp3
+!native-desktop/audio/*.mp3
+!native-android/app/src/main/res/raw/*.mp3
 *.wav
 *.flac
 *.aiff

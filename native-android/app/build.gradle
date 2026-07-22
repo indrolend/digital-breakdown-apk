@@ -2,8 +2,10 @@ apply plugin: 'com.android.application'
 
 android {
     namespace 'com.indrolend.digitalbreakdown'
-    compileSdk 35
+    compileSdk 36
     ndkVersion '27.2.12479018'
+    buildFeatures { buildConfig true }
+    sourceSets { main { assets.srcDirs += ['../../native-tv-gifs'] } }
 
     defaultConfig {
         applicationId 'com.indrolend.digitalbreakdown.native'
@@ -11,6 +13,7 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1-native'
+        buildConfigField 'String', 'MULTIPLAYER_URL', '"' + (System.getenv('DIGITAL_BREAKDOWN_MULTIPLAYER_URL') ?: 'https://digital-breakdown-multiplayer.indrolend.workers.dev') + '"'
 
         externalNativeBuild {
             cmake {
@@ -19,7 +22,7 @@ android {
         }
 
         ndk {
-            abiFilters 'armeabi-v7a'
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
     }
 
@@ -52,4 +55,8 @@ android {
             path 'src/main/cpp/CMakeLists.txt'
         }
     }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:5.4.0'
 }

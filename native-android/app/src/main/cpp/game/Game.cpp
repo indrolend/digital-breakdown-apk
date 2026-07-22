@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <limits>
 
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
@@ -32,39 +35,167 @@ constexpr float LANDING_MOMENTUM_BOOST = 1.04f;
 constexpr float WALL_CLIMB_SPEED = 3.15f;
 constexpr float WALL_CLIMB_GRIP = 0.64f;
 constexpr float WALL_CLIMB_MAX_HEIGHT = 1.25f;
+constexpr float WALL_CLIMB_MAX_TIME = 0.48f;
 constexpr float WALL_CLIMB_PUSH_DOT = -0.18f;
 constexpr float CEILING_CLEARANCE = 0.42f;
 constexpr float PLAYER_CEILING_BODY_CLEARANCE = 0.42f;
 constexpr float PLAYER_COLLISION_RADIUS = 0.34f;
-constexpr float PLAYER_SUPPORT_RADIUS = 0.34f;
+constexpr float PLAYER_WALL_MARGIN = PLAYER_COLLISION_RADIUS + 0.06f;
+// Side collision remains generous and game-feeling; floor support follows the
+// phone's visible footprint so ledges do not grow an invisible shelf.
+constexpr float PLAYER_SUPPORT_RADIUS = 0.06f;
+constexpr float LEDGE_GRAB_VERTICAL_BELOW = 0.24f;
+constexpr float LEDGE_GRAB_VERTICAL_ABOVE = 0.13f;
+constexpr float LEDGE_GRAB_REACH = 0.48f;
+constexpr float LEDGE_PHONE_FACE_GAP = 0.025f;
+constexpr float LEDGE_CORNER_INSET = 0.10f;
+constexpr float LEDGE_SHIMMY_ACCEL = 14.0f;
+constexpr float LEDGE_SHIMMY_MAX_SPEED = 2.2f;
+constexpr float LEDGE_SHIMMY_DAMPING = 0.82f;
+constexpr float LEDGE_REGRAB_COOLDOWN = 0.28f;
+constexpr float LEDGE_VAULT_UP_SPEED = 4.2f;
+constexpr float LEDGE_VAULT_OUT_SPEED = 2.4f;
+constexpr float LEDGE_MANTLE_DURATION = 0.26f;
 constexpr float WALL_CLIMB_RADIUS = 0.34f;
 constexpr float CAMERA_COLLISION_RADIUS = 0.42f;
 constexpr float CAMERA_COLLISION_BACKOFF = 0.16f;
+constexpr float INTRO_CAMERA_DURATION = 1.15f;
+constexpr float DEATH_CAMERA_DURATION = 1.35f;
+constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
 constexpr float VACUUM_MOVE_MULT = 0.35f;
 constexpr float VACUUM_CHARGE_SPEED = 3.5f;
 constexpr float VACUUM_DECAY_SPEED = 6.0f;
 constexpr float SOUL_ATTRACTION_RANGE = 15.5f;
+constexpr float SOUL_ATTRACTION_CONE_RADIUS = 2.35f;
+constexpr float SOUL_CAPTURE_CYLINDER_RADIUS = 1.75f;
+constexpr float SOUL_CAPTURE_CYLINDER_HEIGHT = 2.25f;
 constexpr float SOUL_LATCH_DISTANCE = 0.48f;
 constexpr float SOUL_SEAL_DISTANCE = 0.14f;
+constexpr float SOUL_RECOIL_DURATION = 0.55f;
 constexpr float SOUL_CAPTURE_COMMIT_PHASE = 0.92f;
 constexpr float SOUL_CAPTURE_DECAY = 0.75f;
 constexpr float SOUL_MORPH_DURATION = 0.72f;
 constexpr float SOUL_ARMOR_NORMAL = 2.0f;
 constexpr float SOUL_ARMOR_BRUTE = 4.0f;
+constexpr float SCREEN_HALF_WIDTH = PHONE_SCREEN_WIDTH * 0.5f;
+constexpr float SCREEN_HALF_HEIGHT = PHONE_SCREEN_HEIGHT * 0.5f;
+constexpr float SCREEN_FRONT_OFFSET = 0.018f;
+constexpr float SOUL_SEAL_BODY_OFFSET = 0.36f;
+constexpr float PHONE_SOLID_HALF_X = PHONE_BODY_WIDTH * 0.5f;
+constexpr float PHONE_SOLID_HALF_Y = PHONE_BODY_HEIGHT * 0.5f;
+constexpr float PHONE_SOLID_HALF_Z = PHONE_BODY_DEPTH * 0.5f;
+constexpr float SOUL_CORE_SOLID_RADIUS = 0.33f;
 constexpr float HUMAN_SCALE_BRUTE = 1.7f;
 constexpr float HUMAN_WALK_PHASE_PER_METER = 7.5f;
+constexpr float HUMAN_WALK_SPEED = 0.72f;
+constexpr float HUMAN_WALK_TARGET_RADIUS = 0.55f;
+constexpr float HUMAN_WALK_RANGE = 5.5f;
+constexpr float HUMAN_ATTACK_NOTICE_RANGE = 5.6f;
+constexpr float HUMAN_ATTACK_START_RANGE = 1.55f;
+constexpr float HUMAN_ATTACK_HIT_RANGE = 1.85f;
+constexpr float HUMAN_ATTACK_DURATION = HUMAN_SWING_ATTACK_DURATION;
+constexpr float HUMAN_ATTACK_COOLDOWN = 1.15f;
+constexpr float HUMAN_ATTACK_KNOCKBACK = 3.0f;
+constexpr float HUMAN_ATTACK_BATTERY_COST = 26.0f;
+constexpr float BATTERY_IDLE_REGEN = 22.0f;
+constexpr float BATTERY_WALK_DRAIN = 0.45f;
+constexpr float BATTERY_SPRINT_DRAIN = 3.0f;
+constexpr float BATTERY_AIR_DRAIN = 0.9f;
+constexpr float BATTERY_WALL_CLIMB_DRAIN = 4.2f;
+constexpr float BATTERY_VACUUM_DRAIN = 1.35f;
+constexpr float BATTERY_JUMP_COST = 3.0f;
+constexpr float BATTERY_DOUBLE_JUMP_COST = 6.0f;
+constexpr float BATTERY_SHOOT_COST = 7.0f;
+constexpr float BATTERY_CAPTURE_GAIN = 10.0f;
+constexpr float BATTERY_SOUL_EFFICIENCY = 0.16f;
+constexpr float BATTERY_MELEE_HIT_GAIN = 2.0f;
+constexpr float BATTERY_COMBO_GROWTH = 1.22f;
+constexpr float BATTERY_COMBO_TIMEOUT = 1.8f;
+constexpr float MULTI_HIT_BONUS_GROWTH = 1.12f;
+constexpr float MULTI_HIT_BATTERY_BONUS = 4.5f;
+constexpr float FLOWER_ATTACK_FEED = 2.8f;
+constexpr float FLOWER_SLURP_FEED = 9.0f;
+constexpr float FLOWER_PICKUP_VALUE = 46.0f;
+constexpr float FLOWER_DROP_CHANCE = 0.26f;
+constexpr float FLOWER_PICKUP_RADIUS = 1.05f;
+constexpr float FLOWER_BOB_HEIGHT = 0.16f;
+constexpr float FLOWER_POWERUP_GROUND_Y = 0.38f;
+constexpr float FLOWER_DROP_SEPARATION_RADIUS = 1.15f;
+constexpr float FLOWER_DROP_MIN_SPACING = 1.05f;
+constexpr float POWERUP_STOCK_BASE_MAX = 85.0f;
+constexpr float POWERUP_STOCK_PER_STACK = 32.0f;
 constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
 
-constexpr float MELEE_RANGE = 2.85f;
-constexpr float MELEE_COOLDOWN = 0.34f;
+constexpr float MELEE_COMBO_WINDOW = 0.720f;
+constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
+constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.68f;
+constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = 5.40f;
+constexpr float AIR_MELEE_PHONE_RADIUS = 0.10f;
+constexpr float AIR_MELEE_BODY_FORGIVENESS = 0.07f;
+constexpr float HEADSHOT_BATTERY_GAIN = 3.0f;
+constexpr float PASSIVE_RECHARGE_DELAY = 0.80f;
+constexpr float HEADSHOT_RECHARGE_BOOST_SECONDS = 1.35f;
+// The rendered head moves around the normalized bind-pose center as the human
+// walks, recoils, and swings.  Keep the precision target centered on the face,
+// but give each input method enough margin to agree with that moving silhouette.
+constexpr float LUNGE_HEAD_CONTACT_RADIUS = 0.36f;
+constexpr float BULLET_HEAD_CONTACT_RADIUS = 0.25f;
+constexpr float HEAD_CONTACT_NECK_FRACTION = 0.62f;
+constexpr float HEADSHOT_CRITICAL_ARMOR_FRACTION = 0.60f;
+constexpr float HEADSHOT_PARRY_EARLY_PHASE = 0.22f;
+constexpr float HEADSHOT_PARRY_LATE_PHASE = 0.46f;
+constexpr float ACCURACY_STACK_BONUS = 0.08f;
+constexpr int ACCURACY_STACK_CAP = 15;
+constexpr float ACCURACY_CHAIN_TIMEOUT = 3.2f;
+constexpr int SYNERGY_LEVEL_STEP = 2;
+constexpr int RELAY_PRIMER_STACK_CAP = 5;
+constexpr float RELAY_PRIMER_SECONDS = 3.2f;
+constexpr float RELAY_PRIMER_DAMAGE_PER_STACK = 0.12f;
+constexpr float IMPACT_GUARD_SECONDS = 0.42f;
+constexpr float LAST_STAND_COOLDOWN = 18.0f;
+constexpr float AIR_MELEE_ANGULAR_VELOCITY = 4.4f;
+constexpr float AIR_MELEE_ANGULAR_DAMPING = 2.2f;
+constexpr float AIR_MELEE_CAMERA_RESPONSE = 13.5f;
+constexpr float AIR_MELEE_CAMERA_RECOVERY_RESPONSE = 20.0f;
+constexpr float AIR_MELEE_CAMERA_LAG_DECAY = 4.2f;
+constexpr float AIR_MELEE_CAMERA_MAX_ERROR = 1.35f;
+constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
+constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
+constexpr float LUNGE_HEADSHOT_REBOUND_WINDOW = 1.10f;
+constexpr float LUNGE_HEADSHOT_REBOUND_COST_MULT = 0.55f;
+struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
+constexpr MeleeCombo MELEE_COMBOS[] = {
+    {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
+    {1,2.85f,1.08f,0.90f,0.25f,0.18f,14.0f,0.27f,0.12f,1.75f,0.22f,3.6f},
+    {2,3.18f,1.48f,1.02f,0.31f,0.23f,15.2f,0.38f,0.15f,2.10f,0.29f,5.0f},
+    {3,3.00f,1.22f,0.96f,0.29f,0.20f,13.8f,0.34f,0.12f,1.80f,0.25f,4.2f}
+};
+constexpr float MELEE_VARIANT_SIDE[] = {1,-1,1,-1};
+constexpr float MELEE_VARIANT_ROLL[] = {-0.72f,0.72f,-0.42f,0.42f};
+constexpr float MELEE_VARIANT_YAW[] = {0.62f,-0.62f,0.42f,-0.42f};
+constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
+constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
+constexpr float BULLET_BRUTE_SPEED = 20.0f;
 constexpr float BULLET_GRAVITY = 11.5f;
 constexpr float BULLET_LIFE = 3.25f;
+constexpr float BULLET_VERTICAL_LIFT = 1.15f;
+constexpr float BULLET_AIR_DRAG_PER_SECOND = 0.72f;
+constexpr float BULLET_MAX_UP_AIM = 0.30f;
+constexpr float BULLET_MAX_DOWN_AIM = -0.10f;
+constexpr float ROOM_DEPOSIT_HIT_RADIUS = 1.65f;
 constexpr int MAX_STORED_SOULS = 30;
 constexpr int ACTIVE_HUMAN_TARGET = 5;
+constexpr int ACTIVE_HUMAN_TARGET_CAP = 20;
+constexpr float HUMAN_RESPAWN_DELAY_MIN = 1.45f;
+constexpr float HUMAN_RESPAWN_DELAY_MAX = 2.35f;
+constexpr float ENEMY_ARMOR_REGEN_DELAY = 2.40f;
+constexpr float ROOM_HEAT_SECONDS = 90.0f;
+constexpr float DOOR_DATAMOSH_DISTANCE = 3.0f;
+constexpr float DOOR_DATAMOSH_MIN_STRENGTH = 0.018f;
 
 constexpr float PHONE_GAIT_WALK_PITCH = 0.34f;
 constexpr float PHONE_GAIT_RUN_PITCH = 0.88f;
@@ -86,10 +217,15 @@ constexpr int KEY_S = 47;
 constexpr int KEY_D = 32;
 constexpr int KEY_Q = 45;
 constexpr int KEY_C = 31;
+constexpr int KEY_V = 50;
 constexpr int KEY_F = 34;
 constexpr int KEY_SHIFT_LEFT = 59;
 constexpr int KEY_SHIFT_RIGHT = 60;
 constexpr int KEY_SPACE = 62;
+constexpr int KEY_ENTER = 66;
+constexpr int KEY_R = 46;
+constexpr int KEY_1 = 8;
+constexpr int KEY_4 = 11;
 constexpr int TOUCH_DOWN = 0;
 constexpr int TOUCH_UP = 1;
 constexpr int TOUCH_MOVE = 2;
@@ -97,11 +233,7 @@ constexpr int TOUCH_CANCEL = 3;
 
 float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 float dotXZ(const Vec3& a, const Vec3& b) { return a.x * b.x + a.z * b.z; }
-float distXZ(const Vec3& a, const Vec3& b) {
-    const float dx = a.x - b.x;
-    const float dz = a.z - b.z;
-    return std::sqrt(dx * dx + dz * dz);
-}
+float dot3(const Vec3& a, const Vec3& b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
 float batteryPower(const PlayerState& p) { return clampf(p.battery / 18.0f, 0.35f, 1.0f); }
 float smooth01(float t) {
     t = clampf(t, 0.0f, 1.0f);
@@ -116,18 +248,461 @@ void syncTargetReactionVisual(TargetState& target) {
         target.vacuumPullAmount,
         target.captureCollapseAmount,
         target.soulMorph,
-        target.visibility > 0.5f
+        target.visibility > 0.5f,
+        target.attackTimer,
+        target.attackVariant
     );
+}
+float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
+float secretDoorKnockPulse(float time) {
+    constexpr float phraseSeconds = 11.8f;
+    constexpr float audibleSeconds = 5.4f;
+    constexpr float hits[] = {0.18f,0.54f,1.10f,2.05f,2.31f,3.18f,4.42f};
+    float phrase = std::fmod(std::max(0.0f, time), phraseSeconds);
+    if (phrase > audibleSeconds) return 0.0f;
+    float pulse = 0.0f;
+    for (float hit : hits) {
+        const float d = std::abs(phrase - hit);
+        pulse = std::max(pulse, std::exp(-d * d * 120.0f));
+    }
+    return clampf(pulse, 0.0f, 1.0f);
+}
+bool secretDoorKnockPhraseActive(float time) {
+    constexpr float phraseSeconds = 11.8f;
+    constexpr float audibleSeconds = 5.4f;
+    return std::fmod(std::max(0.0f, time), phraseSeconds) <= audibleSeconds;
+}
+Vec3 latticeRest(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return{static_cast<float>(x)*0.23f-0.23f,static_cast<float>(y)*0.23f-0.23f,static_cast<float>(z)*0.23f-0.23f};}
+float latticeSurface(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return(x==0||x==2||y==0||y==2||z==0||z==2)?1.0f:0.0f;}
+float latticeCorner(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return static_cast<float>((x==0||x==2)+(y==0||y==2)+(z==0||z==2))/3.0f;}
+void springScalar(float value,float velocity,float target,float frequency,float damping,float dt,float& newValue,float& newVelocity){const float omega=frequency*DB_PI*2.0f,f=1+2*dt*damping*omega,oo=omega*omega,hoo=dt*oo,hhoo=dt*hoo,detInv=1/(f+hhoo);newValue=(f*value+dt*velocity+hhoo*target)*detInv;newVelocity=(velocity+hoo*(target-value))*detInv;}
+float pointSegmentDistanceSq(const Vec3& point, const Vec3& a, const Vec3& b) {
+    const Vec3 ab=b-a, ap=point-a;
+    const float denom=std::max(lengthSq(ab),0.0001f);
+    const float t=clampf((ap.x*ab.x+ap.y*ab.y+ap.z*ab.z)/denom,0.0f,1.0f);
+    return lengthSq(point-(a+ab*t));
+}
+
+void syncSoulVisual(TargetState& target, float time) {
+    target.soulVisual = makeSoulVisualState(
+        static_cast<int>(target.soulState), target.vacuumPullAmount, target.ingestProgress,
+        target.hitFlash, time, target.phase, target.alive && target.slurpable,
+        target.soulMorph, target.floatOffset, target.spinSpeed);
 }
 }
 
 void Game::reset() {
+    const PermanentProgressionState permanent=state_.progression.permanent;
+    const LocalSettingsState localSettings=state_.localSettings;
     state_ = GameState{};
+    state_.progression.permanent=permanent;
+    state_.localSettings=localSettings;
+    state_.localSettings.menuPage=LocalMenuPage::Main;
+    state_.localSettings.rebindingAction=-1;
+    state_.localSettings.pendingBinding=-1;
+    state_.localSettings.conflictingAction=-1;
+    state_.secretTv.tolerance=2+(std::abs(state_.roomSeed)%3);
     resetRoom();
+    state_.started=true;
+    state_.dead=false;
+    state_.uiPaused=false;
+    emitAudio(AudioCue::VcInvitation,0.58f);
 }
 
-float Game::seededRoomValue(int offset) const {
-    const float x = std::sin(static_cast<float>(state_.roomSeed + offset) * 12.9898f) * 43758.5453f;
+void Game::restart() {
+    reset();
+    state_.cinematic.introActive = true;
+    state_.cinematic.introElapsed = 0.0f;
+    state_.cinematic.baseYaw = state_.camera.yaw;
+    state_.cinematic.textInteraction = 1.0f;
+}
+
+void Game::setPersistentProgression(std::int64_t tokens,int shotLevel,int lungeLevel,int attackLevel){
+    auto& permanent=state_.progression.permanent;
+    permanent.tokens=std::max<std::int64_t>(0,tokens);
+    permanent.levels[static_cast<int>(UpgradeTrack::Shot)]=std::max(0,std::min(5,shotLevel));
+    permanent.levels[static_cast<int>(UpgradeTrack::Lunge)]=std::max(0,std::min(5,lungeLevel));
+    permanent.levels[static_cast<int>(UpgradeTrack::Attack)]=std::max(0,std::min(5,attackLevel));
+    permanent.revision=1;
+}
+
+void Game::prepareStartScreen(){
+    reset();
+    state_.started=false;
+    state_.dead=false;
+    state_.uiPaused=false;
+    state_.hud.gameOver=false;
+    clearInputState();
+    state_.audio=AudioState{};
+}
+
+void Game::setUiPaused(bool paused){
+    if(!state_.started||state_.dead)return;
+    if(state_.upgradeMenu.active&&!paused)return;
+    state_.uiPaused=paused;
+    clearInputState();
+}
+
+bool Game::chooseTemporaryUpgrade(int track){
+    if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)return false;
+    auto& level=state_.progression.run.temporaryLevels[track];
+    state_.cinematic.textInteraction=1.0f;
+    level=std::min(12,level+1);
+    state_.upgradeMenu.active=false;
+    state_.uiPaused=false;
+    clearInputState();
+    return true;
+}
+
+bool Game::purchasePermanentUpgrade(int track){
+    if(!state_.upgradeMenu.active||track<0||track>=static_cast<int>(UpgradeTrack::Count))return false;
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)return false;
+    auto& permanent=state_.progression.permanent;
+    if(permanent.tokens<=0||permanent.levels[track]>=5)return false;
+    state_.cinematic.textInteraction=1.0f;
+    --permanent.tokens;++permanent.levels[track];++permanent.revision;
+    return true;
+}
+
+float Game::batteryDrainMultiplier() const {
+    return 1.0f / (1.0f + static_cast<float>(state_.player.souls) * BATTERY_SOUL_EFFICIENCY);
+}
+
+int Game::upgradeLevel(UpgradeTrack track) const {
+    const int i=static_cast<int>(track);
+    const int permanent=(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)
+        ? state_.progression.run.networkSharedPermanentLevels[i]
+        : state_.progression.permanent.levels[i];
+    return state_.progression.run.temporaryLevels[i]+permanent;
+}
+
+int Game::pairSynergyTier(UpgradeTrack a,UpgradeTrack b) const {
+    return std::min(5,std::min(upgradeLevel(a),upgradeLevel(b))/SYNERGY_LEVEL_STEP);
+}
+
+int Game::survivalSynergyTier() const {
+    const int shot=upgradeLevel(UpgradeTrack::Shot),lunge=upgradeLevel(UpgradeTrack::Lunge),attack=upgradeLevel(UpgradeTrack::Attack);
+    return std::min(5,std::min(shot,std::min(lunge,attack))/SYNERGY_LEVEL_STEP);
+}
+
+float Game::outgoingDamageMultiplier() const {
+    const int survival=survivalSynergyTier();
+    if(survival<=0||state_.player.battery>=24.0f)return 1.0f;
+    // The balanced "cockroach" circuit exchanges lethality for staying power
+    // only while critically discharged; it never penalizes normal play.
+    return std::max(0.72f,1.0f-0.055f*static_cast<float>(survival));
+}
+
+void Game::updateBuildLabel(){
+    const int precision=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Lunge);
+    const int relay=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Attack);
+    const int momentum=pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack);
+    const int survival=survivalSynergyTier();
+    const char* label="OPEN CIRCUIT";
+    if(survival>0&&state_.player.battery<24.0f)label="COCKROACH CIRCUIT";
+    else if(precision>=relay&&precision>=momentum&&precision>0)label="PINBALL SNIPER";
+    else if(relay>=momentum&&relay>0)label="RELAY BRAWLER";
+    else if(momentum>0)label="MOMENTUM BRUISER";
+    std::snprintf(state_.hud.buildLabel.data(),state_.hud.buildLabel.size(),"%s",label);
+}
+
+void Game::clearActivePowerups() {
+    state_.energy.flowerStacks = 0;
+    state_.energy.supplementalActive = false;
+    state_.energy.supplementalValue = 0.0f;
+    state_.energy.supplementalMax = POWERUP_STOCK_BASE_MAX;
+}
+
+void Game::addFlowerPowerupStack(float amount) {
+    EnergyState& energy = state_.energy;
+    energy.flowerStacks += 1;
+    energy.supplementalMax = POWERUP_STOCK_BASE_MAX + static_cast<float>(std::max(0, energy.flowerStacks - 1)) * POWERUP_STOCK_PER_STACK;
+    energy.supplementalValue = clampf(energy.supplementalValue + std::max(0.0f, amount), 0.0f, energy.supplementalMax);
+    energy.supplementalActive = energy.supplementalValue > 0.0f;
+}
+
+float Game::nextFlowerRandom() {
+    unsigned int& value = state_.flowerRandomState;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    return static_cast<float>(value & 0x00ffffffu) / 16777216.0f;
+}
+
+void Game::spawnFlowerPowerup(float x, float y, float z) {
+    if (!state_.player.alive) return;
+    FlowerPowerupState* slot = nullptr;
+    for (auto& flower : state_.flowers) if (!flower.active) { slot = &flower; break; }
+    if (!slot) return;
+    const float sourceZ = wrapZ(z);
+    const float offsets[] = {0.0f, 0.72f, -0.72f, 1.45f, -1.45f, DB_PI};
+    float dropX = x + FLOWER_DROP_SEPARATION_RADIUS;
+    float dropZ = sourceZ;
+    const float playerLocalZ = wrapZ(state_.player.pos.z);
+    const float baseAngle = std::atan2(sourceZ - playerLocalZ, x - state_.player.pos.x);
+    for (int i = 0; i < 6; ++i) {
+        const float angle = baseAngle + offsets[i];
+        const float radius = FLOWER_DROP_SEPARATION_RADIUS + static_cast<float>(i) * 0.12f;
+        const float candidateX = x + std::cos(angle) * radius;
+        const float candidateZ = sourceZ + std::sin(angle) * radius;
+        const float sourceDx = candidateX - x;
+        const float sourceDz = candidateZ - sourceZ;
+        bool clear = sourceDx*sourceDx + sourceDz*sourceDz >= FLOWER_DROP_MIN_SPACING*FLOWER_DROP_MIN_SPACING;
+        for (const auto& flower : state_.flowers) if (clear && flower.active) {
+            const float dx = candidateX - flower.pos.x;
+            const float dz = candidateZ - flower.pos.z;
+            if (dx*dx + dz*dz < FLOWER_DROP_MIN_SPACING*FLOWER_DROP_MIN_SPACING) clear = false;
+        }
+        if (clear) { dropX = candidateX; dropZ = candidateZ; break; }
+    }
+    *slot = FlowerPowerupState{};
+    slot->active = true;
+    slot->baseY = std::max(FLOWER_POWERUP_GROUND_Y, y);
+    slot->pos = {dropX, slot->baseY, dropZ};
+    slot->rotationY = nextFlowerRandom() * DB_PI * 2.0f;
+}
+
+void Game::updateFlowerPowerups(float dt) {
+    if (!state_.player.alive) return;
+    const float playerLocalZ = wrapZ(state_.player.pos.z);
+    for (auto& flower : state_.flowers) {
+        if (!flower.active) continue;
+        flower.age += dt;
+        flower.pos.y = flower.baseY + std::sin(flower.age * 3.2f) * FLOWER_BOB_HEIGHT;
+        flower.rotationY += dt * 1.35f;
+        const float dx = flower.pos.x - state_.player.pos.x;
+        const float dz = flower.pos.z - playerLocalZ;
+        const float dy = flower.pos.y - state_.player.pos.y;
+        if (dx*dx + dy*dy + dz*dz <= FLOWER_PICKUP_RADIUS*FLOWER_PICKUP_RADIUS) {
+            addFlowerPowerupStack(FLOWER_PICKUP_VALUE);
+            flower = FlowerPowerupState{};
+        }
+    }
+}
+
+void Game::spawnParticleBurst(const Vec3& position) {
+    for(int n=0;n<22;++n) {
+        ParticleState& particle=state_.particles[state_.nextParticle];
+        state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
+        const float life=0.55f+nextFlowerRandom()*0.35f;
+        particle=ParticleState{}; particle.pos=position;
+        particle.vel={(nextFlowerRandom()-0.5f)*5.0f,nextFlowerRandom()*4.0f,(nextFlowerRandom()-0.5f)*5.0f};
+        particle.life=life; particle.maxLife=life;
+    }
+}
+
+void Game::spawnFlameBurst(const Vec3& position,float strength) {
+    const int count=static_cast<int>(36.0f*clampf(strength,0.7f,2.2f));
+    for(int n=0;n<count;++n) {
+        ParticleState& particle=state_.particles[state_.nextParticle]; state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
+        const float angle=nextFlowerRandom()*DB_PI*2.0f,radial=1.2f+nextFlowerRandom()*5.4f*strength,life=0.42f+nextFlowerRandom()*0.32f;
+        particle=ParticleState{}; particle.pos=position+Vec3{0,0.06f,0};
+        particle.vel={std::cos(angle)*radial,2.4f+nextFlowerRandom()*5.0f*strength,std::sin(angle)*radial}; particle.life=life; particle.maxLife=life;
+    }
+}
+
+void Game::spawnShellShatter(const TargetState& target) {
+    const int count=target.brute?48:32;
+    const float bodyHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*target.scale;
+    unsigned int visualSeed=0x91E10DA5u^static_cast<unsigned int>((target.pos.x+32.0f)*997.0f)^static_cast<unsigned int>((target.pos.z+64.0f)*619.0f);
+    const auto visualRandom=[&](){visualSeed=visualSeed*1664525u+1013904223u;return static_cast<float>((visualSeed>>8)&0x00ffffffu)/16777216.0f;};
+    for(int n=0;n<count;++n){
+        ParticleState& particle=state_.particles[state_.nextParticle];state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
+        const float angle=visualRandom()*DB_PI*2.0f;
+        const float height=0.08f+visualRandom()*bodyHeight*0.90f;
+        const float bodyWidth=(height>bodyHeight*0.68f?0.16f:0.25f)*target.scale;
+        const float radial=0.45f+visualRandom()*1.55f;
+        const float life=0.72f+visualRandom()*0.38f;
+        particle=ParticleState{};
+        particle.kind=1;
+        particle.size=(0.055f+visualRandom()*0.075f)*target.scale;
+        particle.pos=target.pos+Vec3{std::cos(angle)*bodyWidth*visualRandom(),height,std::sin(angle)*bodyWidth*visualRandom()};
+        particle.vel={std::cos(angle)*radial,0.45f+visualRandom()*2.25f,std::sin(angle)*radial};
+        particle.life=life;particle.maxLife=life;
+    }
+}
+
+void Game::updateParticles(float dt) {
+    for(auto& particle:state_.particles) {
+        if(particle.life<=0.0f) continue;
+        particle.vel.y-=(particle.kind==1?10.5f:8.0f)*dt;
+        particle.pos+=particle.vel*dt;
+        if(particle.kind==1&&particle.pos.y<=0.025f){
+            particle.pos.y=0.025f;particle.vel.y=0.0f;
+            const float settle=std::exp(-16.0f*dt);particle.vel.x*=settle;particle.vel.z*=settle;
+            particle.life=std::max(0.0f,particle.life-dt*1.25f);
+        }
+        particle.life=std::max(0.0f,particle.life-dt);
+    }
+}
+
+float Game::consumeSupplementalBattery(float cost) {
+    EnergyState& energy = state_.energy;
+    if (!energy.supplementalActive || energy.supplementalValue <= 0.0f || cost <= 0.0f) return cost;
+    const float absorbed = std::min(cost, energy.supplementalValue);
+    energy.supplementalValue = std::max(0.0f, energy.supplementalValue - absorbed);
+    if (energy.supplementalValue <= 0.001f) clearActivePowerups();
+    return std::max(0.0f, cost - absorbed);
+}
+
+void Game::setEnergyTicker(const char* text,int type){
+    state_.hud.energyTicker.fill(0);if(text)std::snprintf(state_.hud.energyTicker.data(),state_.hud.energyTicker.size(),"%s",text);state_.hud.energyTickerType=type;state_.hud.energyTickerUntil=state_.time+1.05f;
+}
+
+bool Game::spendBattery(float amount,BatteryReason reason) {
+    PlayerState& player = state_.player;
+    if (!player.alive) return false;
+    const float before=player.battery;
+    if(reason==BatteryReason::Hit){
+        const int survival=survivalSynergyTier();
+        const float guard=state_.progression.run.impactGuardTimer>0.0f?0.42f:1.0f;
+        amount*=guard*std::max(0.35f,1.0f-0.11f*static_cast<float>(survival));
+    }
+    const float remaining = consumeSupplementalBattery(std::max(0.0f, amount) * batteryDrainMultiplier());
+    player.battery = clampf(player.battery - remaining, 0.0f, 100.0f);
+    if(reason!=BatteryReason::Continuous){
+        const char* label=reason==BatteryReason::Melee?"MELEE":reason==BatteryReason::Shoot?"SHOOT":reason==BatteryReason::Hit?"HIT":reason==BatteryReason::Climb?"CLIMB":reason==BatteryReason::Loop?"LOOP":"JUMP";char message[48]{};
+        const float spent=before-player.battery;if(spent>0.001f)std::snprintf(message,sizeof(message),"-%.1F %s",spent,label);else std::snprintf(message,sizeof(message),"FLOWER %s",label);setEnergyTicker(message,spent>0.001f?1:0);
+    }
+    updateBatteryAudio(before);
+    if (player.battery <= 0.0f && reason==BatteryReason::Hit && survivalSynergyTier()>0 && state_.progression.run.lastStandCooldown<=0.0f) {
+        player.battery=1.0f;
+        state_.progression.run.lastStandCooldown=LAST_STAND_COOLDOWN;
+        setEnergyTicker("LAST SIGNAL",2);
+        return true;
+    }
+    if (player.battery <= 0.0f) {
+        player.battery = 0.0f;
+        if(reason==BatteryReason::Hit&&state_.multiplayer.enabled){player.downed=true;player.bleedoutTimer=15.0f;player.reviveCharge=0.0f;player.grabbedByTarget=-1;player.vel={};player.jumpVel=0.0f;state_.vacuum=VacuumState{};clearInputState();setEnergyTicker("SIGNAL DOWN",1);return false;}
+        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
+        triggerRunDeath();
+        return false;
+    }
+    return true;
+}
+
+void Game::gainBattery(float amount,BatteryReason reason) {
+    if (!state_.player.alive) return;
+    const float before=state_.player.battery;
+    state_.player.battery = clampf(state_.player.battery + std::max(0.0f, amount), 0.0f, 100.0f);
+    if(reason!=BatteryReason::Continuous){const char* label=reason==BatteryReason::Ingest?"INGEST":reason==BatteryReason::NextRoom?"ROOM":reason==BatteryReason::Chain?"CHAIN":reason==BatteryReason::Headshot?"HEADSHOT":"COMBO";char message[48]{};std::snprintf(message,sizeof(message),"+%.1F %s",state_.player.battery-before,label);setEnergyTicker(message,reason==BatteryReason::Combo||reason==BatteryReason::Chain||reason==BatteryReason::Headshot?2:0);}
+    updateBatteryAudio(before);
+}
+
+void Game::emitAudio(AudioCue cue,float volume) {
+    AudioState& audio=state_.audio;
+    const unsigned int serial=audio.nextSerial++;
+    AudioEventState& event=audio.events[(serial-1u)%AUDIO_EVENT_COUNT];
+    event.cue=cue; event.serial=serial; event.volume=volume;
+}
+
+void Game::updateBatteryAudio(float beforeValue) {
+    if(state_.dead) return;
+    AudioState& audio=state_.audio;
+    const float before=clampf(beforeValue/100.0f,0.0f,1.0f),now=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+    if(before>0.24f && now<=0.24f && audio.lowPowerArmed){emitAudio(AudioCue::LowPower,0.48f);audio.lowPowerArmed=false;}
+    // Pass 7 only arms the recovered/full cue after a genuinely critical
+    // discharge. Small expenditures near full must not repeatedly chime.
+    if(now<=0.14f) audio.connectPowerArmed=true;
+    if(audio.connectPowerArmed && before<1.0f && now>=0.995f){emitAudio(AudioCue::ConnectPower,0.52f);audio.connectPowerArmed=false;audio.lowPowerArmed=true;}
+    if(now>0.32f) audio.lowPowerArmed=true;
+}
+
+void Game::updateSlurpAudio() {
+    bool active=false;
+    if(!state_.dead && state_.started && state_.player.souls<MAX_STORED_SOULS) for(const auto& target:state_.targets) {
+        if(target.alive && (target.soulState==SoulState::Latched || target.soulState==SoulState::Ingesting)){active=true;break;}
+    }
+    if(active==state_.audio.slurpPlaying) return;
+    state_.audio.slurpPlaying=active;
+    emitAudio(active?AudioCue::SlurpRingtoneStart:AudioCue::SlurpRingtoneStop,0.13f);
+}
+
+bool Game::feedSupplementalBattery(float amount) {
+    EnergyState& energy = state_.energy;
+    if (!energy.supplementalActive || energy.supplementalMax <= 0.0f) return false;
+    const float before = energy.supplementalValue;
+    energy.supplementalValue = clampf(before + std::max(0.0f, amount), 0.0f, energy.supplementalMax);
+    energy.supplementalActive = energy.supplementalValue > 0.0f;
+    return energy.supplementalValue > before + 0.001f;
+}
+
+void Game::registerMeleeBatteryHit(int hitCount) {
+    const int hits = std::max(1, hitCount);
+    EnergyState& energy = state_.energy;
+    const float multiBonus = hits > 1 ? static_cast<float>(hits - 1) * MULTI_HIT_BATTERY_BONUS : 0.0f;
+    const float multiplierBefore=energy.comboMultiplier;
+    gainBattery((BATTERY_MELEE_HIT_GAIN + multiBonus) * multiplierBefore);
+    {char message[48]{};std::snprintf(message,sizeof(message),"+%.1F X%.2F",(BATTERY_MELEE_HIT_GAIN+multiBonus)*multiplierBefore,multiplierBefore);setEnergyTicker(message,2);}
+    energy.comboHits += hits;
+    energy.lastComboHitTime = state_.time;
+    energy.comboMultiplier *= BATTERY_COMBO_GROWTH * std::pow(MULTI_HIT_BONUS_GROWTH, static_cast<float>(std::max(0, hits - 1)));
+}
+
+void Game::updateBattery(float dt) {
+    if (!state_.player.alive) return;
+    if(state_.player.downed){state_.player.bleedoutTimer=std::max(0.0f,state_.player.bleedoutTimer-dt);if(state_.player.bleedoutTimer<=0.0f){state_.player.downed=false;if(simulationPlayerId_!=0)state_.player.alive=false;else {bool teammate=false;for(const auto& peer:state_.multiplayer.peers)if(peer.active&&peer.player.alive&&!peer.player.downed){teammate=true;break;}if(teammate)state_.player.alive=false;else triggerRunDeath();}}return;}
+    state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
+    state_.progression.run.headshotRegenTax = std::max(0.0f, state_.progression.run.headshotRegenTax - dt * 0.11f);
+    state_.progression.run.relayPrimerTimer=std::max(0.0f,state_.progression.run.relayPrimerTimer-dt);
+    if(state_.progression.run.relayPrimerTimer<=0.0f)state_.progression.run.relayPrimerStacks=0;
+    state_.progression.run.impactGuardTimer=std::max(0.0f,state_.progression.run.impactGuardTimer-dt);
+    state_.progression.run.lastStandCooldown=std::max(0.0f,state_.progression.run.lastStandCooldown-dt);
+    state_.progression.run.lungeReboundTimer=std::max(0.0f,state_.progression.run.lungeReboundTimer-dt);
+    state_.progression.run.headshotRechargeBoost=std::max(0.0f,state_.progression.run.headshotRechargeBoost-dt);
+    EnergyState& energy = state_.energy;
+    if (energy.comboHits > 0 && state_.time - energy.lastComboHitTime > BATTERY_COMBO_TIMEOUT) {
+        energy.comboHits = 0;
+        energy.comboMultiplier = 1.0f;
+        energy.lastComboHitTime = -9999.0f;
+    }
+    energy.dischargeTimer = std::max(0.0f, energy.dischargeTimer - dt);
+    const InputState& input = state_.input;
+    const float forward = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
+    const float strafe = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
+    const bool moving = std::abs(forward) + std::abs(strafe) > 0.0f;
+    const bool running = moving && (input.sprint || input.touchSprint);
+    float drain = 0.0f;
+    bool active = false;
+    if (moving) { drain += running ? BATTERY_SPRINT_DRAIN : BATTERY_WALK_DRAIN; active = true; }
+    if (!state_.player.grounded) { drain += BATTERY_AIR_DRAIN; active = true; }
+    if (state_.vacuum.active) { drain += BATTERY_VACUUM_DRAIN * std::max(0.35f, state_.vacuum.power); active = true; }
+    if (state_.meleeVisual.visualTimer > 0.0f || energy.dischargeTimer > 0.0f) active = true;
+    if(active)state_.progression.run.batteryRegenLock=std::max(state_.progression.run.batteryRegenLock,PASSIVE_RECHARGE_DELAY);
+    if (drain > 0.0f) spendBattery(drain * dt);
+    else if(state_.progression.run.batteryRegenLock<=0.0f) {
+        const float survivalRegen=(survivalSynergyTier()>0&&state_.player.battery<24.0f)?1.0f+0.10f*survivalSynergyTier():1.0f;
+        const float precisionWindow=state_.progression.run.headshotRechargeBoost>0.0f?1.35f:1.0f;
+        const float tvSignal=1.0f+std::min(0.45f,0.06f*std::sqrt(static_cast<float>(std::max(0,state_.secretTv.signal))));
+        gainBattery(BATTERY_IDLE_REGEN * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
+    }
+}
+
+void Game::triggerRunDeath() {
+    if(simulationPlayerId_!=0){state_.player.alive=false;state_.player.battery=0;state_.vacuum=VacuumState{};clearInputState();return;}
+    if(state_.dead) return;
+    state_.dead=true; state_.started=false; state_.uiPaused=false;
+    state_.cinematic.introActive=false;
+    state_.cinematic.deathActive=true;
+    state_.cinematic.deathElapsed=0.0f;
+    state_.cinematic.textInteraction=1.0f;
+    state_.cinematic.baseYaw=state_.camera.yaw;
+    state_.cinematic.startCameraPos=state_.camera.pos;
+    state_.camera.firstPerson=false;
+    state_.player.alive=false; state_.player.battery=0.0f; state_.player.vel={}; state_.player.jumpVel=0.0f;
+    state_.vacuum=VacuumState{};
+    clearActivePowerups();
+    for(auto& flower:state_.flowers) flower=FlowerPowerupState{};
+    state_.energy.comboHits=0; state_.energy.comboMultiplier=1.0f; state_.energy.lastComboHitTime=-9999.0f;
+    if(state_.audio.slurpPlaying){state_.audio.slurpPlaying=false;emitAudio(AudioCue::SlurpRingtoneStop,0.13f);}
+    emitAudio(AudioCue::VcEnded,0.64f);
+    clearInputState();
+    state_.hud.batteryFill=0.0f; state_.hud.lowBattery=true; state_.hud.gameOver=true;
+}
+
+float Game::seededRoomValue(float offset) const {
+    const float x = std::sin((static_cast<float>(state_.roomSeed) + offset) * 12.9898f) * 43758.5453f;
     return x - std::floor(x);
 }
 
@@ -178,40 +753,52 @@ void Game::resetRoom() {
     state_.camera = CameraState{};
     state_.vacuum = VacuumState{};
     state_.phonePose = PhonePoseState{};
+    state_.meleeVisual = MeleeVisualState{};
+    state_.meleeComboWindow = 0.0f;
     state_.topology = RoomTopologyState{};
     state_.roomIndex = roomIndex;
     state_.roomSeed = roomSeed;
+    state_.captureSoundSlots={{0,1,2,3,4}};
+    for(int i=4;i>0;--i){const int j=static_cast<int>(nextFlowerRandom()*static_cast<float>(i+1))%(i+1);std::swap(state_.captureSoundSlots[i],state_.captureSoundSlots[j]);}
     buildRoomColliders();
 
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& target = state_.targets[i];
         target = TargetState{};
         target.pos = {-8.0f + static_cast<float>(i % 5) * 4.0f, GROUND_Y, -12.0f + static_cast<float>(i / 5) * 4.5f};
-        target.alive = i < ACTIVE_HUMAN_TARGET;
+        target.alive = i < activeHumanTarget();
         target.brute = seededRoomValue(420 + i) < 0.18f;
         target.armor = target.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
         target.health = 1.0f;
         target.scale = target.brute ? HUMAN_SCALE_BRUTE : 1.0f;
         target.phase = static_cast<float>(i) * 0.77f;
+        target.floatOffset = seededRoomValue(430 + i) * DB_PI * 2.0f;
+        target.spinSpeed = 0.4f + seededRoomValue(435 + i) * 0.8f;
         target.visualWalkPhase = target.phase;
         target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
+        target.attackCooldown = seededRoomValue(460 + i) * 0.5f;
+        target.attackVariant = static_cast<int>(seededRoomValue(480 + i) * 4.0f) % 4;
+        resetSoulLattice(target);
+        chooseHumanWalkTarget(i);
         syncTargetReactionVisual(target);
-        if (!target.alive) target.respawnTimer = 1.45f + seededRoomValue(300 + i) * 0.9f;
     }
 
-    const Vec3 captureSpots[CAPTURE_COUNT] = {
-        {-1.64f, 3.05f, ROOM_GRID_Z}, {-0.82f, 3.05f, ROOM_GRID_Z}, {0.0f, 3.05f, ROOM_GRID_Z},
-        {0.82f, 3.05f, ROOM_GRID_Z}, {1.64f, 3.05f, ROOM_GRID_Z}
-    };
+    state_.requiredSouls=static_cast<int>(clampf(5.0f+static_cast<float>(state_.runRules.requiredSlotStacks),1.0f,9.0f));
+    state_.depositedSouls=0;
+    const float startX=-((static_cast<float>(state_.requiredSouls)-1.0f)*0.82f)*0.5f;
     for (int i = 0; i < CAPTURE_COUNT; ++i) {
         state_.captures[i] = CapturePointState{};
-        state_.captures[i].pos = captureSpots[i];
+        state_.captures[i].pos = {startX+static_cast<float>(i)*0.82f,3.05f,ROOM_GRID_Z};
     }
     for (auto& bullet : state_.bullets) bullet = BulletState{};
 }
 
 void Game::setKey(int keyCode, bool down) {
     InputState& input = state_.input;
+    if (down && !state_.started && (keyCode == KEY_SPACE || keyCode == KEY_ENTER || keyCode == KEY_R || keyCode == KEY_F)) {
+        restart();
+        return;
+    }
     if (keyCode == KEY_W) input.forward = down;
     if (keyCode == KEY_S) input.back = down;
     if (keyCode == KEY_A) input.left = down;
@@ -223,7 +810,9 @@ void Game::setKey(int keyCode, bool down) {
     }
     if (keyCode == KEY_F && down) input.meleePressed = true;
     if (keyCode == KEY_Q && down) input.shootPressed = true;
-    if (keyCode == KEY_C && down) input.cameraTogglePressed = true;
+    if (keyCode == KEY_C && down) input.meleePressed = true;
+    if (keyCode == KEY_V && down) input.cameraTogglePressed = true;
+    if (down && keyCode >= KEY_1 && keyCode <= KEY_4) setCommSignal(keyCode - KEY_1 + 1);
 }
 
 void Game::clearInputState() {
@@ -241,20 +830,29 @@ void Game::clearInputState() {
     input.touchMoveZ = 0.0f;
     input.lookDeltaX = 0.0f;
     input.lookDeltaY = 0.0f;
+    input.wiggleAxis = 0.0f;
+    input.commSignalPressed = 0;
+    input.jumpPressed = false;
+    input.meleePressed = false;
+    input.shootPressed = false;
+    input.cameraTogglePressed = false;
     input.touching = false;
 }
 
 void Game::setTouch(int action, float x, float y, int pointerCount) {
     (void)pointerCount;
+    if(state_.dead && action==TOUCH_DOWN){restart(); return;}
+    // Android's role-based controller owns gameplay input.  This legacy raw
+    // touch channel is retained only for restart/touch diagnostics; allowing it
+    // to own primaryHeld made every action-button press vacuum simultaneously.
     InputState& input = state_.input;
     if (action == TOUCH_DOWN) {
-        input.touching = true; input.primaryHeld = true;
+        input.touching = true;
         input.touchX = input.lastTouchX = x; input.touchY = input.lastTouchY = y;
     } else if (action == TOUCH_MOVE) {
-        input.lookDeltaX += x - input.lastTouchX; input.lookDeltaY += y - input.lastTouchY;
         input.touchX = input.lastTouchX = x; input.touchY = input.lastTouchY = y;
     } else if (action == TOUCH_UP || action == TOUCH_CANCEL) {
-        input.touching = false; input.primaryHeld = false;
+        input.touching = false;
     }
 }
 
@@ -275,28 +873,286 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
+    state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
+    if(state_.dead) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
+        updateDeathCamera(dt);
+        updateParticles(dt*DEATH_PRESENTATION_SCALE);
+        state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+        state_.hud.lowBattery=state_.player.battery<24.0f;
+        state_.hud.gameOver=true;
+        return;
+    }
+    if(!state_.started) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
+        state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+        state_.hud.lowBattery=state_.player.battery<24.0f;
+        state_.hud.gameOver=false;
+        return;
+    }
+    if(state_.cinematic.introActive) {
+        state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
+        // Freeze simulation without deleting held locomotion. Touch sticks,
+        // keyboard keys, and controller axes held through the reveal should
+        // become live on the first gameplay frame. Only transient actions and
+        // accumulated look deltas are discarded during the locked camera shot.
+        state_.input.lookDeltaX=0.0f;
+        state_.input.lookDeltaY=0.0f;
+        state_.input.primaryHeld=false;
+        state_.input.touchPrimaryHeld=false;
+        state_.input.jumpHeld=false;
+        state_.input.jumpPressed=false;
+        state_.input.meleePressed=false;
+        state_.input.shootPressed=false;
+        state_.input.cameraTogglePressed=false;
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
+        updatePhoneTransform();
+        updateIntroCamera(dt);
+        state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+        state_.hud.lowBattery=state_.player.battery<24.0f;
+        state_.hud.gameOver=false;
+        return;
+    }
+    // A local menu owns the solo simulation clock. In a connected match it
+    // only owns this player's controls; the authoritative room keeps moving.
+    if(state_.uiPaused&&!state_.multiplayer.enabled){
+        updateCamera(0.0f);
+        updateSoulLattices();
+        updateCrosshair(dt);
+        return;
+    }
+    state_.hud.headshotPulse=std::max(0.0f,state_.hud.headshotPulse-dt*5.5f);
+    state_.hud.perfectPulse=std::max(0.0f,state_.hud.perfectPulse-dt*3.8f);
+    state_.hud.headshotKillCharge=std::max(0.0f,state_.hud.headshotKillCharge-dt*1.7f);
+    updateBuildLabel();
+    auto& runProgression=state_.progression.run;
+    if(runProgression.accuracyStacks>0){
+        runProgression.accuracyDecayTimer=std::max(0.0f,runProgression.accuracyDecayTimer-dt);
+        if(runProgression.accuracyDecayTimer<=0.0f){runProgression.accuracyStacks=0;runProgression.accuracyMultiplier=1.0f;}
+    }
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
+    updateSecretTv(dt);
     updateInputActions(dt);
     updatePlayer(dt);
-    updateCamera(dt);
+    updateNetworkPeers(dt);
+    updateTeamRevival(dt);
+    state_.phoneVisual = makePhoneVisualState(state_.vacuum.pose, state_.vacuum.power, 0.0f, state_.time, state_.camera.firstPerson);
+    const float phoneActionAmount=std::max(state_.vacuum.pose,state_.energy.dischargePositionAmount);
+    state_.phoneVisual.actionLift=phoneActionAmount*0.65f;
+    state_.phoneVisual.actionForward=phoneActionAmount*0.25f;
+    updatePhoneTransform();
+    if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();
+    processPendingShots(dt);
     updateTargets(dt);
     updateVacuum(dt);
+    updateSlurpAudio();
+    updateBattery(dt);
+    if(state_.dead) {
+        state_.hud.batteryFill=0.0f; state_.hud.lowBattery=true; state_.hud.gameOver=true;
+        return;
+    }
+    float contact = 0.0f;
+    for (auto& target : state_.targets) {
+        syncSoulVisual(target, state_.time);
+        if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting) {
+            contact = std::max(contact, target.ingestProgress > 0.0f ? target.ingestProgress : 0.25f);
+        }
+    }
+    state_.phoneVisual = makePhoneVisualState(state_.vacuum.pose, state_.vacuum.power, contact, state_.time, state_.camera.firstPerson);
+    state_.phoneVisual.actionLift=phoneActionAmount*0.65f;
+    state_.phoneVisual.actionForward=phoneActionAmount*0.25f;
+    processQueuedSoulCaptures();
+    updateFlowerPowerups(dt);
     updateBullets(dt);
     updateCaptures(dt);
+    updateRoomPopulation(dt);
+    updateDoorTransition();
+    updateParticles(dt);
+    // Pass 7 evaluates vacuum against the prior rendered camera transform, then
+    // advances the camera and crosshair for the frame that is about to render.
+    updateCamera(dt);
+    updateIntroCamera(dt);
+    updateSoulLattices();
+    updateCrosshair(dt);
+    state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
+    state_.hud.storedSouls=state_.player.souls;
+    state_.hud.filledGoals=0;
+    for(const auto& capture:state_.captures) if(capture.filled) ++state_.hud.filledGoals;
+    state_.hud.requiredGoals=state_.requiredSouls;
+    state_.hud.vacuumField=state_.vacuum.fieldStrength;
+    state_.hud.lockStrength=state_.vacuum.lockStrength;
+    state_.hud.hasTarget=state_.vacuum.target!=-1;
+    state_.hud.lowBattery=state_.player.battery<24.0f;
+    state_.hud.gameOver=state_.dead;
+    state_.hud.supplementalFill=state_.energy.supplementalMax>0.0f
+        ? clampf(state_.energy.supplementalValue/state_.energy.supplementalMax,0.0f,1.0f) : 0.0f;
+    state_.hud.flowerStacks=state_.energy.flowerStacks;
 }
+
+void Game::configureNetworkHost(){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=true;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=0;std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"HOSTING");}
+void Game::configureNetworkGuest(int localPlayerId){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=false;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=std::max(1,std::min(NETWORK_PLAYER_COUNT-1,localPlayerId));std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"CONNECTED");}
+void Game::disableNetwork(){state_.multiplayer=MultiplayerRuntimeState{};}
+void Game::setNetworkRoom(const char* code,const char* status,bool connected){const bool changed=(code&&std::strncmp(state_.multiplayer.roomCode.data(),code,6)!=0)||(status&&std::strncmp(state_.multiplayer.status.data(),status,63)!=0)||state_.multiplayer.connected!=connected;if(code)std::snprintf(state_.multiplayer.roomCode.data(),state_.multiplayer.roomCode.size(),"%.6s",code);if(status)std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"%.63s",status);state_.multiplayer.connected=connected;if(changed)state_.cinematic.textInteraction=0.42f;}
+void Game::setNetworkPeerActive(int playerId,bool active){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT||playerId==state_.multiplayer.localPlayerId)return;auto& peer=state_.multiplayer.peers[playerId];if(active&&!peer.active){peer=NetworkPeerState{};peer.active=true;peer.playerId=playerId;peer.player.pos=state_.player.pos+Vec3{static_cast<float>(playerId)*0.75f,0,0};peer.camera=state_.camera;peer.energy=state_.energy;}else if(!active)peer=NetworkPeerState{};}
+void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;for(int signal=1;signal<=4;++signal){const unsigned short bit=static_cast<unsigned short>(1u<<(11+signal));if((buttons&bit)!=0&&(previous&bit)==0)peer.input.commSignalPressed=signal;}peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
+void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float pitch,float vacuumPower,float vacuumPose,int vacuumTarget,float meleeTimer,float dischargeAmount){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT)return;if(playerId==state_.multiplayer.localPlayerId){state_.player=player;state_.camera.pitch=pitch;state_.vacuum.power=vacuumPower;state_.vacuum.pose=vacuumPose;state_.vacuum.target=vacuumTarget;state_.meleeVisual.visualTimer=meleeTimer;state_.energy.dischargePositionAmount=dischargeAmount;updatePhoneTransform();return;}setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];peer.player=player;peer.camera.pitch=pitch;peer.vacuum.power=vacuumPower;peer.vacuum.pose=vacuumPose;peer.vacuum.target=vacuumTarget;peer.meleeVisual.visualTimer=meleeTimer;peer.energy.dischargePositionAmount=dischargeAmount;peer.phoneVisual=makePhoneVisualState(vacuumPose,vacuumPower,0,state_.time,false);peer.phoneTransform.position=player.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},player.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}
+
+void Game::savePlayerContext(NetworkPeerState& c) const{c.input=state_.input;c.player=state_.player;c.energy=state_.energy;c.camera=state_.camera;c.vacuum=state_.vacuum;c.pendingShots=state_.pendingShots;c.phonePose=state_.phonePose;c.phoneTransform=state_.phoneTransform;c.phoneVisual=state_.phoneVisual;c.hud=state_.hud;c.meleeVisual=state_.meleeVisual;c.meleeCooldown=state_.meleeCooldown;c.meleePose=state_.meleePose;c.meleeComboWindow=state_.meleeComboWindow;}
+void Game::loadPlayerContext(const NetworkPeerState& c){state_.input=c.input;state_.player=c.player;state_.energy=c.energy;state_.camera=c.camera;state_.vacuum=c.vacuum;state_.pendingShots=c.pendingShots;state_.phonePose=c.phonePose;state_.phoneTransform=c.phoneTransform;state_.phoneVisual=c.phoneVisual;state_.hud=c.hud;state_.meleeVisual=c.meleeVisual;state_.meleeCooldown=c.meleeCooldown;state_.meleePose=c.meleePose;state_.meleeComboWindow=c.meleeComboWindow;}
+void Game::updateNetworkPeers(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;NetworkPeerState local;savePlayerContext(local);for(int id=1;id<NETWORK_PLAYER_COUNT;++id){auto& peer=state_.multiplayer.peers[id];if(!peer.active)continue;loadPlayerContext(peer);simulationPlayerId_=id;updateInputActions(dt);updatePlayer(dt);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();processPendingShots(dt);updateVacuum(dt);processQueuedSoulCaptures();updateBattery(dt);updateCamera(dt);savePlayerContext(peer);}simulationPlayerId_=0;loadPlayerContext(local);}
+void Game::updateTeamRevival(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;PlayerState* players[NETWORK_PLAYER_COUNT]={&state_.player};InputState* inputs[NETWORK_PLAYER_COUNT]={&state_.input};bool active[NETWORK_PLAYER_COUNT]={true};for(int id=1;id<NETWORK_PLAYER_COUNT;++id){players[id]=&state_.multiplayer.peers[id].player;inputs[id]=&state_.multiplayer.peers[id].input;active[id]=state_.multiplayer.peers[id].active;}for(int donor=0;donor<NETWORK_PLAYER_COUNT;++donor){PlayerState& source=*players[donor];if(!active[donor]||!source.alive||source.downed||source.battery<=10.0f||!(inputs[donor]->primaryHeld||inputs[donor]->touchPrimaryHeld))continue;int recipient=-1;float best=2.2f;const Vec3 forward{-std::sin(source.yaw),0,-std::cos(source.yaw)};for(int id=0;id<NETWORK_PLAYER_COUNT;++id){if(id==donor||!active[id]||!players[id]->alive||!players[id]->downed)continue;const Vec3 delta{players[id]->pos.x-source.pos.x,0,players[id]->pos.z-source.pos.z};const float distance=length(delta);if(distance<best&&distance>0.001f&&dot3(delta*(1.0f/distance),forward)>0.72f){best=distance;recipient=id;}}if(recipient<0)continue;const float spend=std::min(source.battery-10.0f,10.0f*dt);source.battery-=spend;PlayerState& target=*players[recipient];target.reviveCharge+=spend*0.8f;target.battery=target.reviveCharge;if(target.reviveCharge>=18.0f){target.battery=target.reviveCharge;target.downed=false;target.bleedoutTimer=0.0f;target.reviveCharge=0.0f;target.alive=true;target.pos.y=GROUND_Y+PHONE_BODY_HEIGHT*0.5f;target.grounded=true;if(recipient==0){setEnergyTicker("SIGNAL RESTORED",2);emitAudio(AudioCue::RewardWoah,0.42f);}}}}
+void Game::updateSecretTv(float dt) {
+    auto& tv = state_.secretTv;
+    tv.available = state_.roomClear && state_.roomIndex == 10;
+    tv.donationCooldown = std::max(0.0f, tv.donationCooldown - dt);
+    tv.knockCueTimer = std::max(0.0f, tv.knockCueTimer - dt);
+    tv.knockVolume = 0.0f;
+    tv.knockPulse = 0.0f;
+    tv.knockPan = 0.0f;
+
+    const bool localCanHear = tv.available && state_.player.alive && !state_.player.downed &&
+        !state_.player.inSecretRoom && state_.player.secretVisitRoom != state_.roomIndex;
+    if (localCanHear) {
+        const Vec3 entrance{13.25f, state_.player.pos.y, 4.8f};
+        const Vec3 delta = state_.player.pos - entrance;
+        const float distance = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+        const float nearFade = smoothRange(distance, 2.35f, 7.5f);
+        const float farFade = 1.0f - smoothRange(distance, 26.0f, 36.0f);
+        const float seededTime = state_.time + static_cast<float>(std::abs(state_.roomSeed % 17)) * 0.071f;
+        const bool cueActive = tv.knockCueTimer > 0.0f;
+        const float knockTime = cueActive ? 5.4f - tv.knockCueTimer : seededTime;
+        const float pulse = secretDoorKnockPulse(knockTime);
+        const bool phraseActive = cueActive || secretDoorKnockPhraseActive(seededTime);
+        const float presence = nearFade * farFade;
+        tv.knockPulse = presence * pulse;
+        tv.knockVolume = phraseActive ? presence * (0.62f + 0.16f * pulse) : 0.0f;
+        tv.knockPan = clampf((entrance.x - state_.camera.pos.x) / 12.0f, -0.55f, 0.55f);
+    }
+
+    PlayerState* players[NETWORK_PLAYER_COUNT] = {&state_.player};
+    InputState* inputs[NETWORK_PLAYER_COUNT] = {&state_.input};
+    bool active[NETWORK_PLAYER_COUNT] = {true};
+    for (int id = 1; id < NETWORK_PLAYER_COUNT; ++id) {
+        players[id] = &state_.multiplayer.peers[id].player;
+        inputs[id] = &state_.multiplayer.peers[id].input;
+        active[id] = state_.multiplayer.peers[id].active;
+    }
+    for (int id = 0; id < NETWORK_PLAYER_COUNT; ++id) {
+        PlayerState& player = *players[id];
+        if (!active[id] || !player.alive || player.downed) continue;
+        if (!player.inSecretRoom && tv.available && player.secretVisitRoom != state_.roomIndex) {
+            const Vec3 entrance{13.25f, player.pos.y, 4.8f};
+            const Vec3 delta = player.pos - entrance;
+            if (delta.x * delta.x + delta.z * delta.z < 1.05f * 1.05f) {
+                player.inSecretRoom = true;
+                player.secretVisitRoom = state_.roomIndex;
+                player.secretVisitTimer = 15.0f;
+                player.pos = {39.0f, GROUND_Y + PHONE_BODY_HEIGHT * 0.5f, 0};
+                player.vel = {};
+            }
+        }
+        if (!player.inSecretRoom) continue;
+        player.secretVisitTimer = std::max(0.0f, player.secretVisitTimer - dt);
+        if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
+            inputs[id]->shootPressed = false;
+            --player.souls;
+            ++tv.signal;
+            tv.donationCooldown = 0.70f;
+            const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
+            const float roll = seededRoomValue(static_cast<float>(state_.roomSeed) * 0.17f + static_cast<float>(tv.signal) * 13.71f + static_cast<float>(tv.damage) * 31.3f);
+            if (roll < 1.0f / static_cast<float>(denominator)) {
+                ++tv.damage;
+                if (tv.damage >= tv.tolerance) tv.broken = true;
+            }
+            if (id == 0) {
+                setEnergyTicker(tv.broken ? "NO SIGNAL" : "SIGNAL +1", tv.broken ? 1 : 2);
+                if (!tv.broken) emitAudio(AudioCue::RewardNice, 0.30f);
+            }
+        }
+        if (player.secretVisitTimer <= 0.0f || player.pos.x >= 43.45f) {
+            player.inSecretRoom = false;
+            player.pos = {12.6f, GROUND_Y + PHONE_BODY_HEIGHT * 0.5f, 4.8f};
+            player.vel = {};
+        }
+    }
+}
+
+void Game::setWiggle(float axis) {
+    InputState& input=state_.input;
+    if(state_.player.grabbedByTarget<0)return;
+    if(std::abs(axis)<0.001f)axis=state_.player.grabLastDirection>=0?-1.0f:1.0f;
+    input.wiggleAxis=axis>0.0f?1.0f:-1.0f;
+}
+void Game::setCommSignal(int signal) {
+    if(signal<1||signal>4)return;
+    state_.input.commSignalPressed=signal;
+}
+void Game::updateNetworkGuest(float dt){simulationPlayerId_=state_.multiplayer.localPlayerId;const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;state_.input.meleePressed=false;state_.input.shootPressed=false;updateInputActions(dt);state_.input.meleePressed=melee;state_.input.shootPressed=shoot;updatePlayer(dt);const bool vacuumBlocked=state_.player.ledgeHanging||state_.player.ledgeMantleTimer>0.0f||state_.meleeVisual.airLungeLandingPending||state_.meleeVisual.visualTimer>0.0f||state_.phonePose.doubleJumpVacuumPause>0.0f;state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1&&!vacuumBlocked;state_.vacuum.power=clampf(state_.vacuum.power+(state_.vacuum.active?2.4f:-3.2f)*dt,0,1);state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*std::min(1.0f,dt*10.0f);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();updateCamera(dt);updateSoulLattices();updateCrosshair(dt);state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);state_.hud.storedSouls=state_.player.souls;state_.input.meleePressed=false;state_.input.shootPressed=false;simulationPlayerId_=0;}
 
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
+    state_.player.commSignalTimer=std::max(0.0f,state_.player.commSignalTimer-dt);
+    if(state_.player.commSignalTimer<=0.0f)state_.player.commSignal=0;
+    if(input.commSignalPressed>=1&&input.commSignalPressed<=4){
+        state_.player.commSignal=input.commSignalPressed;
+        state_.player.commSignalTimer=2.4f;
+        input.commSignalPressed=0;
+    }
+    if(state_.player.grabbedByTarget>=0){input.jumpPressed=false;input.meleePressed=false;input.shootPressed=false;input.cameraTogglePressed=false;input.primaryHeld=false;input.touchPrimaryHeld=false;input.lookDeltaX=input.lookDeltaY=0.0f;return;}
     if (input.cameraTogglePressed) state_.camera.firstPerson = !state_.camera.firstPerson;
     state_.camera.yaw -= input.lookDeltaX * 0.003f;
     state_.camera.pitch = clampf(state_.camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
     input.lookDeltaX = input.lookDeltaY = 0.0f;
-    if (input.jumpPressed) { state_.player.jumpBufferTimer = JUMP_BUFFER; tryJump(); }
-    if (input.meleePressed) triggerMelee();
-    if (input.shootPressed) shootStoredSoul();
+    MeleeVisualState& action=state_.meleeVisual;
+    const bool lungeOwned=action.airLungeLandingPending;
+    if(input.jumpPressed&&state_.player.ledgeHanging){
+        float forwardAxis=(input.forward?1.0f:0.0f)-(input.back?1.0f:0.0f)+input.touchMoveZ;
+        float strafeAxis=(input.right?1.0f:0.0f)-(input.left?1.0f:0.0f)+input.touchMoveX;
+        Vec3 move=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
+        if(lengthSq(move)>0.0001f)move=normalized(move);
+        releaseLedgeHang(dotXZ(move,state_.player.ledgeNormal*-1.0f)>0.25f);
+    }else if(input.jumpPressed&&action.wallGripTimer>0.0f){
+        spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
+        state_.player.vel+=action.wallNormal*6.0f;
+        state_.player.jumpVel=AIR_JUMP_SPEED;
+        state_.player.grounded=false;
+        action.wallGripTimer=0.0f;
+        action.airLungeLandingPending=false;
+        action.locomotionLunge=false;
+        state_.vacuum.active=false;
+    }else if(input.jumpPressed&&!lungeOwned){
+        state_.player.ledgeMantleTimer=0.0f;
+        state_.vacuum.active=false;
+        state_.player.jumpBufferTimer=JUMP_BUFFER;
+        tryJump();
+    }
+    // Air melee is an evasive locomotion cancel. Ground melee waits for a held
+    // vacuum/slurp beat to finish instead of producing two actions at once.
+    if(input.meleePressed&&state_.player.ledgeHanging){
+        PlayerState& p=state_.player;
+        const Vec3 launch=p.ledgeNormal*1.8f+p.ledgeTangent*p.ledgeShimmySpeed;
+        p.pos+=p.ledgeNormal*(PLAYER_SUPPORT_RADIUS+0.04f);
+        p.ledgeHanging=false; p.ledgeCollider=-1; p.ledgeGrabCooldown=LEDGE_REGRAB_COOLDOWN;
+        p.grounded=false; p.jumpVel=std::max(p.jumpVel,2.3f); p.vel=launch;
+    }
+    if(input.meleePressed&&!lungeOwned){
+        const bool airborne=!state_.player.grounded;
+        if(airborne||!state_.vacuum.active){
+            if(airborne)state_.vacuum.active=false;
+            triggerMelee();
+        }
+    }
+    const bool committedAfterInput=action.airLungeLandingPending;
+    if(input.shootPressed&&!committedAfterInput&&!state_.vacuum.active)shootStoredSoul();
     input.cameraTogglePressed = input.jumpPressed = input.meleePressed = input.shootPressed = false;
     state_.meleeCooldown = std::max(0.0f, state_.meleeCooldown - dt);
+    state_.meleeComboWindow = std::max(0.0f, state_.meleeComboWindow - dt);
+    state_.meleeVisual.visualTimer = std::max(0.0f, state_.meleeVisual.visualTimer - dt);
     state_.meleePose = std::max(0.0f, state_.meleePose - dt * 5.5f);
-    state_.vacuum.active = (input.primaryHeld || input.touchPrimaryHeld) && state_.player.battery > 1.0f;
+    const bool attackOwned=action.visualTimer>0.0f;
+    const bool jumpVacuumBlocked=state_.phonePose.doubleJumpVacuumPause>0.0f;
+    state_.vacuum.active=(input.primaryHeld||input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1.0f
+        && !action.airLungeLandingPending && !attackOwned && !jumpVacuumBlocked && !state_.player.ledgeHanging && state_.player.ledgeMantleTimer<=0.0f;
     if (state_.player.souls >= MAX_STORED_SOULS) state_.vacuum.active = false;
 }
 
@@ -334,23 +1190,68 @@ void Game::resolvePlayerObstacleCollisions() {
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {
+            const Vec3 incoming=player.vel;
             const float pushes[4] = {
                 std::abs(player.pos.x - (c.minX - radius)), std::abs((c.maxX + radius) - player.pos.x),
                 std::abs(localPlayerZ - (c.minZ - radius)), std::abs((c.maxZ + radius) - localPlayerZ)
             };
             int axis = 0; for (int p = 1; p < 4; ++p) if (pushes[p] < pushes[axis]) axis = p;
-            if (axis == 0) { player.pos.x = c.minX - radius; if (player.vel.x > 0) player.vel.x = 0; }
-            else if (axis == 1) { player.pos.x = c.maxX + radius; if (player.vel.x < 0) player.vel.x = 0; }
-            else if (axis == 2) { localPlayerZ = c.minZ - radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z > 0) player.vel.z = 0; }
-            else { localPlayerZ = c.maxZ + radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z < 0) player.vel.z = 0; }
+            Vec3 normal;
+            if (axis == 0) { normal={-1,0,0};player.pos.x = c.minX - radius; if (player.vel.x > 0) player.vel.x = 0; }
+            else if (axis == 1) { normal={1,0,0};player.pos.x = c.maxX + radius; if (player.vel.x < 0) player.vel.x = 0; }
+            else if (axis == 2) { normal={0,0,-1};localPlayerZ = c.minZ - radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z > 0) player.vel.z = 0; }
+            else { normal={0,0,1};localPlayerZ = c.maxZ + radius; player.pos.z = tileOriginZ + localPlayerZ; if (player.vel.z < 0) player.vel.z = 0; }
+            if(state_.meleeVisual.airLungeLandingPending){
+                const float headOn=std::abs(dotXZ(normalized(incoming),normal));
+                const Vec3 tangent=incoming-normal*dotXZ(incoming,normal);
+                player.vel=tangent*(headOn>0.72f?0.62f:0.88f);
+                state_.meleeVisual.wallNormal=normal;
+                if(headOn>0.72f)state_.meleeVisual.wallGripTimer=AIR_MELEE_WALL_GRIP_TIME;
+            }
         }
     }
 }
 
+void Game::resolveDoorwayCollisions(float previousX,float previousZ){
+    PlayerState& player=state_.player;
+    const float radius=PLAYER_COLLISION_RADIUS;
+    const float safeHalfWidth=2.1f-radius;
+    const int previousTile=getRoomTileIndex(previousZ);
+    const int currentTile=getRoomTileIndex(player.pos.z);
+    const bool apertureHeight=player.pos.y>=GROUND_Y-0.12f&&player.pos.y<=3.72f+0.22f;
+    if(previousTile!=currentTile&&(!apertureHeight||std::abs(player.pos.x)>safeHalfWidth)){
+        const float seam=previousTile<currentTile
+            ? getRoomTileOriginZ(previousTile)+ROOM_DEPTH*0.5f
+            : getRoomTileOriginZ(previousTile)-ROOM_DEPTH*0.5f;
+        player.pos.z=seam+(previousTile<currentTile?-radius:radius);
+        if((previousTile<currentTile&&player.vel.z>0.0f)||(previousTile>currentTile&&player.vel.z<0.0f))player.vel.z=0.0f;
+        return;
+    }
+    const float localZ=wrapZ(player.pos.z);
+    const float seamDistance=ROOM_DEPTH*0.5f-std::abs(localZ);
+    if(seamDistance>=radius)return;
+    if(!apertureHeight){
+        const float seamSign=localZ<0.0f?-1.0f:1.0f;
+        player.pos.z=getRoomTileOriginZ(getRoomTileIndex(player.pos.z))+seamSign*(ROOM_DEPTH*0.5f-radius);
+        if((seamSign<0.0f&&player.vel.z<0.0f)||(seamSign>0.0f&&player.vel.z>0.0f))player.vel.z=0.0f;
+        return;
+    }
+    if(std::abs(previousX)<=safeHalfWidth&&std::abs(player.pos.x)>safeHalfWidth){
+        player.pos.x=(player.pos.x<0.0f?-1.0f:1.0f)*safeHalfWidth;
+        if((player.pos.x<0.0f&&player.vel.x<0.0f)||(player.pos.x>0.0f&&player.vel.x>0.0f))player.vel.x=0.0f;
+    }else if(std::abs(player.pos.x)>safeHalfWidth){
+        const float seamSign=localZ<0.0f?-1.0f:1.0f;
+        player.pos.z=getRoomTileOriginZ(getRoomTileIndex(player.pos.z))+seamSign*(ROOM_DEPTH*0.5f-radius);
+        if((seamSign<0.0f&&player.vel.z<0.0f)||(seamSign>0.0f&&player.vel.z>0.0f))player.vel.z=0.0f;
+    }
+}
+
 void Game::applyWallClimb(float dt) {
+    (void)dt;
+    return;
     PlayerState& p = state_.player;
     InputState& input = state_.input;
-    if (p.grounded || !input.jumpHeld) return;
+    if (p.grounded || !input.jumpHeld || state_.meleeVisual.wallClimbRemaining<=0.0f) return;
     const float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     const float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
     if (std::abs(forwardAxis) + std::abs(strafeAxis) <= 0.05f) return;
@@ -358,12 +1259,15 @@ void Game::applyWallClimb(float dt) {
     intent = normalized(intent);
     Vec3 normal{}; float topY = 0.0f; bool contact = false;
     const float radius = WALL_CLIMB_RADIUS, climbGap = 0.08f, localZ = wrapZ(p.pos.z);
+    constexpr float doorwayClimbHalfWidth = 2.1f;
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     const float minZ = -ROOM_DEPTH * 0.5f + 0.8f, maxZ = ROOM_DEPTH * 0.5f - 0.72f;
     if (p.pos.x <= minX + climbGap) { normal = {1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
     else if (p.pos.x >= maxX - climbGap) { normal = {-1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
-    else if (localZ <= minZ + climbGap) { normal = {0,0,1}; topY = getPlayerCeilingLimit(); contact = true; }
-    else if (localZ >= maxZ - climbGap) { normal = {0,0,-1}; topY = getPlayerCeilingLimit(); contact = true; }
+    // The front/rear wall is segmented around the portal.  Treating its open
+    // centre as a climbable boundary creates an invisible step while crossing.
+    else if (localZ <= minZ + climbGap && std::abs(p.pos.x) > doorwayClimbHalfWidth) { normal = {0,0,1}; topY = getPlayerCeilingLimit(); contact = true; }
+    else if (localZ >= maxZ - climbGap && std::abs(p.pos.x) > doorwayClimbHalfWidth) { normal = {0,0,-1}; topY = getPlayerCeilingLimit(); contact = true; }
     for (int i = 0; !contact && i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
         const bool inZ = localZ > c.minZ - radius && localZ < c.maxZ + radius;
@@ -378,7 +1282,8 @@ void Game::applyWallClimb(float dt) {
     if (p.pos.y >= climbLimit) { p.pos.y = climbLimit; if (p.jumpVel > 0) p.jumpVel = 0; return; }
     p.jumpVel = std::max(p.jumpVel, WALL_CLIMB_SPEED * batteryPower(p));
     p.vel.x *= WALL_CLIMB_GRIP; p.vel.z *= WALL_CLIMB_GRIP;
-    p.battery = std::max(0.0f, p.battery - 2.0f * dt);
+    state_.meleeVisual.wallClimbRemaining=std::max(0.0f,state_.meleeVisual.wallClimbRemaining-dt);
+    spendBattery(BATTERY_WALL_CLIMB_DRAIN * dt,BatteryReason::Climb);
 }
 
 bool Game::isInsideDoorAperture(const Vec3& position, float pad) const {
@@ -395,28 +1300,237 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
     Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
     if (!isInsideDoorAperture(local, 0.04f)) return;
     if (state_.roomClear && currentTile < previousTile) {
-        state_.roomIndex += 1; state_.roomSeed += 97; state_.topology.advancing = true; buildRoomColliders();
+        state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
+        state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
+        if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
+        const std::uint32_t seedStep=9973u+static_cast<std::uint32_t>(seededRoomValue(991.0f)*1000000.0f);
+        state_.roomSeed=static_cast<int>(static_cast<std::uint32_t>(state_.roomSeed)+seedStep); state_.topology.advancing = true;
+        advanceRunRulesForRoom();
+        state_.roomClear=false;
+        gainBattery(18.0f,BatteryReason::NextRoom);
+        state_.player.soloSoulRebootUsed=false;
+        state_.player.souls=0;
+        state_.player.storedSoulBrute.fill(false);
+        state_.requiredSouls=std::min(9,5+state_.runRules.requiredSlotStacks);
+        state_.depositedSouls=0;
+        state_.progression.run.roomHeat=0.0f;
+        state_.progression.run.roomElapsed=0.0f;
+        state_.progression.run.roomCaptures=0;
+        const float startX=-((static_cast<float>(state_.requiredSouls)-1.0f)*0.82f)*0.5f;
+        for(int i=0;i<CAPTURE_COUNT;++i){state_.captures[i]=CapturePointState{}; state_.captures[i].pos={startX+static_cast<float>(i)*0.82f,3.05f,ROOM_GRID_Z};}
+        for(auto& bullet:state_.bullets) bullet=BulletState{};
+        for(auto& pending:state_.pendingShots) pending=PendingShotState{};
+        buildRoomColliders();
+        for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};
+        for(int i=0;i<TARGET_COUNT;++i){if(i<activeHumanTarget()) respawnTarget(i); else state_.targets[i]=TargetState{};}
+        state_.upgradeMenu.active=true;
+        state_.uiPaused=true;
+        clearInputState();
+    } else if(!state_.roomClear) {
+        chargeClosedDoorLoop();
     }
+}
+
+void Game::chargeClosedDoorLoop() {
+    constexpr float LOW_BATTERY_THRESHOLD=24.0f;
+    constexpr float LOOP_BATTERY_COST=16.0f;
+    constexpr float LOOP_REGEN_LOCK=1.25f;
+    auto& permanent=state_.progression.permanent;
+    if(state_.player.battery>LOW_BATTERY_THRESHOLD){
+        state_.progression.run.batteryRegenLock=std::max(state_.progression.run.batteryRegenLock,LOOP_REGEN_LOCK);
+        spendBattery(LOOP_BATTERY_COST,BatteryReason::Loop);
+        return;
+    }
+    if(permanent.tokens>0){
+        --permanent.tokens;
+        ++permanent.revision;
+        setEnergyTicker("EMERGENCY LOOP -1 TOKEN",1);
+        return;
+    }
+    setEnergyTicker("LOOP FAILURE / BATTERY EMPTY",1);
+    spendBattery(state_.player.battery,BatteryReason::Loop);
+}
+
+void Game::awardGoalToken(CapturePointState& capture) {
+    if(capture.tokenAwarded)return;
+    capture.tokenAwarded=true;
+    ++state_.progression.permanent.tokens;
+    ++state_.progression.permanent.revision;
+    setEnergyTicker("GOAL +1 TOKEN",2);
+}
+
+int Game::activeHumanTarget() const {
+    int activePlayers=1;
+    if(state_.multiplayer.authoritativeHost)for(int id=1;id<NETWORK_PLAYER_COUNT;++id)if(state_.multiplayer.peers[id].active)++activePlayers;
+    const int roomExtra=std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(0,state_.roomIndex-1));
+    return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,
+        ACTIVE_HUMAN_TARGET+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2));
+}
+
+void Game::advanceRunRulesForRoom() {
+    int candidates[3]; int count=0;
+    if(state_.runRules.requiredSlotStacks<3) candidates[count++]=0;
+    if(state_.runRules.crowdedRoomStacks<4) candidates[count++]=1;
+    if(state_.runRules.fasterSlurpStacks<4) candidates[count++]=2;
+    if(count==0){state_.runRules.lastAdded=-1; return;}
+    const float roll=seededRoomValue(static_cast<float>(state_.runRules.nextId)*19.13f+static_cast<float>(state_.roomIndex)*7.91f);
+    const int chosen=candidates[static_cast<int>(roll*static_cast<float>(count))%count];
+    if(chosen==0) ++state_.runRules.requiredSlotStacks;
+    else if(chosen==1) ++state_.runRules.crowdedRoomStacks;
+    else ++state_.runRules.fasterSlurpStacks;
+    state_.runRules.lastAdded=chosen; ++state_.runRules.nextId;
+}
+
+void Game::updateDoorTransition() {
+    DoorTransitionState& transition=state_.doorTransition;
+    if(!transition.active) return;
+    const Vec3 motion=state_.player.pos-transition.lastPlayerPos;
+    transition.frameMotion=motion;
+    transition.distanceTravelled+=length(motion); transition.lastPlayerPos=state_.player.pos;
+    const float t=clampf(transition.distanceTravelled/DOOR_DATAMOSH_DISTANCE,0.0f,1.0f);
+    transition.progress=1.0f-smooth01(t);
+    if(transition.progress<=DOOR_DATAMOSH_MIN_STRENGTH){transition.active=false; transition.progress=0.0f;}
+}
+
+bool Game::tryBeginLedgeHang() {
+    PlayerState& p=state_.player;
+    if(p.ledgeHanging||p.grounded||p.ledgeGrabCooldown>0.0f||p.jumpVel>0.35f||!p.alive)return false;
+    if(state_.meleeVisual.airLungeLandingPending)return false;
+    const float phoneTop=p.pos.y+PHONE_BODY_HEIGHT*0.5f;
+    const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
+    const float localZ=p.pos.z-tileOriginZ;
+    int best=-1; float bestDistance=LEDGE_GRAB_REACH;
+    Vec3 bestNormal; Vec3 bestTangent;
+    for(int i=0;i<state_.debug.colliderCount;++i){
+        const RoomCollider& c=state_.roomColliders[i];
+        if(phoneTop<c.topY-LEDGE_GRAB_VERTICAL_BELOW||phoneTop>c.topY+LEDGE_GRAB_VERTICAL_ABOVE)continue;
+        auto candidate=[&](float distance,const Vec3& normal,const Vec3& tangent,bool within){
+            if(within&&distance>=-0.02f&&distance<bestDistance){best=i;bestDistance=distance;bestNormal=normal;bestTangent=tangent;}
+        };
+        candidate(c.minX-p.pos.x,{-1,0,0},{0,0,1},localZ>c.minZ+LEDGE_CORNER_INSET&&localZ<c.maxZ-LEDGE_CORNER_INSET);
+        candidate(p.pos.x-c.maxX,{1,0,0},{0,0,1},localZ>c.minZ+LEDGE_CORNER_INSET&&localZ<c.maxZ-LEDGE_CORNER_INSET);
+        candidate(c.minZ-localZ,{0,0,-1},{1,0,0},p.pos.x>c.minX+LEDGE_CORNER_INSET&&p.pos.x<c.maxX-LEDGE_CORNER_INSET);
+        candidate(localZ-c.maxZ,{0,0,1},{1,0,0},p.pos.x>c.minX+LEDGE_CORNER_INSET&&p.pos.x<c.maxX-LEDGE_CORNER_INSET);
+    }
+    if(best<0)return false;
+    const RoomCollider& c=state_.roomColliders[best];
+    p.ledgeHanging=true; p.ledgeCollider=best; p.ledgeNormal=bestNormal; p.ledgeTangent=bestTangent;
+    p.ledgeShimmySpeed=dotXZ(p.vel,bestTangent)*0.55f; p.ledgeHangTime=0.0f;
+    const float faceOffset=PHONE_BODY_DEPTH*0.5f+LEDGE_PHONE_FACE_GAP;
+    if(bestNormal.x<0)p.pos.x=c.minX-faceOffset;
+    else if(bestNormal.x>0)p.pos.x=c.maxX+faceOffset;
+    else if(bestNormal.z<0)p.pos.z=tileOriginZ+c.minZ-faceOffset;
+    else p.pos.z=tileOriginZ+c.maxZ+faceOffset;
+    p.pos.y=c.topY-PHONE_BODY_HEIGHT*0.5f+0.008f;
+    p.vel={0,0,0}; p.jumpVel=0.0f; p.grounded=false;
+    p.yaw=p.targetYaw=std::atan2(bestNormal.x,bestNormal.z);
+    state_.vacuum.active=false;
+    return true;
+}
+
+void Game::releaseLedgeHang(bool mantle) {
+    PlayerState& p=state_.player;
+    if(!p.ledgeHanging)return;
+    const int collider=p.ledgeCollider; const Vec3 normal=p.ledgeNormal; const Vec3 tangent=p.ledgeTangent;
+    const float shimmy=p.ledgeShimmySpeed;
+    p.ledgeHanging=false; p.ledgeCollider=-1; p.ledgeGrabCooldown=LEDGE_REGRAB_COOLDOWN;
+    if(mantle&&collider>=0&&collider<state_.debug.colliderCount){
+        const RoomCollider& c=state_.roomColliders[collider];
+        p.pos-=normal*(PLAYER_SUPPORT_RADIUS+PHONE_BODY_DEPTH*0.5f+0.08f);
+        p.pos.y=c.topY+GROUND_Y; p.grounded=true; p.jumpVel=0.0f;
+        p.vel=tangent*(shimmy*0.70f)-normal*1.35f;
+        p.ledgeMantleTimer=LEDGE_MANTLE_DURATION;
+        p.coyoteTimer=COYOTE_TIME; p.airJumpsRemaining=1;
+    }else{
+        p.pos+=normal*(PLAYER_SUPPORT_RADIUS+0.04f);
+        p.grounded=false; p.jumpVel=LEDGE_VAULT_UP_SPEED;
+        p.vel=normal*LEDGE_VAULT_OUT_SPEED+tangent*(shimmy*1.10f);
+    }
+}
+
+bool Game::updateLedgeHang(float dt,float forwardAxis,float strafeAxis) {
+    PlayerState& p=state_.player;
+    if(!p.ledgeHanging)return false;
+    if(p.ledgeCollider<0||p.ledgeCollider>=state_.debug.colliderCount){p.ledgeHanging=false;return false;}
+    p.ledgeHangTime+=dt;
+    Vec3 move=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
+    if(lengthSq(move)>1.0f)move=normalized(move);
+    const float away=dotXZ(move,p.ledgeNormal);
+    if(-away>0.72f&&p.ledgeHangTime>0.12f){releaseLedgeHang(true);return false;}
+    if(away>0.62f&&p.ledgeHangTime>0.08f){
+        const Vec3 normal=p.ledgeNormal,tangent=p.ledgeTangent; const float shimmy=p.ledgeShimmySpeed;
+        p.pos+=normal*(PLAYER_SUPPORT_RADIUS+0.04f);
+        p.ledgeHanging=false;p.ledgeCollider=-1;p.ledgeGrabCooldown=LEDGE_REGRAB_COOLDOWN;
+        p.grounded=false;p.jumpVel=-0.7f;p.vel=normal*1.1f+tangent*shimmy;
+        return false;
+    }
+    const float intent=dotXZ(move,p.ledgeTangent);
+    p.ledgeShimmySpeed+=intent*LEDGE_SHIMMY_ACCEL*dt;
+    p.ledgeShimmySpeed=clampf(p.ledgeShimmySpeed,-LEDGE_SHIMMY_MAX_SPEED,LEDGE_SHIMMY_MAX_SPEED);
+    p.ledgeShimmySpeed*=std::pow(LEDGE_SHIMMY_DAMPING,dt*60.0f);
+    p.pos+=p.ledgeTangent*(p.ledgeShimmySpeed*dt);
+    const RoomCollider& c=state_.roomColliders[p.ledgeCollider];
+    const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
+    if(std::abs(p.ledgeTangent.x)>0.5f)p.pos.x=clampf(p.pos.x,c.minX+LEDGE_CORNER_INSET,c.maxX-LEDGE_CORNER_INSET);
+    else p.pos.z=tileOriginZ+clampf(p.pos.z-tileOriginZ,c.minZ+LEDGE_CORNER_INSET,c.maxZ-LEDGE_CORNER_INSET);
+    p.pos.y=c.topY-PHONE_BODY_HEIGHT*0.5f+0.008f;
+    p.vel={0,0,0};p.jumpVel=0.0f;p.grounded=false;
+    p.yaw=p.targetYaw=std::atan2(p.ledgeNormal.x,p.ledgeNormal.z);
+    return true;
 }
 
 void Game::updatePlayer(float dt) {
     PlayerState& p = state_.player;
     InputState& input = state_.input;
+    if(p.downed){p.vel={};p.jumpVel=0.0f;p.grounded=true;p.pos.y=GROUND_Y+PHONE_BODY_DEPTH*0.5f;state_.vacuum=VacuumState{};state_.meleeVisual=MeleeVisualState{};return;}
+    if(p.inSecretRoom){const float forward=(input.forward?1.0f:0.0f)-(input.back?1.0f:0.0f)+input.touchMoveZ,side=(input.right?1.0f:0.0f)-(input.left?1.0f:0.0f)+input.touchMoveX;const Vec3 f{-std::sin(state_.camera.yaw),0,-std::cos(state_.camera.yaw)},r{std::cos(state_.camera.yaw),0,-std::sin(state_.camera.yaw)};Vec3 motion=f*forward+r*side;if(lengthSq(motion)>1)motion=normalized(motion);p.pos+=motion*(3.2f*dt);p.pos.x=clampf(p.pos.x,37.2f,43.6f);p.pos.z=clampf(p.pos.z,-2.8f,2.8f);p.pos.y=GROUND_Y+PHONE_BODY_HEIGHT*0.5f;p.vel=motion*3.2f;p.jumpVel=0;p.grounded=true;return;}
+    const float previousX = p.pos.x;
     const float previousZ = p.pos.z;
     if (p.jumpBufferTimer > 0) p.jumpBufferTimer = std::max(0.0f, p.jumpBufferTimer - dt);
+    p.ledgeGrabCooldown=std::max(0.0f,p.ledgeGrabCooldown-dt);
+    p.ledgeMantleTimer=std::max(0.0f,p.ledgeMantleTimer-dt);
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
+    MeleeVisualState& lunge=state_.meleeVisual;
+    lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
+    lunge.wallGripTimer=std::max(0.0f,lunge.wallGripTimer-dt);
+    if(p.grounded)lunge.wallClimbRemaining=WALL_CLIMB_MAX_TIME;
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
-    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT;
+    const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
+    const float lungeInfluence=std::min(0.42f,0.025f*static_cast<float>(upgradeLevel(UpgradeTrack::Lunge)));
+    const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT*(committedLunge?0.18f+lungeInfluence:1.0f);
     const float airSpeed = p.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
     const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
     const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
     const float vacuumSlow = 1.0f - state_.vacuum.pose * (1.0f - VACUUM_MOVE_MULT);
     float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
+    if(updateLedgeHang(dt,forwardAxis,strafeAxis)){
+        updatePhoneGait(dt,false);updatePhoneActionPose(dt,false,forwardAxis,strafeAxis);
+        state_.debug.supportY=p.pos.y;state_.debug.localZ=wrapZ(p.pos.z);state_.debug.horizontalSpeed=std::abs(p.ledgeShimmySpeed);
+        state_.debug.cameraYaw=state_.camera.yaw;state_.debug.cameraPitch=state_.camera.pitch;state_.debug.cameraMode=state_.camera.firstPerson?1:0;
+        state_.debug.phoneYaw=state_.phonePose.yaw;state_.debug.phonePitch=state_.phonePose.pitch;state_.debug.phoneRoll=state_.phonePose.roll;
+        state_.debug.phoneLift=state_.phonePose.lift;state_.debug.phoneForward=state_.phonePose.forward;state_.debug.phoneSide=state_.phonePose.side;
+        return;
+    }
+    updateMeleeDash(dt);
     Vec3 move = cameraForwardFlat() * forwardAxis + cameraRightFlat() * strafeAxis;
     if (lengthSq(move) > 0.0f) { move = normalized(move); p.vel += move * (accel * vacuumSlow * dt); }
     limitHorizontal(p.vel, maxSpeed * vacuumSlow);
+    // Ground melee retains the browser's short positional dash. Air melee is
+    // a one-shot physical impulse, after ordinary air-speed limiting, so its
+    // arc is subsequently governed by gravity, drag and collision response.
+    if (state_.meleeVisual.airLungePending) {
+        MeleeVisualState& melee = state_.meleeVisual;
+        const Vec3 direction = normalized(Vec3{melee.direction.x, 0.0f, melee.direction.z});
+        const float forwardSpeed = dotXZ(p.vel, direction);
+        const Vec3 lateral = p.vel - direction * forwardSpeed;
+        p.vel = direction * std::max(forwardSpeed, melee.airLungeSpeed) + lateral * AIR_MELEE_LATERAL_RETENTION;
+        // This is a physical kick, not a trajectory fitted to an animation
+        // duration. Gravity and the actual support below decide when it lands.
+        p.jumpVel=std::max(p.jumpVel,melee.airLungeVerticalKick);
+        melee.airLungePending = false;
+    }
     if (!p.grounded) {
         p.jumpVel -= GRAVITY * dt;
         applyWallClimb(dt);
@@ -424,29 +1538,37 @@ void Game::updatePlayer(float dt) {
         if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }
         const float support = getPlayerSupportY(p.pos.x, p.pos.z);
         if (p.pos.y <= support) {
+            const float impactSpeed=std::max(0.0f,-p.jumpVel);
             p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
-            if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
+            state_.phonePose.doubleJumpTimer = 0.0f;
+            if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
+            else if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
         }
     }
     if (p.grounded && p.jumpBufferTimer > 0) startGroundJump();
     p.pos += p.vel * dt;
     resolvePlayerObstacleCollisions();
-    updateRoomTopology(previousZ, p.pos.z);
+    resolveDoorwayCollisions(previousX,previousZ);
+    if(simulationPlayerId_==0) updateRoomTopology(previousZ, p.pos.z);
     if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }
+    const bool caughtLedge=tryBeginLedgeHang();
     const float supportAfter = getPlayerSupportY(p.pos.x, p.pos.z);
-    if (p.grounded) {
+    if (!caughtLedge&&p.grounded) {
         if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else p.pos.y = supportAfter;
-    } else if (p.jumpVel <= 0 && p.pos.y <= supportAfter) {
+    } else if (!caughtLedge&&p.jumpVel <= 0 && p.pos.y <= supportAfter) {
+        const float impactSpeed=std::max(0.0f,-p.jumpVel);
         p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
+        state_.phonePose.doubleJumpTimer = 0.0f;
+        if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
     }
     const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
     if (p.pos.x < minX) { p.pos.x = minX; if (p.vel.x < 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
     else if (p.pos.x > maxX) { p.pos.x = maxX; if (p.vel.x > 0) p.vel.x = 0; p.vel.z *= WALL_SLIDE_RETENTION; }
     const float friction = p.grounded ? GROUND_FRICTION : AIR_FRICTION;
     p.vel *= std::pow(friction, dt * 60.0f);
-    p.targetYaw = state_.camera.yaw;
-    p.yaw = state_.camera.yaw;
+    if(!p.ledgeHanging){p.targetYaw = state_.camera.yaw;p.yaw = state_.camera.yaw;}
     updatePhoneGait(dt, running);
+    updatePhoneActionPose(dt, running, forwardAxis, strafeAxis);
     state_.debug.supportY = supportAfter;
     state_.debug.localZ = wrapZ(p.pos.z);
     state_.debug.horizontalSpeed = horizontalLength(p.vel);
@@ -459,6 +1581,134 @@ void Game::updatePlayer(float dt) {
     state_.debug.phoneLift = state_.phonePose.lift;
     state_.debug.phoneForward = state_.phonePose.forward;
     state_.debug.phoneSide = state_.phonePose.side;
+}
+
+void Game::updatePhoneTransform() {
+    PhoneTransformState& transform = state_.phoneTransform;
+    const Vec3 forward{-std::sin(state_.player.yaw), 0.0f, -std::cos(state_.player.yaw)};
+    const Vec3 right{std::cos(state_.player.yaw), 0.0f, -std::sin(state_.player.yaw)};
+    transform.orientation = state_.player.downed?quatNormalized(quatAxisAngle({0,1,0},state_.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatNormalized(
+        state_.phonePose.orientation *
+        quatAxisAngle({1,0,0}, state_.phoneVisual.pitch) *
+        quatAxisAngle({0,0,1}, state_.phoneVisual.roll));
+    transform.position = state_.player.pos + Vec3{0, state_.phonePose.lift + state_.phoneVisual.actionLift, 0}
+        + forward * (state_.phonePose.forward - state_.phoneVisual.actionForward)
+        + right * state_.phonePose.side;
+    transform.screenRight = normalized(rotate(transform.orientation, {1,0,0}));
+    transform.screenUp = normalized(rotate(transform.orientation, {0,1,0}));
+    transform.screenNormal = normalized(rotate(transform.orientation, {0,0,1}));
+    transform.screenCenter = transform.position + transform.screenNormal * (PHONE_SCREEN_Z_OFFSET + state_.phoneVisual.screenOffset);
+    transform.vacuumPullPoint = state_.camera.firstPerson
+        ? state_.camera.pos - state_.camera.forward * 0.85f
+        : transform.screenCenter;
+}
+
+void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis) {
+    PhonePoseState& pose = state_.phonePose;
+    pose.doubleJumpVacuumPause = std::max(0.0f, pose.doubleJumpVacuumPause - dt);
+    pose.doubleJumpTimer = std::max(0.0f, pose.doubleJumpTimer - dt);
+    if(state_.player.ledgeMantleTimer>0.0f){
+        const float phase=1.0f-clampf(state_.player.ledgeMantleTimer/LEDGE_MANTLE_DURATION,0.0f,1.0f);
+        const float settle=smooth01(phase);
+        const float arc=std::sin(phase*DB_PI);
+        pose.lift+=-0.10f*(1.0f-settle)+0.075f*arc;
+        pose.forward+=0.08f*(1.0f-settle)-0.05f*arc;
+        pose.orientation=quatNormalized(
+            quatAxisAngle({0,1,0},state_.player.yaw)*
+            quatAxisAngle({1,0,0},-DB_PI*2.0f*settle));
+        pose.actionState=9;
+        pose.screenForwardTurn=0.0f;
+        return;
+    }
+    if(state_.player.ledgeHanging){
+        const float effort=clampf(std::abs(state_.player.ledgeShimmySpeed)/LEDGE_SHIMMY_MAX_SPEED,0.0f,1.0f);
+        const float dangle=std::sin(state_.player.ledgeHangTime*5.2f)*0.055f;
+        const float travel=std::sin(state_.player.ledgeHangTime*10.4f)*effort;
+        pose.side+=travel*0.018f;
+        pose.lift+=dangle*0.10f;
+        pose.orientation=quatNormalized(
+            quatAxisAngle({0,1,0},state_.player.yaw)*
+            quatAxisAngle({1,0,0},0.20f+dangle)*
+            quatAxisAngle({0,0,1},-travel*0.16f));
+        pose.actionState=8;
+        pose.screenForwardTurn=0.0f;
+        return;
+    }
+    const bool locomotionLunge = state_.meleeVisual.locomotionLunge && state_.meleeVisual.airLungeLandingPending;
+    const bool jumpFlip = pose.doubleJumpTimer > 0.0f && !locomotionLunge;
+    const bool dischargeFacing = state_.energy.dischargeTimer > 0.0f;
+    state_.energy.dischargePositionAmount += ((dischargeFacing ? 1.0f : 0.0f) - state_.energy.dischargePositionAmount) * std::min(1.0f, dt * 12.0f);
+    const bool vacuumFacing = (state_.vacuum.active && pose.doubleJumpVacuumPause <= 0.0f) || dischargeFacing;
+    const float targetTurn = vacuumFacing ? 1.0f : 0.0f;
+    pose.screenForwardTurn += (targetTurn - pose.screenForwardTurn) * std::min(1.0f, dt * 4.5f);
+    const float easedTurn = pose.screenForwardTurn*pose.screenForwardTurn*(3.0f-2.0f*pose.screenForwardTurn);
+
+    const float inputMag = std::max(1.0f, std::sqrt(forwardAxis*forwardAxis + strafeAxis*strafeAxis));
+    const float lean = running ? 0.5f : 0.35f;
+    Quat base = quatAxisAngle({0,1,0}, state_.camera.yaw);
+    base = base * quatAxisAngle({1,0,0}, -(forwardAxis/inputMag)*lean);
+    base = base * quatAxisAngle({0,0,1}, -(strafeAxis/inputMag)*lean*0.82f);
+
+    // THREE.Object3D.lookAt points the phone's local +Z axis along the camera ray.
+    const Vec3 cameraRay = state_.camera.forward;
+    const float aimYaw = std::atan2(cameraRay.x, cameraRay.z);
+    const float aimPitch = -std::asin(clampf(cameraRay.y, -1.0f, 1.0f));
+    Quat aim = quatAxisAngle({0,1,0}, aimYaw) * quatAxisAngle({1,0,0}, aimPitch);
+    Quat q = quatSlerp(base, aim, easedTurn);
+    const float ritualFlip = std::sin(easedTurn * DB_PI) * 0.75f;
+    const float wobble = std::sin(state_.time * 18.0f) * 0.035f * state_.vacuum.pose;
+
+    if (jumpFlip) {
+        const float phase = 1.0f - clampf(pose.doubleJumpTimer / 0.30f, 0.0f, 1.0f);
+        const float ease = phase*phase*(3.0f-2.0f*phase);
+        pose.doubleJumpFlip = ease * DB_PI * 2.0f;
+        q = quatAxisAngle({0,1,0}, pose.doubleJumpFlipYaw) * quatAxisAngle({1,0,0}, -pose.doubleJumpFlip);
+        pose.actionState = 5;
+    } else {
+        pose.doubleJumpFlip = 0.0f;
+        q = q * quatAxisAngle({1,0,0}, -ritualFlip + pose.pitch);
+        q = q * quatAxisAngle({0,1,0}, pose.yaw);
+        q = q * quatAxisAngle({0,0,1}, wobble + pose.roll);
+        pose.actionState = dischargeFacing ? 3 : (vacuumFacing ? 2 : (pose.energy > 0.01f ? 1 : 0));
+        const MeleeVisualState& melee = state_.meleeVisual;
+        if (melee.visualTimer > 0.0f || locomotionLunge) {
+            const float attackT = 1.0f - clampf(melee.visualTimer / std::max(0.001f, melee.visualDuration), 0.0f, 1.0f);
+            const float snap = std::sin(attackT * DB_PI);
+            if (melee.locomotionLunge) {
+                // The airborne action is the phone itself travelling through a
+                // compact forward arc. It is locomotion with contact damage,
+                // not a handheld-style swing layered over ordinary movement.
+                const float horizontal=std::max(0.01f,horizontalLength(state_.player.vel));
+                const float trajectoryAngle=std::atan2(state_.player.jumpVel,horizontal);
+                pose.forward += 0.10f+0.10f*snap;
+                pose.lift += 0.06f+0.08f*snap;
+                q = quatAxisAngle({0,1,0}, state_.camera.yaw)
+                    * quatAxisAngle({1,0,0},-0.12f-melee.airLungeRotation-trajectoryAngle*0.32f);
+                pose.actionState = 6;
+                pose.orientation = quatNormalized(q);
+                return;
+            }
+            const float recover = std::sin(std::min(1.0f, attackT * 1.45f) * DB_PI);
+            const int variant = std::max(0, std::min(3, melee.variant));
+            const float hitWeight = melee.visualHit ? 1.18f : 0.82f;
+            pose.forward += melee.lunge * snap;
+            pose.side += MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
+            pose.lift += MELEE_VARIANT_LIFT[variant] * snap;
+            q = q * quatAxisAngle({1,0,0}, MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
+            q = q * quatAxisAngle({0,0,1}, MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
+            q = q * quatAxisAngle({0,1,0}, MELEE_VARIANT_YAW[variant] * snap * hitWeight);
+            pose.actionState = 4;
+        }
+        if(!locomotionLunge&&melee.landingRecovery>0.0f){
+            const float recovery=clampf(melee.landingRecovery/std::max(0.001f,melee.landingRecoveryDuration),0.0f,1.0f);
+            const float compression=recovery*recovery;
+            pose.lift-=0.055f*compression;
+            pose.forward+=0.045f*compression;
+            q=quatAxisAngle({0,1,0},state_.camera.yaw)*quatAxisAngle({1,0,0},-melee.landingPosePitch*recovery-0.22f*compression);
+            pose.actionState=7;
+        }
+    }
+    pose.orientation = quatNormalized(q);
 }
 
 void Game::updatePhoneGait(float dt, bool running) {
@@ -532,10 +1782,30 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
     const float localEndZ = localStartZ + (end.z - start.z);
     const Vec3 localStart{start.x, start.y, localStartZ};
     const Vec3 localEnd{end.x, end.y, localEndZ};
+    const Vec3 segment=localEnd-localStart;
+    // The phone may legitimately stand closer to a wall than the camera's
+    // padded sphere radius.  A cast that begins in that padding must be allowed
+    // to leave through the nearest face; treating the initial overlap as a hit
+    // collapses the boom to first-person distance exactly while climbing/hanging.
+    const auto cameraHit=[&](const RoomCollider& box,float pad){
+        const float mins[3]={box.minX-pad,box.bottomY-pad,box.minZ-pad};
+        const float maxs[3]={box.maxX+pad,box.topY+pad,box.maxZ+pad};
+        const float p[3]={localStart.x,localStart.y,localStart.z};
+        const float d[3]={segment.x,segment.y,segment.z};
+        const bool inside=p[0]>=mins[0]&&p[0]<=maxs[0]&&p[1]>=mins[1]&&p[1]<=maxs[1]&&p[2]>=mins[2]&&p[2]<=maxs[2];
+        if(inside){
+            float nearest=p[0]-mins[0];float outward=-d[0];
+            const float gaps[5]={maxs[0]-p[0],p[1]-mins[1],maxs[1]-p[1],p[2]-mins[2],maxs[2]-p[2]};
+            const float velocities[5]={d[0],-d[1],d[1],-d[2],d[2]};
+            for(int i=0;i<5;++i)if(gaps[i]<nearest){nearest=gaps[i];outward=velocities[i];}
+            if(outward>0.0f)return -1.0f;
+        }
+        return getSegmentAabbHitT(localStart,localEnd,box,pad);
+    };
 
     float nearestT = 1.0f;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
-        const float t = getSegmentAabbHitT(localStart, localEnd, state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
+        const float t = cameraHit(state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
         if (t >= 0.0f && t < nearestT) nearestT = t;
     }
 
@@ -558,15 +1828,15 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
         makeBounds(doorX0, doorX1, ROOM_DEPTH * 0.5f - 0.5f, ROOM_DEPTH * 0.5f + wallPad, 3.72f, ROOM_WALL_HEIGHT)
     };
     for (const RoomCollider& c : roomBounds) {
-        const float t = getSegmentAabbHitT(localStart, localEnd, c, CAMERA_COLLISION_RADIUS * 0.8f);
+        const float t = cameraHit(c, CAMERA_COLLISION_RADIUS * 0.8f);
         if (t >= 0.0f && t < nearestT) nearestT = t;
     }
 
     if (nearestT < 1.0f) {
-        const Vec3 segment = end - start;
-        const float dist = length(segment);
+        const Vec3 worldSegment = end - start;
+        const float dist = length(worldSegment);
         const float safeT = dist > 0.001f ? std::max(0.0f, nearestT - CAMERA_COLLISION_BACKOFF / dist) : 0.0f;
-        desired = start + segment * safeT;
+        desired = start + worldSegment * safeT;
     }
 
     desired.x = clampf(desired.x, -ROOM_WIDTH * 0.5f + CAMERA_COLLISION_RADIUS, ROOM_WIDTH * 0.5f - CAMERA_COLLISION_RADIUS);
@@ -582,22 +1852,93 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
 }
 
 void Game::updateCamera(float dt) {
-    (void)dt;
     CameraState& camera = state_.camera;
     const PlayerState& player = state_.player;
     const float cp = std::cos(camera.pitch);
-    camera.forward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
+    const Vec3 aimForward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
+    const float horizontalSpeed=std::sqrt(player.vel.x*player.vel.x+player.vel.z*player.vel.z);
+    const float motionFov=clampf((horizontalSpeed-2.5f)*1.05f,0.0f,9.0f)+(!player.grounded?2.2f:0.0f)+(state_.meleeVisual.airLungeLandingPending?4.8f:0.0f);
+    const bool mobile = state_.localSettings.mobileFraming;
+    const float targetFov=camera.firstPerson?(mobile?60.0f:64.0f):(mobile?56.0f:60.0f)+motionFov*(mobile?0.72f:1.0f);
+    if(dt>0.0f)camera.verticalFovDegrees+=(targetFov-camera.verticalFovDegrees)*(1.0f-std::exp(-(targetFov>camera.verticalFovDegrees?5.2f:2.8f)*dt));else camera.verticalFovDegrees=targetFov;
     if (camera.firstPerson) {
-        camera.pos = player.pos + Vec3{0, 0.72f, 0} + camera.forward * 0.18f;
-        camera.lookTarget = camera.pos + camera.forward * 10.0f;
+        camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;
+        camera.lookTarget = camera.pos + aimForward * 10.0f;
+        camera.forward = normalized(camera.lookTarget-camera.pos);
         return;
     }
-    Vec3 desired = player.pos - camera.forward * 3.0f + Vec3{0, 1.1f, 0};
+    const float leadAmount=clampf((horizontalSpeed-2.0f)*0.0045f,0.0f,0.038f);
+    const Vec3 motionLead{player.vel.x*leadAmount,clampf(player.jumpVel*0.022f,-0.18f,0.14f),player.vel.z*leadAmount};
+    const float leadScale = mobile ? 0.20f : 0.25f;
+    const float boom = mobile ? 3.22f : 3.0f;
+    const float height = mobile ? 1.18f : 1.1f;
+    Vec3 desired = player.pos+motionLead*leadScale - aimForward * boom + Vec3{0, height, 0};
     if (desired.y < GROUND_Y + 0.8f) desired.y = GROUND_Y + 0.8f;
     constrainThirdPersonCamera(desired, player.pos);
-    camera.pos = desired;
-    camera.lookTarget = player.pos + camera.forward * 10.0f;
-    camera.lookTarget.y += 0.45f;
+    Vec3 desiredTarget=player.pos+motionLead+aimForward*10.0f;
+    desiredTarget.y+=mobile?0.42f:0.45f;
+    const MeleeVisualState& melee=state_.meleeVisual;
+    if(melee.airLungeCameraLag>0.0f&&dt>0.0f){
+        const float recoveryT=melee.landingRecoveryDuration>0.0f
+            ? 1.0f-clampf(melee.landingRecovery/melee.landingRecoveryDuration,0.0f,1.0f)
+            : 0.0f;
+        const float responseRate=melee.airLungeLandingPending
+            ? AIR_MELEE_CAMERA_RESPONSE
+            : AIR_MELEE_CAMERA_RESPONSE+(AIR_MELEE_CAMERA_RECOVERY_RESPONSE-AIR_MELEE_CAMERA_RESPONSE)*recoveryT;
+        const float response=1.0f-std::exp(-responseRate*dt);
+        camera.pos+= (desired-camera.pos)*response;
+        camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
+        const Vec3 cameraError=camera.pos-desired;const float cameraErrorLength=length(cameraError);
+        if(cameraErrorLength>AIR_MELEE_CAMERA_MAX_ERROR)camera.pos=desired+cameraError*(AIR_MELEE_CAMERA_MAX_ERROR/cameraErrorLength);
+        const Vec3 targetError=camera.lookTarget-desiredTarget;const float targetErrorLength=length(targetError);
+        if(targetErrorLength>AIR_MELEE_CAMERA_MAX_ERROR*1.35f)camera.lookTarget=desiredTarget+targetError*(AIR_MELEE_CAMERA_MAX_ERROR*1.35f/targetErrorLength);
+    }else{
+        camera.pos=desired;
+        camera.lookTarget=desiredTarget;
+    }
+    camera.forward = normalized(camera.lookTarget-camera.pos);
+}
+
+void Game::updateIntroCamera(float dt) {
+    CinematicState& cinematic = state_.cinematic;
+    if (!cinematic.introActive) return;
+    cinematic.introElapsed = std::min(INTRO_CAMERA_DURATION, cinematic.introElapsed + dt);
+    const float linear = clampf(cinematic.introElapsed / INTRO_CAMERA_DURATION, 0.0f, 1.0f);
+    const float productPhase=clampf(linear/0.68f,0.0f,1.0f);
+    const float productEase=smooth01(productPhase);
+    const Vec3 phoneFocus=state_.phoneTransform.position+Vec3{0.0f,0.02f,0.0f};
+    const float productYaw=cinematic.baseYaw-0.58f+productEase*0.76f;
+    const Vec3 productForward{-std::sin(productYaw),0.0f,-std::cos(productYaw)};
+    const Vec3 productCamera=phoneFocus-productForward*0.54f+Vec3{0.0f,0.11f,0.0f};
+
+    const float cp=std::cos(state_.camera.pitch);
+    const Vec3 gameplayForward=normalized({-std::sin(cinematic.baseYaw)*cp,std::sin(state_.camera.pitch),-std::cos(cinematic.baseYaw)*cp});
+    Vec3 gameplayCamera=state_.player.pos-gameplayForward*3.0f+Vec3{0.0f,1.1f,0.0f};
+    constrainThirdPersonCamera(gameplayCamera,state_.player.pos);
+    const Vec3 gameplayTarget=state_.player.pos+gameplayForward*10.0f+Vec3{0.0f,0.45f,0.0f};
+    const float handoff=smooth01((linear-0.68f)/0.32f);
+    state_.camera.pos=productCamera*(1.0f-handoff)+gameplayCamera*handoff;
+    state_.camera.lookTarget=phoneFocus*(1.0f-handoff)+gameplayTarget*handoff;
+    state_.camera.forward = normalized(state_.camera.lookTarget - state_.camera.pos);
+    if (linear >= 1.0f) {
+        cinematic.introActive = false;
+        updateCamera(0.0f);
+    }
+}
+
+void Game::updateDeathCamera(float dt) {
+    CinematicState& cinematic = state_.cinematic;
+    if (!cinematic.deathActive) return;
+    cinematic.deathElapsed = std::min(DEATH_CAMERA_DURATION, cinematic.deathElapsed + dt);
+    const float linear = clampf(cinematic.deathElapsed / DEATH_CAMERA_DURATION, 0.0f, 1.0f);
+    const float t = linear * linear * (3.0f - 2.0f * linear);
+    const float orbitYaw = cinematic.baseYaw + t * 0.72f;
+    const Vec3 orbitForward{-std::sin(orbitYaw), 0.0f, -std::cos(orbitYaw)};
+    Vec3 desired = state_.player.pos - orbitForward * 5.3f + Vec3{0.0f, 2.15f, 0.0f};
+    constrainThirdPersonCamera(desired, state_.player.pos);
+    state_.camera.pos = cinematic.startCameraPos * (1.0f - t) + desired * t;
+    state_.camera.lookTarget = state_.player.pos + Vec3{0.0f, 0.48f, 0.0f};
+    state_.camera.forward = normalized(state_.camera.lookTarget - state_.camera.pos);
 }
 
 void Game::tryJump() {
@@ -606,41 +1947,413 @@ void Game::tryJump() {
 }
 void Game::startGroundJump() {
     PlayerState& p = state_.player;
+    spendBattery(BATTERY_JUMP_COST,BatteryReason::Jump);
     p.jumpVel = JUMP_SPEED; p.grounded = false; p.coyoteTimer = 0; p.jumpBufferTimer = 0; p.airJumpsRemaining = 1;
+    state_.meleeVisual.landingRecovery=0.0f;
+    state_.phonePose.doubleJumpVacuumPause=std::max(state_.phonePose.doubleJumpVacuumPause,0.12f);
 }
 void Game::startAirJump() {
     PlayerState& p = state_.player;
+    spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
     p.jumpVel = AIR_JUMP_SPEED; p.jumpBufferTimer = 0; p.airJumpsRemaining -= 1;
+    PhonePoseState& pose = state_.phonePose;
+    pose.doubleJumpTimer = std::max(pose.doubleJumpTimer, 0.30f);
+    pose.doubleJumpVacuumPause = std::max(pose.doubleJumpVacuumPause, 0.16f);
+    const InputState& input = state_.input;
+    const float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
+    const float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
+    Vec3 direction = cameraForwardFlat()*forwardAxis + cameraRightFlat()*strafeAxis;
+    pose.doubleJumpFlipYaw = lengthSq(direction) > 0.000001f
+        ? std::atan2(-normalized(direction).x, -normalized(direction).z)
+        : state_.camera.yaw;
 }
 
 void Game::triggerMelee() {
+    // A body lunge owns the player until its computed ground contact. The
+    // shorter grounded-combo cooldown must never be allowed to renew flight.
+    if(state_.meleeVisual.airLungeLandingPending) return;
     if (state_.meleeCooldown > 0) return;
-    state_.meleeCooldown = MELEE_COOLDOWN; state_.meleePose = 1.0f;
-    for (auto& t : state_.targets) if (t.alive && distXZ(t.pos, state_.player.pos) <= MELEE_RANGE) {
+    const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
+    const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
+    const bool airborne=!state_.player.grounded;
+    const float upwardAim=airborne?clampf(state_.camera.pitch/0.62f,0.0f,1.0f):0.0f;
+    const int lungeLevel=upgradeLevel(UpgradeTrack::Lunge);
+    const float altitudeEfficiency=1.0f/(1.0f+0.045f*static_cast<float>(lungeLevel));
+    const bool rebound=airborne&&state_.progression.run.lungeReboundTimer>0.0f;
+    const float baseCost=combo.cost+upwardAim*5.5f*altitudeEfficiency;
+    if (!spendBattery(baseCost*(rebound?LUNGE_HEADSHOT_REBOUND_COST_MULT:1.0f),BatteryReason::Melee)) return;
+    if(rebound)state_.progression.run.lungeReboundTimer=0.0f;
+    state_.meleeComboWindow = MELEE_COMBO_WINDOW;
+    state_.meleeCooldown = combo.cooldown/(1.0f+0.045f*static_cast<float>(lungeLevel)); state_.meleePose = 1.0f;
+    MeleeVisualState& visual = state_.meleeVisual;
+    const int attackLevel=upgradeLevel(UpgradeTrack::Attack);
+    const float comboEscalation=airborne?1.0f:1.0f+0.035f*static_cast<float>(attackLevel*comboIndex);
+    visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel))*comboEscalation;
+    visual.hitRadius=combo.hitRadius; visual.visualDuration=combo.visual; visual.visualTimer=combo.visual;
+    visual.locomotionLunge=airborne;
+    visual.dashTimer=airborne?0.0f:combo.dash; visual.dashSpeed=combo.dashSpeed; visual.travel=0.0f; visual.lunge=combo.lunge;
+    visual.airLungePending=airborne;visual.airLungeLandingPending=airborne;
+    visual.airLungeSpeed=airborne?AIR_MELEE_LOCOMOTION_DISTANCE/AIR_MELEE_LOCOMOTION_DURATION:0.0f;
+    visual.airLungeVerticalKick=3.0f+upwardAim*2.8f;
+    visual.airLungeTimer=airborne?AIR_MELEE_LOCOMOTION_DURATION:0.0f;
+    visual.airLungeRotation=0.0f;visual.airLungeAngularVelocity=airborne?AIR_MELEE_ANGULAR_VELOCITY:0.0f;visual.airLungeCameraLag=airborne?1.0f:0.0f;
+    if(airborne){visual.visualDuration=AIR_MELEE_LOCOMOTION_DURATION;visual.visualTimer=AIR_MELEE_LOCOMOTION_DURATION;}
+    visual.recoilDistance=combo.recoilDistance; visual.recoilSpeed=combo.recoilSpeed; visual.visualHit=false; visual.hitMask=0;
+    visual.previousContactPosition=state_.phoneTransform.position;visual.contactPositionValid=airborne;
+    visual.direction=cameraForwardFlat();
+    const Vec3 assistOrigin=state_.player.pos+Vec3{0,airborne?0.70f:0.42f,0};
+    visual.direction=assistedActionDirection(assistOrigin,visual.direction,airborne?4.2f:3.1f,airborne?0.76f:0.80f,airborne?0.36f:0.28f,true);
+    visual.direction.y=0.0f;
+    if(lengthSq(visual.direction)<0.0001f)visual.direction=cameraForwardFlat();else visual.direction=normalized(visual.direction);
+    visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+    visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
+    if(!airborne) applyMeleeHits();
+}
+
+int Game::applyMeleeHits() {
+    MeleeVisualState& visual=state_.meleeVisual;
+    const Vec3 phoneCurrent=state_.phoneTransform.position;
+    const Vec3 phonePrevious=visual.contactPositionValid?visual.previousContactPosition:phoneCurrent;
+    visual.previousContactPosition=phoneCurrent;visual.contactPositionValid=true;
+    int newHits=0; int totalHits=0; int headshots=0; std::array<Vec3,TARGET_COUNT> headshotPositions{}; std::array<bool,TARGET_COUNT> headshotCritical{};std::array<float,TARGET_COUNT> headshotAttackProgress{},headshotKillCharge{};
+    for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
+    for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;
+        const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
+        bool lungeBodyContact=false;
+        if(visual.locomotionLunge){
+            const float bodyRadius=PASS7_HUMAN_VISUAL_SPEC.torsoWidth*0.5f*t.scale+AIR_MELEE_PHONE_RADIUS+AIR_MELEE_BODY_FORGIVENESS;
+            const float bodyY[3]={0.30f*t.scale,0.57f*t.scale,0.82f*t.scale};
+            for(float y:bodyY){const Vec3 bodyPoint=t.pos+Vec3{0,y,0};if(pointSegmentDistanceSq(bodyPoint,phonePrevious,phoneCurrent)<=bodyRadius*bodyRadius){lungeBodyContact=true;break;}}
+        }else{
+            const float forwardDist=dotXZ(delta,visual.direction);
+            if(forwardDist < -0.35f || forwardDist > visual.range) continue;
+            const Vec3 sideDelta=delta-visual.direction*forwardDist;
+            const float hitRadius=visual.hitRadius+(t.brute?0.28f:0.0f);
+            if(lengthSq(sideDelta)>hitRadius*hitRadius) continue;
+        }
+        const Vec3 headCenter=targetHeadCenter(t);
+        const Vec3 headBase=headCenter-Vec3{0,PASS7_HUMAN_VISUAL_SPEC.headRadius*t.scale*HEAD_CONTACT_NECK_FRACTION,0};
+        const float headRadius=PASS7_HUMAN_VISUAL_SPEC.headRadius*t.scale+LUNGE_HEAD_CONTACT_RADIUS;
+        const bool headshot=visual.locomotionLunge&&std::min(pointSegmentDistanceSq(headCenter,phonePrevious,phoneCurrent),pointSegmentDistanceSq(headBase,phonePrevious,phoneCurrent))<=headRadius*headRadius;
+        if(visual.locomotionLunge&&!headshot&&!lungeBodyContact)continue;
         const Vec3 away = normalized(Vec3{t.pos.x - state_.player.pos.x, 0.0f, t.pos.z - state_.player.pos.z});
         const Vec3 right{std::cos(t.visualYaw), 0.0f, -std::sin(t.visualYaw)};
-        t.armor -= 1.0f;
-        t.hitFlash = 1.0f;
         t.hitDirectionLocal = clampf(away.x * right.x + away.z * right.z, -1.0f, 1.0f);
-        if (t.armor <= 0) { t.armor = 0.0f; t.slurpable = true; t.soulState = SoulState::Free; t.soulMorph = 0.0f; }
+        float synergyDamage=1.0f;
+        if(visual.locomotionLunge){
+            const int momentum=pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack);
+            synergyDamage+=static_cast<float>(momentum)*0.07f*clampf(horizontalLength(state_.player.vel)/AIR_MELEE_LOCOMOTION_DISTANCE,0.0f,2.0f);
+        }else if(state_.progression.run.relayPrimerStacks>0){
+            synergyDamage+=state_.progression.run.relayPrimerStacks*RELAY_PRIMER_DAMAGE_PER_STACK;
+        }
+        if(headshot&&t.grabbedPlayerId>=0)releaseTargetGrab(i);
+        damageSoulShell(i,headshot?headshotDamage(t):visual.damage*synergyDamage*outgoingDamageMultiplier()*(1.0f+std::min(0.75f,totalHits*0.12f)));
+        if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
+        if(headshot){const float armorMax=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;headshotPositions[headshots]=headCenter;headshotCritical[headshots]=t.slurpable||t.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION;headshotAttackProgress[headshots]=t.attackTimer>0.0f?1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f):-1.0f;headshotKillCharge[headshots]=t.slurpable?1.0f:1.0f-clampf(t.armor/armorMax,0.0f,1.0f);++headshots;}
+        spawnFlameBurst(t.pos+Vec3{0,0.65f,0},newHits>0?0.95f+static_cast<float>(newHits+1)*0.18f:0.55f);
+        visual.hitMask|=(1u<<i); visual.visualHit=true; visual.impact=t.pos+Vec3{0,0.62f,0}; ++newHits; ++totalHits;
     }
+    if(newHits>0){
+        emitAudio(AudioCue::PhoneAttack,0.44f);registerMeleeBatteryHit(newHits);
+        for(int hit=0;hit<headshots;++hit)rewardHeadshot(headshotPositions[hit],headshotCritical[hit],visual.locomotionLunge,headshotAttackProgress[hit],headshotKillCharge[hit]);
+        if(visual.locomotionLunge&&pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack)>0)state_.progression.run.impactGuardTimer=IMPACT_GUARD_SECONDS;
+        if(!visual.locomotionLunge&&state_.progression.run.relayPrimerStacks>0){state_.progression.run.relayPrimerStacks=0;state_.progression.run.relayPrimerTimer=0.0f;setEnergyTicker("RELAY CLOSED",2);}
+        if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();
+        if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
+    }
+    return newHits;
+}
+
+Vec3 Game::targetHeadCenter(const TargetState& target) const {
+    // The authoritative FBX is normalized from the floor to HUMAN_MODEL_HEIGHT.
+    // Its head sphere therefore sits one visual head radius below that top.
+    return {target.pos.x,
+        (PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius)*target.scale,
+        target.pos.z};
+}
+
+float Game::headshotDamage(const TargetState& target) const {
+    const float fullArmor=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+    return fullArmor/static_cast<float>(std::max(1,state_.requiredSouls));
+}
+
+Vec3 Game::assistedActionDirection(const Vec3& origin, const Vec3& direction, float maxDistance, float minDot, float maxBlend, bool preferHead) const {
+    Vec3 base=normalized(direction);
+    if(!state_.localSettings.mobileFraming || lengthSq(base)<0.0001f) return base;
+    int best=-1;
+    float bestScore=0.0f;
+    Vec3 bestDirection=base;
+    for(int i=0;i<TARGET_COUNT;++i){
+        const TargetState& target=state_.targets[i];
+        if(!target.alive||target.captureQueued||target.captureCommitted)continue;
+        if(target.slurpable)continue;
+        const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+        const float damage=1.0f-clampf(target.armor/std::max(0.001f,armorMax),0.0f,1.0f);
+        const Vec3 body{target.pos.x,(0.66f+0.08f*damage)*target.scale,target.pos.z};
+        const Vec3 aimPoint=preferHead&&damage>0.18f?targetHeadCenter(target):body;
+        Vec3 toTarget=aimPoint-origin;
+        const float distance=length(toTarget);
+        if(distance<=0.001f||distance>maxDistance)continue;
+        toTarget=toTarget*(1.0f/distance);
+        const float alignment=dot3(base,toTarget);
+        if(alignment<minDot)continue;
+        const float distanceScore=1.0f-clampf(distance/maxDistance,0.0f,1.0f);
+        const float alignmentScore=clampf((alignment-minDot)/std::max(0.001f,1.0f-minDot),0.0f,1.0f);
+        const float score=alignmentScore*0.74f+distanceScore*0.26f+damage*0.08f;
+        if(score>bestScore){bestScore=score;best=i;bestDirection=toTarget;}
+    }
+    if(best<0)return base;
+    const float blend=clampf(bestScore*maxBlend,0.0f,maxBlend);
+    return normalized(base*(1.0f-blend)+bestDirection*blend);
+}
+
+void Game::continueLungeFromHeadshot() {
+    MeleeVisualState& lunge=state_.meleeVisual;
+    lunge.airLungePending=false;
+    lunge.airLungeLandingPending=false;
+    lunge.locomotionLunge=false;
+    lunge.airLungeTimer=0.0f;
+    lunge.visualTimer=0.0f;
+    lunge.airLungeAngularVelocity=0.0f;
+    lunge.contactPositionValid=false;
+    state_.meleeCooldown=0.0f;
+    state_.progression.run.lungeReboundTimer=LUNGE_HEADSHOT_REBOUND_WINDOW;
+}
+
+void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, float enemyAttackProgress, float killCharge) {
+    auto& run=state_.progression.run;
+    run.accuracyStacks=std::min(ACCURACY_STACK_CAP,run.accuracyStacks+1);
+    run.accuracyMultiplier=1.0f+static_cast<float>(run.accuracyStacks)*ACCURACY_STACK_BONUS;
+    run.accuracyDecayTimer=ACCURACY_CHAIN_TIMEOUT;
+    const int precision=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Lunge);
+    run.headshotRegenTax=std::min(0.65f,run.headshotRegenTax+0.12f*std::max(0.55f,1.0f-0.08f*precision));
+    const float timingForgiveness=0.012f*static_cast<float>(precision);
+    const bool perfect=enemyAttackProgress>=HEADSHOT_PARRY_EARLY_PHASE-timingForgiveness&&enemyAttackProgress<=HEADSHOT_PARRY_LATE_PHASE+timingForgiveness;
+    gainBattery(HEADSHOT_BATTERY_GAIN*run.accuracyMultiplier*(perfect?1.20f:1.0f),BatteryReason::Headshot);
+    run.batteryRegenLock=std::min(run.batteryRegenLock,perfect?0.08f:0.22f);
+    run.headshotRechargeBoost=std::max(run.headshotRechargeBoost,HEADSHOT_RECHARGE_BOOST_SECONDS*(perfect?1.35f:1.0f));
+    char ticker[48]{};
+    std::snprintf(ticker,sizeof(ticker),perfect?"PERFECT HEADSHOT X%.2F":"HEADSHOT CHAIN X%.2F",run.accuracyMultiplier);
+    setEnergyTicker(ticker,2);
+    state_.hud.headshotPulse=1.0f;
+    state_.hud.headshotKillCharge=clampf(std::max(state_.hud.headshotKillCharge,killCharge),0.0f,1.0f);
+    if(perfect)state_.hud.perfectPulse=1.0f;
+    spawnFlameBurst(position,1.35f);
+    spawnParticleBurst(position);
+    emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.70f:0.58f);
+    emitAudio(AudioCue::RewardWoah,0.42f);
+    if(precision>0){
+        state_.meleeCooldown=std::max(0.0f,state_.meleeCooldown-0.035f*static_cast<float>(precision));
+        if(!fromLunge&&perfect&&state_.player.airJumpsRemaining<1)state_.player.airJumpsRemaining=1;
+    }
+}
+
+bool Game::damageSoulShell(int index, float amount) {
+    if(index<0 || index>=TARGET_COUNT) return false;
+    TargetState& t=state_.targets[index];
+    if(!t.alive || t.captureQueued || t.captureCommitted) return false;
+    if(!t.slurpable) {
+        t.armor-=amount;
+        t.armorRegenDelay=ENEMY_ARMOR_REGEN_DELAY;
+        t.hitFlash=1.0f;
+        if(t.armor<=0.0f) {
+            t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
+            if(t.grabbedPlayerId>=0) releaseTargetGrab(index);
+            spawnShellShatter(t);
+            if(t.brute && nextFlowerRandom()<FLOWER_DROP_CHANCE) spawnFlowerPowerup(t.pos.x,GROUND_Y+0.42f,t.pos.z);
+        }
+    } else {
+        t.hitFlash=std::max(t.hitFlash,0.75f);
+    }
+    Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
+    t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
+    feedSupplementalBattery(FLOWER_ATTACK_FEED);
+    spawnParticleBurst(t.pos+Vec3{0,0.65f,0});
+    return true;
+}
+
+void Game::updateMeleeDash(float dt) {
+    MeleeVisualState& visual=state_.meleeVisual;
+    if(visual.airLungeCameraLag>0.0f){
+        visual.airLungeCameraLag*=std::exp(-AIR_MELEE_CAMERA_LAG_DECAY*dt);
+        if(visual.airLungeCameraLag<0.001f)visual.airLungeCameraLag=0.0f;
+    }
+    if(visual.airLungeLandingPending){
+        visual.airLungeTimer=std::max(0.0f,visual.airLungeTimer-dt);
+        visual.airLungeRotation+=visual.airLungeAngularVelocity*dt;
+        visual.airLungeAngularVelocity*=std::exp(-AIR_MELEE_ANGULAR_DAMPING*dt);
+        visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+        if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
+        return;
+    }
+    if(visual.dashTimer<=0.0f) return;
+    const float step=std::min(visual.dashSpeed*dt,std::max(0.0f,visual.range-visual.travel));
+    visual.dashTimer=std::max(0.0f,visual.dashTimer-dt); visual.travel+=step;
+    state_.player.pos+=visual.direction*step; state_.player.vel.x*=0.55f; state_.player.vel.z*=0.55f;
+    visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
+    if(!visual.visualHit) visual.impact=visual.origin+visual.direction*(visual.range*0.72f);
+    applyMeleeHits();
+}
+
+void Game::finishAirLungeLanding(float impactSpeed){
+    MeleeVisualState& visual=state_.meleeVisual;
+    visual.airLungeLandingPending=false;
+    visual.locomotionLunge=false;
+    visual.airLungeTimer=0.0f;
+    visual.visualTimer=0.0f;
+    visual.airLungeAngularVelocity=0.0f;
+    visual.wallGripTimer=0.0f;
+    visual.contactPositionValid=false;
+    visual.landingRecoveryDuration=clampf(0.06f+std::max(0.0f,impactSpeed-2.0f)*0.018f,0.06f,0.24f);
+    visual.landingRecovery=visual.landingRecoveryDuration;
+    visual.landingPosePitch=clampf(visual.airLungeRotation,0.28f,1.15f);
+    state_.player.vel*=AIR_MELEE_LANDING_RETENTION;
+    if(pairSynergyTier(UpgradeTrack::Lunge,UpgradeTrack::Attack)>0)state_.progression.run.impactGuardTimer=std::max(state_.progression.run.impactGuardTimer,IMPACT_GUARD_SECONDS*0.65f);
 }
 void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
-    for (auto& b : state_.bullets) if (!b.alive) {
-        b.alive = true; b.life = BULLET_LIFE; b.pos = state_.player.pos + Vec3{0,0.5f,0}; b.vel = state_.camera.forward * BULLET_SPEED; state_.player.souls--; break;
+    for (auto& pending : state_.pendingShots) if (!pending.active) {
+        if (!spendBattery(BATTERY_SHOOT_COST,BatteryReason::Shoot)) return;
+        const int storedIndex=state_.player.souls-1;
+        pending=PendingShotState{}; pending.active=true; pending.brute=state_.player.storedSoulBrute[storedIndex];
+        state_.player.storedSoulBrute[storedIndex]=false;
+        state_.player.souls--;
+        state_.hud.shootJoinTimer=0.18f;
+        state_.energy.dischargeTimer=0.34f;
+        return;
     }
 }
-void Game::releaseSoul(int index) { if (index >= 0 && index < TARGET_COUNT) state_.targets[index].soulState = SoulState::Recoiling; }
+
+void Game::processPendingShots(float dt) {
+    for(auto& pending:state_.pendingShots) {
+        if(!pending.active) continue;
+        pending.age+=dt;
+        if(state_.phonePose.screenForwardTurn<=0.45f && pending.age<0.09f) continue;
+        BulletState* slot=nullptr;
+        for(auto& bullet:state_.bullets) if(!bullet.alive){slot=&bullet;break;}
+        if(!slot) {
+            if(pending.age>0.75f && state_.player.souls<MAX_STORED_SOULS) {
+                state_.player.storedSoulBrute[state_.player.souls]=pending.brute;
+                state_.player.souls++;
+                pending=PendingShotState{};
+            }
+            continue;
+        }
+        Vec3 direction=state_.camera.forward;
+        direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
+        direction=normalized(direction);
+        direction=assistedActionDirection(
+            state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f),
+            direction,
+            pending.brute?15.0f:13.0f,
+            pending.brute?0.94f:0.955f,
+            pending.brute?0.34f:0.26f,
+            true
+        );
+        direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
+        direction=normalized(direction);
+        *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute;
+        slot->pos=state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f);
+        slot->pos.y=std::max(slot->pos.y,0.95f);
+        slot->vel=direction*(slot->brute?BULLET_BRUTE_SPEED:BULLET_SPEED);
+        slot->vel.y+=BULLET_VERTICAL_LIFT;
+        emitAudio(AudioCue::SentMessage,0.62f);
+        spawnParticleBurst(slot->pos);
+        pending=PendingShotState{};
+    }
+}
+void Game::releaseSoul(int index) {
+    if (index < 0 || index >= TARGET_COUNT) return;
+    TargetState& t = state_.targets[index];
+    const float phase = clampf(t.ingestProgress, 0.0f, 1.0f);
+    if (phase >= SOUL_CAPTURE_COMMIT_PHASE) { queueSoulCapture(index); return; }
+    Vec3 direction = t.pos - state_.phoneTransform.vacuumPullPoint;
+    if (lengthSq(direction) < 0.001f) direction = {std::sin(state_.camera.yaw), 0.18f, std::cos(state_.camera.yaw)};
+    direction = normalized(direction);
+    const float recoil = 4.5f + phase * 10.5f;
+    t.vel = {direction.x * recoil, 1.4f + phase * 2.2f, direction.z * recoil};
+    if (phase > 0.015f) emitAudio(AudioCue::EndCallTone, 0.34f);
+    t.ingestProgress = 0.0f;
+    t.captureCollapseAmount = 0.0f;
+    t.latchedToScreen = false;
+    t.vacuumPullAmount = 0.0f;
+    resetSoulLattice(t);
+    t.soulState = SoulState::Recoiling;
+    t.recoilTime = SOUL_RECOIL_DURATION;
+    t.networkOwnerPlayerId = -1;
+}
+void Game::queueSoulCapture(int index) {
+    if (index < 0 || index >= TARGET_COUNT) return;
+    TargetState& t = state_.targets[index];
+    if (t.captureQueued || t.captureCommitted || !t.alive || !t.slurpable) return;
+    t.captureQueued = true;
+    t.ingestProgress = std::max(t.ingestProgress, SOUL_CAPTURE_COMMIT_PHASE);
+}
+void Game::processQueuedSoulCaptures() {
+    for (int i = 0; i < TARGET_COUNT; ++i) {
+        TargetState& t = state_.targets[i];
+        if (!t.captureQueued || t.captureCommitted) continue;
+        if (state_.player.souls >= MAX_STORED_SOULS) {
+            t.captureQueued = false;
+            continue;
+        }
+        t.captureQueued = false;
+        t.captureCommitted = true;
+        captureSoul(i);
+    }
+}
 void Game::captureSoul(int index) {
     if (index < 0 || index >= TARGET_COUNT) return;
     TargetState& t = state_.targets[index];
+    if (state_.player.souls >= MAX_STORED_SOULS || !t.alive || !t.slurpable) return;
     t.alive = false;
     t.visibility = 0.0f;
     t.soulCubeAmount = 0.0f;
     syncTargetReactionVisual(t);
-    t.respawnTimer = 2.0f;
+    const Vec3 capturedAt=t.pos;
+    state_.player.storedSoulBrute[state_.player.souls]=t.brute;
     state_.player.souls++;
+    ++state_.progression.run.roomCaptures;
+    state_.progression.run.roomHeat=clampf(state_.progression.run.roomHeat+0.045f,0.0f,1.0f);
+    gainBattery(BATTERY_CAPTURE_GAIN,BatteryReason::Ingest);
+    feedSupplementalBattery(FLOWER_SLURP_FEED);
+    emitAudio(AudioCue::ReceivedMessage,0.58f);
+    emitAudio(AudioCue::RewardNice,0.30f);
+    t.captureQueued=false; t.captureCommitted=false; t.soulState=SoulState::Free; t.networkOwnerPlayerId=-1;
+    spawnParticleBurst(capturedAt);
+    queueHumanRespawn(capturedAt);
+}
+
+void Game::queueHumanRespawn(const Vec3& avoid) {
+    if(state_.roomClear) return;
+    for(auto& request:state_.respawnQueue) if(!request.active) {
+        request.active=true; request.avoid=avoid;
+        const float roomScale=1.0f+0.16f*std::log2(1.0f+static_cast<float>(std::max(0,state_.roomIndex-1)));
+        const float heatScale=1.0f+state_.progression.run.roomHeat*1.35f;
+        request.delay=lerpf(HUMAN_RESPAWN_DELAY_MIN,HUMAN_RESPAWN_DELAY_MAX,nextFlowerRandom())/std::min(4.0f,roomScale*heatScale);
+        return;
+    }
+}
+
+void Game::updateRoomPopulation(float dt) {
+    if(state_.roomClear){for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{}; return;}
+    state_.progression.run.roomElapsed+=dt;
+    const float timeHeat=clampf(state_.progression.run.roomElapsed/ROOM_HEAT_SECONDS,0.0f,1.0f);
+    const float captureHeat=clampf(static_cast<float>(state_.progression.run.roomCaptures)*0.045f,0.0f,0.55f);
+    state_.progression.run.roomHeat=std::max(state_.progression.run.roomHeat,clampf(timeHeat+captureHeat,0.0f,1.0f));
+    for(auto& request:state_.respawnQueue) if(request.active) request.delay-=dt;
+    int active=0;
+    for(const auto& target:state_.targets) if(target.alive && !target.slurpable && target.soulState==SoulState::Free) ++active;
+    for(int q=TARGET_COUNT-1;q>=0 && active<activeHumanTarget();--q) {
+        HumanRespawnRequest& request=state_.respawnQueue[q];
+        if(!request.active || request.delay>0.0f) continue;
+        int slot=-1;
+        for(int i=0;i<TARGET_COUNT;++i){const TargetState& target=state_.targets[i]; if(!target.alive && !target.captureQueued && !target.captureCommitted && target.soulState==SoulState::Free){slot=i;break;}}
+        if(slot<0) break;
+        respawnTarget(slot);
+        TargetState& target=state_.targets[slot];
+        target.pos=chooseHumanSpawnPoint(slot,&request.avoid); chooseHumanWalkTarget(slot); request=HumanRespawnRequest{}; ++active;
+    }
 }
 void Game::respawnTarget(int index) {
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
@@ -648,107 +2361,500 @@ void Game::respawnTarget(int index) {
     t.armor = t.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
     t.scale = t.brute ? HUMAN_SCALE_BRUTE : 1.0f;
     t.health = 1.0f;
-    t.pos = {(seededRoomValue(500 + index) - 0.5f) * 20.0f, GROUND_Y, ROOM_MIN_SPAWN_Z + seededRoomValue(600 + index) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z)};
+    t.pos = chooseHumanSpawnPoint(index);
     t.visualYaw = seededRoomValue(540 + index) * DB_PI * 2.0f;
     t.visualWalkPhase = seededRoomValue(560 + index) * DB_PI * 2.0f;
+    t.floatOffset=seededRoomValue(565+index)*DB_PI*2.0f;
+    t.spinSpeed=0.4f+seededRoomValue(570+index)*0.8f;
+    t.attackCooldown=seededRoomValue(580+index)*0.5f;
+    t.attackVariant=static_cast<int>(seededRoomValue(590+index)*4.0f)%4;
+    resetSoulLattice(t);
+    chooseHumanWalkTarget(index);
     syncTargetReactionVisual(t);
 }
 
+Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
+    const float tileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
+    const float playerLocalZ=wrapZ(state_.player.pos.z);
+    Vec3 best{0.0f,GROUND_Y,tileOrigin+ROOM_MIN_SPAWN_Z+4.5f};
+    float bestScore=-1.0e9f;
+    for(int attempt=0;attempt<32;++attempt){
+        // Each browser candidate gets its own obstacle-clearance retries.
+        Vec3 candidate=best;
+        for(int retry=0;retry<18;++retry){
+            const int seed=index+attempt*17+state_.roomIndex*31+retry*101;
+            const float x=(seededRoomValue(900+seed)-0.5f)*20.0f;
+            const float localZ=ROOM_MIN_SPAWN_Z+seededRoomValue(1200+seed)*(ROOM_MAX_SPAWN_Z-ROOM_MIN_SPAWN_Z);
+            candidate={x,GROUND_Y,tileOrigin+localZ};
+            if(!isHumanPointBlocked(x,candidate.z,0.7f)) break;
+        }
+        if(isHumanPointBlocked(candidate.x,candidate.z,0.7f)) continue;
+        const float pdx=candidate.x-state_.player.pos.x,pdz=wrapZ(candidate.z)-playerLocalZ;
+        const float playerDistSq=pdx*pdx+pdz*pdz;
+        float oldDistSq=1.0e9f;
+        if(avoid){const float dx=candidate.x-avoid->x,dz=wrapZ(candidate.z)-wrapZ(avoid->z);oldDistSq=dx*dx+dz*dz;}
+        float overlapPenalty=0.0f;
+        for(int h=0;h<TARGET_COUNT;++h){if(h==index)continue;const TargetState& other=state_.targets[h];if(!other.alive||other.slurpable||other.soulState!=SoulState::Free)continue;const float dx=candidate.x-other.pos.x,dz=wrapZ(candidate.z)-wrapZ(other.pos.z);if(dx*dx+dz*dz<6.25f)overlapPenalty+=100.0f;}
+        const float score=std::min(playerDistSq,144.0f)+std::min(oldDistSq,144.0f)-overlapPenalty;
+        if(score>bestScore){bestScore=score;best=candidate;}
+        if(playerDistSq>=64.0f&&oldDistSq>=36.0f&&overlapPenalty<=0.0f)return candidate;
+    }
+    return best;
+}
+
+bool Game::isHumanPointBlocked(float x,float z,float radius) const {
+    const float localZ=wrapZ(z);
+    if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius) return true;
+    for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
+        if(x>c.minX-radius && x<c.maxX+radius && localZ>c.minZ-radius && localZ<c.maxZ+radius) return true;}
+    return false;
+}
+
+void Game::chooseHumanWalkTarget(int index) {
+    TargetState& t=state_.targets[index];
+    const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
+    for(int attempt=0;attempt<10;++attempt){
+        const int seed=700+index*97+t.walkTargetSequence*19+attempt*2;
+        const float angle=seededRoomValue(seed)*DB_PI*2.0f;
+        const float radius=1.8f+seededRoomValue(seed+1)*HUMAN_WALK_RANGE;
+        const float x=clampf(t.pos.x+std::cos(angle)*radius,-ROOM_WIDTH*0.5f+1.1f,ROOM_WIDTH*0.5f-1.1f);
+        const float localZ=clampf(wrapZ(t.pos.z)+std::sin(angle)*radius,ROOM_MIN_SPAWN_Z,ROOM_MAX_SPAWN_Z);
+        if(!isHumanPointBlocked(x,tileOrigin+localZ,0.5f)){t.walkTarget={x,GROUND_Y,tileOrigin+localZ}; ++t.walkTargetSequence; return;}
+    }
+    t.walkTarget=t.pos; ++t.walkTargetSequence;
+}
+
+void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TARGET_COUNT)return;TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;if(id==0){state_.player.grabbedByTarget=-1;state_.player.grabEscape=0;state_.player.grabLastDirection=0;clearInputState();}else if(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active){auto& player=state_.multiplayer.peers[id].player;player.grabbedByTarget=-1;player.grabEscape=0;player.grabLastDirection=0;state_.multiplayer.peers[id].input=InputState{};}target.grabbedPlayerId=-1;target.grabCooldown=18.0f;target.attackTimer=0;target.attackCooldown=1.15f;}
+
+void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
+
 void Game::updateTargets(float dt) {
+    state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
+    if(state_.enemyAttackOwner>=0){const TargetState& owner=state_.targets[state_.enemyAttackOwner];if(!owner.alive||owner.slurpable||owner.attackTimer<=0.0f)state_.enemyAttackOwner=-1;}
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
-        if (!t.alive) { if ((t.respawnTimer -= dt) <= 0 && i < ACTIVE_HUMAN_TARGET) respawnTarget(i); continue; }
+        if (!t.alive) continue;
         t.hitFlash = std::max(0.0f, t.hitFlash - TARGET_HITFLASH_DECAY_PER_FRAME);
         t.visibility = 1.0f;
         t.vacuumPullAmount = 0.0f;
         t.captureCollapseAmount = clampf(t.ingestProgress, 0.0f, 1.0f);
+        t.grabCooldown=std::max(0.0f,t.grabCooldown-dt);
+        if(t.grabbedPlayerId>=0){updateTargetGrab(i,dt);continue;}
         if (t.slurpable) {
             t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);
             t.locomotionAmount = 0.0f;
         } else {
             t.soulMorph = 0.0f;
-            t.phase += dt;
-            const float dx = std::sin(t.phase * 0.7f) * dt * 0.18f;
-            const float dz = std::cos(t.phase * 0.5f) * dt * 0.18f;
-            t.pos.x += dx;
-            t.pos.z += dz;
-            if (std::fabs(dx) + std::fabs(dz) > 0.0001f) {
-                t.visualYaw = std::atan2(-dx, -dz);
-                t.visualWalkPhase += std::sqrt(dx * dx + dz * dz) * HUMAN_WALK_PHASE_PER_METER;
-                t.locomotionAmount = 1.0f;
-            } else {
-                t.locomotionAmount = 0.0f;
+            t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
+            if(t.armorRegenDelay<=0.0f){
+                const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
+                if(t.armor<fullArmor){
+                    const float roomScale=std::log2(1.0f+static_cast<float>(std::max(0,state_.roomIndex)));
+                    const float regenPerSecond=std::min(0.50f,0.035f+roomScale*0.018f+state_.progression.run.roomHeat*0.16f);
+                    t.armor=std::min(fullArmor,t.armor+regenPerSecond*dt);
+                }
             }
-            t.pos.z = getRoomTileOriginZ(state_.topology.currentTileIndex) + wrapZ(t.pos.z);
+            const float currentTileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
+            const float targetTileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
+            if(std::abs(currentTileOrigin-targetTileOrigin)>0.001f){const float shift=currentTileOrigin-targetTileOrigin; t.pos.z+=shift; t.walkTarget.z+=shift;}
+            t.pos.y=GROUND_Y; t.attackCooldown=std::max(0.0f,t.attackCooldown-dt);
+            int attackedPlayerId=0;
+            Vec3 attackedPlayerPos=state_.player.pos;
+            float nearestPlayerDistance=state_.player.downed?9999.0f:horizontalLength(Vec3{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z});
+            if(state_.multiplayer.authoritativeHost){for(int id=1;id<NETWORK_PLAYER_COUNT;++id){const auto& peer=state_.multiplayer.peers[id];if(!peer.active||!peer.player.alive||peer.player.downed)continue;const float distance=horizontalLength(Vec3{peer.player.pos.x-t.pos.x,0,peer.player.pos.z-t.pos.z});if(distance<nearestPlayerDistance){nearestPlayerDistance=distance;attackedPlayerId=id;attackedPlayerPos=peer.player.pos;}}}
+            Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
+            float playerDist=horizontalLength(toPlayer);
+            if(playerDist>0.001f && playerDist<HUMAN_ATTACK_NOTICE_RANGE) t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(t.attackTimer>0.0f){
+                t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
+                const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
+                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
+                else {
+                    t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    attackedPlayerId=t.attackTargetPlayerId;
+                    attackedPlayerPos=state_.player.pos;
+                    if(attackedPlayerId>0&&attackedPlayerId<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[attackedPlayerId].active)attackedPlayerPos=state_.multiplayer.peers[attackedPlayerId].player.pos;
+                    else attackedPlayerId=0;
+                }
+                const float sweepT=clampf((progress-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
+                const float side=t.attackVariant%2==0?1.0f:-1.0f;
+                const float arcAngle=side*lerpf(1.12f,-1.12f,smooth01(sweepT));
+                const float cs=std::cos(arcAngle),sn=std::sin(arcAngle);
+                const Vec3 swingDir{t.attackDirection.x*cs-t.attackDirection.z*sn,0,t.attackDirection.x*sn+t.attackDirection.z*cs};
+                const Vec3 liveToPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};const float liveDist=horizontalLength(liveToPlayer);
+                const float sweepFacing=liveDist>0.001f?dot3(liveToPlayer*(1.0f/liveDist),swingDir):-1.0f;
+                if(!t.attackHit && progress>=HUMAN_SWING_COMMIT_PHASE && progress<=HUMAN_SWING_END_PHASE && liveDist<=HUMAN_ATTACK_HIT_RANGE+0.18f && sweepFacing>=0.90f){
+                    const Vec3 away=liveDist>0.001f?liveToPlayer*(-1.0f/liveDist):Vec3{0,0,1};
+                    PlayerState* victim=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
+                    if(victim->battery<22.0f&&!victim->downed&&victim->grabbedByTarget<0&&t.grabCooldown<=0.0f){victim->grabbedByTarget=i;victim->grabEscape=0;victim->grabLastDirection=0;t.grabbedPlayerId=attackedPlayerId;t.attackTimer=0.0f;state_.enemyAttackOwner=-1;}
+                    else if(attackedPlayerId==0){state_.player.vel+=away*HUMAN_ATTACK_KNOCKBACK;spendBattery(HUMAN_ATTACK_BATTERY_COST,BatteryReason::Hit);}
+                    else {NetworkPeerState local;savePlayerContext(local);loadPlayerContext(state_.multiplayer.peers[attackedPlayerId]);simulationPlayerId_=attackedPlayerId;state_.player.vel+=away*HUMAN_ATTACK_KNOCKBACK;spendBattery(HUMAN_ATTACK_BATTERY_COST,BatteryReason::Hit);savePlayerContext(state_.multiplayer.peers[attackedPlayerId]);simulationPlayerId_=0;loadPlayerContext(local);}
+                    if(state_.time-state_.audio.lastDamageAckTime>=0.18f){state_.audio.lastDamageAckTime=state_.time;emitAudio(AudioCue::NegativeAck,0.26f);}
+                    t.attackHit=true;
+                }
+                if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=0.34f;}
+            } else if(playerDist<HUMAN_ATTACK_START_RANGE && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+                t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=HUMAN_ATTACK_COOLDOWN;
+                t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
+                t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
+            } else {
+                Vec3 destination=(playerDist<HUMAN_ATTACK_NOTICE_RANGE && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget;
+                Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
+                if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=HUMAN_ATTACK_NOTICE_RANGE){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
+                if(dist>0.001f){
+                    const Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<HUMAN_ATTACK_NOTICE_RANGE?1.28f:1.0f;
+                    const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
+                    const float speed=HUMAN_WALK_SPEED*aggro*(t.brute?0.56f:1.0f)*variation;
+                    const float step=std::min(dist,speed*dt); const Vec3 next=t.pos+dir*step;
+                    if(isHumanPointBlocked(next.x,next.z,0.42f)) chooseHumanWalkTarget(i);
+                    else {t.pos=next; t.visualYaw=std::atan2(-dir.x,-dir.z); t.visualWalkPhase+=step*HUMAN_WALK_PHASE_PER_METER;}
+                    t.locomotionAmount=step>0.00001f?1.0f:0.0f;
+                } else t.locomotionAmount=0.0f;
+            }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
+        if ((!t.slurpable || t.soulMorph < 0.995f) && t.ingestProgress < 0.01f) t.humanAnimationTime += dt;
         syncTargetReactionVisual(t);
     }
 }
 
 void Game::updateVacuum(float dt) {
     VacuumState& v = state_.vacuum;
+    if(state_.player.ledgeHanging||state_.player.ledgeMantleTimer>0.0f)v.active=false;
     v.power = clampf(v.power + (v.active ? VACUUM_CHARGE_SPEED : -VACUUM_DECAY_SPEED) * dt, 0, 1);
-    v.pose += ((v.active ? 1.0f : 0.0f) - v.pose) * std::min(1.0f, dt * 8.0f);
+    v.pose += ((v.active ? 1.0f : 0.0f) - v.pose) * std::min(1.0f, dt * 10.0f);
+    v.fieldStrength += ((v.active ? 1.0f : 0.0f) - v.fieldStrength) * std::min(1.0f, dt * 5.0f);
     v.target = -1;
-    if (!v.active) {
-        for (auto& target : state_.targets) {
-            if (target.soulState == SoulState::Latched || target.soulState == SoulState::Ingesting || target.soulState == SoulState::Attracted) {
-                target.soulState = SoulState::Free;
-            }
-            target.ingestProgress = std::max(0.0f, target.ingestProgress - SOUL_CAPTURE_DECAY * dt);
-            target.captureCollapseAmount = clampf(target.ingestProgress, 0.0f, 1.0f);
-            syncTargetReactionVisual(target);
+    const bool attractionActive = v.active && v.power > 0.32f;
+    const Vec3 pullPoint = state_.phoneTransform.vacuumPullPoint;
+    auto nearestWorldPos = [&](const TargetState& target) {
+        Vec3 p = target.pos;
+        const int centerTile = getRoomTileIndex(pullPoint.z);
+        float bestZ = wrapZ(target.pos.z) + getRoomTileOriginZ(centerTile);
+        float bestDist = std::abs(bestZ - pullPoint.z);
+        for (int offset : {-1, 1}) {
+            const float candidate = wrapZ(target.pos.z) + getRoomTileOriginZ(centerTile + offset);
+            const float candidateDist = std::abs(candidate - pullPoint.z);
+            if (candidateDist < bestDist) { bestZ = candidate; bestDist = candidateDist; }
         }
-        return;
+        p.z = bestZ;
+        return p;
+    };
+    auto writeCanonical = [&](TargetState& target, const Vec3& world) {
+        target.pos = world;
+        target.pos.z = wrapZ(world.z) + getRoomTileOriginZ(state_.topology.currentTileIndex);
+    };
+    auto keepOutsidePhoneSolid = [&](Vec3 world, bool preferScreenFront) {
+        if(state_.camera.firstPerson)return world;
+        Vec3 local=inverseRotate(state_.phoneTransform.orientation,world-state_.phoneTransform.position);
+        const float hx=PHONE_SOLID_HALF_X+SOUL_CORE_SOLID_RADIUS;
+        const float hy=PHONE_SOLID_HALF_Y+SOUL_CORE_SOLID_RADIUS;
+        const float hz=PHONE_SOLID_HALF_Z+SOUL_CORE_SOLID_RADIUS;
+        if(std::abs(local.x)>hx||std::abs(local.y)>hy||std::abs(local.z)>hz)return world;
+        if(preferScreenFront)local.z=hz;
+        else {
+            const float px=hx-std::abs(local.x),py=hy-std::abs(local.y),pz=hz-std::abs(local.z);
+            if(px<=py&&px<=pz)local.x=(local.x<0.0f?-1.0f:1.0f)*hx;
+            else if(py<=px&&py<=pz)local.y=(local.y<0.0f?-1.0f:1.0f)*hy;
+            else local.z=(local.z<0.0f?-1.0f:1.0f)*hz;
+        }
+        return state_.phoneTransform.position+rotate(state_.phoneTransform.orientation,local);
+    };
+    auto insideCylinder = [&](const Vec3& p) {
+        const Vec3 d = p - state_.phoneTransform.position;
+        return d.x*d.x + d.z*d.z <= SOUL_CAPTURE_CYLINDER_RADIUS*SOUL_CAPTURE_CYLINDER_RADIUS &&
+            std::abs(d.y) <= SOUL_CAPTURE_CYLINDER_HEIGHT * 0.5f;
+    };
+    auto inOffer = [&](const Vec3& p) {
+        const Vec3 toSoul = p - state_.camera.pos;
+        const float forwardDistance = dot3(toSoul, state_.camera.forward);
+        if (forwardDistance <= 0.0f || forwardDistance > SOUL_ATTRACTION_RANGE) return false;
+        const Vec3 radial = toSoul - state_.camera.forward * forwardDistance;
+        const float coneRadius = SOUL_ATTRACTION_CONE_RADIUS * (0.24f + forwardDistance / SOUL_ATTRACTION_RANGE);
+        return lengthSq(radial) <= coneRadius * coneRadius;
+    };
+
+    int offeredFreeSoul = -1;
+    float offeredScore = 1e9f;
+    if (attractionActive) {
+        for (int i = 0; i < TARGET_COUNT; ++i) {
+            TargetState& t = state_.targets[i];
+            if (!t.alive || !t.slurpable || t.captureQueued || t.captureCommitted ||
+                (t.soulState != SoulState::Free && t.soulState != SoulState::Attracted)) continue;
+            const Vec3 p = nearestWorldPos(t);
+            if (!inOffer(p)) continue;
+            const float score = length(pullPoint - p) + (insideCylinder(p) ? -3.5f : 0.0f);
+            if (score < offeredScore) { offeredScore = score; offeredFreeSoul = i; }
+        }
     }
-    float best = SOUL_ATTRACTION_RANGE;
+
+    float bestScore = 1e9f;
     for (int i = 0; i < TARGET_COUNT; ++i) {
-        TargetState& t = state_.targets[i]; if (!t.alive || !t.slurpable) continue;
-        const float d = distXZ(t.pos, state_.player.pos); if (d < best) { best = d; v.target = i; }
+        TargetState& t = state_.targets[i];
+        if (!t.alive || !t.slurpable) continue;
+        if(t.networkOwnerPlayerId>=0&&t.networkOwnerPlayerId!=simulationPlayerId_) continue;
+        if (t.soulState == SoulState::Recoiling) {
+            t.recoilTime -= dt;
+            t.vel.y -= 5.5f * dt;
+            t.pos += t.vel * dt;
+            const float damping = std::max(0.0f, 1.0f - 3.5f * dt);
+            t.vel.x *= damping; t.vel.z *= damping;
+            if (t.pos.y < GROUND_Y) { t.pos.y = GROUND_Y; t.vel.y = 0.0f; }
+            if (t.recoilTime <= 0.0f) { t.soulState = SoulState::Free; t.networkOwnerPlayerId=-1; }
+            continue;
+        }
+        if (t.captureQueued || t.captureCommitted) continue;
+        const Vec3 soulWorld = nearestWorldPos(t);
+        const bool offered = attractionActive &&
+            (t.soulState == SoulState::Latched || t.soulState == SoulState::Ingesting || i == offeredFreeSoul || insideCylinder(soulWorld));
+        if (!attractionActive && (t.soulState == SoulState::Latched || t.soulState == SoulState::Ingesting)) {
+            releaseSoul(i); continue;
+        }
+        if (!offered) {
+            if (t.soulState == SoulState::Attracted) { t.soulState = SoulState::Free; t.networkOwnerPlayerId=-1; }
+            if (t.soulState == SoulState::Free) { t.ingestProgress = std::max(0.0f, t.ingestProgress - dt * SOUL_CAPTURE_DECAY); t.latchedToScreen = false; t.vel = {}; }
+            continue;
+        }
+        if (t.soulState == SoulState::Free) { t.soulState = SoulState::Attracted; t.networkOwnerPlayerId=simulationPlayerId_; }
+        const float score = length(pullPoint - soulWorld) + (insideCylinder(soulWorld) ? -2.5f : 0.0f);
+        if (score < bestScore) { bestScore = score; v.target = i; }
+        const float soulMass = t.brute ? 1.45f : 1.0f;
+        if (t.soulState == SoulState::Attracted) {
+            Vec3 delta = pullPoint - soulWorld; const float d = std::max(length(delta), 0.001f);
+            const float proximity = 1.0f - clampf(d / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
+            const float speed = v.power * (3.2f + smooth01(proximity)*5.8f + (insideCylinder(soulWorld)?8.5f:0.0f)) / soulMass;
+            Vec3 next = soulWorld + normalized(delta) * std::min(d, speed*dt);
+            next=keepOutsidePhoneSolid(next,insideCylinder(soulWorld));
+            writeCanonical(t, next); t.vel = {}; t.vacuumPullAmount = v.power;
+            if (insideCylinder(next) || d <= SOUL_LATCH_DISTANCE) { t.soulState = SoulState::Latched; t.latchedToScreen = true; }
+            syncTargetReactionVisual(t); continue;
+        }
+        if (t.soulState == SoulState::Latched || t.soulState == SoulState::Ingesting) {
+            t.latchedToScreen = true;
+            Vec3 sealPoint = pullPoint;
+            if (!state_.camera.firstPerson) {
+                Vec3 local = inverseRotate(state_.phoneTransform.orientation, soulWorld - state_.phoneTransform.screenCenter);
+                local.x = clampf(local.x, -SCREEN_HALF_WIDTH*0.92f, SCREEN_HALF_WIDTH*0.92f);
+                local.y = clampf(local.y, -SCREEN_HALF_HEIGHT*0.92f, SCREEN_HALF_HEIGHT*0.92f);
+                local.z = SCREEN_FRONT_OFFSET + SOUL_SEAL_BODY_OFFSET;
+                sealPoint = state_.phoneTransform.screenCenter + rotate(state_.phoneTransform.orientation, local);
+            }
+            t.latchPoint = sealPoint;
+            const float phase = clampf(t.ingestProgress, 0.0f, 1.0f);
+            const float sealEase = smooth01(clampf((phase-0.08f)/(0.32f-0.08f),0.0f,1.0f));
+            const float pressureEase = smooth01(clampf((phase-0.32f)/(0.78f-0.32f),0.0f,1.0f));
+            const float popEase = smooth01(clampf((phase-0.78f)/(1.0f-0.78f),0.0f,1.0f));
+            Vec3 toSeal = sealPoint - soulWorld; const float d = length(toSeal);
+            const float move = std::min(d, ((7.0f+sealEase*5.0f+popEase*14.0f)/soulMass)*dt);
+            Vec3 next = d > 0.001f ? soulWorld + normalized(toSeal)*move : soulWorld;
+            next=keepOutsidePhoneSolid(next,true);
+            writeCanonical(t,next); t.vel={}; t.vacuumPullAmount=std::max(v.power,t.ingestProgress);
+            const bool sealed = std::max(0.0f,d-move) <= SOUL_SEAL_DISTANCE;
+            t.soulState = sealed ? SoulState::Ingesting : SoulState::Latched;
+            if (sealed) {
+                const float slurpRate=std::pow(1.18f,static_cast<float>(state_.runRules.fasterSlurpStacks));
+                t.ingestProgress=clampf(t.ingestProgress+dt*v.power*(0.38f+sealEase*0.55f+pressureEase*0.85f+popEase*2.25f)*slurpRate/soulMass,0.0f,1.0f);
+                t.health-=VACUUM_DAMAGE*v.power*dt*0.10f;
+            }
+            t.captureCollapseAmount=t.ingestProgress; syncTargetReactionVisual(t);
+            if (t.ingestProgress>=SOUL_CAPTURE_COMMIT_PHASE || t.health<=0.0f) queueSoulCapture(i);
+        }
     }
-    if (v.target < 0) return;
-    TargetState& t = state_.targets[v.target];
-    Vec3 screen = state_.player.pos + state_.camera.forward * 0.2f + Vec3{0,0.5f,0};
-    Vec3 delta = screen - t.pos; float d = length(delta);
-    const float soulMass = t.brute ? 1.45f : 1.0f;
-    const float proximity = 1.0f - clampf(d / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
-    const float closeEase = smooth01(proximity);
-    t.vacuumPullAmount = clampf(std::max(v.power, t.ingestProgress), 0.0f, 1.0f);
-    if (d > 0.001f) {
-        const float speed = v.power * (3.2f + closeEase * 5.8f) / soulMass;
-        t.pos += normalized(delta) * std::min(d, speed * dt);
-        t.visualYaw = std::atan2(-delta.x, -delta.z);
+    const float lockTarget = (v.target != -1 && attractionActive) ? 1.0f : 0.0f;
+    v.lockStrength += (lockTarget - v.lockStrength) * std::min(1.0f, dt * 8.0f);
+    v.coneTightness += (lockTarget - v.coneTightness) * std::min(1.0f, dt * 4.0f);
+}
+
+void Game::resetSoulLattice(TargetState& target) {
+    target.latticeVisualPull=0;target.latticeVisualPullVelocity=0;target.tetherVisible=false;target.tetherWidth=0;
+    for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){target.latticePos[n]=latticeRest(n);target.latticeSurfacePos[n]=target.latticePos[n];target.latticeVel[n]={};}
+}
+
+void Game::updateSoulLattices() {
+    const Vec3 up{0,1,0};const float step=0.016f;
+    for(int i=0;i<TARGET_COUNT;++i){TargetState& target=state_.targets[i];
+        if(!target.alive){target.tetherVisible=false;continue;}
+        const int owner=target.networkOwnerPlayerId;
+        const bool remoteOwner=owner>0&&owner<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[owner].active;
+        const PhoneTransformState& ownerPhone=remoteOwner?state_.multiplayer.peers[owner].phoneTransform:state_.phoneTransform;
+        const VacuumState& ownerVacuum=remoteOwner?state_.multiplayer.peers[owner].vacuum:state_.vacuum;
+        const Vec3 center=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0};
+        Vec3 pullDir=ownerPhone.vacuumPullPoint-center;if(lengthSq(pullDir)>0.001f)pullDir=normalized(pullDir);else pullDir={std::sin(state_.time*target.spinSpeed),0,std::cos(state_.time*target.spinSpeed)};
+        Vec3 side{pullDir.z,0,-pullDir.x};if(lengthSq(side)<0.001f)side={1,0,0};else side=normalized(side);
+        const bool slurpable=target.slurpable,latched=target.latchedToScreen;
+        const bool owned=target.soulState==SoulState::Attracted||target.soulState==SoulState::Latched||target.soulState==SoulState::Ingesting;
+        const bool livePin=ownerVacuum.active&&ownerVacuum.power>0.01f&&(ownerVacuum.target==i||owned);
+        const float ingest=clampf(target.ingestProgress,0,1);const bool activelyPulled=livePin||ingest>0.01f;
+        const float sealPhase=smoothRange(ingest,0.32f,0.56f),pressurePhase=smoothRange(ingest,0.56f,0.86f),popPhase=smoothRange(ingest,0.86f,1.0f);
+        const float breakStress=slurpable?1.0f:clampf(1-target.armor/(target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL),0,1),suction=clampf(1-target.health,0,1),hit=clampf(target.hitFlash,0,1);
+        const float visualTarget=std::max({livePin?ownerVacuum.power*ownerVacuum.lockStrength:0.0f,ingest,suction*0.25f,breakStress*0.16f,hit*0.18f});
+        springScalar(target.latticeVisualPull,target.latticeVisualPullVelocity,activelyPulled?visualTarget:0,activelyPulled?4.8f:3.2f,activelyPulled?0.78f:0.58f,step,target.latticeVisualPull,target.latticeVisualPullVelocity);
+        const float visualPull=clampf(target.latticeVisualPull,0,1),slurpStrength=clampf(std::max(visualPull,livePin?ownerVacuum.power:0),0,1);
+        const float latchLimpness=latched?clampf(0.18f+slurpStrength*0.62f+ingest*0.34f,0,1):0;
+        const float ingestEase=smooth01(ingest),collapse=std::max({smoothRange(suction,0.76f,1.0f),pressurePhase*0.55f,popPhase});
+        const bool tetherAllowed=livePin&&owned;const float tetherIn=tetherAllowed?std::max(smoothRange(visualPull,0.08f,0.38f),smoothRange(ingest,0.02f,0.22f)):0;
+        const float readyPulse=slurpable?1+std::sin(state_.time*18.0f+i)*0.055f:1,hitPulse=1+hit*0.16f,idleBreath=(1+std::sin(state_.time*3.0f+i*1.7f)*0.035f)*readyPulse*hitPulse;
+        Vec3 anchorSum{};float anchorWeight=0,bestScore=-1e9f;Vec3 bestTip=center;
+        for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){const Vec3 rest=latticeRest(n);const float restLen=std::max(length(rest),0.001f);const Vec3 outward=rest*(1/restLen);const float facing=clampf(dot3(outward,pullDir)*0.5f+0.5f,0,1),surface=latticeSurface(n),corner=latticeCorner(n);
+            const float breathe=std::sin(state_.time*4.0f+i*1.31f+n*0.77f)*0.018f,stressWave=std::sin(state_.time*12.0f+i*2.17f+n*1.9f)*visualPull,direct=surface*visualPull*std::pow(facing,1.35f),faceCluster=std::max(surface*std::pow(facing,2.4f),direct);
+            const float armPattern=surface*std::pow(facing,3.0f)*(0.5f+0.5f*std::sin(state_.time*7.0f+i*4.9f+n*2.2f)),cheek=surface*std::pow(facing,1.7f)*(1-corner*0.55f)*(0.65f+0.35f*std::sin(state_.time*11.0f+i+n));
+            Vec3 desired=rest*(idleBreath+breathe);const float neck=surface*std::pow(facing,4.2f),shoulder=surface*std::pow(facing,1.8f)*(1-neck),rearLag=surface*std::pow(1-facing,1.4f),axisOffset=dot3(rest,pullDir);const Vec3 radial=desired-pullDir*axisOffset;const float taper=visualPull*(neck*0.72f+shoulder*0.28f+collapse*facing*0.55f);
+            desired+=pullDir*(visualPull*neck*(0.18f+armPattern*0.08f)+direct*0.12f+visualPull*shoulder*0.10f+collapse*facing*0.12f-visualPull*rearLag*0.13f);desired+=radial*(-taper);desired+=side*(stressWave*surface*(0.04f+cheek*0.04f));desired+=up*(std::sin(state_.time*10.0f+i*3.1f+n)*visualPull*surface*0.045f);
+            if(ingest>0.001f&&livePin){const float localDepth=facing,nodeDelay=(1-localDepth)*0.36f+corner*0.05f,nodeIngest=clampf((ingestEase-nodeDelay)/std::max(1-nodeDelay,0.001f),0,1),nodeEase=smooth01(nodeIngest);const float apertureX=clampf((rest.x/0.23f)*0.035f,-0.035f,0.035f),apertureY=clampf((rest.y/0.23f)*0.0625f,-0.0625f,0.0625f);const Vec3 aperture=ownerPhone.screenCenter+ownerPhone.screenRight*apertureX+ownerPhone.screenUp*apertureY+ownerPhone.screenNormal*0.018f;const Vec3 toScreen=aperture-(center+desired);const float sealWeight=sealPhase*std::pow(localDepth,2.6f),pressureWeight=pressurePhase*(0.25f+localDepth*0.55f),rearBulge=pressurePhase*(1-popPhase)*std::pow(1-localDepth,1.7f),popWeight=popPhase*(0.45f+nodeEase*0.85f),swallow=clampf(sealWeight+pressureWeight+popWeight,0,1),squeeze=(sealWeight*0.35f+pressureWeight*0.68f+popWeight)*surface;desired+=toScreen*swallow+radial*(-squeeze)+pullDir*(-rearBulge*0.18f+popWeight*0.16f);const float jitter=std::sin(state_.time*35.0f+i*3.7f+n*1.9f)*pressurePhase*(1-popPhase)*0.018f;desired+=side*(jitter*surface)+up*(jitter*0.7f*surface);}
+            Vec3& current=target.latticePos[n];Vec3& velocity=target.latticeVel[n];const float stiffness=latched?7.0f+(1-latchLimpness)*6.5f:(activelyPulled?14.5f:20.0f),damping=latched?0.84f+latchLimpness*0.11f:(activelyPulled?0.76f:0.66f);velocity+=(desired-current)*(stiffness*step);if(!activelyPulled)velocity+=(rest-current)*(1.15f*step*60.0f);velocity*=std::pow(damping,step*60.0f);current+=velocity*step;if(!activelyPulled&&lengthSq(current-rest)<0.00008f&&lengthSq(velocity)<0.00008f){current=rest;velocity={};}
+            const Vec3 world=center+current;if(faceCluster>0.35f){anchorSum+=world*faceCluster;anchorWeight+=faceCluster;}const float score=faceCluster*4+visualPull*facing-length(world-ownerPhone.vacuumPullPoint)*0.18f;if(surface>0.5f&&score>bestScore){bestScore=score;bestTip=world;}
+            Vec3 surfacePos=current;if(latched){const float rear=1-facing,limp=clampf(latchLimpness+sealPhase*0.16f+pressurePhase*0.18f,0,1),sag=limp*rear*(1-popPhase)*(0.20f+slurpStrength*0.24f),smear=rear*limp*(1-popPhase)*(0.12f+slurpStrength*0.20f);surfacePos.y-=sag;surfacePos+=pullDir*(-smear);surfacePos*=1-limp*rear*0.10f;const Vec3 surfaceWorld=center+surfacePos;const float minFront=0.006f+rear*limp*(0.018f+slurpStrength*0.022f),signedDistance=dot3(surfaceWorld-ownerPhone.screenCenter,ownerPhone.screenNormal);if(popPhase<0.72f&&signedDistance<minFront)surfacePos+=ownerPhone.screenNormal*(minFront-signedDistance);}target.latticeSurfacePos[n]=surfacePos;
+        }
+        target.tetherAnchor=anchorWeight>0.001f?(anchorSum*(1/anchorWeight))*0.38f+bestTip*0.62f:center+pullDir*0.38f;target.tetherDestination=ownerPhone.vacuumPullPoint;target.tetherVisible=tetherAllowed&&tetherIn>0.01f;target.tetherWidth=target.tetherVisible?std::max(0.12f,(0.92f-visualPull*0.62f-collapse*0.18f-ingestEase*0.26f)*tetherIn):0;
     }
-    if (d <= SOUL_LATCH_DISTANCE) {
-        t.soulState = d <= SOUL_SEAL_DISTANCE ? SoulState::Ingesting : SoulState::Latched;
-        const float phase = clampf(t.ingestProgress, 0.0f, 1.0f);
-        const float sealEase = smooth01(clampf((phase - 0.08f) / (0.32f - 0.08f), 0.0f, 1.0f));
-        const float pressureEase = smooth01(clampf((phase - 0.32f) / (0.78f - 0.32f), 0.0f, 1.0f));
-        const float popEase = smooth01(clampf((phase - 0.78f) / (1.0f - 0.78f), 0.0f, 1.0f));
-        const float phaseRate = v.power * (0.38f + sealEase * 0.55f + pressureEase * 0.85f + popEase * 2.25f) / soulMass;
-        t.ingestProgress = clampf(t.ingestProgress + dt * phaseRate, 0.0f, 1.0f);
-        t.health -= VACUUM_DAMAGE * v.power * dt * 0.10f;
+}
+
+void Game::updateCrosshair(float dt) {
+    HudState& hud=state_.hud;
+    const bool fullyCommitted=state_.dead||!state_.started||state_.cinematic.introActive||state_.uiPaused
+        ||state_.meleeVisual.airLungeLandingPending;
+    const bool shooting=state_.energy.dischargeTimer>0.0f||state_.energy.dischargePositionAmount>0.01f
+        ||state_.hud.shootJoinTimer>0.0f;
+    const bool crosshairAction=state_.vacuum.active||shooting;
+    bool soulInFlight=false;for(const auto& bullet:state_.bullets)if(bullet.alive){soulInFlight=true;break;}
+    const bool critAction=state_.meleeVisual.locomotionLunge||state_.meleeVisual.airLungeLandingPending||shooting||soulInFlight;
+    const float critTarget=!state_.dead&&state_.started&&!state_.cinematic.introActive&&!state_.uiPaused&&critAction?1.0f:0.0f;
+    hud.critMarkerOpacity+=(critTarget-hud.critMarkerOpacity)*std::min(1.0f,dt*(critTarget>hud.critMarkerOpacity?8.0f:6.0f));
+    const float opacityTarget=!fullyCommitted&&crosshairAction?1.0f:0.0f;
+    const float opacityResponse=opacityTarget>hud.crosshairOpacity?12.0f:14.0f;
+    hud.crosshairOpacity+=(opacityTarget-hud.crosshairOpacity)*std::min(1.0f,dt*opacityResponse);
+    bool aimTarget=state_.vacuum.target!=-1;
+    const Vec3 characterForward=cameraForwardFlat();
+    for(const auto& target:state_.targets) {
+        if(!target.alive) continue;
+        Vec3 world=target.pos;
+        const int centerTile=getRoomTileIndex(state_.camera.pos.z);
+        float bestZ=wrapZ(target.pos.z)+getRoomTileOriginZ(centerTile);
+        for(int offset:{-1,1}) {
+            const float candidate=wrapZ(target.pos.z)+getRoomTileOriginZ(centerTile+offset);
+            if(std::abs(candidate-state_.camera.pos.z)<std::abs(bestZ-state_.camera.pos.z)) bestZ=candidate;
+        }
+        world.z=bestZ;
+        const Vec3 toTarget=world-state_.camera.pos;
+        const float forwardDistance=dot3(toTarget,state_.camera.forward);
+        if(forwardDistance<=0.0f) continue;
+        Vec3 flat{target.pos.x-state_.player.pos.x,0.0f,wrapZ(target.pos.z)-wrapZ(state_.player.pos.z)};
+        if(lengthSq(flat)>0.00001f && dot3(normalized(flat),characterForward)<0.72f) continue;
+        const Vec3 radial=toTarget-state_.camera.forward*forwardDistance;
+        if(lengthSq(radial)<=0.55f*0.55f) {aimTarget=true; break;}
+    }
+    hud.hasAimTarget=aimTarget;
+
+    const float spinDt=std::min(dt,0.05f);
+    const float hover=std::sin(state_.time*3.0f)*2.0f;
+    const float slurpStrength=state_.vacuum.active
+        ? clampf(state_.vacuum.power*(0.72f+state_.vacuum.lockStrength*0.28f),0.0f,1.0f)
+        : 0.0f;
+    float spread=state_.vacuum.active?15.0f+slurpStrength*8.0f+hover:8.0f+hover;
+    if(slurpStrength>0.01f) {
+        const float spinSpeed=80.0f+slurpStrength*620.0f;
+        hud.crosshairRotationDegrees=std::fmod(hud.crosshairRotationDegrees+spinSpeed*spinDt,360.0f);
     } else {
-        t.ingestProgress = std::max(0.0f, t.ingestProgress - SOUL_CAPTURE_DECAY * dt);
-        t.soulState = SoulState::Attracted;
+        hud.crosshairRotationDegrees+=(0.0f-hud.crosshairRotationDegrees)*std::min(1.0f,spinDt*8.0f);
     }
-    t.captureCollapseAmount = clampf(t.ingestProgress, 0.0f, 1.0f);
-    syncTargetReactionVisual(t);
-    if (t.ingestProgress >= SOUL_CAPTURE_COMMIT_PHASE || t.health <= 0.0f) captureSoul(v.target);
+    if(hud.shootJoinTimer>0.0f) {
+        const float joinEase=clampf(hud.shootJoinTimer/0.18f,0.0f,1.0f);
+        spread=lerpf(spread,0.0f,joinEase);
+        hud.crosshairRotationDegrees=lerpf(hud.crosshairRotationDegrees,45.0f,joinEase);
+        hud.shootJoinTimer=std::max(0.0f,hud.shootJoinTimer-dt);
+    }
+    hud.crosshairSpreadPixels=spread;
 }
 
 void Game::updateBullets(float dt) {
     for (auto& b : state_.bullets) if (b.alive) {
-        b.life -= dt; b.vel.y -= BULLET_GRAVITY * dt; b.pos += b.vel * dt;
-        if (b.life <= 0 || b.pos.y < -2) b.alive = false;
+        const Vec3 previous=b.pos;
+        b.life-=dt;
+        b.vel.y-=BULLET_GRAVITY*dt;
+        const float drag=std::pow(BULLET_AIR_DRAG_PER_SECOND,dt);
+        b.vel*=drag;
+        b.pos+=b.vel*dt;
+        b.spin+=dt*10.0f;
+
+        bool deposited=false;
+        if(!state_.roomClear){
+            const float hitRadius=ROOM_DEPOSIT_HIT_RADIUS*1.35f;
+            const float missRadius=hitRadius*1.85f;
+            const float tileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
+            for(int i=0;i<state_.requiredSouls;++i){
+                if(state_.captures[i].filled) continue;
+                Vec3 goal=state_.captures[i].pos; goal.z+=tileOrigin;
+                const bool sphereHit=lengthSq(b.pos-goal)<hitRadius*hitRadius || pointSegmentDistanceSq(goal,previous,b.pos)<hitRadius*hitRadius;
+                bool wallHit=false;
+                const float wallZ=goal.z;
+                if((previous.z-wallZ)*(b.pos.z-wallZ)<=0.0f){
+                    const float span=b.pos.z-previous.z;
+                    const float t=std::abs(span)>0.0001f?clampf((wallZ-previous.z)/span,0.0f,1.0f):0.0f;
+                    const float crossX=previous.x+(b.pos.x-previous.x)*t;
+                    const float crossY=previous.y+(b.pos.y-previous.y)*t;
+                    wallHit=std::abs(crossX-goal.x)<hitRadius*0.95f && std::abs(crossY-goal.y)<hitRadius*0.95f;
+                }
+                if(!sphereHit && !wallHit) continue;
+                int filledSlot=0;
+                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
+                emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);emitAudio(AudioCue::RewardNice,0.28f);
+                spawnParticleBurst(b.pos);
+                spawnParticleBurst(goal);
+                b.alive=false; deposited=true; break;
+            }
+            if(!deposited&&!b.depositNearMissPlayed){
+                const float wallZ=ROOM_GRID_Z+tileOrigin;
+                if((previous.z-wallZ)*(b.pos.z-wallZ)<=0.0f){
+                    const float span=b.pos.z-previous.z;
+                    const float crossing=std::abs(span)>0.0001f?clampf((wallZ-previous.z)/span,0.0f,1.0f):0.0f;
+                    const float crossX=previous.x+(b.pos.x-previous.x)*crossing;
+                    const float crossY=previous.y+(b.pos.y-previous.y)*crossing;
+                    float nearestMissSq=1e9f;
+                    for(int i=0;i<state_.requiredSouls;++i){if(state_.captures[i].filled)continue;const Vec3& goal=state_.captures[i].pos;const float dx=crossX-goal.x,dy=crossY-goal.y;nearestMissSq=std::min(nearestMissSq,dx*dx+dy*dy);}
+                    if(nearestMissSq<missRadius*missRadius){b.depositNearMissPlayed=true;emitAudio(AudioCue::PaymentFailure,0.46f);}
+                }
+            }
+        }
+        if(deposited) continue;
+        for(int i=0;i<TARGET_COUNT && b.alive;++i) {
+            TargetState& target=state_.targets[i];
+            if(!target.alive || target.slurpable || target.captureQueued || target.captureCommitted) continue;
+            const Vec3 shellCenter{target.pos.x,0.65f,target.pos.z};
+            const float hitRadius=b.brute?0.95f:0.72f;
+            const Vec3 headCenter=targetHeadCenter(target);
+            const float headRadius=PASS7_HUMAN_VISUAL_SPEC.headRadius*target.scale+BULLET_HEAD_CONTACT_RADIUS;
+            // Fired cubes use the visible face center for precision. The lunge
+            // keeps the neck capsule assist, but projectiles at body height
+            // must remain body shots so relay-primer and shell damage stay
+            // deterministic across platforms.
+            const bool headshot=pointSegmentDistanceSq(headCenter,previous,b.pos)<=headRadius*headRadius;
+            const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
+            if(!bodyHit&&!headshot)continue;
+            const int shotLevel=upgradeLevel(UpgradeTrack::Shot);
+            const float shotDamage=(b.brute?1.65f:0.9f)*(1.0f+0.07f*static_cast<float>(shotLevel))*outgoingDamageMultiplier();
+            if(headshot&&target.grabbedPlayerId>=0)releaseTargetGrab(i);
+            if(!damageSoulShell(i,headshot?headshotDamage(target):shotDamage)) continue;
+            if(!headshot){state_.progression.run.accuracyStacks=0;state_.progression.run.accuracyMultiplier=1.0f;state_.progression.run.accuracyDecayTimer=0.0f;}
+            if(headshot){const float attackProgress=target.attackTimer>0.0f?1.0f-clampf(target.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f):-1.0f;const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;const float killCharge=target.slurpable?1.0f:1.0f-clampf(target.armor/armorMax,0.0f,1.0f);rewardHeadshot(headCenter,target.slurpable||target.armor<=armorMax*HEADSHOT_CRITICAL_ARMOR_FRACTION,false,attackProgress,killCharge);}
+            else {
+                const int relay=pairSynergyTier(UpgradeTrack::Shot,UpgradeTrack::Attack);
+                if(relay>0){state_.progression.run.relayPrimerStacks=std::min(RELAY_PRIMER_STACK_CAP,state_.progression.run.relayPrimerStacks+1);state_.progression.run.relayPrimerTimer=RELAY_PRIMER_SECONDS+0.2f*relay;}
+            }
+            target.vel+=b.vel*(0.08f+0.004f*static_cast<float>(shotLevel));
+            target.vel.y=std::max(target.vel.y,1.0f);
+            b.alive=false;
+        }
+        if(b.life<=0.0f || b.pos.y<-3.5f || std::abs(b.pos.x)>ROOM_WIDTH*1.25f || std::abs(wrapZ(b.pos.z))>ROOM_DEPTH*1.25f) b.alive=false;
     }
 }
 void Game::updateCaptures(float dt) {
     (void)dt;
-    int filled = 0; for (const auto& c : state_.captures) if (c.filled) filled++;
-    state_.roomClear = filled >= CAPTURE_COUNT;
+    int filled = 0; for(int i=0;i<state_.requiredSouls;++i) if(state_.captures[i].filled) ++filled;
+    state_.depositedSouls=filled;
+    const bool wasClear=state_.roomClear;
+    state_.roomClear = filled >= state_.requiredSouls;
+    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(state_.roomIndex==10){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
 }
 void Game::clampRoom(Vec3& pos) {
-    pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + 1.1f, ROOM_WIDTH * 0.5f - 1.1f);
+    pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + PLAYER_WALL_MARGIN, ROOM_WIDTH * 0.5f - PLAYER_WALL_MARGIN);
 }
