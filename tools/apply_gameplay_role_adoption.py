@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Apply the first guarded TargetRoles/SoulMotion adoption to Game.cpp.
 
-This script exists because the GitHub contents API replaces whole files.  It
-performs narrow, count-checked substitutions against the inspected source and
-refuses to write when any anchor is stale or ambiguous.
+The GitHub contents API replaces whole files. This script performs narrow,
+count-checked substitutions against the inspected source and refuses to write
+when any anchor is stale or ambiguous.
 """
 
 from __future__ import annotations
@@ -58,13 +58,6 @@ def transform(source: str) -> str:
         '    for(const auto& target:state_.targets) if(target.alive && !target.slurpable && target.soulState==SoulState::Free) ++active;',
         '    for(const auto& target:state_.targets) if(gameplay::isActiveHuman(target)) ++active;',
         "room active-human count",
-    )
-
-    text = replace_once(
-        text,
-        '         for(int i=0;i<TARGET_COUNT;++i){const TargetState& target=state_.targets[i]; if(!target.alive && !target.captureQueued && !target.captureCommitted && target.soulState==SoulState::Free){slot=i;break;}}',
-        '         for(int i=0;i<TARGET_COUNT;++i){const TargetState& target=state_.targets[i]; if(!target.alive && !target.captureQueued && !target.captureCommitted && target.soulState==SoulState::Free){slot=i;break;}}',
-        "respawn slot guard",
     )
 
     text = replace_once(
