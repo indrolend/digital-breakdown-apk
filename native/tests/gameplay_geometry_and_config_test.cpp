@@ -25,6 +25,11 @@ int main() {
     assert(near(rooms.canonicalZ(43.0f, 0), 1.0f));
     assert(near(rooms.nearestPeriodicZ(-20.0f, 23.0f), 22.0f));
 
+    const world::RoomCoordinates disabled{0.0f};
+    assert(near(disabled.wrapLocalZ(17.0f), 17.0f));
+    assert(disabled.tileIndex(17.0f) == 0);
+    assert(near(disabled.nearestPeriodicZ(17.0f, -100.0f), 17.0f));
+
     gameplay::VacuumGeometryConfig geometry;
     const Vec3 camera{0.0f, 1.0f, 0.0f};
     const Vec3 forward{0.0f, 0.0f, -1.0f};
