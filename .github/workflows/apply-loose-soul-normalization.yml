@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/loose-soul-normalization
+  pull_request:
+    branches:
+      - agent/gameplay-architecture-distillation
 
 permissions:
   contents: write
@@ -144,7 +147,6 @@ void updateLooseSoulMotion(TargetState& target, float dt) {
               'if(!isCombatTarget(target)) continue;',
               'bullet target filter')
 
-          # Normalize the common compact human-only checks used by crosshair and coordinators.
           text = text.replace('!target.alive||target.slurpable', '!isCombatTarget(target)')
           text = text.replace('!owner.alive||owner.slurpable', '!isCombatTarget(owner)')
 
