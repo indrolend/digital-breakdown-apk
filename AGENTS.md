@@ -1,4 +1,4 @@
-# Digital Breakdown Native Parity
+﻿# Digital Breakdown Native Parity
 
 ## Authoritative Browser Reference
 
@@ -33,6 +33,17 @@ Do not redesign mechanics.
 - Gameplay simulation should remain shared between desktop and Android.
 - Do not embed JavaScript or Three.js into the native runtime.
 
+## Gameplay architecture invariants
+
+- Keep `TargetState` pooled and fixed-size.
+- Derive active-human and loose-soul roles from existing state; do not add parallel entity hierarchies.
+- Do not introduce ECS, dynamic allocation, or broad architecture rewrites during focused fixes.
+- Keep capture commit and inventory awarding in the existing capture transaction.
+- Keep network ownership and protocol-visible layout stable unless protocol work is explicitly requested.
+- Treat `TargetState::pos` as canonical simulation position.
+- Keep hover, spin, lattice deformation, and other presentation offsets visual-only.
+- Prefer focused modules under `game/gameplay/` over adding more unrelated logic to `Game.cpp`.
+
 ## Validation
 
 Before editing, verify that:
@@ -45,38 +56,14 @@ Inspect the browser implementation before changing native code.
 
 Do not substitute another runtime if this file exists.
 
-## Maintainable gameplay editing contract
+For gameplay changes, run one of:
 
-### Source of truth
+```bash
+bash scripts/verify-gameplay.sh
+```
 
-- Continue gameplay architecture work from `agent/gameplay-architecture-distillation` or a branch explicitly based on it.
-- Inspect the current branch and current source before editing. Do not resume from stale snippets or older rescue branches.
+```powershell
+./scripts/verify-gameplay.ps1
+```
 
-### Gameplay invariants
-
-- `TargetState` remains a fixed pooled object reused across inactive, human, and loose-soul roles.
-- Human-to-soul conversion occurs in place. Do not introduce separate soul entities or an ECS.
-- `captureSoul()` remains the inventory-awarding capture transaction.
-- Network and protocol layout must not change without explicit protocol tests and approval.
-- Simulation coordinates remain canonical. Hover, bob, spin, squash, and other presentation offsets must not mutate simulation position.
-- Prefer derived role predicates over new replicated flags.
-
-### Change shape
-
-- Prefer focused source files under roughly 500 lines.
-- Keep orchestration in `Game.cpp`; move cohesive behavior into narrow gameplay modules.
-- Avoid broad formatting, unrelated cleanup, dynamic allocation, and framework rewrites.
-- Make dependencies explicit through small context structs rather than passing the entire `Game` object.
-
-### Gameplay verification
-
-Run the native desktop build and available gameplay/protocol tests, including where present:
-
-- `Pass7ParityTest`
-- `MultiplayerProtocolTest`
-- smoke test
-- model test
-- proximity test
-- `git diff --check`
-
-Report exactly which commands ran and which could not run.
+The canonical focused suite includes role/soul-motion checks, browser parity smoke coverage, multiplayer protocol coverage, and `git diff --check`.
