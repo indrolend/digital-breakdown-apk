@@ -350,6 +350,10 @@ struct SecretTvState {
     bool broken = false;
     bool available = false;
     float donationCooldown = 0.0f;
+    float knockCueTimer = 0.0f;
+    float knockVolume = 0.0f;
+    float knockPulse = 0.0f;
+    float knockPan = 0.0f;
 };
 
 enum class LocalMenuPage : unsigned char { Main, Online, JoinCode, Settings, Controls, Audio, Graphics };

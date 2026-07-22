@@ -247,65 +247,92 @@ private:
     q[2] = c1 * c2 * s3 + s1 * s2 * c3;
     q[3] = c1 * c2 * c3 - s1 * s2 * s3;
   }
+  enum RigRegion {
+    RigOther = 0,
+    RigSpine = 1,
+    RigHead = 2,
+    RigShoulder = 3,
+    RigUpperArm = 4,
+    RigForearm = 5,
+    RigHand = 6
+  };
+  static RigRegion rigRegion(const HumanModelBone &bone) {
+    if (bone.kind == 1)
+      return RigShoulder;
+    if (bone.kind == 2)
+      return RigUpperArm;
+    if (bone.kind == 3)
+      return RigForearm;
+    if (bone.kind == 4)
+      return RigHand;
+    if (bone.flags & 2)
+      return RigHead;
+    if (bone.flags & 1)
+      return RigSpine;
+    return RigOther;
+  }
+  static bool rigIsLeftArm(const HumanModelBone &bone) { return bone.flags & 4; }
+  static bool rigIsRightArm(const HumanModelBone &bone) { return bone.flags & 8; }
   static void applyAttack(const HumanModelBone &bone, float timer, int variant,
                           float *q) {
     constexpr float duration = 0.86f;
     const float t = 1 - std::clamp(timer / duration, 0.0f, 1.0f);
     const float pi = 3.14159265358979323846f;
     const float windup = std::sin(std::clamp(t / 0.30f, 0.0f, 1.0f) * pi * 0.5f) * (t < 0.30f ? 1.0f : 0.0f);
-    const float sweepT=std::clamp((t-0.30f)/0.42f,0.0f,1.0f);
-    const float strike=std::sin(sweepT*pi);
-    const float recover=std::sin(std::clamp((t-0.72f)/0.28f,0.0f,1.0f)*pi);
-    const float impact = std::max(strike, recover * 0.35f),
-                side = (variant % 2 == 0) ? 1.0f : -1.0f,
+    const float sweepT = std::clamp((t - 0.30f) / 0.42f, 0.0f, 1.0f);
+    const float strike = std::sin(sweepT * pi);
+    const float reach = std::clamp(sweepT * 1.35f, 0.0f, 1.0f);
+    const float recover = std::sin(std::clamp((t - 0.72f) / 0.28f, 0.0f, 1.0f) * pi);
+    const float side = (variant % 2 == 0) ? 1.0f : -1.0f,
                 low = variant >= 2 ? 1.0f : 0.0f;
+    const RigRegion region = rigRegion(bone);
     float dx = 0, dy = 0, dz = 0;
-    if (bone.flags & 1) {
-      dx += -impact * (0.30f + low * 0.08f) + windup * 0.12f;
-      dy += side * impact * 0.18f;
-      dz += side * impact * 0.28f;
+    if (region == RigSpine) {
+      dx += windup * (0.10f + low * 0.03f) - reach * (0.22f + low * 0.08f) + recover * 0.08f;
+      dy += side * (windup * -0.10f + strike * 0.12f);
+      dz += side * (windup * -0.22f + strike * 0.20f - recover * 0.08f);
     }
-    if (bone.flags & 2) {
-      dx += -impact * 0.12f;
-      dy += side * impact * 0.10f;
-      dz += side * impact * 0.08f;
+    if (region == RigHead) {
+      dx += -reach * 0.10f + windup * 0.04f;
+      dy += side * (windup * 0.06f + strike * 0.04f);
+      dz += side * (windup * -0.08f + strike * 0.06f);
     }
     const bool lead =
-        (side > 0 && (bone.flags & 8)) || (side < 0 && (bone.flags & 4));
+        (side > 0 && rigIsRightArm(bone)) || (side < 0 && rigIsLeftArm(bone));
     const bool back =
-        (side > 0 && (bone.flags & 4)) || (side < 0 && (bone.flags & 8));
+        (side > 0 && rigIsLeftArm(bone)) || (side < 0 && rigIsRightArm(bone));
     if (lead || back) {
-      const float armSide = lead ? side : -side,
-            power = (lead ? 1.0f : 0.38f) *
-                    std::max(0.0f, strike * 1.82f + recover * 0.25f),
-            cross = (variant % 2) ? -1.0f : 1.0f, wind = windup * 0.9f;
-      dx += lead ? wind * 0.72f : -wind * 0.20f;
-      dy += lead ? -side * wind * 0.82f : side * wind * 0.25f;
-      dz += lead ? -side * wind * 0.75f : side * wind * 0.24f;
-      switch (bone.kind) {
-      case 1:
-        dx += lead ? -power * (0.42f + low * 0.16f) : power * 0.14f;
-        dy += armSide * cross * power * (0.58f + low * 0.12f);
-        dz += armSide * power * (0.36f + low * 0.10f);
+      const float armSide = lead ? side : -side;
+      const float wind = windup;
+      const float deadReach = lead ? (reach * 1.28f + strike * 0.34f) : (reach * 0.22f);
+      const float drag = lead ? 1.0f : 0.34f;
+      dx += lead ? wind * 0.54f : -wind * 0.16f;
+      dy += lead ? -side * wind * 0.62f : side * wind * 0.16f;
+      dz += lead ? -side * wind * 0.66f : side * wind * 0.18f;
+      switch (region) {
+      case RigShoulder:
+        dx += lead ? -deadReach * (0.28f + low * 0.12f) : reach * 0.08f;
+        dy += armSide * deadReach * (0.30f + low * 0.08f);
+        dz += armSide * (strike * 0.24f - recover * 0.10f) * drag;
         break;
-      case 2:
-        dx += lead ? -power * (1.35f + low * 0.28f) : power * 0.24f;
-        dy += armSide * cross * power * (0.82f + low * 0.18f);
-        dz += armSide * power * (0.62f + low * 0.18f);
+      case RigUpperArm:
+        dx += lead ? -deadReach * (0.92f + low * 0.24f) : reach * 0.16f;
+        dy += armSide * deadReach * (0.46f + low * 0.10f);
+        dz += armSide * (strike * 0.32f - recover * 0.14f) * drag;
         break;
-      case 3:
-        dx += lead ? -power * (0.92f - low * 0.18f) : power * 0.18f;
-        dy += armSide * cross * power * 0.34f;
-        dz += armSide * power * (0.22f + low * 0.12f);
+      case RigForearm:
+        dx += lead ? -deadReach * (1.18f + low * 0.18f) : reach * 0.18f;
+        dy += armSide * deadReach * 0.24f;
+        dz += armSide * (strike * 0.22f - recover * 0.10f) * drag;
         break;
-      case 4:
-        dx += lead ? -power * 0.34f : power * 0.08f;
-        dy += armSide * cross * power * 0.30f;
-        dz += armSide * power * 0.52f;
+      case RigHand:
+        dx += lead ? -deadReach * (0.68f + low * 0.12f) : reach * 0.08f;
+        dy += armSide * deadReach * 0.18f;
+        dz += armSide * (strike * 0.38f - recover * 0.18f) * drag;
         break;
       default:
-        dx += lead ? -power * 0.70f : power * 0.14f;
-        dz += armSide * power * 0.28f;
+        dx += lead ? -deadReach * 0.45f : reach * 0.10f;
+        dz += armSide * strike * 0.18f * drag;
         break;
       }
     }

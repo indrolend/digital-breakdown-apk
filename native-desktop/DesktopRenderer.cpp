@@ -239,8 +239,11 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,bool s
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
-    const Quat rootQ=quaternionFromEulerXYZ(target.attackTimer>0?-strike*(0.18f+low*0.06f)+windup*0.10f:0,target.visualYaw+PI,target.attackTimer>0?side*(strike*0.30f-windup*0.20f):0);
-    const Vec3 root{target.pos.x,target.attackTimer>0?std::sin(attackT*PI)*0.035f*low:0,target.pos.z};
+    const float reach=target.attackTimer>0?smoothStep01(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)):0.0f;
+    const Quat rootQ=quaternionFromEulerXYZ(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0,target.visualYaw+PI,target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0);
+    const Vec3 attackForward=lengthSq(target.attackDirection)>0.001f?normalized(target.attackDirection):Vec3{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};
+    const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
+    const Vec3 root{target.pos.x+attackLunge.x,target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0,target.pos.z+attackLunge.z};
     const float matrix[16]={1-2*(rootQ.y*rootQ.y+rootQ.z*rootQ.z),2*(rootQ.x*rootQ.y+rootQ.z*rootQ.w),2*(rootQ.x*rootQ.z-rootQ.y*rootQ.w),0,2*(rootQ.x*rootQ.y-rootQ.z*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.z*rootQ.z),2*(rootQ.y*rootQ.z+rootQ.x*rootQ.w),0,2*(rootQ.x*rootQ.z+rootQ.y*rootQ.w),2*(rootQ.y*rootQ.z-rootQ.x*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.y*rootQ.y),0,0,0,0,1};
     const bool parryCue=target.attackTimer>0&&attackT>=0.22f&&attackT<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={humanModel_.color[0]+(0.55f-humanModel_.color[0])*cue,humanModel_.color[1]+(0.96f-humanModel_.color[1])*cue,humanModel_.color[2]+(1.0f-humanModel_.color[2])*cue,humanModel_.color[3]};
     glPushMatrix();glTranslatef(root.x,root.y,root.z);glMultMatrixf(matrix);glScalef(pose.scale,pose.scale,pose.scale);if(shadow)glColor4f(0.012f,0.018f,0.022f,0.28f);else gradedColor(cueColor[0],cueColor[1],cueColor[2],cueColor[3]);glBegin(GL_TRIANGLES);
@@ -317,6 +320,7 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     };
     const auto floatingText=[&](const std::string& value,float x,float y,float scale,float r,float g,float b,float a=0.96f){const float pulse=clampf(state.cinematic.textInteraction,0.0f,1.0f),tracking=pulse*0.24f*std::min(scale,2.0f),wave=0.16f+pulse*0.18f;float pen=x-tracking*std::max(0.0f,(static_cast<float>(value.size())-1.0f)*0.5f);for(std::size_t i=0;i<value.size();++i){const float offset=std::sin(state.time*1.45f+static_cast<float>(i)*0.42f)*wave;const std::string glyph(1,value[i]);text(glyph,pen+1.0f,y+offset+1.0f,scale,0.0f,0.0f,0.0f,0.48f*a);text(glyph,pen,y+offset,scale,r,g,b,a);pen+=6.0f*scale+tracking;}};
     const auto rainbow=[&](float hue){hue-=std::floor(hue);const float x=hue*6.0f,i=std::floor(x),f=x-i,q=1.0f-f;switch(static_cast<int>(i)%6){case 0:return Vec3{1,f,0};case 1:return Vec3{q,1,0};case 2:return Vec3{0,1,f};case 3:return Vec3{0,q,1};case 4:return Vec3{f,0,1};default:return Vec3{1,0,q};}};
+    const auto floatingPaletteText=[&](const std::string& value,float x,float y,float scale,float a=0.96f){const float pulse=clampf(state.cinematic.textInteraction,0.0f,1.0f),tracking=pulse*0.24f*std::min(scale,2.0f),wave=0.16f+pulse*0.18f;float pen=x-tracking*std::max(0.0f,(static_cast<float>(value.size())-1.0f)*0.5f);for(std::size_t i=0;i<value.size();++i){const float offset=std::sin(state.time*1.45f+static_cast<float>(i)*0.42f)*wave;const Vec3 color=rainbow(state.time*0.026f+static_cast<float>(i)*0.115f);const std::string glyph(1,value[i]);text(glyph,pen+1.0f,y+offset+1.0f,scale,0.0f,0.0f,0.0f,0.48f*a);text(glyph,pen,y+offset,scale,0.55f+color.x*0.42f,0.65f+color.y*0.34f,0.72f+color.z*0.28f,a);pen+=6.0f*scale+tracking;}};
 
     glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
@@ -330,9 +334,9 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     if(state.cinematic.introActive){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));
-        const float panelW=std::min(520.0f,menuCanvasW*0.72f),panelH=250.0f,panelX=(menuCanvasW-panelW)*0.5f,panelY=(menuCanvasH-panelH)*0.5f;
-        const std::string status="READY";const float statusScale=3.0f,statusW=status.size()*6*statusScale;
-        floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*alpha);
+        const float panelW=std::min(520.0f,menuCanvasW*0.72f),panelH=250.0f,panelX=(menuCanvasW-panelW)*0.5f,panelY=(menuCanvasH-panelH)*0.5f+20.0f;
+        const std::string status="DATA";const float statusScale=3.0f,statusW=status.size()*6*statusScale;
+        floatingPaletteText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.96f*alpha);
         const std::string start="START";const float startScale=2.0f,startW=start.size()*6*startScale;
         floatingText(start,panelX+(panelW-startW)*0.5f,panelY+118,startScale,0.75f,0.96f,1.0f,alpha);
         glPopMatrix();glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
@@ -345,11 +349,11 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         const bool controlsPage=state.localSettings.menuPage==LocalMenuPage::Controls;
         const float panelH=controlsPage?560.0f:430.0f;
         const float panelX=(menuCanvasW-panelW)*0.5f;
-        const float panelY=(menuCanvasH-panelH)*0.5f;
+        const float panelY=(menuCanvasH-panelH)*0.5f+(controlsPage?0.0f:24.0f);
         const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;
-        const std::string status=state.dead?"":pausedSolo&&state.localSettings.menuPage==LocalMenuPage::Main?"PAUSED":state.localSettings.menuPage==LocalMenuPage::Main?"READY":state.localSettings.menuPage==LocalMenuPage::Online?"ONLINE":state.localSettings.menuPage==LocalMenuPage::JoinCode?"ENTER CODE":state.localSettings.menuPage==LocalMenuPage::Settings?"SETTINGS":state.localSettings.menuPage==LocalMenuPage::Controls?"CONTROLS":state.localSettings.menuPage==LocalMenuPage::Audio?"AUDIO":"GRAPHICS";
+        const std::string status=state.dead?"":pausedSolo&&state.localSettings.menuPage==LocalMenuPage::Main?"PAUSED":state.localSettings.menuPage==LocalMenuPage::Main?"DATA":state.localSettings.menuPage==LocalMenuPage::Online?"ONLINE":state.localSettings.menuPage==LocalMenuPage::JoinCode?"ENTER CODE":state.localSettings.menuPage==LocalMenuPage::Settings?"SETTINGS":state.localSettings.menuPage==LocalMenuPage::Controls?"CONTROLS":state.localSettings.menuPage==LocalMenuPage::Audio?"AUDIO":"GRAPHICS";
         const float statusScale=3.0f,statusW=status.size()*6*statusScale;
-        if(!status.empty())floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*menuAlpha);
+        if(!status.empty()){const bool title=state.localSettings.menuPage==LocalMenuPage::Main&&!pausedSolo;if(title)floatingPaletteText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.96f*menuAlpha);else floatingText(status,panelX+(panelW-statusW)*0.5f,panelY+48,statusScale,0.92f,0.97f,1.0f,0.96f*menuAlpha);}
         const std::string networkStatus=state.multiplayer.status[0]?state.multiplayer.status.data():"";
         const std::string room=state.multiplayer.roomCode[0]?state.multiplayer.roomCode.data():"";
         const float buttonW=std::min(360.0f,panelW-48.0f);const auto menuText=[&](int item,const std::string& label,float y,float rowH=44.0f,float scale=2.25f){const bool selected=state.hud.menuSelection==item;const float breath=selected?(0.5f+0.5f*std::sin(state.time*1.18f+item*0.11f)):0.0f,cx=panelX+panelW*0.5f;rotatedQuad(cx,y+rowH*0.5f,buttonW,rowH,0,selected?0.12f:0.02f,selected?0.72f:0.08f,selected?0.82f:0.11f,(selected?0.12f+breath*0.025f:0.075f)*menuAlpha);rotatedQuad(cx,y+rowH-1,buttonW-24,1,0,0.62f,0.96f,1.0f,(selected?0.48f+breath*0.10f:0.22f)*menuAlpha);const float tw=label.size()*6.0f*scale;floatingText(label,cx-tw*0.5f,y+(rowH-7*scale)*0.5f,scale,selected?0.96f:0.75f,selected?1.0f:0.96f,1.0f,menuAlpha);};
@@ -375,7 +379,6 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     }
 
     if(state.multiplayer.enabled){const std::string code=state.multiplayer.roomCode.data();const std::string net=state.multiplayer.status.data(),focus=code.empty()?net:code;const float w=std::max(92.0f,static_cast<float>(focus.size())*8.1f+18.0f),x=width_-w-12.0f;quad(x,12,w,30,0.005f,0.012f,0.016f,0.54f);text(focus,x+(w-focus.size()*7.2f)*0.5f,20,1.2f,0.66f,0.96f,1.0f);}
-    if(!state.uiPaused&&!state.upgradeMenu.active){const float ox=width_-38.0f,oy=54.0f;quad(ox-8,oy-10,34,28,0.005f,0.012f,0.016f,0.38f);for(int i=0;i<3;++i)quad(ox,oy+i*7,18,2,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.72f);}
 
     // Browser goal strip: five compact top-center receptacles.
     const int goalCount=std::max(1,state.hud.requiredGoals);
@@ -466,10 +469,9 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         text("COST 1 TOKEN",px+18,py+278,1.05f,0.72f,0.90f,1.0f);text("ESC EXIT",px+pw-82,py+278,1.05f,0.82f,0.94f,1.0f);
     } else if(state.uiPaused&&state.multiplayer.enabled){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
-        const float pw=360.0f,ph=250.0f,px=menuCanvasW-pw-12.0f,py=48.0f;
+        const float pw=360.0f,ph=116.0f,px=menuCanvasW-pw-12.0f,py=48.0f;
         quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.16f);quad(px,py,pw,1,1,1,1,0.55f);quad(px,py+ph-1,pw,1,1,1,1,0.40f);quad(px,py,1,ph,1,1,1,0.42f);quad(px+pw-1,py,1,ph,1,1,1,0.42f);
         text("PAUSED",px+12,py+12,2.0f);const float pauseTilt=std::sin(state.time*2.4f)*0.018f,pulse=clampf(state.cinematic.textInteraction,0,1),buttonScale=2.45f+pulse*0.06f;rotatedQuad(px+pw*0.5f,py+63,pw-24,58,pauseTilt,0.16f,0.86f,1.0f,0.18f);text("RESUME",px+pw*0.5f-6*6*buttonScale*0.5f,py+54-3.5f*buttonScale,buttonScale,0.92f,1.0f,1.0f);
-        text("WASD  MOVE",px+12,py+112,1.25f);text("SHIFT RUN",px+12,py+130,1.25f);text("SPACE JUMP",px+12,py+148,1.25f);text("MOUSE LOOK",px+12,py+166,1.25f);text("LEFT VACUUM",px+12,py+184,1.25f);text("C/F LUNGE  Q SHOOT",px+12,py+202,1.25f);text("V CAMERA",px+12,py+220,1.25f);
     }
     if(state.upgradeMenu.active||state.uiPaused)glPopMatrix();
 
@@ -510,9 +512,13 @@ void DesktopRenderer::draw(const GameState& state) const {
     // The secret room is deliberately disconnected from the repeating corridor:
     // a tiny, cheap collection of boxes makes it feel like found backstage space.
     if(state.secretTv.available){
+        const float knock=clampf(state.secretTv.knockPulse,0.0f,1.0f);
         const float breathe=0.04f+0.035f*std::sin(state.time*2.1f);
+        const float push=knock*(0.10f+0.018f*std::sin(state.time*41.0f));
+        const float alpha=(state.secretTv.broken?0.12f:0.25f)+knock*0.28f;
         glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-        drawBox({14.73f,3.38f,4.80f},{0.07f,1.38f+breathe,1.34f+breathe},0,0,0,Pass7Visual::TvMembrane.r,Pass7Visual::TvMembrane.g,Pass7Visual::TvMembrane.b,state.secretTv.broken?0.12f:0.25f);
+        drawBox({14.73f-push,3.38f,4.80f},{0.07f+push*0.42f,1.38f+breathe+knock*0.10f,1.34f+breathe+knock*0.08f},0,0,0,Pass7Visual::TvMembrane.r,Pass7Visual::TvMembrane.g,Pass7Visual::TvMembrane.b,alpha);
+        if(knock>0.025f)drawBox({14.66f-push*1.5f,3.38f,4.80f},{0.025f,1.10f+knock*0.24f,1.04f+knock*0.20f},0,0,0,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.18f*knock);
         glDepthMask(GL_TRUE);glDisable(GL_BLEND);
     }
     if(state.player.inSecretRoom){

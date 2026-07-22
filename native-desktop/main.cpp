@@ -172,7 +172,9 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
         return -1;
     }
     if(!state.started||soloPauseMenu(state)){
-        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;const float pw=std::min(520.0f,canvasW*0.72f),ph=controls?560.0f:430.0f,px=(canvasW-pw)*0.5f,py=(canvasH-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
+        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;
+        const float pw=std::min(520.0f,canvasW*0.72f),ph=controls?560.0f:430.0f,px=(canvasW-pw)*0.5f;
+        const float py=(canvasH-ph)*0.5f+(controls?0.0f:24.0f),buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
         if(x<buttonX||x>buttonX+buttonW)return -1;
         const int count=menuItemCount(state);
         const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;

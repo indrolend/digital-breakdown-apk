@@ -40,6 +40,7 @@ constexpr float WALL_CLIMB_PUSH_DOT = -0.18f;
 constexpr float CEILING_CLEARANCE = 0.42f;
 constexpr float PLAYER_CEILING_BODY_CLEARANCE = 0.42f;
 constexpr float PLAYER_COLLISION_RADIUS = 0.34f;
+constexpr float PLAYER_WALL_MARGIN = PLAYER_COLLISION_RADIUS + 0.06f;
 // Side collision remains generous and game-feeling; floor support follows the
 // phone's visible footprint so ledges do not grow an invisible shelf.
 constexpr float PLAYER_SUPPORT_RADIUS = 0.06f;
@@ -253,6 +254,24 @@ void syncTargetReactionVisual(TargetState& target) {
     );
 }
 float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
+float secretDoorKnockPulse(float time) {
+    constexpr float phraseSeconds = 11.8f;
+    constexpr float audibleSeconds = 5.4f;
+    constexpr float hits[] = {0.18f,0.54f,1.10f,2.05f,2.31f,3.18f,4.42f};
+    float phrase = std::fmod(std::max(0.0f, time), phraseSeconds);
+    if (phrase > audibleSeconds) return 0.0f;
+    float pulse = 0.0f;
+    for (float hit : hits) {
+        const float d = std::abs(phrase - hit);
+        pulse = std::max(pulse, std::exp(-d * d * 120.0f));
+    }
+    return clampf(pulse, 0.0f, 1.0f);
+}
+bool secretDoorKnockPhraseActive(float time) {
+    constexpr float phraseSeconds = 11.8f;
+    constexpr float audibleSeconds = 5.4f;
+    return std::fmod(std::max(0.0f, time), phraseSeconds) <= audibleSeconds;
+}
 Vec3 latticeRest(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return{static_cast<float>(x)*0.23f-0.23f,static_cast<float>(y)*0.23f-0.23f,static_cast<float>(z)*0.23f-0.23f};}
 float latticeSurface(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return(x==0||x==2||y==0||y==2||z==0||z==2)?1.0f:0.0f;}
 float latticeCorner(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return static_cast<float>((x==0||x==2)+(y==0||y==2)+(z==0||z==2))/3.0f;}
@@ -982,9 +1001,80 @@ void Game::savePlayerContext(NetworkPeerState& c) const{c.input=state_.input;c.p
 void Game::loadPlayerContext(const NetworkPeerState& c){state_.input=c.input;state_.player=c.player;state_.energy=c.energy;state_.camera=c.camera;state_.vacuum=c.vacuum;state_.pendingShots=c.pendingShots;state_.phonePose=c.phonePose;state_.phoneTransform=c.phoneTransform;state_.phoneVisual=c.phoneVisual;state_.hud=c.hud;state_.meleeVisual=c.meleeVisual;state_.meleeCooldown=c.meleeCooldown;state_.meleePose=c.meleePose;state_.meleeComboWindow=c.meleeComboWindow;}
 void Game::updateNetworkPeers(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;NetworkPeerState local;savePlayerContext(local);for(int id=1;id<NETWORK_PLAYER_COUNT;++id){auto& peer=state_.multiplayer.peers[id];if(!peer.active)continue;loadPlayerContext(peer);simulationPlayerId_=id;updateInputActions(dt);updatePlayer(dt);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();processPendingShots(dt);updateVacuum(dt);processQueuedSoulCaptures();updateBattery(dt);updateCamera(dt);savePlayerContext(peer);}simulationPlayerId_=0;loadPlayerContext(local);}
 void Game::updateTeamRevival(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;PlayerState* players[NETWORK_PLAYER_COUNT]={&state_.player};InputState* inputs[NETWORK_PLAYER_COUNT]={&state_.input};bool active[NETWORK_PLAYER_COUNT]={true};for(int id=1;id<NETWORK_PLAYER_COUNT;++id){players[id]=&state_.multiplayer.peers[id].player;inputs[id]=&state_.multiplayer.peers[id].input;active[id]=state_.multiplayer.peers[id].active;}for(int donor=0;donor<NETWORK_PLAYER_COUNT;++donor){PlayerState& source=*players[donor];if(!active[donor]||!source.alive||source.downed||source.battery<=10.0f||!(inputs[donor]->primaryHeld||inputs[donor]->touchPrimaryHeld))continue;int recipient=-1;float best=2.2f;const Vec3 forward{-std::sin(source.yaw),0,-std::cos(source.yaw)};for(int id=0;id<NETWORK_PLAYER_COUNT;++id){if(id==donor||!active[id]||!players[id]->alive||!players[id]->downed)continue;const Vec3 delta{players[id]->pos.x-source.pos.x,0,players[id]->pos.z-source.pos.z};const float distance=length(delta);if(distance<best&&distance>0.001f&&dot3(delta*(1.0f/distance),forward)>0.72f){best=distance;recipient=id;}}if(recipient<0)continue;const float spend=std::min(source.battery-10.0f,10.0f*dt);source.battery-=spend;PlayerState& target=*players[recipient];target.reviveCharge+=spend*0.8f;target.battery=target.reviveCharge;if(target.reviveCharge>=18.0f){target.battery=target.reviveCharge;target.downed=false;target.bleedoutTimer=0.0f;target.reviveCharge=0.0f;target.alive=true;target.pos.y=GROUND_Y+PHONE_BODY_HEIGHT*0.5f;target.grounded=true;if(recipient==0){setEnergyTicker("SIGNAL RESTORED",2);emitAudio(AudioCue::RewardWoah,0.42f);}}}}
-void Game::updateSecretTv(float dt){auto& tv=state_.secretTv;tv.available=state_.roomClear&&state_.roomIndex>=10&&(state_.roomIndex==10||((state_.roomIndex-10)%5)==0);tv.donationCooldown=std::max(0.0f,tv.donationCooldown-dt);PlayerState* players[NETWORK_PLAYER_COUNT]={&state_.player};InputState* inputs[NETWORK_PLAYER_COUNT]={&state_.input};bool active[NETWORK_PLAYER_COUNT]={true};for(int id=1;id<NETWORK_PLAYER_COUNT;++id){players[id]=&state_.multiplayer.peers[id].player;inputs[id]=&state_.multiplayer.peers[id].input;active[id]=state_.multiplayer.peers[id].active;}for(int id=0;id<NETWORK_PLAYER_COUNT;++id){PlayerState& player=*players[id];if(!active[id]||!player.alive||player.downed)continue;if(!player.inSecretRoom&&tv.available&&player.secretVisitRoom!=state_.roomIndex&&player.pos.y>2.25f){const Vec3 entrance{13.25f,player.pos.y,4.8f};const Vec3 delta=player.pos-entrance;if(delta.x*delta.x+delta.z*delta.z<0.72f*0.72f){player.inSecretRoom=true;player.secretVisitRoom=state_.roomIndex;player.secretVisitTimer=15.0f;player.pos={39.0f,GROUND_Y+PHONE_BODY_HEIGHT*0.5f,0};player.vel={};}}
-if(!player.inSecretRoom)continue;player.secretVisitTimer=std::max(0.0f,player.secretVisitTimer-dt);if(inputs[id]->shootPressed&&player.souls>0&&!tv.broken&&tv.donationCooldown<=0.0f){inputs[id]->shootPressed=false;--player.souls;++tv.signal;tv.donationCooldown=0.70f;const int denominator=tv.signal<6?12:tv.signal<12?9:tv.signal<18?7:tv.signal<24?5:4;const float roll=seededRoomValue(static_cast<float>(state_.roomSeed)*0.17f+static_cast<float>(tv.signal)*13.71f+static_cast<float>(tv.damage)*31.3f);if(roll<1.0f/static_cast<float>(denominator)){++tv.damage;if(tv.damage>=tv.tolerance)tv.broken=true;}if(id==0){setEnergyTicker(tv.broken?"NO SIGNAL":"SIGNAL +1",tv.broken?1:2);if(!tv.broken)emitAudio(AudioCue::RewardNice,0.30f);}}
-if(player.secretVisitTimer<=0.0f||player.pos.x>=43.45f){player.inSecretRoom=false;player.pos={12.6f,GROUND_Y+PHONE_BODY_HEIGHT*0.5f,4.8f};player.vel={};}}
+void Game::updateSecretTv(float dt) {
+    auto& tv = state_.secretTv;
+    tv.available = state_.roomClear && state_.roomIndex == 10;
+    tv.donationCooldown = std::max(0.0f, tv.donationCooldown - dt);
+    tv.knockCueTimer = std::max(0.0f, tv.knockCueTimer - dt);
+    tv.knockVolume = 0.0f;
+    tv.knockPulse = 0.0f;
+    tv.knockPan = 0.0f;
+
+    const bool localCanHear = tv.available && state_.player.alive && !state_.player.downed &&
+        !state_.player.inSecretRoom && state_.player.secretVisitRoom != state_.roomIndex;
+    if (localCanHear) {
+        const Vec3 entrance{13.25f, state_.player.pos.y, 4.8f};
+        const Vec3 delta = state_.player.pos - entrance;
+        const float distance = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+        const float nearFade = smoothRange(distance, 2.35f, 7.5f);
+        const float farFade = 1.0f - smoothRange(distance, 26.0f, 36.0f);
+        const float seededTime = state_.time + static_cast<float>(std::abs(state_.roomSeed % 17)) * 0.071f;
+        const bool cueActive = tv.knockCueTimer > 0.0f;
+        const float knockTime = cueActive ? 5.4f - tv.knockCueTimer : seededTime;
+        const float pulse = secretDoorKnockPulse(knockTime);
+        const bool phraseActive = cueActive || secretDoorKnockPhraseActive(seededTime);
+        const float presence = nearFade * farFade;
+        tv.knockPulse = presence * pulse;
+        tv.knockVolume = phraseActive ? presence * (0.62f + 0.16f * pulse) : 0.0f;
+        tv.knockPan = clampf((entrance.x - state_.camera.pos.x) / 12.0f, -0.55f, 0.55f);
+    }
+
+    PlayerState* players[NETWORK_PLAYER_COUNT] = {&state_.player};
+    InputState* inputs[NETWORK_PLAYER_COUNT] = {&state_.input};
+    bool active[NETWORK_PLAYER_COUNT] = {true};
+    for (int id = 1; id < NETWORK_PLAYER_COUNT; ++id) {
+        players[id] = &state_.multiplayer.peers[id].player;
+        inputs[id] = &state_.multiplayer.peers[id].input;
+        active[id] = state_.multiplayer.peers[id].active;
+    }
+    for (int id = 0; id < NETWORK_PLAYER_COUNT; ++id) {
+        PlayerState& player = *players[id];
+        if (!active[id] || !player.alive || player.downed) continue;
+        if (!player.inSecretRoom && tv.available && player.secretVisitRoom != state_.roomIndex) {
+            const Vec3 entrance{13.25f, player.pos.y, 4.8f};
+            const Vec3 delta = player.pos - entrance;
+            if (delta.x * delta.x + delta.z * delta.z < 1.05f * 1.05f) {
+                player.inSecretRoom = true;
+                player.secretVisitRoom = state_.roomIndex;
+                player.secretVisitTimer = 15.0f;
+                player.pos = {39.0f, GROUND_Y + PHONE_BODY_HEIGHT * 0.5f, 0};
+                player.vel = {};
+            }
+        }
+        if (!player.inSecretRoom) continue;
+        player.secretVisitTimer = std::max(0.0f, player.secretVisitTimer - dt);
+        if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
+            inputs[id]->shootPressed = false;
+            --player.souls;
+            ++tv.signal;
+            tv.donationCooldown = 0.70f;
+            const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
+            const float roll = seededRoomValue(static_cast<float>(state_.roomSeed) * 0.17f + static_cast<float>(tv.signal) * 13.71f + static_cast<float>(tv.damage) * 31.3f);
+            if (roll < 1.0f / static_cast<float>(denominator)) {
+                ++tv.damage;
+                if (tv.damage >= tv.tolerance) tv.broken = true;
+            }
+            if (id == 0) {
+                setEnergyTicker(tv.broken ? "NO SIGNAL" : "SIGNAL +1", tv.broken ? 1 : 2);
+                if (!tv.broken) emitAudio(AudioCue::RewardNice, 0.30f);
+            }
+        }
+        if (player.secretVisitTimer <= 0.0f || player.pos.x >= 43.45f) {
+            player.inSecretRoom = false;
+            player.pos = {12.6f, GROUND_Y + PHONE_BODY_HEIGHT * 0.5f, 4.8f};
+            player.vel = {};
+        }
+    }
 }
 
 void Game::setWiggle(float axis) {
@@ -1157,6 +1247,8 @@ void Game::resolveDoorwayCollisions(float previousX,float previousZ){
 }
 
 void Game::applyWallClimb(float dt) {
+    (void)dt;
+    return;
     PlayerState& p = state_.player;
     InputState& input = state_.input;
     if (p.grounded || !input.jumpHeld || state_.meleeVisual.wallClimbRemaining<=0.0f) return;
@@ -2730,11 +2822,12 @@ void Game::updateBullets(float dt) {
             const Vec3 shellCenter{target.pos.x,0.65f,target.pos.z};
             const float hitRadius=b.brute?0.95f:0.72f;
             const Vec3 headCenter=targetHeadCenter(target);
-            const Vec3 headBase=headCenter-Vec3{0,PASS7_HUMAN_VISUAL_SPEC.headRadius*target.scale*HEAD_CONTACT_NECK_FRACTION,0};
             const float headRadius=PASS7_HUMAN_VISUAL_SPEC.headRadius*target.scale+BULLET_HEAD_CONTACT_RADIUS;
-            // Test both ends of the short face/neck capsule. Projectile motion is
-            // already swept, so this remains stable at 60 FPS and on mobile.
-            const bool headshot=std::min(pointSegmentDistanceSq(headCenter,previous,b.pos),pointSegmentDistanceSq(headBase,previous,b.pos))<=headRadius*headRadius;
+            // Fired cubes use the visible face center for precision. The lunge
+            // keeps the neck capsule assist, but projectiles at body height
+            // must remain body shots so relay-primer and shell damage stay
+            // deterministic across platforms.
+            const bool headshot=pointSegmentDistanceSq(headCenter,previous,b.pos)<=headRadius*headRadius;
             const bool bodyHit=pointSegmentDistanceSq(shellCenter,previous,b.pos)<=hitRadius*hitRadius;
             if(!bodyHit&&!headshot)continue;
             const int shotLevel=upgradeLevel(UpgradeTrack::Shot);
@@ -2760,8 +2853,8 @@ void Game::updateCaptures(float dt) {
     state_.depositedSouls=filled;
     const bool wasClear=state_.roomClear;
     state_.roomClear = filled >= state_.requiredSouls;
-    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);}
+    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(state_.roomIndex==10){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
 }
 void Game::clampRoom(Vec3& pos) {
-    pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + 1.1f, ROOM_WIDTH * 0.5f - 1.1f);
+    pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + PLAYER_WALL_MARGIN, ROOM_WIDTH * 0.5f - PLAYER_WALL_MARGIN);
 }

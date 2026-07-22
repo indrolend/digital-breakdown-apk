@@ -454,9 +454,9 @@ public final class GameView extends GLSurfaceView implements Choreographer.Frame
     float shootCenterY() { return viewHeight - buttonRadius() * 2.78f; }
     float cameraCenterX() { return viewWidth - buttonRadius() * 5.16f; }
     float cameraCenterY() { return viewHeight - buttonRadius() * 1.10f; }
-    float optionsCenterX() { return viewWidth - buttonRadius() * 0.86f; }
-    float optionsCenterY() { return buttonRadius() * 0.92f; }
     float optionsRadius() { return buttonRadius() * 0.46f; }
+    float optionsCenterX() { return viewWidth - optionsRadius() - Math.max(10.0f, buttonRadius() * 0.28f); }
+    float optionsCenterY() { return optionsRadius() + Math.max(10.0f, buttonRadius() * 0.28f); }
     float commCenterX(int signal) { return viewWidth * 0.5f + (signal - 2.5f) * buttonRadius() * 1.18f; }
     float commCenterY() { return buttonRadius() * 0.88f; }
     float commRadius() { return buttonRadius() * 0.46f; }

@@ -195,14 +195,14 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
         const float sweepT=clampf((t-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
         const float strike = std::sin(sweepT * DB_PI);
         const float recover = std::sin(clampf((t - HUMAN_SWING_END_PHASE) / (1.0f-HUMAN_SWING_END_PHASE), 0.0f, 1.0f) * DB_PI);
-        const float impact = std::max(strike, recover * 0.35f);
         const float side = reaction.attackVariant % 2 == 0 ? 1.0f : -1.0f;
         const float low = reaction.attackVariant >= 2 ? 1.0f : 0.0f;
-        pose.torsoPitch += -impact * (0.30f + low * 0.08f) + windup * 0.12f;
-        pose.torsoRoll += side * (strike * 0.30f - windup * 0.20f);
-        pose.headPitch += -impact * 0.12f;
-        const float lead = strike * (1.65f + low * 0.20f) - windup * 0.82f;
-        const float rear = -strike * 0.38f + windup * 0.20f;
+        const float reach = smoothStep01(sweepT);
+        pose.torsoPitch += windup * 0.10f - reach * (0.24f + low * 0.08f) + recover * 0.07f;
+        pose.torsoRoll += side * (strike * 0.18f - windup * 0.24f - recover * 0.06f);
+        pose.headPitch += windup * 0.04f - reach * 0.10f;
+        const float lead = reach * (1.34f + low * 0.22f) + strike * 0.34f - windup * 0.74f;
+        const float rear = -reach * 0.24f + windup * 0.14f;
         if (side > 0) { pose.rightArmSwing -= lead; pose.leftArmSwing += rear; }
         else { pose.leftArmSwing -= lead; pose.rightArmSwing += rear; }
     }

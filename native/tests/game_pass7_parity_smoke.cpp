@@ -270,8 +270,8 @@ int main() {
     game.setKey(62,true);
     game.setTouchControls(-1,0,0,0,false,false,false,false,false,false);
     step(game,60);
-    ok &= expect(game.state().meleeVisual.wallClimbRemaining<=0.0f&&game.state().player.jumpVel<0.0f,
-        "wall climb spends a finite airborne grip budget and returns control to gravity");
+    ok &= expect(game.state().player.pos.y<=1.0f&&game.state().player.jumpVel<=0.0f,
+        "holding jump into a wall no longer climbs, preserving ledges and lunges as navigation verbs");
     game.setKey(62,false);
 
     game.reset();
@@ -802,6 +802,22 @@ int main() {
             "each newly filled goal awards exactly one persistent token");
         ok &= expect(hasAudioCue(state,AudioCue::PaymentSuccess),
             "final room deposit queues the authoritative payment-success cue");
+    }
+
+    {
+        Game secretWake;secretWake.reset();
+        GameState& setup=const_cast<GameState&>(secretWake.state());
+        setup.roomIndex=10;setup.requiredSouls=1;setup.roomClear=false;setup.captures[0].filled=true;setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,12.0f};
+        step(secretWake);
+        ok &= expect(secretWake.state().roomClear&&secretWake.state().secretTv.knockCueTimer>5.0f&&std::strstr(secretWake.state().hud.energyTicker.data(),"KNOCK")!=nullptr,
+            "filling every level-ten capture point wakes the secret TV entrance instead of silently only opening the exit");
+        step(secretWake);
+        ok &= expect(secretWake.state().secretTv.available&&secretWake.state().secretTv.knockVolume>0.0f,
+            "the awakened level-ten TV entrance becomes audible and discoverable on the following desktop frame");
+        {GameState& enter=const_cast<GameState&>(secretWake.state());enter.player.pos={13.25f,PHONE_MODEL_HEIGHT*0.5f,4.8f};enter.player.vel={};enter.player.grounded=true;}
+        step(secretWake);
+        ok &= expect(secretWake.state().player.inSecretRoom,
+            "a grounded level-ten player can enter the secret TV room through the awakened membrane");
     }
 
     {
