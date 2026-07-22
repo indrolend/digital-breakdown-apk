@@ -1,0 +1,164 @@
+name: Apply loose soul normalization
+
+on:
+  push:
+    branches:
+      - agent/loose-soul-normalization
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/loose-soul-normalization
+          fetch-depth: 0
+
+      - name: Apply focused gameplay patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('native-android/app/src/main/cpp/game/Game.cpp')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          helper_anchor = 'constexpr float GROUND_Y = 0.08f;\n'
+          helpers = '''constexpr float GROUND_Y = 0.08f;
+
+bool isActiveHuman(const TargetState& target) {
+    return target.alive && !target.slurpable && !target.captureQueued && !target.captureCommitted;
+}
+
+bool isLooseSoul(const TargetState& target) {
+    return target.alive && target.slurpable && !target.captureQueued && !target.captureCommitted;
+}
+
+bool isCombatTarget(const TargetState& target) {
+    return isActiveHuman(target);
+}
+
+bool isVacuumTarget(const TargetState& target) {
+    return isLooseSoul(target) &&
+        (target.soulState == SoulState::Free || target.soulState == SoulState::Attracted);
+}
+
+void updateLooseSoulMotion(TargetState& target, float dt) {
+    if (!isLooseSoul(target) ||
+        (target.soulState != SoulState::Free && target.soulState != SoulState::Recoiling)) return;
+
+    if (target.soulState == SoulState::Recoiling) {
+        target.recoilTime = std::max(0.0f, target.recoilTime - dt);
+        if (target.recoilTime <= 0.0f) {
+            target.soulState = SoulState::Free;
+            target.networkOwnerPlayerId = -1;
+        }
+    }
+
+    target.vel.y -= 5.5f * dt;
+    target.pos += target.vel * dt;
+
+    const float airborneDrag = std::exp(-3.5f * dt);
+    target.vel.x *= airborneDrag;
+    target.vel.z *= airborneDrag;
+
+    if (target.pos.y <= GROUND_Y) {
+        target.pos.y = GROUND_Y;
+        if (target.vel.y < 0.0f) target.vel.y = 0.0f;
+        const float groundedDrag = std::exp(-10.0f * dt);
+        target.vel.x *= groundedDrag;
+        target.vel.z *= groundedDrag;
+        if (std::abs(target.vel.x) < 0.015f) target.vel.x = 0.0f;
+        if (std::abs(target.vel.z) < 0.015f) target.vel.z = 0.0f;
+    }
+}
+'''
+          replace_once(helper_anchor, helpers, 'role helpers')
+
+          replace_once(
+              'for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;',
+              'for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!isCombatTarget(t) || (visual.hitMask&(1u<<i))!=0) continue;',
+              'melee target filter')
+
+          replace_once(
+              'if(!t.alive || t.captureQueued || t.captureCommitted) return false;',
+              'if(!isCombatTarget(t) || t.captureQueued || t.captureCommitted) return false;',
+              'damage target filter')
+
+          replace_once(
+              'if(!target.alive||target.captureQueued||target.captureCommitted)continue;\n        if(target.slurpable)continue;',
+              'if(!isCombatTarget(target))continue;',
+              'aim assist filter')
+
+          replace_once(
+              'for(const auto& target:state_.targets) if(target.alive && !target.slurpable && target.soulState==SoulState::Free) ++active;',
+              'for(const auto& target:state_.targets) if(isActiveHuman(target) && target.soulState==SoulState::Free) ++active;',
+              'active human count')
+
+          replace_once(
+              'if (!t.alive || !t.slurpable || t.captureQueued || t.captureCommitted ||\n                (t.soulState != SoulState::Free && t.soulState != SoulState::Attracted)) continue;',
+              'if (!isVacuumTarget(t)) continue;',
+              'vacuum offer filter')
+
+          replace_once(
+              'if (!t.alive || !t.slurpable) continue;',
+              'if (!isLooseSoul(t)) continue;',
+              'vacuum loose soul filter')
+
+          recoil_block = '''        if (t.soulState == SoulState::Recoiling) {
+            t.recoilTime -= dt;
+            t.vel.y -= 5.5f * dt;
+            t.pos += t.vel * dt;
+            const float damping = std::max(0.0f, 1.0f - 3.5f * dt);
+            t.vel.x *= damping; t.vel.z *= damping;
+            if (t.pos.y < GROUND_Y) { t.pos.y = GROUND_Y; t.vel.y = 0.0f; }
+            if (t.recoilTime <= 0.0f) { t.soulState = SoulState::Free; t.networkOwnerPlayerId=-1; }
+            continue;
+        }
+'''
+          replace_once(recoil_block, '        if (t.soulState == SoulState::Recoiling) continue;\n', 'vacuum recoil ownership')
+
+          replace_once(
+              'if (t.soulState == SoulState::Free) { t.ingestProgress = std::max(0.0f, t.ingestProgress - dt * SOUL_CAPTURE_DECAY); t.latchedToScreen = false; t.vel = {}; }',
+              'if (t.soulState == SoulState::Free) { t.ingestProgress = std::max(0.0f, t.ingestProgress - dt * SOUL_CAPTURE_DECAY); t.latchedToScreen = false; }',
+              'free soul velocity preservation')
+
+          replace_once(
+              '        if (t.slurpable) {\n            t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);',
+              '        if (t.slurpable) {\n            updateLooseSoulMotion(t, dt);\n            t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);',
+              'loose soul simulation call')
+
+          replace_once(
+              'if(!target.alive || target.slurpable || target.captureQueued || target.captureCommitted) continue;',
+              'if(!isCombatTarget(target)) continue;',
+              'bullet target filter')
+
+          # Normalize the common compact human-only checks used by crosshair and coordinators.
+          text = text.replace('!target.alive||target.slurpable', '!isCombatTarget(target)')
+          text = text.replace('!owner.alive||owner.slurpable', '!isCombatTarget(owner)')
+
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/apply-loose-soul-normalization.yml
+          git diff --check
+
+      - name: Commit normalized gameplay pass
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native-android/app/src/main/cpp/game/Game.cpp .github/workflows/apply-loose-soul-normalization.yml
+          git commit -m "Normalize loose soul targeting and motion"
+          git push origin HEAD:agent/loose-soul-normalization
