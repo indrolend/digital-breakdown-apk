@@ -1,4 +1,4 @@
-﻿# Digital Breakdown Native Parity
+# Digital Breakdown Native Parity
 
 ## Authoritative Browser Reference
 
@@ -67,3 +67,26 @@ bash scripts/verify-gameplay.sh
 ```
 
 The canonical focused suite includes role/soul-motion checks, browser parity smoke coverage, multiplayer protocol coverage, and `git diff --check`.
+
+## Maintainable gameplay editing contract
+
+### Source of truth
+
+- Continue gameplay architecture work from `agent/gameplay-architecture-distillation` or a branch explicitly based on it.
+- Inspect the current branch and current source before editing. Do not resume from stale snippets or older rescue branches.
+
+### Gameplay invariants
+
+- `TargetState` remains a fixed pooled object reused across inactive, human, and loose-soul roles.
+- Human-to-soul conversion occurs in place. Do not introduce separate soul entities or an ECS.
+- `captureSoul()` remains the inventory-awarding capture transaction.
+- Network and protocol layout must not change without explicit protocol tests and approval.
+- Simulation coordinates remain canonical. Hover, bob, spin, squash, and other presentation offsets must not mutate simulation position.
+- Prefer derived role predicates over new replicated flags.
+
+### Change shape
+
+- Prefer focused source files under roughly 500 lines.
+- Keep orchestration in `Game.cpp`; move cohesive behavior into narrow gameplay modules.
+- Avoid broad formatting, unrelated cleanup, dynamic allocation, and framework rewrites.
+- Make dependencies explicit through small context structs rather than passing the entire `Game` object.
