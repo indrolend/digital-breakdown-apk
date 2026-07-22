@@ -1248,44 +1248,7 @@ void Game::resolveDoorwayCollisions(float previousX,float previousZ){
 
 void Game::applyWallClimb(float dt) {
     (void)dt;
-    return;
-    PlayerState& p = state_.player;
-    InputState& input = state_.input;
-    if (p.grounded || !input.jumpHeld || state_.meleeVisual.wallClimbRemaining<=0.0f) return;
-    const float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
-    const float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
-    if (std::abs(forwardAxis) + std::abs(strafeAxis) <= 0.05f) return;
-    Vec3 intent = cameraForwardFlat() * forwardAxis + cameraRightFlat() * strafeAxis;
-    intent = normalized(intent);
-    Vec3 normal{}; float topY = 0.0f; bool contact = false;
-    const float radius = WALL_CLIMB_RADIUS, climbGap = 0.08f, localZ = wrapZ(p.pos.z);
-    constexpr float doorwayClimbHalfWidth = 2.1f;
-    const float minX = -ROOM_WIDTH * 0.5f + 1.1f, maxX = ROOM_WIDTH * 0.5f - 1.1f;
-    const float minZ = -ROOM_DEPTH * 0.5f + 0.8f, maxZ = ROOM_DEPTH * 0.5f - 0.72f;
-    if (p.pos.x <= minX + climbGap) { normal = {1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
-    else if (p.pos.x >= maxX - climbGap) { normal = {-1,0,0}; topY = getPlayerCeilingLimit(); contact = true; }
-    // The front/rear wall is segmented around the portal.  Treating its open
-    // centre as a climbable boundary creates an invisible step while crossing.
-    else if (localZ <= minZ + climbGap && std::abs(p.pos.x) > doorwayClimbHalfWidth) { normal = {0,0,1}; topY = getPlayerCeilingLimit(); contact = true; }
-    else if (localZ >= maxZ - climbGap && std::abs(p.pos.x) > doorwayClimbHalfWidth) { normal = {0,0,-1}; topY = getPlayerCeilingLimit(); contact = true; }
-    for (int i = 0; !contact && i < state_.debug.colliderCount; ++i) {
-        const RoomCollider& c = state_.roomColliders[i];
-        const bool inZ = localZ > c.minZ - radius && localZ < c.maxZ + radius;
-        const bool inX = p.pos.x > c.minX - radius && p.pos.x < c.maxX + radius;
-        if (inZ && std::abs(p.pos.x - (c.minX - radius)) < climbGap + 0.05f) { normal={-1,0,0}; topY=c.topY; contact=true; }
-        else if (inZ && std::abs(p.pos.x - (c.maxX + radius)) < climbGap + 0.05f) { normal={1,0,0}; topY=c.topY; contact=true; }
-        else if (inX && std::abs(localZ - (c.minZ - radius)) < climbGap + 0.05f) { normal={0,0,-1}; topY=c.topY; contact=true; }
-        else if (inX && std::abs(localZ - (c.maxZ + radius)) < climbGap + 0.05f) { normal={0,0,1}; topY=c.topY; contact=true; }
-    }
-    if (!contact || dotXZ(intent, normal) >= WALL_CLIMB_PUSH_DOT) return;
-    const float climbLimit = std::min(getPlayerCeilingLimit(), topY + GROUND_Y + WALL_CLIMB_MAX_HEIGHT);
-    if (p.pos.y >= climbLimit) { p.pos.y = climbLimit; if (p.jumpVel > 0) p.jumpVel = 0; return; }
-    p.jumpVel = std::max(p.jumpVel, WALL_CLIMB_SPEED * batteryPower(p));
-    p.vel.x *= WALL_CLIMB_GRIP; p.vel.z *= WALL_CLIMB_GRIP;
-    state_.meleeVisual.wallClimbRemaining=std::max(0.0f,state_.meleeVisual.wallClimbRemaining-dt);
-    spendBattery(BATTERY_WALL_CLIMB_DRAIN * dt,BatteryReason::Climb);
 }
-
 bool Game::isInsideDoorAperture(const Vec3& position, float pad) const {
     return std::abs(position.x) <= 2.1f + pad && position.y >= GROUND_Y - 0.12f && position.y <= 3.72f + 0.22f;
 }
