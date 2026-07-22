@@ -1,4 +1,6 @@
 #include "Game.hpp"
+#include "gameplay/SoulMotion.hpp"
+#include "gameplay/TargetRoles.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -1980,7 +1982,7 @@ int Game::applyMeleeHits() {
     visual.previousContactPosition=phoneCurrent;visual.contactPositionValid=true;
     int newHits=0; int totalHits=0; int headshots=0; std::array<Vec3,TARGET_COUNT> headshotPositions{}; std::array<bool,TARGET_COUNT> headshotCritical{};std::array<float,TARGET_COUNT> headshotAttackProgress{},headshotKillCharge{};
     for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
-    for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;
+    for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!gameplay::isCombatTarget(t) || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
         bool lungeBodyContact=false;
         if(visual.locomotionLunge){
@@ -2048,8 +2050,7 @@ Vec3 Game::assistedActionDirection(const Vec3& origin, const Vec3& direction, fl
     Vec3 bestDirection=base;
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetState& target=state_.targets[i];
-        if(!target.alive||target.captureQueued||target.captureCommitted)continue;
-        if(target.slurpable)continue;
+        if(!gameplay::isCombatTarget(target))continue;
         const float armorMax=target.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
         const float damage=1.0f-clampf(target.armor/std::max(0.001f,armorMax),0.0f,1.0f);
         const Vec3 body{target.pos.x,(0.66f+0.08f*damage)*target.scale,target.pos.z};
@@ -2114,7 +2115,7 @@ void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, f
 bool Game::damageSoulShell(int index, float amount) {
     if(index<0 || index>=TARGET_COUNT) return false;
     TargetState& t=state_.targets[index];
-    if(!t.alive || t.captureQueued || t.captureCommitted) return false;
+    if(!gameplay::isCombatTarget(t)) return false;
     if(!t.slurpable) {
         t.armor-=amount;
         t.armorRegenDelay=ENEMY_ARMOR_REGEN_DELAY;
@@ -2306,7 +2307,7 @@ void Game::updateRoomPopulation(float dt) {
     state_.progression.run.roomHeat=std::max(state_.progression.run.roomHeat,clampf(timeHeat+captureHeat,0.0f,1.0f));
     for(auto& request:state_.respawnQueue) if(request.active) request.delay-=dt;
     int active=0;
-    for(const auto& target:state_.targets) if(target.alive && !target.slurpable && target.soulState==SoulState::Free) ++active;
+    for(const auto& target:state_.targets) if(gameplay::isActiveHuman(target)) ++active;
     for(int q=TARGET_COUNT-1;q>=0 && active<activeHumanTarget();--q) {
         HumanRespawnRequest& request=state_.respawnQueue[q];
         if(!request.active || request.delay>0.0f) continue;
@@ -2397,6 +2398,7 @@ void Game::updateTargets(float dt) {
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
         if (!t.alive) continue;
+        gameplay::updateLooseSoulMotion(t, dt);
         t.hitFlash = std::max(0.0f, t.hitFlash - TARGET_HITFLASH_DECAY_PER_FRAME);
         t.visibility = 1.0f;
         t.vacuumPullAmount = 0.0f;
@@ -2542,8 +2544,7 @@ void Game::updateVacuum(float dt) {
     if (attractionActive) {
         for (int i = 0; i < TARGET_COUNT; ++i) {
             TargetState& t = state_.targets[i];
-            if (!t.alive || !t.slurpable || t.captureQueued || t.captureCommitted ||
-                (t.soulState != SoulState::Free && t.soulState != SoulState::Attracted)) continue;
+            if (!gameplay::isFreeVacuumOffer(t)) continue;
             const Vec3 p = nearestWorldPos(t);
             if (!inOffer(p)) continue;
             const float score = length(pullPoint - p) + (insideCylinder(p) ? -3.5f : 0.0f);
@@ -2554,18 +2555,8 @@ void Game::updateVacuum(float dt) {
     float bestScore = 1e9f;
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
-        if (!t.alive || !t.slurpable) continue;
+        if (!gameplay::isLooseSoul(t)) continue;
         if(t.networkOwnerPlayerId>=0&&t.networkOwnerPlayerId!=simulationPlayerId_) continue;
-        if (t.soulState == SoulState::Recoiling) {
-            t.recoilTime -= dt;
-            t.vel.y -= 5.5f * dt;
-            t.pos += t.vel * dt;
-            const float damping = std::max(0.0f, 1.0f - 3.5f * dt);
-            t.vel.x *= damping; t.vel.z *= damping;
-            if (t.pos.y < GROUND_Y) { t.pos.y = GROUND_Y; t.vel.y = 0.0f; }
-            if (t.recoilTime <= 0.0f) { t.soulState = SoulState::Free; t.networkOwnerPlayerId=-1; }
-            continue;
-        }
         if (t.captureQueued || t.captureCommitted) continue;
         const Vec3 soulWorld = nearestWorldPos(t);
         const bool offered = attractionActive &&
@@ -2575,7 +2566,7 @@ void Game::updateVacuum(float dt) {
         }
         if (!offered) {
             if (t.soulState == SoulState::Attracted) { t.soulState = SoulState::Free; t.networkOwnerPlayerId=-1; }
-            if (t.soulState == SoulState::Free) { t.ingestProgress = std::max(0.0f, t.ingestProgress - dt * SOUL_CAPTURE_DECAY); t.latchedToScreen = false; t.vel = {}; }
+            if (t.soulState == SoulState::Free) { t.ingestProgress = std::max(0.0f, t.ingestProgress - dt * SOUL_CAPTURE_DECAY); t.latchedToScreen = false; }
             continue;
         }
         if (t.soulState == SoulState::Free) { t.soulState = SoulState::Attracted; t.networkOwnerPlayerId=simulationPlayerId_; }
