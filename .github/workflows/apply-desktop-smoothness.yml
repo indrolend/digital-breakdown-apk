@@ -1,0 +1,38 @@
+name: Apply desktop smoothness pass
+
+on:
+  push:
+    branches:
+      - desktop-smoothness-pass
+    paths:
+      - tools/apply_desktop_smoothness.py
+      - .github/workflows/apply-desktop-smoothness.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: desktop-smoothness-pass
+          fetch-depth: 0
+      - name: Apply guarded transform
+        run: python3 tools/apply_desktop_smoothness.py
+      - name: Verify transformed source
+        run: |
+          grep -q 'glfwSwapInterval(1)' native-desktop/main.cpp
+          grep -q 'SIMULATION_STEP_SECONDS' native-desktop/main.cpp
+          grep -q 'GameState renderState' native-desktop/main.cpp
+          ! grep -q 'PRESENTATION_STEP_SECONDS' native-desktop/main.cpp
+      - name: Commit transformed source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add native-desktop/main.cpp
+          git commit -m 'Improve desktop frame pacing and camera smoothness'
+          git push origin HEAD:desktop-smoothness-pass
