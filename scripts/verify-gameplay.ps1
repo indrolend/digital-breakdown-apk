@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 cmake -S native-desktop -B $BuildDir -DCMAKE_BUILD_TYPE=Release
-cmake --build $BuildDir --config Release --target GameplayRoleAndSoulMotionTest Pass7ParityTest MultiplayerProtocolTest --parallel
+cmake --build $BuildDir --config Release --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest Pass7ParityTest MultiplayerProtocolTest --parallel
 ctest --test-dir $BuildDir -C Release --output-on-failure
 
 & (Join-Path $BuildDir "Release/Pass7ParityTest.exe")
