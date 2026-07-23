@@ -6,6 +6,9 @@ BUILD_DIR="${1:-build/gameplay-checks}"
 cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" --config Release --target \
   GameplayRoleAndSoulMotionTest \
+  GameplayGeometryAndConfigTest \
+  TargetLifecycleTest \
+  GameplayStateContractsTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
   --parallel
