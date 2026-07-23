@@ -24,6 +24,21 @@ constexpr float PHONE_SCREEN_WIDTH = 0.07f;
 constexpr float PHONE_SCREEN_HEIGHT = 0.125f;
 constexpr float PHONE_SCREEN_DEPTH = 0.002f;
 constexpr float PHONE_SCREEN_Z_OFFSET = 0.007f;
+constexpr float PHONE_VISUAL_HALF_WIDTH = PHONE_BODY_WIDTH * 0.5f;
+constexpr float PHONE_VISUAL_HALF_HEIGHT = PHONE_BODY_HEIGHT * 0.5f;
+constexpr float PHONE_VISUAL_HALF_DEPTH = PHONE_BODY_DEPTH * 0.5f;
+constexpr float PHONE_TACTILE_RADIUS = 0.34f;
+constexpr float PHONE_WALL_MARGIN = PHONE_TACTILE_RADIUS + 0.06f;
+constexpr float PHONE_SUPPORT_RADIUS = 0.06f;
+constexpr float PHONE_LEDGE_FACE_GAP = 0.025f;
+constexpr float PHONE_LEDGE_FACE_OFFSET = PHONE_VISUAL_HALF_DEPTH + PHONE_LEDGE_FACE_GAP;
+constexpr float PHONE_LEDGE_RELEASE_OFFSET = PHONE_SUPPORT_RADIUS + 0.04f;
+constexpr float PHONE_LEDGE_MANTLE_CLEARANCE = PHONE_SUPPORT_RADIUS + PHONE_VISUAL_HALF_DEPTH + 0.08f;
+constexpr float PHONE_LUNGE_CONTACT_RADIUS = 0.10f;
+constexpr float PHONE_GROUNDED_MELEE_HEIGHT = 0.42f;
+constexpr float PHONE_AIR_ASSIST_HEIGHT = 0.70f;
+constexpr float PHONE_CAMERA_FOCUS_LIFT = 0.02f;
+constexpr float PHONE_REMOTE_PRESENTATION_LIFT = 0.54f;
 
 enum class SoulState : unsigned char {
     Free,

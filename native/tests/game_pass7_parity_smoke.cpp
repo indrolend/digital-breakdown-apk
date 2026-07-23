@@ -113,6 +113,8 @@ int main() {
     ok &= expect(!ledgeAttackGame->state().player.ledgeHanging&&ledgeAttackGame->state().meleeVisual.airLungeLandingPending&&ledgeAttackGame->state().player.jumpVel>0.0f,
         "attack from a ledge releases the phone into the existing gravity-owned locomotion lunge");
     ok &= expect(near(PHONE_BODY_WIDTH, 0.08f, 0.0001f) && near(PHONE_BODY_HEIGHT, 0.16f, 0.0001f) && near(PHONE_BODY_DEPTH, 0.012f, 0.0001f), "phone body dimensions match Pass 7 fallback/model normalized size");
+    ok &= expect(near(PHONE_TACTILE_RADIUS, 0.34f, 0.0001f) && near(PHONE_SUPPORT_RADIUS, 0.06f, 0.0001f) && near(PHONE_LUNGE_CONTACT_RADIUS, 0.10f, 0.0001f),
+        "phone visual core and tactile envelope are named separately instead of guessed around the model");
     const float intactThinning=humanShellThinningAmount(2.0f,2.0f,false),criticalThinning=humanShellThinningAmount(0.1f,2.0f,false);
     int missingFixtureTriangles=0;for(std::size_t triangle=0;triangle<1000;++triangle)if(humanShellTriangleMissing(triangle,criticalThinning))++missingFixtureTriangles;
     ok &= expect(near(intactThinning,0.0f,0.0001f)&&criticalThinning>0.38f&&missingFixtureTriangles>350&&missingFixtureTriangles<500,
