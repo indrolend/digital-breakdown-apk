@@ -33,6 +33,17 @@ Do not redesign mechanics.
 - Gameplay simulation should remain shared between desktop and Android.
 - Do not embed JavaScript or Three.js into the native runtime.
 
+## Gameplay architecture invariants
+
+- Keep `TargetState` pooled and fixed-size.
+- Derive active-human and loose-soul roles from existing state; do not add parallel entity hierarchies.
+- Do not introduce ECS, dynamic allocation, or broad architecture rewrites during focused fixes.
+- Keep capture commit and inventory awarding in the existing capture transaction.
+- Keep network ownership and protocol-visible layout stable unless protocol work is explicitly requested.
+- Treat `TargetState::pos` as canonical simulation position.
+- Keep hover, spin, lattice deformation, and other presentation offsets visual-only.
+- Prefer focused modules under `game/gameplay/` over adding more unrelated logic to `Game.cpp`.
+
 ## Validation
 
 Before editing, verify that:
@@ -44,3 +55,15 @@ exists.
 Inspect the browser implementation before changing native code.
 
 Do not substitute another runtime if this file exists.
+
+For gameplay changes, run one of:
+
+```bash
+bash scripts/verify-gameplay.sh
+```
+
+```powershell
+./scripts/verify-gameplay.ps1
+```
+
+The canonical focused suite includes role/soul-motion checks, browser parity smoke coverage, multiplayer protocol coverage, and `git diff --check`.

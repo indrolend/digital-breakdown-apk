@@ -1,0 +1,44 @@
+name: Gameplay checks
+
+on:
+  pull_request:
+    paths:
+      - "native-android/app/src/main/cpp/game/**"
+      - "native/tests/**"
+      - "native-desktop/CMakeLists.txt"
+      - "scripts/verify-gameplay.*"
+      - ".github/workflows/gameplay-checks.yml"
+  push:
+    branches:
+      - agent/gameplay-architecture-distillation
+      - agent/loose-soul-normalization
+    paths:
+      - "native-android/app/src/main/cpp/game/**"
+      - "native/tests/**"
+      - "native-desktop/CMakeLists.txt"
+      - "scripts/verify-gameplay.*"
+      - ".github/workflows/gameplay-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gameplay:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify gameplay contracts
+        id: verify
+        continue-on-error: true
+        run: bash scripts/verify-gameplay.sh
+      - name: Upload verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameplay-verification-logs
+          path: build/gameplay-checks/verification-logs
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Enforce verification result
+        if: steps.verify.outcome != 'success'
+        run: exit 1
