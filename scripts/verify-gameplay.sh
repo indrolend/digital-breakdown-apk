@@ -2,9 +2,24 @@
 set -euo pipefail
 
 BUILD_DIR="${1:-build/gameplay-checks}"
+LOG_DIR="$BUILD_DIR/verification-logs"
+mkdir -p "$LOG_DIR"
 
-cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$BUILD_DIR" --config Release --target \
+run_logged() {
+  local name="$1"
+  shift
+  local log="$LOG_DIR/$name.log"
+  echo "==> $name"
+  if ! "$@" >"$log" 2>&1; then
+    echo "FAILED: $name"
+    tail -n 200 "$log"
+    return 1
+  fi
+  tail -n 20 "$log"
+}
+
+run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   GameplayRoleAndSoulMotionTest \
   GameplayGeometryAndConfigTest \
   TargetLifecycleTest \
@@ -12,9 +27,7 @@ cmake --build "$BUILD_DIR" --config Release --target \
   Pass7ParityTest \
   MultiplayerProtocolTest \
   --parallel
-
-ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
-"$BUILD_DIR/Pass7ParityTest"
-"$BUILD_DIR/MultiplayerProtocolTest"
-
-git diff --check
+run_logged ctest ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
+run_logged parity "$BUILD_DIR/Pass7ParityTest"
+run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
+run_logged diff-check git diff --check
