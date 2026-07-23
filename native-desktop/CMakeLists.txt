@@ -126,9 +126,17 @@ add_executable(
 target_include_directories(TargetLifecycleTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(TargetLifecycleTest PRIVATE cxx_std_17)
 
+add_executable(
+    GameplayStateContractsTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_state_contracts_test.cpp"
+)
+target_include_directories(GameplayStateContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(GameplayStateContractsTest PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
+add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
