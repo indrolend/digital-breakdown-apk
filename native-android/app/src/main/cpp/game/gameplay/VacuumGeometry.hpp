@@ -30,7 +30,10 @@ inline bool insideVacuumOffer(
     const Vec3& cameraForward,
     const VacuumGeometryConfig& config = {}) noexcept {
     const Vec3 toSoul = point - cameraPosition;
-    const float forwardDistance = dot3(toSoul, cameraForward);
+    const float forwardDistance =
+        toSoul.x * cameraForward.x +
+        toSoul.y * cameraForward.y +
+        toSoul.z * cameraForward.z;
     if (forwardDistance <= 0.0f || forwardDistance > config.attractionRange) return false;
     const Vec3 radial = toSoul - cameraForward * forwardDistance;
     const float coneRadius = config.attractionConeRadius *
