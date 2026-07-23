@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Adopt the canonical PhoneBody geometry contract in Game.cpp.
 
-The transform is narrow, count-checked, and idempotent. It replaces duplicated
-numeric declarations with aliases to gameplay::PHONE_BODY while preserving all
-existing call sites and runtime values.
+The transform is narrow, count-checked, idempotent, and intended to be run by
+the dedicated adoption workflow. It replaces duplicated numeric declarations
+with aliases to gameplay::PHONE_BODY while preserving all existing call sites
+and runtime values.
 """
 
 from __future__ import annotations
