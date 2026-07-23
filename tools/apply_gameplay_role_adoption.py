@@ -2,8 +2,8 @@
 """Apply the first guarded TargetRoles/SoulMotion adoption to Game.cpp.
 
 The GitHub contents API replaces whole files. This script performs narrow,
-count-checked substitutions against the inspected source and refuses to write
-when any anchor is stale or ambiguous.
+count-checked substitutions against the inspected source, accepts a fully
+adopted source as a no-op, and refuses partial or ambiguous states.
 """
 
 from __future__ import annotations
@@ -22,7 +22,35 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def is_fully_adopted(source: str) -> bool:
+    required = (
+        '#include "gameplay/SoulMotion.hpp"',
+        '#include "gameplay/TargetRoles.hpp"',
+        'gameplay::isCombatTarget(t)',
+        'gameplay::isCombatTarget(target)',
+        'gameplay::isActiveHuman(target)',
+        'gameplay::updateLooseSoulMotion(t, dt)',
+        'gameplay::isFreeVacuumOffer(t)',
+        'gameplay::isLooseSoul(t)',
+    )
+    legacy = (
+        'if (!t.alive || (visual.hitMask&(1u<<i))!=0) continue;',
+        'if(!target.alive||target.captureQueued||target.captureCommitted)continue;',
+        'if(!target.alive || target.captureQueued || target.captureCommitted) return false;',
+        'if(target.alive && !target.slurpable && target.soulState==SoulState::Free)',
+        'if (!t.alive || !t.slurpable || t.captureQueued || t.captureCommitted ||',
+        'if (!t.alive || !t.slurpable) continue;',
+        't.vel = {};',
+    )
+    return all(marker in source for marker in required) and not any(
+        marker in source for marker in legacy
+    )
+
+
 def transform(source: str) -> str:
+    if is_fully_adopted(source):
+        return source
+
     text = source
 
     text = replace_once(
@@ -96,8 +124,8 @@ def transform(source: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="validate anchors without writing")
-    parser.add_argument("--write", action="store_true", help="replace Game.cpp in place")
+    parser.add_argument("--check", action="store_true", help="validate anchors or an already-adopted source")
+    parser.add_argument("--write", action="store_true", help="replace Game.cpp in place when adoption is needed")
     args = parser.parse_args()
 
     if args.check == args.write:
@@ -105,6 +133,10 @@ def main() -> int:
 
     source = GAME_CPP.read_text(encoding="utf-8-sig")
     result = transform(source)
+
+    if result == source:
+        print("gameplay role adoption already present")
+        return 0
 
     if args.write:
         GAME_CPP.write_text(result, encoding="utf-8", newline="\n")
