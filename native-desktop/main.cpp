@@ -30,8 +30,8 @@
 #include <thread>
 
 namespace {
-constexpr double PRESENTATION_STEP_SECONDS = 1.0 / 60.0;
-constexpr double MAX_FRAME_DELTA_SECONDS = 0.25;
+constexpr double SIMULATION_STEP_SECONDS = 1.0 / 60.0;
+constexpr double MAX_FRAME_DELTA_SECONDS = 0.10;
 constexpr int MAX_SIMULATION_STEPS_PER_FRAME = 4;
 constexpr int KEY_W_ANDROID = 51;
 constexpr int KEY_A_ANDROID = 29;
@@ -742,10 +742,9 @@ int main(int argc, char** argv) {
 
     glfwMakeContextCurrent(window);
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
-    // A software deadline below owns the 60 Hz presentation rate. Disabling
-    // monitor-rate vsync avoids running gameplay at 120/144 Hz or being
-    // double-throttled on displays whose refresh is not an even multiple of 60.
-    glfwSwapInterval(0);
+    // Let the platform compositor synchronize presentation to the active display.
+    // Gameplay remains fixed at 60 Hz and the renderer interpolates the camera.
+    glfwSwapInterval(1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused)host.game.setUiPaused(true);
 
@@ -761,24 +760,16 @@ int main(int argc, char** argv) {
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
     auto previous = std::chrono::steady_clock::now();
-    auto nextPresentation = previous;
     double simulationAccumulator = 0.0;
+    auto previousCamera = host.game.state().camera;
     int captureFrames=0;
     while (!glfwWindowShouldClose(window)) {
-        if (!capturePath) {
-            const auto beforePacing = std::chrono::steady_clock::now();
-            if (beforePacing < nextPresentation) std::this_thread::sleep_until(nextPresentation);
-        }
         glfwPollEvents();
 
         const auto now = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(now - previous).count();
         previous = now;
-        if (!capturePath) {
-            if (now > nextPresentation + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(PRESENTATION_STEP_SECONDS * 4.0))) nextPresentation = now;
-            nextPresentation += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(PRESENTATION_STEP_SECONDS));
-            simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
-        }
+        if (!capturePath) simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
 
         const DesktopGamepadInput gamepad=pollGamepad(window,host);
         const bool vacuumHeld = captureSoul || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || gamepad.vacuumHeld;
@@ -808,20 +799,37 @@ int main(int argc, char** argv) {
 
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         if (capturePath) {
-            host.game.update(static_cast<float>(PRESENTATION_STEP_SECONDS));
+            previousCamera = host.game.state().camera;
+            host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
         } else {
             int simulationSteps = 0;
-            while (simulationAccumulator >= PRESENTATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
-                host.game.update(static_cast<float>(PRESENTATION_STEP_SECONDS));
-                simulationAccumulator -= PRESENTATION_STEP_SECONDS;
+            while (simulationAccumulator >= SIMULATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
+                previousCamera = host.game.state().camera;
+                host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+                simulationAccumulator -= SIMULATION_STEP_SECONDS;
                 ++simulationSteps;
             }
-            if (simulationSteps == MAX_SIMULATION_STEPS_PER_FRAME && simulationAccumulator >= PRESENTATION_STEP_SECONDS) simulationAccumulator = 0.0;
+            if (simulationSteps == MAX_SIMULATION_STEPS_PER_FRAME && simulationAccumulator >= SIMULATION_STEP_SECONDS)
+                simulationAccumulator = std::fmod(simulationAccumulator, SIMULATION_STEP_SECONDS);
         }
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
-        host.renderer.draw(host.game.state());
+        GameState renderState = host.game.state();
+        if (!capturePath) {
+            const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);
+            const auto& currentCamera = host.game.state().camera;
+            const bool cameraCut = previousCamera.firstPerson != currentCamera.firstPerson ||
+                lengthSq(previousCamera.pos - currentCamera.pos) > 25.0f ||
+                lengthSq(previousCamera.lookTarget - currentCamera.lookTarget) > 25.0f;
+            if (!cameraCut) {
+                renderState.camera.pos = previousCamera.pos + (currentCamera.pos - previousCamera.pos) * alpha;
+                renderState.camera.lookTarget = previousCamera.lookTarget + (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;
+                renderState.camera.forward = normalized(renderState.camera.lookTarget - renderState.camera.pos);
+                renderState.time += alpha * static_cast<float>(SIMULATION_STEP_SECONDS);
+            }
+        }
+        host.renderer.draw(renderState);
         if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
         glfwSwapBuffers(window);
     }
