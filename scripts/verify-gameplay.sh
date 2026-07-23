@@ -12,10 +12,10 @@ run_logged() {
   echo "==> $name"
   if ! "$@" >"$log" 2>&1; then
     echo "FAILED: $name"
-    tail -n 200 "$log"
+    cat "$log"
     return 1
   fi
-  tail -n 20 "$log"
+  echo "PASS: $name"
 }
 
 run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
