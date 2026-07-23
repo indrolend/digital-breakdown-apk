@@ -42,7 +42,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Commit runtime adoption
-        if: steps.verify.outcome == 'success'
+        if: steps.verify.conclusion == 'success'
         run: |
           if git diff --quiet; then
             echo "No source changes required"
@@ -55,5 +55,5 @@ jobs:
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
       - name: Fail on verification error
-        if: steps.verify.outcome != 'success'
+        if: steps.verify.conclusion != 'success'
         run: exit 1
