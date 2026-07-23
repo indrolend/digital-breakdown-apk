@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
 
@@ -40,17 +41,17 @@ constexpr float WALL_CLIMB_MAX_HEIGHT = 1.25f;
 constexpr float WALL_CLIMB_MAX_TIME = 0.48f;
 constexpr float WALL_CLIMB_PUSH_DOT = -0.18f;
 constexpr float CEILING_CLEARANCE = 0.42f;
-constexpr float PLAYER_CEILING_BODY_CLEARANCE = 0.42f;
-constexpr float PLAYER_COLLISION_RADIUS = 0.34f;
-constexpr float PLAYER_WALL_MARGIN = PLAYER_COLLISION_RADIUS + 0.06f;
+constexpr float PLAYER_CEILING_BODY_CLEARANCE = gameplay::PHONE_BODY.ceilingClearance;
+constexpr float PLAYER_COLLISION_RADIUS = gameplay::PHONE_BODY.collisionRadius;
+constexpr float PLAYER_WALL_MARGIN = gameplay::PHONE_BODY.wallMargin;
 // Side collision remains generous and game-feeling; floor support follows the
 // phone's visible footprint so ledges do not grow an invisible shelf.
-constexpr float PLAYER_SUPPORT_RADIUS = 0.06f;
-constexpr float LEDGE_GRAB_VERTICAL_BELOW = 0.24f;
-constexpr float LEDGE_GRAB_VERTICAL_ABOVE = 0.13f;
-constexpr float LEDGE_GRAB_REACH = 0.48f;
-constexpr float LEDGE_PHONE_FACE_GAP = 0.025f;
-constexpr float LEDGE_CORNER_INSET = 0.10f;
+constexpr float PLAYER_SUPPORT_RADIUS = gameplay::PHONE_BODY.supportRadius;
+constexpr float LEDGE_GRAB_VERTICAL_BELOW = gameplay::PHONE_BODY.ledgeGrabVerticalBelow;
+constexpr float LEDGE_GRAB_VERTICAL_ABOVE = gameplay::PHONE_BODY.ledgeGrabVerticalAbove;
+constexpr float LEDGE_GRAB_REACH = gameplay::PHONE_BODY.ledgeGrabReach;
+constexpr float LEDGE_PHONE_FACE_GAP = gameplay::PHONE_BODY.ledgeFaceGap;
+constexpr float LEDGE_CORNER_INSET = gameplay::PHONE_BODY.ledgeCornerInset;
 constexpr float LEDGE_SHIMMY_ACCEL = 14.0f;
 constexpr float LEDGE_SHIMMY_MAX_SPEED = 2.2f;
 constexpr float LEDGE_SHIMMY_DAMPING = 0.82f;
@@ -59,8 +60,8 @@ constexpr float LEDGE_VAULT_UP_SPEED = 4.2f;
 constexpr float LEDGE_VAULT_OUT_SPEED = 2.4f;
 constexpr float LEDGE_MANTLE_DURATION = 0.26f;
 constexpr float WALL_CLIMB_RADIUS = 0.34f;
-constexpr float CAMERA_COLLISION_RADIUS = 0.42f;
-constexpr float CAMERA_COLLISION_BACKOFF = 0.16f;
+constexpr float CAMERA_COLLISION_RADIUS = gameplay::PHONE_BODY.cameraCollisionRadius;
+constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionBackoff;
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
@@ -135,8 +136,8 @@ constexpr float MELEE_COMBO_WINDOW = 0.720f;
 constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
 constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.68f;
 constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = 5.40f;
-constexpr float AIR_MELEE_PHONE_RADIUS = 0.10f;
-constexpr float AIR_MELEE_BODY_FORGIVENESS = 0.07f;
+constexpr float AIR_MELEE_PHONE_RADIUS = gameplay::PHONE_BODY.airMeleeRadius;
+constexpr float AIR_MELEE_BODY_FORGIVENESS = gameplay::PHONE_BODY.airMeleeBodyForgiveness;
 constexpr float HEADSHOT_BATTERY_GAIN = 3.0f;
 constexpr float PASSIVE_RECHARGE_DELAY = 0.80f;
 constexpr float HEADSHOT_RECHARGE_BOOST_SECONDS = 1.35f;

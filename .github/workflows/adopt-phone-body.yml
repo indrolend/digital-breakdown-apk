@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   adopt:
+    # This branch is intentionally transformed once; subsequent runs are no-ops.
     if: github.event.pull_request.head.ref == 'agent/phone-body-adoption'
     runs-on: ubuntu-latest
     steps:
@@ -20,6 +21,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          show-progress: false
 
       - name: Apply guarded phone body adoption
         run: python3 tools/apply_phone_body_adoption.py --write
@@ -28,9 +30,20 @@ jobs:
         run: python3 tools/apply_phone_body_adoption.py --check
 
       - name: Verify gameplay
+        id: verify
+        continue-on-error: true
         run: bash scripts/verify-gameplay.sh
 
+      - name: Upload verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-body-adoption-verification
+          path: build/gameplay-checks/verification-logs
+          if-no-files-found: warn
+
       - name: Commit runtime adoption
+        if: steps.verify.conclusion == 'success'
         run: |
           if git diff --quiet; then
             echo "No source changes required"
@@ -41,3 +54,7 @@ jobs:
           git add native-android/app/src/main/cpp/game/Game.cpp
           git commit -m "Adopt canonical phone body geometry"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Fail on verification error
+        if: steps.verify.conclusion != 'success'
+        run: exit 1
