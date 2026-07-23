@@ -5,7 +5,7 @@ path = Path("native-desktop/main.cpp")
 text = path.read_text(encoding="utf-8")
 original = text
 
-replacements = [
+initial_replacements = [
     (
         "constexpr double PRESENTATION_STEP_SECONDS = 1.0 / 60.0;\nconstexpr double MAX_FRAME_DELTA_SECONDS = 0.25;",
         "constexpr double SIMULATION_STEP_SECONDS = 1.0 / 60.0;\nconstexpr double MAX_FRAME_DELTA_SECONDS = 0.10;",
@@ -32,20 +32,31 @@ replacements = [
     ),
     (
         "        host.renderer.draw(host.game.state());",
-        "        GameState renderState = host.game.state();\n        if (!capturePath) {\n            const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);\n            const auto& currentCamera = host.game.state().camera;\n            const bool cameraCut = previousCamera.firstPerson != currentCamera.firstPerson ||\n                lengthSq(previousCamera.pos - currentCamera.pos) > 25.0f ||\n                lengthSq(previousCamera.lookTarget - currentCamera.lookTarget) > 25.0f;\n            if (!cameraCut) {\n                renderState.camera.pos = previousCamera.pos + (currentCamera.pos - previousCamera.pos) * alpha;\n                renderState.camera.lookTarget = previousCamera.lookTarget + (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;\n                renderState.camera.forward = normalized(renderState.camera.lookTarget - renderState.camera.pos);\n                renderState.time += alpha * static_cast<float>(SIMULATION_STEP_SECONDS);\n            }\n        }\n        host.renderer.draw(renderState);",
+        "        GameState renderState = host.game.state();\n        if (!capturePath) {\n            const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);\n            const auto& currentCamera = host.game.state().camera;\n            const bool cameraCut = previousCamera.firstPerson != currentCamera.firstPerson ||\n                lengthSq(previousCamera.pos - currentCamera.pos) > 25.0f ||\n                lengthSq(previousCamera.lookTarget - currentCamera.lookTarget) > 25.0f;\n            renderState.time = std::max(0.0f, currentCamera.firstPerson != previousCamera.firstPerson\n                ? host.game.state().time\n                : host.game.state().time - (1.0f - alpha) * static_cast<float>(SIMULATION_STEP_SECONDS));\n            if (!cameraCut) {\n                renderState.camera.pos = previousCamera.pos + (currentCamera.pos - previousCamera.pos) * alpha;\n                renderState.camera.lookTarget = previousCamera.lookTarget + (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;\n                renderState.camera.forward = normalized(renderState.camera.lookTarget - renderState.camera.pos);\n            }\n        }\n        host.renderer.draw(renderState);",
     ),
 ]
 
-for old, new in replacements:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"expected exactly one anchor, found {count}: {old[:80]!r}")
-    text = text.replace(old, new, 1)
+applied_initial = False
+for old, new in initial_replacements:
+    if old in text:
+        if text.count(old) != 1:
+            raise SystemExit(f"ambiguous anchor: {old[:80]!r}")
+        text = text.replace(old, new, 1)
+        applied_initial = True
+
+incorrect_time = "                renderState.time += alpha * static_cast<float>(SIMULATION_STEP_SECONDS);"
+correct_time = "                renderState.time = std::max(0.0f, host.game.state().time - (1.0f - alpha) * static_cast<float>(SIMULATION_STEP_SECONDS));"
+if incorrect_time in text:
+    text = text.replace(incorrect_time, correct_time, 1)
 
 if "PRESENTATION_STEP_SECONDS" in text:
     raise SystemExit("stale PRESENTATION_STEP_SECONDS reference remains")
+required = ["glfwSwapInterval(1)", "SIMULATION_STEP_SECONDS", "GameState renderState"]
+for marker in required:
+    if marker not in text:
+        raise SystemExit(f"missing transformed marker: {marker}")
 if text == original:
-    raise SystemExit("transform made no changes")
-
-path.write_text(text, encoding="utf-8")
-print("desktop smoothness transform applied")
+    print("desktop smoothness transform already applied")
+else:
+    path.write_text(text, encoding="utf-8")
+    print("desktop smoothness transform applied")
