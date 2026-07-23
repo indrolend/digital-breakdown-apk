@@ -1,0 +1,43 @@
+name: Adopt phone body contract
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  adopt:
+    if: github.event.pull_request.head.ref == 'agent/phone-body-adoption'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout adoption branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply guarded phone body adoption
+        run: python3 tools/apply_phone_body_adoption.py --write
+
+      - name: Verify focused transform state
+        run: python3 tools/apply_phone_body_adoption.py --check
+
+      - name: Verify gameplay
+        run: bash scripts/verify-gameplay.sh
+
+      - name: Commit runtime adoption
+        run: |
+          if git diff --quiet; then
+            echo "No source changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native-android/app/src/main/cpp/game/Game.cpp
+          git commit -m "Adopt canonical phone body geometry"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
