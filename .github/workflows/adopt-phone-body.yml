@@ -1,21 +1,24 @@
 name: Adopt phone body contract
 
 on:
-  push:
+  pull_request:
+    types: [opened, reopened, synchronize]
     branches:
-      - agent/phone-body-adoption
+      - main
 
 permissions:
   contents: write
 
 jobs:
   adopt:
+    if: github.event.pull_request.head.ref == 'agent/phone-body-adoption'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout adoption branch
         uses: actions/checkout@v4
         with:
-          ref: agent/phone-body-adoption
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply guarded phone body adoption
@@ -37,4 +40,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add native-android/app/src/main/cpp/game/Game.cpp
           git commit -m "Adopt canonical phone body geometry"
-          git push origin HEAD:agent/phone-body-adoption
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
