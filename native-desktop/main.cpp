@@ -826,7 +826,7 @@ int main(int argc, char** argv) {
                 renderState.camera.pos = previousCamera.pos + (currentCamera.pos - previousCamera.pos) * alpha;
                 renderState.camera.lookTarget = previousCamera.lookTarget + (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;
                 renderState.camera.forward = normalized(renderState.camera.lookTarget - renderState.camera.pos);
-                renderState.time += alpha * static_cast<float>(SIMULATION_STEP_SECONDS);
+                renderState.time = std::max(0.0f, host.game.state().time - (1.0f - alpha) * static_cast<float>(SIMULATION_STEP_SECONDS));
             }
         }
         host.renderer.draw(renderState);
