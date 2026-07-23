@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   adopt:
+    # This branch is intentionally transformed once; subsequent runs are no-ops.
     if: github.event.pull_request.head.ref == 'agent/phone-body-adoption'
     runs-on: ubuntu-latest
     steps:
