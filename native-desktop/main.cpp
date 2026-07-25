@@ -170,26 +170,9 @@ int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,in
 
 int menuItemCount(const GameState& state) {
     if(state.upgradeMenu.active)return 6;
-    if(soloPauseMenu(state)){
-        switch(state.localSettings.menuPage){
-            case LocalMenuPage::Main:return 5;
-            case LocalMenuPage::Controls:return makePhoneMenuLayout(state).selectableCount;
-            case LocalMenuPage::Audio:return 5;
-            case LocalMenuPage::Graphics:return 5;
-            default:return 5;
-        }
-    }
+    if(soloPauseMenu(state))return makePhoneMenuPageModel(state).selectableCount;
     if(!state.started){
-        if(state.dead)return 2;
-        switch(state.localSettings.menuPage){
-            case LocalMenuPage::Main:return 4;
-            case LocalMenuPage::Online:return 3;
-            case LocalMenuPage::JoinCode:return 0;
-            case LocalMenuPage::Settings:return 4;
-            case LocalMenuPage::Controls:return makePhoneMenuLayout(state).selectableCount;
-            case LocalMenuPage::Audio:return 5;
-            case LocalMenuPage::Graphics:return 5;
-        }
+        return makePhoneMenuPageModel(state).selectableCount;
     }
     if(state.uiPaused)return 1;
     return 0;
@@ -198,6 +181,7 @@ int menuItemCount(const GameState& state) {
 void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;if(page==LocalMenuPage::Controls)state.localSettings.controlsPage=0;state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.36f;}
 
 PhoneMenuRow selectedPhoneRow(const GameState& state){const PhoneMenuLayout layout=makePhoneMenuLayout(state);const PhoneMenuRow* row=phoneMenuRowForSelection(layout,state.hud.menuSelection);return row?*row:PhoneMenuRow{};}
+PhoneMenuAction selectedPhoneAction(const GameState& state){const PhoneMenuPageViewModel page=makePhoneMenuPageModel(state);const PhoneMenuElement* element=phoneMenuElementForSelection(page,state.hud.menuSelection);return element?element->action:PhoneMenuAction::None;}
 
 bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneRow(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
 
@@ -242,7 +226,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
     if(soloPauseMenu(state)){
         auto& settings=state.localSettings;
         const PhoneMenuRow row=selectedPhoneRow(state);
-        if(settings.menuPage==LocalMenuPage::Main){if(selection==0){setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Controls);else if(selection==2)openMenuPage(host,LocalMenuPage::Audio);else if(selection==3)openMenuPage(host,LocalMenuPage::Graphics);else{host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);}}
+        if(settings.menuPage==LocalMenuPage::Main){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Resume){setMouseCaptured(window,host,true);}else if(action==PhoneMenuAction::Controls)openMenuPage(host,LocalMenuPage::Controls);else if(action==PhoneMenuAction::Audio)openMenuPage(host,LocalMenuPage::Audio);else if(action==PhoneMenuAction::Graphics)openMenuPage(host,LocalMenuPage::Graphics);else if(action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);}}
         else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Main);}
@@ -252,9 +236,9 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         if(state.dead){if(selection==1){glfwSetWindowShouldClose(window,GLFW_TRUE);return;}host.game.restart();setMouseCaptured(window,host,true);return;}
         auto& settings=state.localSettings;
         const PhoneMenuRow row=selectedPhoneRow(state);
-        if(settings.menuPage==LocalMenuPage::Main){if(selection==0){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Online);else if(selection==2)openMenuPage(host,LocalMenuPage::Settings);else glfwSetWindowShouldClose(window,GLFW_TRUE);}
-        else if(settings.menuPage==LocalMenuPage::Online){if(selection==0){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(selection==1){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Settings){if(selection==0)openMenuPage(host,LocalMenuPage::Controls);else if(selection==1)openMenuPage(host,LocalMenuPage::Audio);else if(selection==2)openMenuPage(host,LocalMenuPage::Graphics);else openMenuPage(host,LocalMenuPage::Main);}
+        if(settings.menuPage==LocalMenuPage::Main){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Solo){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(action==PhoneMenuAction::Online)openMenuPage(host,LocalMenuPage::Online);else if(action==PhoneMenuAction::Settings)openMenuPage(host,LocalMenuPage::Settings);else if(action==PhoneMenuAction::Exit)glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        else if(settings.menuPage==LocalMenuPage::Online){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Host){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(action==PhoneMenuAction::Join){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else if(action==PhoneMenuAction::Back)openMenuPage(host,LocalMenuPage::Main);}
+        else if(settings.menuPage==LocalMenuPage::Settings){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Controls)openMenuPage(host,LocalMenuPage::Controls);else if(action==PhoneMenuAction::Audio)openMenuPage(host,LocalMenuPage::Audio);else if(action==PhoneMenuAction::Graphics)openMenuPage(host,LocalMenuPage::Graphics);else if(action==PhoneMenuAction::Back)openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Settings);}
         else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Settings);}
         else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Settings);}

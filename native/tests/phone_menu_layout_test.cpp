@@ -34,6 +34,12 @@ const PhoneMenuRow& selectionRow(const PhoneMenuLayout& layout, int selection) {
     return *row;
 }
 
+const PhoneMenuElement& selectionElement(const PhoneMenuPageViewModel& page, int selection) {
+    const PhoneMenuElement* element = phoneMenuElementForSelection(page, selection);
+    assert(element);
+    return *element;
+}
+
 } // namespace
 
 int main() {
@@ -43,6 +49,12 @@ int main() {
     state.started = false;
     state.dead = false;
     state.localSettings.menuPage = LocalMenuPage::Main;
+    PhoneMenuPageViewModel mainModel = makePhoneMenuPageModel(state);
+    assert(mainModel.selectableCount == 4);
+    assert(selectionElement(mainModel, 0).action == PhoneMenuAction::Solo);
+    assert(selectionElement(mainModel, 1).action == PhoneMenuAction::Online);
+    assert(selectionElement(mainModel, 2).action == PhoneMenuAction::Settings);
+    assert(selectionElement(mainModel, 3).action == PhoneMenuAction::Exit);
     PhoneMenuLayout main = makePhoneMenuLayout(state);
     assert(main.selectableCount == 4);
     expectRowsInsideSafe(main);
@@ -52,12 +64,21 @@ int main() {
     state.multiplayer.enabled = false;
     state.upgradeMenu.active = false;
     state.localSettings.menuPage = LocalMenuPage::Main;
+    PhoneMenuPageViewModel pauseModel = makePhoneMenuPageModel(state);
+    assert(pauseModel.selectableCount == 5);
+    assert(selectionElement(pauseModel, 0).action == PhoneMenuAction::Resume);
+    assert(selectionElement(pauseModel, 4).action == PhoneMenuAction::ExitRun);
     PhoneMenuLayout pause = makePhoneMenuLayout(state);
     assert(pause.selectableCount == 5);
     expectRowsInsideSafe(pause);
 
     state.localSettings.menuPage = LocalMenuPage::Controls;
     state.localSettings.controlsPage = 0;
+    PhoneMenuPageViewModel controlsOneModel = makePhoneMenuPageModel(state);
+    assert(controlsOneModel.tablePage);
+    assert(controlsOneModel.selectableCount == 8);
+    assert(controlsOneModel.elements[0].kind == PhoneMenuRowKind::Section);
+    assert(!controlsOneModel.elements[0].selectable);
     PhoneMenuLayout controlsOne = makePhoneMenuLayout(state);
     assert(controlsOne.title == "Controls 1/2");
     assert(controlsOne.selectableCount == 8);
@@ -69,6 +90,11 @@ int main() {
     expectRowsInsideSafe(controlsOne);
 
     state.localSettings.controlsPage = 1;
+    PhoneMenuPageViewModel controlsTwoModel = makePhoneMenuPageModel(state);
+    assert(controlsTwoModel.tablePage);
+    assert(controlsTwoModel.selectableCount == 9);
+    assert(selectionElement(controlsTwoModel, 6).action == PhoneMenuAction::PreviousControls);
+    assert(selectionElement(controlsTwoModel, 7).action == PhoneMenuAction::Defaults);
     PhoneMenuLayout controlsTwo = makePhoneMenuLayout(state);
     assert(controlsTwo.title == "Controls 2/2");
     assert(controlsTwo.selectableCount == 9);
@@ -82,16 +108,26 @@ int main() {
     expectRowsInsideSafe(controlsTwo);
 
     state.localSettings.menuPage = LocalMenuPage::Audio;
+    PhoneMenuPageViewModel audioModel = makePhoneMenuPageModel(state);
+    assert(audioModel.tablePage);
+    assert(selectionElement(audioModel, 0).action == PhoneMenuAction::MusicVolume);
+    assert(selectionElement(audioModel, 1).action == PhoneMenuAction::SfxVolume);
     PhoneMenuLayout audio = makePhoneMenuLayout(state);
     assert(audio.selectableCount == 5);
     expectRowsInsideSafe(audio);
 
     state.localSettings.menuPage = LocalMenuPage::Graphics;
+    PhoneMenuPageViewModel graphicsModel = makePhoneMenuPageModel(state);
+    assert(graphicsModel.tablePage);
+    assert(selectionElement(graphicsModel, 0).action == PhoneMenuAction::GraphicsPreset);
     PhoneMenuLayout graphics = makePhoneMenuLayout(state);
     assert(graphics.selectableCount == 5);
     expectRowsInsideSafe(graphics);
 
     state.localSettings.menuPage = LocalMenuPage::JoinCode;
+    PhoneMenuPageViewModel joinModel = makePhoneMenuPageModel(state);
+    assert(joinModel.selectableCount == 0);
+    assert(joinModel.joinCode);
     PhoneMenuLayout join = makePhoneMenuLayout(state);
     assert(join.selectableCount == 0);
     assert(join.joinCode);
