@@ -294,6 +294,34 @@ void syncSoulVisual(TargetState& target, float time) {
         target.hitFlash, time, target.phase, target.alive && target.slurpable,
         target.soulMorph, target.floatOffset, target.spinSpeed);
 }
+
+PhoneDisplayMode phoneDisplayModeForState(const GameState& state) {
+    if (state.dead) return PhoneDisplayMode::Death;
+    if (state.upgradeMenu.active) return PhoneDisplayMode::Upgrade;
+    if (state.cinematic.introActive) return PhoneDisplayMode::Boot;
+    if (state.started && state.uiPaused) return PhoneDisplayMode::Pause;
+    if (!state.started) {
+        switch (state.localSettings.menuPage) {
+            case LocalMenuPage::Main: return PhoneDisplayMode::MainMenu;
+            case LocalMenuPage::Online: return PhoneDisplayMode::Online;
+            case LocalMenuPage::JoinCode: return PhoneDisplayMode::JoinCode;
+            case LocalMenuPage::Settings: return PhoneDisplayMode::Settings;
+            case LocalMenuPage::Controls: return PhoneDisplayMode::Controls;
+            case LocalMenuPage::Audio: return PhoneDisplayMode::Audio;
+            case LocalMenuPage::Graphics: return PhoneDisplayMode::Graphics;
+        }
+    }
+    return state.hud.lowBattery ? PhoneDisplayMode::Warning : PhoneDisplayMode::Gameplay;
+}
+
+float finiteClamped(float value, float lo, float hi) {
+    if (!std::isfinite(value)) return lo;
+    return clampf(value, lo, hi);
+}
+
+Vec3 mix3(const Vec3& a, const Vec3& b, float t) {
+    return a * (1.0f - t) + b * t;
+}
 }
 
 void Game::reset() {
@@ -312,6 +340,7 @@ void Game::reset() {
     state_.dead=false;
     state_.uiPaused=false;
     emitAudio(AudioCue::VcInvitation,0.58f);
+    updatePhoneDisplay(0.0f);
 }
 
 void Game::restart() {
@@ -320,6 +349,7 @@ void Game::restart() {
     state_.cinematic.introElapsed = 0.0f;
     state_.cinematic.baseYaw = state_.camera.yaw;
     state_.cinematic.textInteraction = 1.0f;
+    updatePhoneDisplay(0.0f);
 }
 
 void Game::debugStartSecretTvTest(bool enterRoom) {
@@ -372,6 +402,7 @@ void Game::prepareStartScreen(){
     state_.hud.gameOver=false;
     clearInputState();
     state_.audio=AudioState{};
+    updatePhoneDisplay(0.0f);
 }
 
 void Game::setUiPaused(bool paused){
@@ -952,6 +983,7 @@ void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
+    updatePhoneDisplay(dt);
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
@@ -1033,6 +1065,7 @@ void Game::update(float dt) {
     updateBattery(dt);
     if(state_.dead) {
         state_.hud.batteryFill=0.0f; state_.hud.lowBattery=true; state_.hud.gameOver=true;
+        updatePhoneDisplay(dt);
         return;
     }
     float contact = 0.0f;
@@ -1071,6 +1104,7 @@ void Game::update(float dt) {
     state_.hud.supplementalFill=state_.energy.supplementalMax>0.0f
         ? clampf(state_.energy.supplementalValue/state_.energy.supplementalMax,0.0f,1.0f) : 0.0f;
     state_.hud.flowerStacks=state_.energy.flowerStacks;
+    updatePhoneDisplay(dt);
 }
 
 void Game::configureNetworkHost(){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=true;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=0;std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"HOSTING");}
@@ -1671,6 +1705,72 @@ void Game::updatePhoneTransform() {
     transform.vacuumPullPoint = state_.camera.firstPerson
         ? state_.camera.pos - state_.camera.forward * 0.85f
         : transform.screenCenter;
+}
+
+void Game::updatePhoneDisplay(float dt) {
+    PhoneDisplayState& display = state_.phoneDisplay;
+    const PhoneDisplayMode nextMode = phoneDisplayModeForState(state_);
+    if (display.mode != nextMode) {
+        display.previousMode = display.mode;
+        display.mode = nextMode;
+        display.transitionProgress = 0.0f;
+    } else {
+        display.transitionProgress = finiteClamped(display.transitionProgress + dt * 5.5f, 0.0f, 1.0f);
+    }
+
+    const float decay = std::exp(-dt * 5.5f);
+    display.damagePulse *= decay;
+    display.capturePulse *= decay;
+    display.powerPulse *= decay;
+    display.warningPulse *= decay;
+    const float lowBatteryTarget = state_.hud.lowBattery ? (0.45f + 0.35f * std::sin(state_.time * 4.1f)) : 0.0f;
+    display.lowBatteryPulse += (lowBatteryTarget - display.lowBatteryPulse) * (1.0f - std::exp(-dt * 8.0f));
+    display.screenNoisePhase = finiteClamped(display.screenNoisePhase + dt * (0.08f + state_.vacuum.power * 0.10f), 0.0f, 1000000.0f);
+
+    const bool menuMode = display.mode == PhoneDisplayMode::Boot || display.mode == PhoneDisplayMode::MainMenu ||
+        display.mode == PhoneDisplayMode::Online || display.mode == PhoneDisplayMode::JoinCode ||
+        display.mode == PhoneDisplayMode::Settings || display.mode == PhoneDisplayMode::Controls ||
+        display.mode == PhoneDisplayMode::Audio || display.mode == PhoneDisplayMode::Graphics ||
+        display.mode == PhoneDisplayMode::Pause || display.mode == PhoneDisplayMode::Death;
+    const float vacuum = finiteClamped(state_.vacuum.power, 0.0f, 1.0f);
+    const float discharge = finiteClamped(state_.energy.dischargePositionAmount, 0.0f, 1.0f);
+    const float battery = finiteClamped(state_.player.battery / 100.0f, 0.0f, 1.0f);
+    const float modeBase = menuMode ? 0.66f : 0.34f;
+    const float deathDim = display.mode == PhoneDisplayMode::Death ? 0.42f : 1.0f;
+    display.brightness = finiteClamped((modeBase + vacuum * 0.18f + discharge * 0.26f + battery * 0.08f) * deathDim, 0.0f, 1.0f);
+    display.contentOpacity = finiteClamped(menuMode ? 1.0f : 0.38f + vacuum * 0.24f, 0.0f, 1.0f);
+
+    const Vec3 baseCyan{0.07f, 0.19f, 0.29f};
+    const Vec3 activeCyan{0.18f, 0.76f, 0.92f};
+    const Vec3 copper{0.70f, 0.34f, 0.18f};
+    const Vec3 white{0.90f, 0.98f, 1.0f};
+    Vec3 color = mix3(baseCyan, activeCyan, display.brightness);
+    color = mix3(color, copper, finiteClamped(display.lowBatteryPulse, 0.0f, 1.0f) * 0.42f);
+    color = mix3(color, white, finiteClamped(discharge + display.capturePulse, 0.0f, 1.0f) * 0.22f);
+    display.screenTint = color;
+    display.emissionColor = color;
+    display.emissionStrength = finiteClamped(display.brightness * 0.95f + vacuum * 0.22f + discharge * 0.55f, 0.0f, 2.4f);
+    display.localLightIntensity = finiteClamped(display.emissionStrength * (menuMode ? 0.38f : 0.22f), 0.0f, 1.15f);
+    display.localLightRadius = finiteClamped(0.16f + display.emissionStrength * 0.045f, 0.12f, 0.32f);
+    display.glassResponse = finiteClamped(0.12f + display.brightness * 0.10f, 0.06f, 0.30f);
+    display.blackLevel = finiteClamped(1.0f - display.brightness * 0.72f, 0.08f, 1.0f);
+    display.interactive = menuMode || display.mode == PhoneDisplayMode::Upgrade;
+
+    display.material.displayBrightness = display.brightness;
+    display.material.emissionColor = display.emissionColor;
+    display.material.emissionIntensity = display.emissionStrength;
+    display.material.backgroundEmission = finiteClamped(display.emissionStrength, 0.0f, 2.4f);
+    display.material.glassEmission = finiteClamped(display.emissionStrength * 0.09f, 0.0f, 0.25f);
+    display.material.rimEmission = finiteClamped(display.emissionStrength * 0.18f, 0.0f, 0.45f);
+    display.material.glassOpacity = display.glassResponse;
+    display.material.glassRoughness = finiteClamped(0.46f - display.brightness * 0.12f, 0.28f, 0.62f);
+    display.material.blackLevel = display.blackLevel;
+
+    display.lighting.color = display.emissionColor;
+    display.lighting.intensity = display.localLightIntensity;
+    display.lighting.radius = display.localLightRadius;
+    display.lighting.forwardOffset = 0.024f;
+    display.lighting.pulse = finiteClamped(display.damagePulse + display.capturePulse + display.powerPulse + display.lowBatteryPulse, 0.0f, 1.0f);
 }
 
 void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis) {

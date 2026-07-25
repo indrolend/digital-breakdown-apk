@@ -6,6 +6,7 @@
 #include "HumanVisual.hpp"
 #include "VisualIdentity.hpp"
 #include "Math.hpp"
+#include "PhoneDisplay.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -552,6 +553,7 @@ struct GameState {
     PhonePoseState phonePose;
     PhoneTransformState phoneTransform;
     PhoneVisualState phoneVisual;
+    PhoneDisplayState phoneDisplay;
     HudState hud;
     PlayerDebugState debug;
     float time = 0.0f;
@@ -642,6 +644,7 @@ private:
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updatePhoneTransform();
+    void updatePhoneDisplay(float dt);
     void updateTargets(float dt);
     void chooseHumanWalkTarget(int index);
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;
