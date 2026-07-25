@@ -391,14 +391,14 @@ void drawPhoneMenuSurface(const GameState& state){
         const float markerPulse=selected?(0.72f+0.28f*std::sin(state.time*2.2f+i*0.17f)):0.0f;
         const float itemX = row.kind==PhoneMenuRowKind::TwoColumn ? row.labelX : -layout.safe.w*0.22f;
         if(selected){
-            phoneScreenQuad(phone,itemX-layout.safe.w*0.085f,row.textY-row.scale*0.36f,layout.screenW*0.010f,layout.screenW*0.010f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,(0.66f+markerPulse*0.22f)*alpha);
+            phoneScreenQuad(phone,itemX-layout.safe.w*0.090f,row.textY-row.scale*0.34f,layout.screenW*0.012f,layout.screenW*0.012f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,(0.78f+markerPulse*0.18f)*alpha);
         }
         if(row.kind==PhoneMenuRowKind::TwoColumn){
             const float vw=phoneTextWidth(row.value,row.scale,selected);
-            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,selected?0.94f:0.70f,selected?1.0f:0.88f,1.0f,selected?0.98f*alpha:0.76f*alpha,selected);
+            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,selected?1.0f:0.70f,selected?1.0f:0.88f,1.0f,selected?1.0f*alpha:0.76f*alpha,selected);
             phoneScreenText(phone,row.value,row.valueRightX-vw,row.textY,row.scale,selected?Pass7Visual::AcidChartreuse.r:Pass7Visual::MetallicTeal.r,selected?Pass7Visual::AcidChartreuse.g:Pass7Visual::MetallicTeal.g,selected?Pass7Visual::AcidChartreuse.b:Pass7Visual::MetallicTeal.b,selected?0.98f*alpha:0.78f*alpha,selected);
         }else{
-            phoneScreenText(phone,row.label,itemX,row.textY,row.scale,selected?0.94f:0.70f,selected?1.0f:0.88f,1.0f,selected?0.98f*alpha:0.76f*alpha,selected);
+            phoneScreenText(phone,row.label,itemX,row.textY,row.scale,selected?1.0f:0.70f,selected?1.0f:0.88f,1.0f,selected?1.0f*alpha:0.76f*alpha,selected);
         }
     }
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
@@ -725,7 +725,8 @@ void DesktopRenderer::draw(const GameState& state) const {
     // Directional planar shadows: project each caster's real geometry along the
     // browser sun vector onto the floor. Silhouette, length and motion therefore
     // come from object vertices, height and light direction rather than blobs.
-    if(state.localSettings.shadows){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
+    const bool menuPresentation=(((!state.started&&!state.dead)||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
+    if(state.localSettings.shadows&&!menuPresentation){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(!state.camera.firstPerson){if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.012f,0.018f,0.022f);}

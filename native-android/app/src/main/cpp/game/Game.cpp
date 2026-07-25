@@ -60,6 +60,8 @@ constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionB
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float MENU_EXIT_CAMERA_DURATION = 0.42f;
+constexpr float MENU_CAMERA_VERTICAL_FOV = 42.0f;
+constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.60f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
@@ -118,6 +120,12 @@ constexpr float FLOWER_SLURP_FEED = 9.0f;
 constexpr float FLOWER_PICKUP_VALUE = 46.0f;
 constexpr float FLOWER_DROP_CHANCE = 0.26f;
 constexpr float FLOWER_PICKUP_RADIUS = 1.05f;
+
+bool localPhoneMenuPresentation(const GameState& state) {
+    return (((!state.started && !state.dead) || state.cinematic.introActive || state.uiPaused) &&
+        !state.multiplayer.enabled && !state.upgradeMenu.active);
+}
+
 constexpr float FLOWER_BOB_HEIGHT = 0.16f;
 constexpr float FLOWER_POWERUP_GROUND_Y = 0.38f;
 constexpr float FLOWER_DROP_SEPARATION_RADIUS = 1.15f;
@@ -1635,6 +1643,16 @@ void Game::updatePlayer(float dt) {
 
 void Game::updatePhoneTransform() {
     PhoneTransformState& transform = state_.phoneTransform;
+    if (localPhoneMenuPresentation(state_)) {
+        transform.orientation = quatAxisAngle({0,1,0}, state_.player.yaw);
+        transform.position = state_.player.pos;
+        transform.screenRight = normalized(rotate(transform.orientation, {1,0,0}));
+        transform.screenUp = normalized(rotate(transform.orientation, {0,1,0}));
+        transform.screenNormal = normalized(rotate(transform.orientation, {0,0,1}));
+        transform.screenCenter = transform.position + transform.screenNormal * PHONE_SCREEN_Z_OFFSET;
+        transform.vacuumPullPoint = transform.screenCenter;
+        return;
+    }
     const Vec3 forward{-std::sin(state_.player.yaw), 0.0f, -std::cos(state_.player.yaw)};
     const Vec3 right{std::cos(state_.player.yaw), 0.0f, -std::sin(state_.player.yaw)};
     transform.orientation = state_.player.downed?quatNormalized(quatAxisAngle({0,1,0},state_.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatNormalized(
@@ -1938,17 +1956,22 @@ void Game::updateCamera(float dt) {
         camera.forward = normalized(camera.lookTarget-camera.pos);
         return;
     }
-    if (((!state_.started && !state_.dead) || state_.cinematic.introActive || state_.uiPaused) && !state_.multiplayer.enabled && !state_.upgradeMenu.active) {
+    if (localPhoneMenuPresentation(state_)) {
         const PhoneTransformState& phone = state_.phoneTransform;
-        Vec3 desired = phone.screenCenter + phone.screenNormal * 0.27f + phone.screenUp * 0.020f;
-        Vec3 desiredTarget = phone.screenCenter - phone.screenUp * 0.018f;
+        camera.firstPerson = false;
+        const float fovRadians = MENU_CAMERA_VERTICAL_FOV * DB_PI / 180.0f;
+        const float menuDistance = PHONE_BODY_HEIGHT / (2.0f * MENU_PHONE_VIEWPORT_HEIGHT * std::tan(fovRadians * 0.5f));
+        Vec3 desiredTarget = phone.position;
+        Vec3 desired = desiredTarget + phone.screenNormal * menuDistance;
         if (dt > 0.0f) {
-            const float response = 1.0f - std::exp(-10.0f * dt);
+            const float response = 1.0f - std::exp(-12.0f * dt);
             camera.pos += (desired - camera.pos) * response;
             camera.lookTarget += (desiredTarget - camera.lookTarget) * response;
+            camera.verticalFovDegrees += (MENU_CAMERA_VERTICAL_FOV - camera.verticalFovDegrees) * response;
         } else {
             camera.pos = desired;
             camera.lookTarget = desiredTarget;
+            camera.verticalFovDegrees = MENU_CAMERA_VERTICAL_FOV;
         }
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
