@@ -25,6 +25,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   TargetLifecycleTest \
   GameplayStateContractsTest \
   PhoneBodyContractTest \
+  PhoneMenuLayoutTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
   --parallel
