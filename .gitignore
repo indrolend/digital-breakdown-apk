@@ -61,3 +61,9 @@ android/app/src/test/
 android/app/src/main/assets/
 android/app/src/main/res/xml/config.xml
 android/capacitor-cordova-android-plugins/
+native-android/app/.cxx/
+multiplayer-server/.wrangler/
+multiplayer-server/node_modules/
+multiplayer-server/dist/
+multiplayer-server/coverage/
+multiplayer-server/.mf/

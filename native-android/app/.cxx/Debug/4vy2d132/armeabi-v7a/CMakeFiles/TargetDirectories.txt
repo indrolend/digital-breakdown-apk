@@ -1,3 +1,0 @@
-/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/armeabi-v7a/CMakeFiles/digitalbreakdown.dir
-/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/armeabi-v7a/CMakeFiles/edit_cache.dir
-/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/armeabi-v7a/CMakeFiles/rebuild_cache.dir
