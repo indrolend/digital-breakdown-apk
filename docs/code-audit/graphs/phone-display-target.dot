@@ -1,0 +1,13 @@
+digraph phone_display_target {
+  rankdir=LR;
+  node [shape=box];
+
+  "Game.cpp" -> "PhoneDisplayState";
+  "PhoneMenuModel.hpp" -> "PhoneDisplayLayout.hpp";
+  "PhoneDisplayLayout.hpp" -> "PhoneDisplayComposer";
+  "PhoneDisplayLayout.hpp" -> "main.cpp";
+  "PhoneDisplayComposer" -> "DesktopRenderer.cpp" [label="texture pixels"];
+  "PhoneBodyContract" -> "DesktopRenderer.cpp" [label="derived screen plane"];
+  "drawHud()" -> "authoritative gameplay HUD";
+  "drawSecretTvScreen()" -> "secret-room TV";
+}

@@ -1,0 +1,17 @@
+digraph state_flow {
+  rankdir=TB;
+  node [shape=box];
+
+  "GameState" -> "Gameplay simulation";
+  "GameState" -> "HUD fields";
+  "GameState" -> "PhoneDisplayState";
+  "GameState" -> "PhoneTransformState";
+
+  "HUD fields" -> "drawHud()" [label="readable gameplay authority"];
+  "PhoneDisplayState" -> "renderPhoneDisplayPixels()" [label="phone-native state"];
+  "PhoneMenuModel" -> "PhoneDisplayLayout" [label="semantic rows"];
+  "PhoneDisplayLayout" -> "renderPhoneDisplayPixels()" [label="visual rows"];
+  "PhoneDisplayLayout" -> "phoneMenuItemAt()" [label="hit rows"];
+  "PhoneTransformState" -> "phoneMenuItemAt()" [label="raycast plane"];
+  "PhoneTransformState" -> "phone textured quad";
+}

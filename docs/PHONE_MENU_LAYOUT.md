@@ -1,8 +1,10 @@
 # Phone Menu Layout
 
-The phone-bound menus use `PhoneMenuLayout.hpp` as their shared geometry source.
+The phone-bound menus use `PhoneMenuModel.hpp` for semantic rows and
+`PhoneDisplayLayout.hpp` as their shared physical phone-screen geometry source.
 The desktop renderer and pointer hit-testing both consume the same calculated
-rows so visual selection rectangles and clickable regions cannot drift apart.
+display rows so visual selection markers and clickable regions cannot drift
+apart.
 
 The visible phone screen is divided into an inner safe rectangle, a title/header
 zone, a content zone, and a footer zone. Current proportions are:
@@ -27,3 +29,7 @@ Controls rows carry semantic actions such as `Rebind`, `NextControls`,
 `AdjustMouse`, and `Defaults`. Keyboard, gamepad, and mouse activation read those
 semantic actions instead of assuming that a visual row number maps to a fixed
 global control.
+
+Audit note: the older `PhoneMenuLayout.hpp` parallel geometry path was removed in
+the 2026-07-25 phone-display audit. See `docs/code-audit/` for the current
+authority graph and pruning record.

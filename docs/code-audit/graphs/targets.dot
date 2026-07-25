@@ -1,0 +1,24 @@
+digraph targets {
+  rankdir=LR;
+  node [shape=box];
+
+  DigitalBreakdown -> "main.cpp";
+  DigitalBreakdown -> "DesktopRenderer.cpp";
+  DigitalBreakdown -> "DesktopAudio.cpp";
+  DigitalBreakdown -> "DesktopMultiplayer.cpp";
+  DigitalBreakdown -> "Game.cpp";
+  DigitalBreakdown -> "MultiplayerProtocol.cpp";
+  DigitalBreakdown -> GLFW;
+  DigitalBreakdown -> OpenGL;
+  DigitalBreakdown -> miniaudio;
+  DigitalBreakdown -> IXWebSocket [label="macOS"];
+
+  Pass7ParityTest -> "game_pass7_parity_smoke.cpp";
+  Pass7ParityTest -> "Game.cpp";
+  MultiplayerProtocolTest -> "multiplayer_protocol_test.cpp";
+  MultiplayerProtocolTest -> "MultiplayerProtocol.cpp";
+  PhoneDisplayStateTest -> "phone_display_state_test.cpp";
+  PhoneDisplayStateTest -> "Game.cpp";
+  PhoneMenuLayoutTest -> "phone_menu_layout_test.cpp";
+  PhoneMenuLayoutTest -> "PhoneDisplayLayout.hpp";
+}

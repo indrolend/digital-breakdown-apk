@@ -99,8 +99,8 @@ int main() {
     PhoneDisplayMenuLayout controlsTwo = makePhoneDisplayMenuLayout(menu);
     expectLayoutInside(controlsTwo);
     assert(controlsTwo.title == "Controls 2/2");
-    assert(controlsTwo.selectableCount == 10);
-    assert(controlsTwo.rowCount == 12);
+    assert(controlsTwo.selectableCount == 9);
+    assert(controlsTwo.rowCount == 11);
     assert(controlsTwo.rows[0].kind == PhoneMenuRowKind::Section);
     assert(controlsTwo.rows[5].kind == PhoneMenuRowKind::Section);
     assert(!controlsTwo.rows[0].selectable && !controlsTwo.rows[5].selectable);

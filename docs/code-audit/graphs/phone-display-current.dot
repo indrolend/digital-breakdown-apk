@@ -1,0 +1,15 @@
+digraph phone_display_current {
+  rankdir=LR;
+  node [shape=box];
+
+  "Game.cpp" -> "PhoneDisplayState";
+  "PhoneMenuModel.hpp" -> "PhoneDisplayLayout.hpp" [label="semantic rows"];
+  "PhoneDisplayLayout.hpp" -> "main.cpp" [label="hit rows"];
+  "PhoneDisplayLayout.hpp" -> "DesktopRenderer.cpp" [label="draw rows"];
+  "DesktopRenderer.cpp" -> "CPU phone texture";
+  "CPU phone texture" -> "OpenGL phone quad";
+  "PhoneTransformState" -> "main.cpp" [label="ray-plane hit"];
+  "PhoneTransformState" -> "DesktopRenderer.cpp" [label="screen placement"];
+  "drawHud()" -> "authoritative gameplay HUD";
+  "drawSecretTvScreen()" -> "secret-room TV";
+}

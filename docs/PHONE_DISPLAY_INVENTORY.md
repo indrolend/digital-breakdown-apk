@@ -1,5 +1,10 @@
 # Phone Display Inventory
 
+Current-status note, 2026-07-25: this file records the original migration
+inventory and includes now-historical references to the removed world-space menu
+renderer and `PhoneMenuLayout.hpp`. The current authority graph and pruning
+record live in `docs/code-audit/`.
+
 This document is the audit checkpoint for the persistent phone display work. It
 records the current browser contract, native implementation, duplicated paths,
 and migration targets before structural renderer edits.

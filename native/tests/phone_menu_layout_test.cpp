@@ -2,35 +2,49 @@
 #include <cmath>
 
 #include "Game.hpp"
-#include "PhoneMenuLayout.hpp"
+#include "PhoneDisplayLayout.hpp"
 
 namespace {
 
-void expectRowsInsideSafe(const PhoneMenuLayout& layout) {
-    const float safeLeft = layout.safe.x - layout.safe.w * 0.5f;
-    const float safeRight = layout.safe.x + layout.safe.w * 0.5f;
-    const float safeBottom = layout.safe.y - layout.safe.h * 0.5f;
-    const float safeTop = layout.safe.y + layout.safe.h * 0.5f;
+void expectRectInside(const PhoneDisplayRect& outer, const PhoneDisplayRect& inner) {
+    constexpr float epsilon = 0.001f;
+    assert(inner.x + epsilon >= outer.x);
+    assert(inner.y + epsilon >= outer.y);
+    assert(inner.x + inner.w <= outer.x + outer.w + epsilon);
+    assert(inner.y + inner.h <= outer.y + outer.h + epsilon);
+}
+
+void expectRowsInsideSafe(const PhoneDisplayMenuLayout& layout) {
+    assert(layout.logicalW == PhoneDisplayState::LogicalWidth);
+    assert(layout.logicalH == PhoneDisplayState::LogicalHeight);
+    assert(layout.safe.x > 0.0f);
+    assert(layout.safe.y > 0.0f);
+    assert(layout.safe.x + layout.safe.w < static_cast<float>(layout.logicalW));
+    assert(layout.safe.y + layout.safe.h < static_cast<float>(layout.logicalH));
     for (int i = 0; i < layout.rowCount; ++i) {
-        const PhoneMenuRow& row = layout.rows[i];
-        const float left = row.visual.x - row.visual.w * 0.5f;
-        const float right = row.visual.x + row.visual.w * 0.5f;
-        const float bottom = row.visual.y - row.visual.h * 0.5f;
-        const float top = row.visual.y + row.visual.h * 0.5f;
-        assert(left >= safeLeft - 0.00001f);
-        assert(right <= safeRight + 0.00001f);
-        assert(bottom >= safeBottom - 0.00001f);
-        assert(top <= safeTop + 0.00001f);
+        const PhoneDisplayMenuRow& row = layout.rows[i];
+        expectRectInside(layout.safe, row.visual);
+        assert(std::isfinite(row.baselineY));
+        assert(row.baselineY >= layout.safe.y);
+        assert(row.baselineY <= layout.safe.y + layout.safe.h);
         if (row.kind == PhoneMenuRowKind::Section) {
             assert(!row.selectable);
             assert(row.selectableIndex < 0);
+            assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
+        } else {
+            assert(row.selectable);
+            assert(row.selectableIndex >= 0);
+            expectRectInside(layout.safe, row.hit);
         }
     }
 }
 
-const PhoneMenuRow& selectionRow(const PhoneMenuLayout& layout, int selection) {
-    const PhoneMenuRow* row = phoneMenuRowForSelection(layout, selection);
+const PhoneDisplayMenuRow& selectionRow(const PhoneDisplayMenuLayout& layout, int selection) {
+    const PhoneDisplayMenuRow* row = phoneDisplayRowForSelection(layout, selection);
     assert(row);
+    const float cx = row->hit.x + row->hit.w * 0.5f;
+    const float cy = row->hit.y + row->hit.h * 0.5f;
+    assert(phoneDisplayItemAt(layout, cx, cy) == selection);
     return *row;
 }
 
@@ -55,9 +69,10 @@ int main() {
     assert(selectionElement(mainModel, 1).action == PhoneMenuAction::Online);
     assert(selectionElement(mainModel, 2).action == PhoneMenuAction::Settings);
     assert(selectionElement(mainModel, 3).action == PhoneMenuAction::Exit);
-    PhoneMenuLayout main = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout main = makePhoneDisplayMenuLayout(state);
     assert(main.selectableCount == 4);
     expectRowsInsideSafe(main);
+    assert(selectionRow(main, 0).action == PhoneMenuAction::Solo);
 
     state.started = true;
     state.uiPaused = true;
@@ -68,7 +83,7 @@ int main() {
     assert(pauseModel.selectableCount == 5);
     assert(selectionElement(pauseModel, 0).action == PhoneMenuAction::Resume);
     assert(selectionElement(pauseModel, 4).action == PhoneMenuAction::ExitRun);
-    PhoneMenuLayout pause = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout pause = makePhoneDisplayMenuLayout(state);
     assert(pause.selectableCount == 5);
     expectRowsInsideSafe(pause);
 
@@ -79,9 +94,10 @@ int main() {
     assert(controlsOneModel.selectableCount == 8);
     assert(controlsOneModel.elements[0].kind == PhoneMenuRowKind::Section);
     assert(!controlsOneModel.elements[0].selectable);
-    PhoneMenuLayout controlsOne = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout controlsOne = makePhoneDisplayMenuLayout(state);
     assert(controlsOne.title == "Controls 1/2");
     assert(controlsOne.selectableCount == 8);
+    assert(controlsOne.rowCount == 9);
     assert(selectionRow(controlsOne, 0).action == PhoneMenuAction::Rebind);
     assert(selectionRow(controlsOne, 0).bindingAction == 0);
     assert(selectionRow(controlsOne, 5).bindingAction == 5);
@@ -93,11 +109,15 @@ int main() {
     PhoneMenuPageViewModel controlsTwoModel = makePhoneMenuPageModel(state);
     assert(controlsTwoModel.tablePage);
     assert(controlsTwoModel.selectableCount == 9);
+    assert(selectionElement(controlsTwoModel, 5).action == PhoneMenuAction::AdjustController);
     assert(selectionElement(controlsTwoModel, 6).action == PhoneMenuAction::PreviousControls);
     assert(selectionElement(controlsTwoModel, 7).action == PhoneMenuAction::Defaults);
-    PhoneMenuLayout controlsTwo = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout controlsTwo = makePhoneDisplayMenuLayout(state);
     assert(controlsTwo.title == "Controls 2/2");
     assert(controlsTwo.selectableCount == 9);
+    assert(controlsTwo.rowCount == 11);
+    assert(controlsTwo.rows[0].kind == PhoneMenuRowKind::Section);
+    assert(controlsTwo.rows[5].kind == PhoneMenuRowKind::Section);
     assert(selectionRow(controlsTwo, 0).bindingAction == 6);
     assert(selectionRow(controlsTwo, 3).bindingAction == 9);
     assert(selectionRow(controlsTwo, 4).action == PhoneMenuAction::AdjustMouse);
@@ -112,7 +132,7 @@ int main() {
     assert(audioModel.tablePage);
     assert(selectionElement(audioModel, 0).action == PhoneMenuAction::MusicVolume);
     assert(selectionElement(audioModel, 1).action == PhoneMenuAction::SfxVolume);
-    PhoneMenuLayout audio = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout audio = makePhoneDisplayMenuLayout(state);
     assert(audio.selectableCount == 5);
     expectRowsInsideSafe(audio);
 
@@ -120,7 +140,7 @@ int main() {
     PhoneMenuPageViewModel graphicsModel = makePhoneMenuPageModel(state);
     assert(graphicsModel.tablePage);
     assert(selectionElement(graphicsModel, 0).action == PhoneMenuAction::GraphicsPreset);
-    PhoneMenuLayout graphics = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout graphics = makePhoneDisplayMenuLayout(state);
     assert(graphics.selectableCount == 5);
     expectRowsInsideSafe(graphics);
 
@@ -128,7 +148,7 @@ int main() {
     PhoneMenuPageViewModel joinModel = makePhoneMenuPageModel(state);
     assert(joinModel.selectableCount == 0);
     assert(joinModel.joinCode);
-    PhoneMenuLayout join = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout join = makePhoneDisplayMenuLayout(state);
     assert(join.selectableCount == 0);
     assert(join.joinCode);
 
@@ -139,8 +159,9 @@ int main() {
     assert(deathModel.selectableCount == 1);
     assert(selectionElement(deathModel, 0).label == "Again?");
     assert(selectionElement(deathModel, 0).action == PhoneMenuAction::Restart);
-    PhoneMenuLayout death = makePhoneMenuLayout(state);
+    PhoneDisplayMenuLayout death = makePhoneDisplayMenuLayout(state);
     assert(death.selectableCount == 1);
+    assert(selectionRow(death, 0).action == PhoneMenuAction::Restart);
     expectRowsInsideSafe(death);
 
     return 0;
