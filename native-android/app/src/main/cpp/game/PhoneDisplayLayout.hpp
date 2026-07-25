@@ -22,16 +22,18 @@ struct PhoneDisplayMenuRow {
     std::string label;
     std::string value;
     PhoneDisplayRect visual;
+    PhoneDisplayRect contentVisual;
     PhoneDisplayRect hit;
     float labelX = 0.0f;
     float valueRightX = 0.0f;
     float baselineY = 0.0f;
     float fontPx = 34.0f;
     bool selectable = false;
+    bool visible = true;
 };
 
 struct PhoneDisplayMenuLayout {
-    static constexpr int MaxRows = 16;
+    static constexpr int MaxRows = 24;
     int logicalW = PhoneDisplayState::LogicalWidth;
     int logicalH = PhoneDisplayState::LogicalHeight;
     PhoneDisplayRect safe;
@@ -47,6 +49,10 @@ struct PhoneDisplayMenuLayout {
     bool paletteTitle = false;
     bool joinCode = false;
     bool tablePage = false;
+    float scrollOffset = 0.0f;
+    float maxScroll = 0.0f;
+    float contentHeight = 0.0f;
+    float rowHeight = 0.0f;
 };
 
 inline void addPhoneDisplayRow(PhoneDisplayMenuLayout& layout, PhoneDisplayMenuRow row) {
@@ -66,8 +72,8 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
     const float w = static_cast<float>(layout.logicalW);
     const float h = static_cast<float>(layout.logicalH);
     const float marginX = w * 0.12f;
-    const float marginTop = h * 0.10f;
-    const float marginBottom = h * 0.10f;
+    const float marginTop = h * 0.12f;
+    const float marginBottom = h * 0.16f;
     layout.safe = {marginX, marginTop, w - marginX * 2.0f, h - marginTop - marginBottom};
     const float headerH = h * 0.16f;
     const float footerH = h * 0.12f;
@@ -75,7 +81,8 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
     layout.footer = {layout.safe.x, layout.safe.y + layout.safe.h - footerH, layout.safe.w, footerH};
     layout.content = {layout.safe.x, layout.safe.y + headerH, layout.safe.w, layout.safe.h - headerH - footerH};
     layout.titleCenterY = layout.header.y + layout.header.h * 0.50f;
-    layout.titlePx = page.paletteTitle ? 62.0f : 48.0f;
+    layout.titlePx = page.paletteTitle ? 74.0f : 56.0f;
+    layout.scrollOffset = std::max(0.0f, state.localSettings.menuScroll);
 
     for (int i = 0; i < page.elementCount; ++i) {
         const PhoneMenuElement& element = page.elements[i];
@@ -86,35 +93,34 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
         row.label = element.label;
         row.value = element.value;
         row.selectable = element.selectable;
-        row.fontPx = element.kind == PhoneMenuRowKind::Section ? 25.0f : (page.tablePage ? 34.0f : 42.0f);
+        row.fontPx = element.kind == PhoneMenuRowKind::Section ? 32.0f : (page.tablePage ? 43.0f : 52.0f);
         addPhoneDisplayRow(layout, row);
     }
 
     if (layout.rowCount <= 0) return layout;
-    const float rowH = page.tablePage ? 58.0f : 72.0f;
-    const float preferredStep = page.tablePage ? 62.0f : 86.0f;
-    const float usableStep = layout.rowCount > 1
-        ? std::min(preferredStep, (layout.content.h - rowH) / static_cast<float>(layout.rowCount - 1))
-        : preferredStep;
-    const float usedH = usableStep * static_cast<float>(layout.rowCount - 1) + rowH;
-    const float firstCenterY = layout.content.y + (layout.content.h - usedH) * 0.5f + rowH * 0.5f;
+    const float rowH = page.tablePage ? 72.0f : 86.0f;
+    const float preferredStep = page.tablePage ? 78.0f : 96.0f;
+    layout.rowHeight = rowH;
+    const float usedH = preferredStep * static_cast<float>(layout.rowCount - 1) + rowH;
+    layout.contentHeight = usedH;
+    layout.maxScroll = std::max(0.0f, usedH - layout.content.h);
+    layout.scrollOffset = std::min(layout.scrollOffset, layout.maxScroll);
+    const float firstContentCenterY = rowH * 0.5f;
+    const float shortPageOffset = layout.maxScroll <= 0.0f ? (layout.content.h - usedH) * 0.5f : 0.0f;
     for (int i = 0; i < layout.rowCount; ++i) {
         PhoneDisplayMenuRow& row = layout.rows[i];
-        const float cy = firstCenterY + static_cast<float>(i) * usableStep;
+        const float contentCy = firstContentCenterY + static_cast<float>(i) * preferredStep;
+        const float cy = layout.content.y + shortPageOffset + contentCy - layout.scrollOffset;
+        row.contentVisual = {layout.safe.x, contentCy - rowH * 0.5f, layout.safe.w, rowH};
         row.visual = {layout.safe.x, cy - rowH * 0.5f, layout.safe.w, rowH};
-        row.hit = row.selectable ? row.visual : PhoneDisplayRect{};
+        row.visible = row.visual.y >= layout.content.y && row.visual.y + row.visual.h <= layout.content.y + layout.content.h;
+        row.hit = row.selectable && row.visible ? row.visual : PhoneDisplayRect{};
         row.baselineY = cy + row.fontPx * 0.34f;
-        row.labelX = page.tablePage ? layout.safe.x + layout.safe.w * 0.06f : layout.safe.x + layout.safe.w * 0.38f;
-        row.valueRightX = layout.safe.x + layout.safe.w * 0.94f;
+        row.labelX = page.tablePage ? layout.safe.x + layout.safe.w * 0.08f : layout.safe.x + layout.safe.w * 0.38f;
+        row.valueRightX = layout.safe.x + layout.safe.w * 0.92f;
         if (row.kind == PhoneMenuRowKind::Section) {
-            row.labelX = layout.safe.x + layout.safe.w * 0.06f;
+            row.labelX = layout.safe.x + layout.safe.w * 0.08f;
             row.hit = {};
-        }
-        if (state.dead && row.action == PhoneMenuAction::Restart) {
-            row.labelX = layout.logicalW * 0.5f;
-            row.visual = {layout.safe.x, layout.logicalH * 0.5f - rowH * 0.5f, layout.safe.w, rowH};
-            row.hit = row.visual;
-            row.baselineY = layout.logicalH * 0.5f + row.fontPx * 0.34f;
         }
     }
     return layout;
@@ -125,6 +131,18 @@ inline const PhoneDisplayMenuRow* phoneDisplayRowForSelection(const PhoneDisplay
         if (layout.rows[i].selectable && layout.rows[i].selectableIndex == selection) return &layout.rows[i];
     }
     return nullptr;
+}
+
+inline float phoneDisplayScrollForSelection(const PhoneDisplayMenuLayout& layout, int selection) {
+    const PhoneDisplayMenuRow* row = phoneDisplayRowForSelection(layout, selection);
+    if (!row) return layout.scrollOffset;
+    float next = layout.scrollOffset;
+    const float rowTop = row->contentVisual.y;
+    const float rowBottom = row->contentVisual.y + row->contentVisual.h;
+    const float margin = layout.rowHeight * 0.30f;
+    if (rowTop < next + margin) next = rowTop - margin;
+    if (rowBottom > next + layout.content.h - margin) next = rowBottom - layout.content.h + margin;
+    return std::max(0.0f, std::min(layout.maxScroll, next));
 }
 
 inline int phoneDisplayItemAt(const PhoneDisplayMenuLayout& layout, float x, float y) {

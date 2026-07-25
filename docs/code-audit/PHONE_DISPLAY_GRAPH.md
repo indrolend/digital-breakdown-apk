@@ -46,10 +46,32 @@ Shared constants are:
 
 The `0.023` textured-quad lift was much larger than the fallback screen depth and
 made the display read as a floating rectangle in front of the model. This pass
-replaced it with `PHONE_SCREEN_DEPTH * 0.75`, which keeps the textured display
+replaced it with `PHONE_SCREEN_DEPTH * 0.52`, which keeps the textured display
 just in front of the physical screen box while staying tied to the shared phone
 screen contract. A future loaded-model material registration pass can still
 replace the fallback screen box entirely when named screen materials are exposed.
+
+## Menu And Death Presentation
+
+- Menu camera framing targets roughly 80% viewport height for the phone body.
+- Menus use a stable menu camera and neutral phone pose.
+- Menu states suppress gameplay shadows and keep only a quiet phone shadow.
+- The run-death state no longer uses `PhoneDisplayMode::Death` as an interactive
+  phone menu. The phone display resolves to `Off`, while `Again?` / `Quit`
+  render in the desktop HUD layer with their own matching hit rectangles.
+
+## Reference Repos Inspected
+
+The pass inspected the local SPA references for navigation structure only:
+
+- `/Users/joelgutierrez/basicbrowserslim/js/spa/navModel.js`
+- `/Users/joelgutierrez/basicbrowserslim/js/spa/appKernel.js`
+- `/Users/joelgutierrez/basic-browser-spa/js/spa/router.js`
+- `/Users/joelgutierrez/basic-browser-spa/js/spa/routes.js`
+- `/Users/joelgutierrez/basic-browser-spa/main.js`
+
+The useful pattern was a small route/item state with transitions separated from
+the selected route. No DOM rendering code was copied.
 
 ## TV Boundary
 

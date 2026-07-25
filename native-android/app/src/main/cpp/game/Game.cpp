@@ -61,7 +61,7 @@ constexpr float INTRO_CAMERA_DURATION = 1.15f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float MENU_EXIT_CAMERA_DURATION = 0.42f;
 constexpr float MENU_CAMERA_VERTICAL_FOV = 42.0f;
-constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.66f;
+constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.80f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
@@ -122,7 +122,7 @@ constexpr float FLOWER_DROP_CHANCE = 0.26f;
 constexpr float FLOWER_PICKUP_RADIUS = 1.05f;
 
 bool localPhoneMenuPresentation(const GameState& state) {
-    return (((!state.started && !state.dead) || state.dead || state.cinematic.introActive || state.uiPaused) &&
+    return (((!state.started && !state.dead) || state.cinematic.introActive || state.uiPaused) &&
         !state.multiplayer.enabled && !state.upgradeMenu.active);
 }
 
@@ -296,7 +296,7 @@ void syncSoulVisual(TargetState& target, float time) {
 }
 
 PhoneDisplayMode phoneDisplayModeForState(const GameState& state) {
-    if (state.dead) return PhoneDisplayMode::Death;
+    if (state.dead) return PhoneDisplayMode::Off;
     if (state.upgradeMenu.active) return PhoneDisplayMode::Upgrade;
     if (state.cinematic.introActive) return PhoneDisplayMode::Boot;
     if (state.started && state.uiPaused) return PhoneDisplayMode::Pause;
@@ -331,6 +331,8 @@ void Game::reset() {
     state_.progression.permanent=permanent;
     state_.localSettings=localSettings;
     state_.localSettings.menuPage=LocalMenuPage::Main;
+    state_.localSettings.menuScroll=0.0f;
+    state_.localSettings.menuHistoryDepth=0;
     state_.localSettings.rebindingAction=-1;
     state_.localSettings.pendingBinding=-1;
     state_.localSettings.conflictingAction=-1;
@@ -349,6 +351,7 @@ void Game::restart() {
     state_.cinematic.introElapsed = 0.0f;
     state_.cinematic.baseYaw = state_.camera.yaw;
     state_.cinematic.textInteraction = 1.0f;
+    state_.cinematic.restartAwaken = 1.0f;
     updatePhoneDisplay(0.0f);
 }
 
@@ -765,6 +768,8 @@ void Game::triggerRunDeath() {
     state_.cinematic.introActive=false;
     state_.cinematic.deathActive=true;
     state_.cinematic.deathElapsed=0.0f;
+    state_.cinematic.overlayFade=0.0f;
+    state_.cinematic.deathChoice=0;
     state_.cinematic.textInteraction=1.0f;
     state_.cinematic.baseYaw=state_.camera.yaw;
     state_.cinematic.startCameraPos=state_.camera.pos;
@@ -983,12 +988,14 @@ void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
+    state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
+    state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
     updatePhoneDisplay(dt);
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
         updatePhoneTransform();
-        updateCamera(dt);
+        updateDeathCamera(dt);
         updateParticles(dt*DEATH_PRESENTATION_SCALE);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
@@ -1038,6 +1045,7 @@ void Game::update(float dt) {
         return;
     }
     state_.hud.headshotPulse=std::max(0.0f,state_.hud.headshotPulse-dt*5.5f);
+    state_.hud.criticalHitPulse=std::max(0.0f,state_.hud.criticalHitPulse-dt*4.8f);
     state_.hud.perfectPulse=std::max(0.0f,state_.hud.perfectPulse-dt*3.8f);
     state_.hud.headshotKillCharge=std::max(0.0f,state_.hud.headshotKillCharge-dt*1.7f);
     updateBuildLabel();
@@ -1731,13 +1739,13 @@ void Game::updatePhoneDisplay(float dt) {
         display.mode == PhoneDisplayMode::Online || display.mode == PhoneDisplayMode::JoinCode ||
         display.mode == PhoneDisplayMode::Settings || display.mode == PhoneDisplayMode::Controls ||
         display.mode == PhoneDisplayMode::Audio || display.mode == PhoneDisplayMode::Graphics ||
-        display.mode == PhoneDisplayMode::Pause || display.mode == PhoneDisplayMode::Death;
+        display.mode == PhoneDisplayMode::Pause;
+    const bool displayOff = display.mode == PhoneDisplayMode::Off || display.mode == PhoneDisplayMode::Death;
     const float vacuum = finiteClamped(state_.vacuum.power, 0.0f, 1.0f);
     const float discharge = finiteClamped(state_.energy.dischargePositionAmount, 0.0f, 1.0f);
     const float battery = finiteClamped(state_.player.battery / 100.0f, 0.0f, 1.0f);
-    const float modeBase = menuMode ? 0.66f : 0.34f;
-    const float deathDim = display.mode == PhoneDisplayMode::Death ? 0.42f : 1.0f;
-    display.brightness = finiteClamped((modeBase + vacuum * 0.18f + discharge * 0.26f + battery * 0.08f) * deathDim, 0.0f, 1.0f);
+    const float modeBase = menuMode ? 0.66f : (displayOff ? 0.08f : 0.34f);
+    display.brightness = finiteClamped(modeBase + vacuum * 0.18f + discharge * 0.26f + battery * 0.08f, 0.0f, 1.0f);
     display.contentOpacity = finiteClamped(menuMode ? 1.0f : 0.38f + vacuum * 0.24f, 0.0f, 1.0f);
 
     const Vec3 baseCyan{0.07f, 0.19f, 0.29f};
@@ -1747,9 +1755,11 @@ void Game::updatePhoneDisplay(float dt) {
     Vec3 color = mix3(baseCyan, activeCyan, display.brightness);
     color = mix3(color, copper, finiteClamped(display.lowBatteryPulse, 0.0f, 1.0f) * 0.42f);
     color = mix3(color, white, finiteClamped(discharge + display.capturePulse, 0.0f, 1.0f) * 0.22f);
+    const Vec3 magenta{Pass7Visual::ElectricMagenta.r, Pass7Visual::ElectricMagenta.g, Pass7Visual::ElectricMagenta.b};
+    color = mix3(color, magenta, finiteClamped(state_.hud.criticalHitPulse, 0.0f, 1.0f) * 0.30f);
     display.screenTint = color;
     display.emissionColor = color;
-    display.emissionStrength = finiteClamped(display.brightness * 0.95f + vacuum * 0.22f + discharge * 0.55f, 0.0f, 2.4f);
+    display.emissionStrength = finiteClamped(display.brightness * 0.95f + vacuum * 0.22f + discharge * 0.55f + state_.hud.criticalHitPulse * 0.42f, 0.0f, 2.4f);
     display.localLightIntensity = finiteClamped(display.emissionStrength * (menuMode ? 0.38f : 0.22f), 0.0f, 1.15f);
     display.localLightRadius = finiteClamped(0.16f + display.emissionStrength * 0.045f, 0.12f, 0.32f);
     display.glassResponse = finiteClamped(0.12f + display.brightness * 0.10f, 0.06f, 0.30f);
@@ -1770,7 +1780,7 @@ void Game::updatePhoneDisplay(float dt) {
     display.lighting.intensity = display.localLightIntensity;
     display.lighting.radius = display.localLightRadius;
     display.lighting.forwardOffset = 0.024f;
-    display.lighting.pulse = finiteClamped(display.damagePulse + display.capturePulse + display.powerPulse + display.lowBatteryPulse, 0.0f, 1.0f);
+    display.lighting.pulse = finiteClamped(display.damagePulse + display.capturePulse + display.powerPulse + display.lowBatteryPulse + state_.hud.criticalHitPulse, 0.0f, 1.0f);
 }
 
 void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis) {
@@ -2354,6 +2364,7 @@ void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, f
     std::snprintf(ticker,sizeof(ticker),perfect?"PERFECT HEADSHOT X%.2F":"HEADSHOT CHAIN X%.2F",run.accuracyMultiplier);
     setEnergyTicker(ticker,2);
     state_.hud.headshotPulse=1.0f;
+    if(critical)state_.hud.criticalHitPulse=1.0f;
     state_.hud.headshotKillCharge=clampf(std::max(state_.hud.headshotKillCharge,killCharge),0.0f,1.0f);
     if(perfect)state_.hud.perfectPulse=1.0f;
     spawnFlameBurst(position,1.35f);

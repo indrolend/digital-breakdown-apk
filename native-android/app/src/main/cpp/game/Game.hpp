@@ -156,6 +156,9 @@ struct CinematicState {
     Vec3 startCameraPos;
     Vec3 menuExitCameraPos;
     Vec3 menuExitLookTarget;
+    float overlayFade = 0.0f;
+    float restartAwaken = 0.0f;
+    int deathChoice = 0;
 };
 
 struct VacuumState {
@@ -365,7 +368,14 @@ struct SecretTvState {
 
 enum class LocalMenuPage : unsigned char { Main, Online, JoinCode, Settings, Controls, Audio, Graphics };
 
+struct LocalMenuHistoryEntry {
+    LocalMenuPage page = LocalMenuPage::Main;
+    int selection = 0;
+    float scroll = 0.0f;
+};
+
 struct LocalSettingsState {
+    static constexpr int MenuHistoryCapacity = 8;
     LocalMenuPage menuPage = LocalMenuPage::Main;
     float musicVolume = 0.70f;
     float sfxVolume = 0.55f;
@@ -380,7 +390,9 @@ struct LocalSettingsState {
     float touchLookSensitivity = 1.0f;
     float controllerLookSensitivity = 1.0f;
     bool mobileFraming = false;
-    int controlsPage = 0;
+    float menuScroll = 0.0f;
+    std::array<LocalMenuHistoryEntry, MenuHistoryCapacity> menuHistory{};
+    int menuHistoryDepth = 0;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
     std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
@@ -488,6 +500,7 @@ struct HudState {
     float headshotPulse = 0.0f;
     float perfectPulse = 0.0f;
     float headshotKillCharge = 0.0f;
+    float criticalHitPulse = 0.0f;
     float critMarkerOpacity = 0.0f;
     std::array<char,32> buildLabel{};
     int menuSelection = 0;

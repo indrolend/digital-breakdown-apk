@@ -60,10 +60,15 @@ Renderer: current desktop implementation in `DesktopRenderer.cpp`
 
 Rules:
 
-- Menus, death restart, boot/title presentation, and phone-native ambience belong
-  on the phone display.
+- Menus, boot/title presentation, and phone-native ambience belong on the phone
+  display.
 - Active gameplay phone content may react to gameplay, but it should stay
   cosmetic or diegetic unless promoted deliberately into gameplay design.
+- Run-death restart presentation is owned by the desktop HUD layer because the
+  phone screen is intentionally dark/off after death.
+- Critical-hit feedback is a shared event pulse. It may tint the phone display,
+  phone light, target cue, and perimeter wash, but gameplay truth remains owned
+  by target/player combat state.
 
 ## Secret-Room TV
 

@@ -10,9 +10,9 @@ The visible phone screen is divided into an inner safe rectangle, a title/header
 zone, a content zone, and a footer zone. Current proportions are:
 
 - Horizontal safe margin: 11% of visible screen width on each side.
-- Top safe margin: 9.5% of visible screen height.
-- Bottom safe margin: 9.5% of visible screen height.
-- Header/title zone: 15% of visible screen height.
+- Top safe margin: 12% of visible screen height.
+- Bottom safe margin: 16% of visible screen height.
+- Header/title zone: 16% of visible screen height.
 - Footer zone: 12% of visible screen height.
 
 Menus render directly on the phone screen material instead of on an opaque panel.
@@ -21,14 +21,18 @@ Desktop menu text uses bundled Source Sans 3 Regular and Semibold through
 one vertical navigation column with a compact cyan selection marker and brighter
 selected text. Dense pages use the same safe rectangle, but request the denser
 row spacing token and aligned label/value columns. Controls is split into two
-pages so row scale stays legible and every row remains inside the safe area.
-Section labels are rows for drawing only; they do not receive selectable indices
-or hit regions.
+row spacing token and aligned label/value columns. Controls is one scrollable
+surface with grouped sections, so keyboard, mouse, and controller navigation all
+share a single selection model. Section labels are rows for drawing only; they
+do not receive selectable indices or hit regions.
 
-Controls rows carry semantic actions such as `Rebind`, `NextControls`,
-`AdjustMouse`, and `Defaults`. Keyboard, gamepad, and mouse activation read those
-semantic actions instead of assuming that a visual row number maps to a fixed
-global control.
+Controls rows carry semantic actions such as `Rebind`, `AdjustMouse`, and
+`Defaults`. Keyboard, gamepad, and mouse activation read those semantic actions
+instead of assuming that a visual row number maps to a fixed global control.
+
+The death/restart state is deliberately outside the phone display. When the run
+ends, the phone screen goes dark and the desktop HUD layer presents the centered
+`Again?` / `Quit` choices with matching pointer hit regions.
 
 Audit note: the older `PhoneMenuLayout.hpp` parallel geometry path was removed in
 the 2026-07-25 phone-display audit. See `docs/code-audit/` for the current

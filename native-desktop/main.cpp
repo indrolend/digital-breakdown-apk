@@ -154,6 +154,7 @@ int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,in
 
 int menuItemCount(const GameState& state) {
     if(state.upgradeMenu.active)return 6;
+    if(state.dead)return 2;
     if(soloPauseMenu(state))return makePhoneMenuPageModel(state).selectableCount;
     if(!state.started){
         return makePhoneMenuPageModel(state).selectableCount;
@@ -162,18 +163,38 @@ int menuItemCount(const GameState& state) {
     return 0;
 }
 
-void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;if(page==LocalMenuPage::Controls)state.localSettings.controlsPage=0;state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.36f;}
+int deathMenuItemAt(const GameState& state,float x,float y,float canvasW,float canvasH){
+    if(!state.dead)return -1;
+    const float cx=canvasW*0.5f,cy=canvasH*0.56f;
+    const auto rowAt=[&](const char* label,int index,float rowY,float scale)->int{
+        const float tw=static_cast<float>(std::strlen(label))*6.0f*scale;
+        const float padX=34.0f,padY=18.0f;
+        if(x>=cx-tw*0.5f-padX&&x<=cx+tw*0.5f+padX&&y>=rowY-padY&&y<=rowY+7.0f*scale+padY)return index;
+        return -1;
+    };
+    int hit=rowAt("Again?",0,cy,2.6f);
+    if(hit>=0)return hit;
+    return rowAt("Quit",1,cy+58.0f,1.55f);
+}
+
+void clearMenuHistory(LocalSettingsState& settings){settings.menuHistoryDepth=0;settings.menuScroll=0.0f;}
+void setMenuPageDirect(HostState& host,LocalMenuPage page,int selection=0,float scroll=0.0f){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;state.localSettings.menuScroll=std::max(0.0f,scroll);state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=std::max(0,selection);state.cinematic.textInteraction=0.36f;}
+void openMenuRoot(HostState& host,LocalMenuPage page=LocalMenuPage::Main){GameState& state=host.game.networkMutableState();clearMenuHistory(state.localSettings);setMenuPageDirect(host,page);}
+void pushMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;if(settings.menuHistoryDepth<LocalSettingsState::MenuHistoryCapacity){settings.menuHistory[settings.menuHistoryDepth++]={settings.menuPage,state.hud.menuSelection,settings.menuScroll};}else{for(int i=1;i<LocalSettingsState::MenuHistoryCapacity;++i)settings.menuHistory[i-1]=settings.menuHistory[i];settings.menuHistory[LocalSettingsState::MenuHistoryCapacity-1]={settings.menuPage,state.hud.menuSelection,settings.menuScroll};}setMenuPageDirect(host,page);}
+bool popMenuPage(HostState& host){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;if(settings.menuHistoryDepth<=0)return false;const LocalMenuHistoryEntry entry=settings.menuHistory[--settings.menuHistoryDepth];setMenuPageDirect(host,entry.page,entry.selection,entry.scroll);return true;}
 
 PhoneMenuElement selectedPhoneElement(const GameState& state){const PhoneMenuPageViewModel page=makePhoneMenuPageModel(state);const PhoneMenuElement* element=phoneMenuElementForSelection(page,state.hud.menuSelection);return element?*element:PhoneMenuElement{};}
 PhoneMenuAction selectedPhoneAction(const GameState& state){return selectedPhoneElement(state).action;}
 
 bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneElement(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
+bool toggleMenuSetting(HostState& host){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;switch(selectedPhoneAction(state)){case PhoneMenuAction::MusicMute:settings.musicMuted=!settings.musicMuted;break;case PhoneMenuAction::SfxMute:settings.sfxMuted=!settings.sfxMuted;break;case PhoneMenuAction::ToggleShadows:settings.shadows=!settings.shadows;break;case PhoneMenuAction::ToggleParticles:settings.particles=!settings.particles;break;case PhoneMenuAction::ToggleFps:settings.fpsCounter=!settings.fpsCounter;break;default:return false;}state.cinematic.textInteraction=0.65f;return true;}
 
 void setMenuSelection(HostState& host,int selection) {
     const int count=menuItemCount(host.game.state());
     if(count<=0)return;
     GameState& state=host.game.networkMutableState();const int next=(selection%count+count)%count;
-    if(state.hud.menuSelection!=next){state.hud.menuSelection=next;state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);}
+    if(state.dead){state.hud.menuSelection=next;state.cinematic.deathChoice=next;state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);return;}
+    if(state.hud.menuSelection!=next){state.hud.menuSelection=next;const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);state.localSettings.menuScroll=phoneDisplayScrollForSelection(layout,next);state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);}
 }
 
 int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double windowY) {
@@ -192,6 +213,8 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
         if(y>=py+184&&y<=py+250)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return 3+column;}
         return -1;
     }
+    const int deathItem=deathMenuItemAt(state,x,y,canvasW,canvasH);
+    if(deathItem>=0)return deathItem;
     const int phoneItem=phoneMenuItemAt(state,framebufferX,framebufferY,fw,fh);
     if(phoneItem>=0)return phoneItem;
     if(!state.started||soloPauseMenu(state))return -1;
@@ -207,25 +230,42 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         if(!host.game.state().upgradeMenu.active)setMouseCaptured(window,host,true);
         return;
     }
+    if(state.dead){
+        if(selection==0){host.game.restart();setMouseCaptured(window,host,true);}
+        else {host.game.prepareStartScreen();setMouseCaptured(window,host,false);}
+        return;
+    }
     if(soloPauseMenu(state)){
         auto& settings=state.localSettings;
         const PhoneMenuElement row=selectedPhoneElement(state);
-        if(settings.menuPage==LocalMenuPage::Main){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Resume){setMouseCaptured(window,host,true);}else if(action==PhoneMenuAction::Controls)openMenuPage(host,LocalMenuPage::Controls);else if(action==PhoneMenuAction::Audio)openMenuPage(host,LocalMenuPage::Audio);else if(action==PhoneMenuAction::Graphics)openMenuPage(host,LocalMenuPage::Graphics);else if(action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);}}
-        else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Main);}
+        if(row.action==PhoneMenuAction::Resume){setMouseCaptured(window,host,true);}
+        else if(row.action==PhoneMenuAction::Controls)pushMenuPage(host,LocalMenuPage::Controls);
+        else if(row.action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
+        else if(row.action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
+        else if(row.action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);openMenuRoot(host);}
+        else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
+        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}
+        else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
     if(!state.started){
-        if(state.dead){host.game.restart();setMouseCaptured(window,host,true);return;}
         auto& settings=state.localSettings;
         const PhoneMenuElement row=selectedPhoneElement(state);
-        if(settings.menuPage==LocalMenuPage::Main){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Solo){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(action==PhoneMenuAction::Online)openMenuPage(host,LocalMenuPage::Online);else if(action==PhoneMenuAction::Settings)openMenuPage(host,LocalMenuPage::Settings);else if(action==PhoneMenuAction::Exit)glfwSetWindowShouldClose(window,GLFW_TRUE);}
-        else if(settings.menuPage==LocalMenuPage::Online){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Host){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(action==PhoneMenuAction::Join){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else if(action==PhoneMenuAction::Back)openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Settings){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Controls)openMenuPage(host,LocalMenuPage::Controls);else if(action==PhoneMenuAction::Audio)openMenuPage(host,LocalMenuPage::Audio);else if(action==PhoneMenuAction::Graphics)openMenuPage(host,LocalMenuPage::Graphics);else if(action==PhoneMenuAction::Back)openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Settings);}
-        else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Settings);}
-        else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Settings);}
+        const PhoneMenuAction action=selectedPhoneAction(state);
+        if(action==PhoneMenuAction::Solo){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}
+        else if(action==PhoneMenuAction::Online)pushMenuPage(host,LocalMenuPage::Online);
+        else if(action==PhoneMenuAction::Settings)pushMenuPage(host,LocalMenuPage::Settings);
+        else if(action==PhoneMenuAction::Exit)glfwSetWindowShouldClose(window,GLFW_TRUE);
+        else if(action==PhoneMenuAction::Host){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}
+        else if(action==PhoneMenuAction::Join){host.enteringJoinCode=true;host.joinCode.clear();pushMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}
+        else if(action==PhoneMenuAction::Controls)pushMenuPage(host,LocalMenuPage::Controls);
+        else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
+        else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
+        else if(action==PhoneMenuAction::Back)popMenuPage(host);
+        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}
+        else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
     if(state.uiPaused)setMouseCaptured(window,host,true);
@@ -233,16 +273,14 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
 
 void controllerMenuBack(GLFWwindow* window,HostState& host){
     const GameState& state=host.game.state();
+    if(state.dead){GameState& mutableState=host.game.networkMutableState();mutableState.hud.menuSelection=1;mutableState.cinematic.deathChoice=1;return;}
     if(soloPauseMenu(state)){
-        if(state.localSettings.menuPage==LocalMenuPage::Controls&&state.localSettings.controlsPage!=0){GameState& mutableState=host.game.networkMutableState();mutableState.localSettings.controlsPage=0;mutableState.hud.menuSelection=0;mutableState.cinematic.textInteraction=0.65f;return;}
-        if(state.localSettings.menuPage!=LocalMenuPage::Main){openMenuPage(host,LocalMenuPage::Main);return;}
+        if(state.localSettings.menuPage!=LocalMenuPage::Main){if(popMenuPage(host))return;}
         setMouseCaptured(window,host,true);return;
     }
     if(!state.started&&state.localSettings.menuPage!=LocalMenuPage::Main){
-        if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();openMenuPage(host,LocalMenuPage::Online);return;}
-        if(state.localSettings.menuPage==LocalMenuPage::Controls&&state.localSettings.controlsPage!=0){GameState& mutableState=host.game.networkMutableState();mutableState.localSettings.controlsPage=0;mutableState.hud.menuSelection=0;mutableState.cinematic.textInteraction=0.65f;return;}
-        const auto page=state.localSettings.menuPage;
-        openMenuPage(host,page==LocalMenuPage::Settings||page==LocalMenuPage::Online?LocalMenuPage::Main:LocalMenuPage::Settings);
+        if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();}
+        popMenuPage(host);
         return;
     }
     if(state.uiPaused){setMouseCaptured(window,host,true);return;}
@@ -321,7 +359,7 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
             const int delta=host.game.state().upgradeMenu.active?(menuDown?3:-3):(menuDown?1:-1);setMenuSelection(host,host.game.state().hud.menuSelection+delta);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
-            const int direction=menuRight?1:-1;if(!adjustMenuSetting(host,direction))setMenuSelection(host,host.game.state().hud.menuSelection+direction);
+            const int direction=menuRight?1:-1;if(!adjustMenuSetting(host,direction)&&menuRight)toggleMenuSetting(host);
         }
         if(pressed(GLFW_GAMEPAD_BUTTON_A))activateMenuSelection(window,host);
         if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
@@ -357,7 +395,7 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
     host.lookY = 0.0;
     glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     host.game.setUiPaused(!captured);
-    if(!captured&&host.game.state().started&&!host.game.state().multiplayer.enabled&&!wasPaused)openMenuPage(host,LocalMenuPage::Main);
+    if(!captured&&host.game.state().started&&!host.game.state().multiplayer.enabled&&!wasPaused)openMenuRoot(host,LocalMenuPage::Main);
     if (captured) {
         glfwGetCursorPos(window, &host.lastMouseX, &host.lastMouseY);
         host.haveMouse = true;
@@ -374,20 +412,20 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
-        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){const auto page=host->game.state().localSettings.menuPage;openMenuPage(*host,page==LocalMenuPage::Settings||page==LocalMenuPage::Online?LocalMenuPage::Main:LocalMenuPage::Settings);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
         const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
         const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
         if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
-        if((left||right)&&!host->game.state().started&&adjustMenuSetting(*host,right?1:-1))return;
-        if(left||up){setMenuSelection(*host,host->game.state().hud.menuSelection-1);return;}
-        if(right||down){setMenuSelection(*host,host->game.state().hud.menuSelection+1);return;}
+        if((left||right)){if(!adjustMenuSetting(*host,right?1:-1)&&right)toggleMenuSetting(*host);return;}
+        if(up){setMenuSelection(*host,host->game.state().hud.menuSelection-1);return;}
+        if(down){setMenuSelection(*host,host->game.state().hud.menuSelection+1);return;}
         if(key==GLFW_KEY_ENTER||key==GLFW_KEY_SPACE||key==GLFW_KEY_F){activateMenuSelection(window,*host);return;}
         if(host->game.state().upgradeMenu.active&&key>=GLFW_KEY_1&&key<=GLFW_KEY_6){setMenuSelection(*host,key-GLFW_KEY_1);activateMenuSelection(window,*host);}
         return;
     }
 
     if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
-        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();openMenuPage(*host,LocalMenuPage::Online);return;}
+        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();popMenuPage(*host);return;}
         if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}
         if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;return;}
         if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){host->joinCode.push_back(static_cast<char>(key));host->game.setNetworkRoom(host->joinCode.c_str(),"ENTER CODE",false);if(host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;}return;}
@@ -777,13 +815,14 @@ int main(int argc, char** argv) {
         if(page&&std::strcmp(page,"pause")==0){host.game.restart();host.game.setUiPaused(true);}
         else if(page&&std::strcmp(page,"online")==0)fixture.localSettings.menuPage=LocalMenuPage::Online;
         else if(page&&std::strcmp(page,"settings")==0)fixture.localSettings.menuPage=LocalMenuPage::Settings;
-        else if(page&&std::strcmp(page,"controls2")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.controlsPage=1;}
-        else if(page&&std::strcmp(page,"controls1")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.controlsPage=0;}
+        else if(page&&std::strcmp(page,"controls-bottom")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.hud.menuSelection=13;fixture.localSettings.menuScroll=999.0f;}
+        else if(page&&std::strcmp(page,"controls-middle")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.hud.menuSelection=7;fixture.localSettings.menuScroll=360.0f;}
+        else if(page&&std::strncmp(page,"controls",8)==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.menuScroll=0.0f;}
         else if(page&&std::strcmp(page,"audio")==0)fixture.localSettings.menuPage=LocalMenuPage::Audio;
         else if(page&&std::strcmp(page,"graphics")==0)fixture.localSettings.menuPage=LocalMenuPage::Graphics;
         else if(page&&std::strcmp(page,"death")==0){fixture.dead=true;fixture.started=false;fixture.player.alive=false;fixture.player.battery=0.0f;}
         else fixture.localSettings.menuPage=LocalMenuPage::Main;
-        fixture.hud.menuSelection=0;
+        if(!(page&&std::strcmp(page,"controls-bottom")==0)&&!(page&&std::strcmp(page,"controls-middle")==0))fixture.hud.menuSelection=0;
     }
     if(tvRoomTest||tvRoomEnter){
         host.game.debugStartSecretTvTest(tvRoomEnter);

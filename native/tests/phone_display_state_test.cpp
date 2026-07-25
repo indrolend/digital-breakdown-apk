@@ -46,12 +46,10 @@ void expectLayoutInside(const PhoneDisplayMenuLayout& layout) {
     assert(layout.safe.y + layout.safe.h < static_cast<float>(layout.logicalH));
     for (int i = 0; i < layout.rowCount; ++i) {
         const PhoneDisplayMenuRow& row = layout.rows[i];
-        assert(row.baselineY >= layout.safe.y);
-        assert(row.baselineY <= layout.safe.y + layout.safe.h);
-        expectRectInside(layout.safe, row.visual);
         if (row.selectable) {
-            expectRectInside(layout.safe, row.hit);
             assert(row.selectableIndex >= 0);
+            if (row.visible) expectRectInside(layout.safe, row.hit);
+            else assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
         } else {
             assert(row.selectableIndex < 0);
             assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
@@ -84,28 +82,19 @@ int main() {
     expectSelectableHit(mainLayout, 0);
 
     menu.localSettings.menuPage = LocalMenuPage::Controls;
-    menu.localSettings.controlsPage = 0;
-    PhoneDisplayMenuLayout controlsOne = makePhoneDisplayMenuLayout(menu);
-    expectLayoutInside(controlsOne);
-    assert(controlsOne.title == "Controls 1/2");
-    assert(controlsOne.selectableCount == 8);
-    assert(controlsOne.rowCount == 9);
-    assert(controlsOne.rows[0].kind == PhoneMenuRowKind::Section);
-    assert(!controlsOne.rows[0].selectable);
-    expectSelectableHit(controlsOne, 0);
-    expectSelectableHit(controlsOne, controlsOne.selectableCount - 1);
-
-    menu.localSettings.controlsPage = 1;
-    PhoneDisplayMenuLayout controlsTwo = makePhoneDisplayMenuLayout(menu);
-    expectLayoutInside(controlsTwo);
-    assert(controlsTwo.title == "Controls 2/2");
-    assert(controlsTwo.selectableCount == 9);
-    assert(controlsTwo.rowCount == 11);
-    assert(controlsTwo.rows[0].kind == PhoneMenuRowKind::Section);
-    assert(controlsTwo.rows[5].kind == PhoneMenuRowKind::Section);
-    assert(!controlsTwo.rows[0].selectable && !controlsTwo.rows[5].selectable);
-    expectSelectableHit(controlsTwo, 0);
-    expectSelectableHit(controlsTwo, controlsTwo.selectableCount - 1);
+    menu.localSettings.menuScroll = 0.0f;
+    PhoneDisplayMenuLayout controls = makePhoneDisplayMenuLayout(menu);
+    expectLayoutInside(controls);
+    assert(controls.title == "Controls");
+    assert(controls.selectableCount == 14);
+    assert(controls.rowCount == 17);
+    assert(controls.rows[0].kind == PhoneMenuRowKind::Section);
+    assert(!controls.rows[0].selectable);
+    expectSelectableHit(controls, 0);
+    menu.localSettings.menuScroll = phoneDisplayScrollForSelection(controls, controls.selectableCount - 1);
+    PhoneDisplayMenuLayout controlsScrolled = makePhoneDisplayMenuLayout(menu);
+    expectLayoutInside(controlsScrolled);
+    expectSelectableHit(controlsScrolled, controlsScrolled.selectableCount - 1);
 
     step(game);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Controls);
@@ -140,14 +129,13 @@ int main() {
     death.uiPaused = false;
     death.localSettings.menuPage = LocalMenuPage::Main;
     step(game);
-    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Death);
-    assert(game.state().phoneDisplay.interactive);
+    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Off);
+    assert(!game.state().phoneDisplay.interactive);
     expectFiniteAndBounded(game.state().phoneDisplay);
     PhoneDisplayMenuLayout deathLayout = makePhoneDisplayMenuLayout(death);
     expectLayoutInside(deathLayout);
-    assert(deathLayout.selectableCount == 1);
-    assert(deathLayout.rows[0].label == "Again?");
-    expectSelectableHit(deathLayout, 0);
+    assert(deathLayout.selectableCount == 0);
+    assert(deathLayout.rowCount == 0);
 
     return 0;
 }

@@ -160,8 +160,8 @@ Obsolete target:
 - `GameState::phoneVisual` stores screen scale, glow, screen offset, phone pose
   offsets, pitch, roll, and gameplay action response.
 - `GameState::hud.menuSelection` is the current selectable menu index.
-- `GameState::localSettings.menuPage` and `controlsPage` select the active phone
-  menu page.
+- `GameState::localSettings.menuPage`, `menuScroll`, and menu history select the
+  active phone menu route and scroll position.
 - `GameState::started`, `dead`, `uiPaused`, `cinematic.introActive`, and
   `upgradeMenu.active` determine whether menu presentation is visible.
 - `CinematicState` stores intro/death/menu-exit camera timing and text
@@ -171,11 +171,11 @@ Obsolete target:
 - `AudioState` and event cues indirectly drive future display pulse candidates:
   damage, capture, low battery, headshot/reward, game over, and secret TV cues.
 
-Missing target:
+Implemented target:
 
-- There is no `PhoneDisplayState`, `PhoneDisplayMode`, retained frame, brightness,
-  material state, lighting state, black level, noise phase, or display pulse
-  accumulator.
+- `PhoneDisplayState` and `PhoneDisplayMode` retain mode, brightness, material,
+  lighting, black level, noise phase, and pulse accumulators for the physical
+  phone display.
 
 ## Current Menu Pages And Non-Menu Screen Behaviors
 
@@ -186,13 +186,12 @@ Current `PhoneMenuPageViewModel` pages:
 - Online: `Host`, `Join`, `Back`.
 - Join Code: code entry display.
 - Settings: `Controls`, `Audio`, `Graphics`, `Back`.
-- Controls 1/2: move bindings plus `Next` and `Back`.
-- Controls 2/2: action bindings, look sensitivity, `Previous`, `Defaults`,
-  `Back`.
+- Controls: one grouped scrollable page with movement bindings, action bindings,
+  look sensitivity, `Defaults`, and `Back`.
 - Audio: music/SFX values and mutes.
 - Graphics: preset, shadows, particles, FPS, back.
 - Pause: `PAUSED`, `Resume`, `Controls`, `Audio`, `Graphics`, `Exit Run`.
-- Death: single centered `Again?` action.
+- Death: phone display turns off; `Again?` / `Quit` are detached HUD choices.
 
 Other screen-related behaviors:
 
