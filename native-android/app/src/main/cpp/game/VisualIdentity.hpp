@@ -48,6 +48,34 @@ constexpr VisualColor FlowerCore{0x33 / 255.0f, 0x55 / 255.0f, 0x25 / 255.0f};
 constexpr float HemisphereIntensity = 1.1f;
 constexpr float SunIntensity = 1.0f;
 constexpr float FillIntensity = 0.35f;
+
+constexpr VisualColor DataMosaicPalette[25] = {
+    {0x66 / 255.0f, 0x6b / 255.0f, 0xb2 / 255.0f},
+    {0x4f / 255.0f, 0x4c / 255.0f, 0xb1 / 255.0f},
+    {0x98 / 255.0f, 0x1e / 255.0f, 0x97 / 255.0f},
+    {0x74 / 255.0f, 0x53 / 255.0f, 0x71 / 255.0f},
+    {0x60 / 255.0f, 0x3f / 255.0f, 0x5b / 255.0f},
+    {0x78 / 255.0f, 0xd5 / 255.0f, 0xe1 / 255.0f},
+    {0x7f / 255.0f, 0xa9 / 255.0f, 0xae / 255.0f},
+    {0xc4 / 255.0f, 0xd6 / 255.0f, 0xa4 / 255.0f},
+    {0xd4 / 255.0f, 0xec / 255.0f, 0x8e / 255.0f},
+    {0xd0 / 255.0f, 0xde / 255.0f, 0xbb / 255.0f},
+    {0x93 / 255.0f, 0x78 / 255.0f, 0x91 / 255.0f},
+    {0x67 / 255.0f, 0x45 / 255.0f, 0x64 / 255.0f},
+    {0x33 / 255.0f, 0x55 / 255.0f, 0x25 / 255.0f},
+    {0xaa / 255.0f, 0x80 / 255.0f, 0x66 / 255.0f},
+    {0xae / 255.0f, 0x8a / 255.0f, 0x79 / 255.0f},
+    {0xf1 / 255.0f, 0xc6 / 255.0f, 0xa6 / 255.0f},
+    {0xe1 / 255.0f, 0xb8 / 255.0f, 0x7f / 255.0f},
+    {0xb9 / 255.0f, 0x97 / 255.0f, 0x5b / 255.0f},
+    {0x99 / 255.0f, 0x55 / 255.0f, 0x2b / 255.0f},
+    {0x8b / 255.0f, 0x5b / 255.0f, 0x29 / 255.0f},
+    {0x4e / 255.0f, 0x36 / 255.0f, 0x29 / 255.0f},
+    {0x5b / 255.0f, 0x34 / 255.0f, 0x27 / 255.0f},
+    {0x78 / 255.0f, 0xd5 / 255.0f, 0xe1 / 255.0f},
+    {0xd4 / 255.0f, 0xec / 255.0f, 0x8e / 255.0f},
+    {0xf1 / 255.0f, 0xc6 / 255.0f, 0xa6 / 255.0f}
+};
 }
 
 struct PhoneVisualState {
