@@ -60,6 +60,7 @@ struct HostState {
     bool haveMouse = false;
     bool mouseCaptured = true;
     bool focused = true;
+    bool suppressLeftMouseUntilRelease = false;
     int gamepadId = -1;
     bool gamepadMapped = false;
     bool restoreCaptureOnFocus = false;
@@ -117,6 +118,58 @@ HostState* stateFor(GLFWwindow* window) {
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured);
 bool soloPauseMenu(const GameState& state){return state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;}
+int menuItemCount(const GameState& state);
+
+Vec3 cross3(const Vec3& a,const Vec3& b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+
+bool projectWorldToFramebuffer(const GameState& state,const Vec3& world,int fw,int fh,float& sx,float& sy){
+    const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos);
+    Vec3 right=normalized(cross3(forward,{0.0f,1.0f,0.0f}));
+    if(lengthSq(right)<0.00001f)right={1.0f,0.0f,0.0f};
+    const Vec3 up=cross3(right,forward);
+    const Vec3 delta=world-state.camera.pos;
+    const float depth=dot3(delta,forward);
+    if(depth<=0.02f)return false;
+    const float aspect=static_cast<float>(fw)/std::max(1,fh);
+    const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f);
+    const float nx=dot3(delta,right)/(depth*tanHalf*aspect);
+    const float ny=dot3(delta,up)/(depth*tanHalf);
+    sx=(nx*0.5f+0.5f)*static_cast<float>(fw);
+    sy=(0.5f-ny*0.5f)*static_cast<float>(fh);
+    return std::isfinite(sx)&&std::isfinite(sy);
+}
+
+int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
+    if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
+    if(state.started&&!soloPauseMenu(state))return -1;
+    const int count=menuItemCount(state);
+    if(count<=0)return -1;
+    const bool compactList=state.localSettings.menuPage==LocalMenuPage::Controls;
+    const float screenW=PHONE_SCREEN_WIDTH*std::max(0.65f,state.phoneVisual.screenScale.x);
+    const float screenH=PHONE_SCREEN_HEIGHT*std::max(0.65f,state.phoneVisual.screenScale.y);
+    const float rowStep=compactList?screenH*0.055f:screenH*0.094f;
+    const float rowH=compactList?screenH*0.040f:screenH*0.064f;
+    const float startY=compactList?screenH*0.15f:screenH*0.12f;
+    const PhoneTransformState& phone=state.phoneTransform;
+    for(int row=0;row<count;++row){
+        const float y=startY-static_cast<float>(row)*rowStep-rowH*0.34f;
+        const Vec3 center=phone.screenCenter+phone.screenNormal*0.020f+phone.screenUp*y;
+        const Vec3 rx=phone.screenRight*(screenW*0.36f);
+        const Vec3 uy=phone.screenUp*(rowH*0.62f);
+        float minX=1.0e9f,minY=1.0e9f,maxX=-1.0e9f,maxY=-1.0e9f;
+        const Vec3 corners[4]={center-rx-uy,center+rx-uy,center+rx+uy,center-rx+uy};
+        bool projected=true;
+        for(const Vec3& corner:corners){
+            float sx=0.0f,sy=0.0f;
+            if(!projectWorldToFramebuffer(state,corner,fw,fh,sx,sy)){projected=false;break;}
+            minX=std::min(minX,sx);maxX=std::max(maxX,sx);minY=std::min(minY,sy);maxY=std::max(maxY,sy);
+        }
+        if(!projected)continue;
+        const float pad=compactList?3.0f:5.0f;
+        if(cursorX>=minX-pad&&cursorX<=maxX+pad&&cursorY>=minY-pad&&cursorY<=maxY+pad)return row;
+    }
+    return -1;
+}
 
 int menuItemCount(const GameState& state) {
     if(state.upgradeMenu.active)return 6;
@@ -163,7 +216,8 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
     // button rectangles stay identical on high-density displays.
     const float uiScale=clampf(std::min(static_cast<float>(fw)/1280.0f,static_cast<float>(fh)/720.0f),0.55f,4.5f);
     const float canvasW=fw/uiScale,canvasH=fh/uiScale;
-    const float x=static_cast<float>(windowX)*fw/std::max(1,ww)/uiScale,y=static_cast<float>(windowY)*fh/std::max(1,wh)/uiScale;
+    const float framebufferX=static_cast<float>(windowX)*fw/std::max(1,ww),framebufferY=static_cast<float>(windowY)*fh/std::max(1,wh);
+    const float x=framebufferX/uiScale,y=framebufferY/uiScale;
     const GameState& state=host.game.state();
     if(state.upgradeMenu.active){
         const float pw=std::min(680.0f,canvasW-24.0f),ph=300.0f,px=(canvasW-pw)*0.5f,py=(canvasH-ph)*0.5f;
@@ -171,10 +225,12 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
         if(y>=py+184&&y<=py+250)for(int column=0;column<3;++column){const float left=px+12+column*(pw-24)/3;if(x>=left&&x<left+(pw-24)/3)return 3+column;}
         return -1;
     }
+    const int phoneItem=phoneMenuItemAt(state,framebufferX,framebufferY,fw,fh);
+    if(phoneItem>=0)return phoneItem;
     if(!state.started||soloPauseMenu(state)){
         const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;
-        const float pw=std::min(520.0f,canvasW*0.72f),ph=controls?560.0f:430.0f,px=(canvasW-pw)*0.5f;
-        const float py=(canvasH-ph)*0.5f+(controls?0.0f:24.0f),buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
+        const float pw=std::min(controls?390.0f:340.0f,canvasW*0.72f),ph=controls?560.0f:470.0f,px=(canvasW-pw)*0.5f;
+        const float py=(canvasH-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
         if(x<buttonX||x>buttonX+buttonW)return -1;
         const int count=menuItemCount(state);
         const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;
@@ -441,7 +497,10 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     if(menuItemCount(host->game.state())>0){
         double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
-        if(button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)activateMenuSelection(window,*host);
+        if(button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT){
+            activateMenuSelection(window,*host);
+            if(button==GLFW_MOUSE_BUTTON_LEFT&&host->mouseCaptured)host->suppressLeftMouseUntilRelease=true;
+        }
         return;
     }
     if(button==GLFW_MOUSE_BUTTON_RIGHT && !host->game.state().dead) {
@@ -492,6 +551,17 @@ bool hasArg(int argc, char** argv, const char* expected) {
         if (std::strcmp(argv[i], expected) == 0) return true;
     }
     return false;
+}
+
+void printUsage() {
+    std::printf("Data native desktop host\n");
+    std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
+    std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
+    std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
+    std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
+    std::printf("  --controller-test    Print connected controller state once and exit.\n");
+    std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
+    std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
 }
 
 bool near(float a, float b, float eps = 0.025f) {
@@ -667,12 +737,18 @@ int runControllerLiveTest(){
 }
 
 int main(int argc, char** argv) {
+    if (hasArg(argc, argv, "--help") || hasArg(argc, argv, "-h")) {
+        printUsage();
+        return 0;
+    }
     const bool captureHuman=argValue(argc,argv,"--capture-human-frame")!=nullptr;
     const bool captureSoul=argValue(argc,argv,"--capture-soul-frame")!=nullptr;
     const bool captureStart=argValue(argc,argv,"--capture-start-frame")!=nullptr;
     const bool capturePaused=argValue(argc,argv,"--capture-paused-frame")!=nullptr;
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
+    const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
+    const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):argValue(argc,argv,"--capture-frame"))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -726,6 +802,14 @@ int main(int argc, char** argv) {
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
+    if(tvRoomTest||tvRoomEnter){
+        host.game.debugStartSecretTvTest(tvRoomEnter);
+        const auto& tv=host.game.state().secretTv;
+        std::printf("TV_ROOM_TEST_%s entrance=(%.2f, %.2f, %.2f) normal=(%.1f, %.1f, %.1f)\n",
+            tvRoomEnter?"ENTER":"AWAKE",
+            tv.entrancePos.x,tv.entrancePos.y,tv.entrancePos.z,
+            tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
+    }
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
@@ -753,9 +837,11 @@ int main(int argc, char** argv) {
     int framebufferHeight = 1;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
-    if(const char* service=argValue(argc,argv,"--service-url"))host.multiplayerService=service;
-    if(hasArg(argc,argv,"--host-room"))host.multiplayer.host(host.multiplayerService);
-    if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
+    if(!tvRoomTest&&!tvRoomEnter){
+        if(const char* service=argValue(argc,argv,"--service-url"))host.multiplayerService=service;
+        if(hasArg(argc,argv,"--host-room"))host.multiplayer.host(host.multiplayerService);
+        if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
+    }
 
     std::printf("Digital Breakdown native desktop host running.\n");
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
@@ -781,7 +867,9 @@ int main(int argc, char** argv) {
         }
 
         const DesktopGamepadInput gamepad=pollGamepad(window,host);
-        const bool vacuumHeld = captureSoul || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || gamepad.vacuumHeld;
+        const bool leftMouseDown=glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if(!leftMouseDown)host.suppressLeftMouseUntilRelease=false;
+        const bool vacuumHeld = captureSoul || (leftMouseDown&&!host.suppressLeftMouseUntilRelease) || gamepad.vacuumHeld;
         const bool sprintHeld = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                 glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS || gamepad.sprintHeld;
 

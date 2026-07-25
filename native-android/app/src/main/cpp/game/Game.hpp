@@ -150,7 +150,11 @@ struct CinematicState {
     float deathElapsed = 0.0f;
     float textInteraction = 0.0f;
     float baseYaw = 0.0f;
+    bool menuExitActive = false;
+    float menuExitElapsed = 0.0f;
     Vec3 startCameraPos;
+    Vec3 menuExitCameraPos;
+    Vec3 menuExitLookTarget;
 };
 
 struct VacuumState {
@@ -349,6 +353,8 @@ struct SecretTvState {
     int tolerance = 3;
     bool broken = false;
     bool available = false;
+    Vec3 entrancePos {13.9f, PHONE_BODY_HEIGHT * 0.5f, 4.8f};
+    Vec3 entranceNormal {-1.0f, 0.0f, 0.0f};
     float donationCooldown = 0.0f;
     float knockCueTimer = 0.0f;
     float knockVolume = 0.0f;
@@ -573,6 +579,8 @@ public:
     void reset();
     void restart();
     void prepareStartScreen();
+    // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
+    void debugStartSecretTvTest(bool enterRoom);
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);
@@ -613,6 +621,7 @@ private:
 
     void resetRoom();
     void buildRoomColliders();
+    void chooseSecretTvEntrance();
     void updateInputActions(float dt);
     void updateNetworkPeers(float dt);
     void updateTeamRevival(float dt);

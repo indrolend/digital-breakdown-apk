@@ -814,10 +814,12 @@ int main() {
         step(secretWake);
         ok &= expect(secretWake.state().secretTv.available&&secretWake.state().secretTv.knockVolume>0.0f,
             "the awakened level-ten TV entrance becomes audible and discoverable on the following desktop frame");
-        {GameState& enter=const_cast<GameState&>(secretWake.state());enter.player.pos={13.25f,PHONE_MODEL_HEIGHT*0.5f,4.8f};enter.player.vel={};enter.player.grounded=true;}
+        {GameState& enter=const_cast<GameState&>(secretWake.state());enter.player.pos=enter.secretTv.entrancePos;enter.player.vel={};enter.player.grounded=true;}
         step(secretWake);
         ok &= expect(secretWake.state().player.inSecretRoom,
             "a grounded level-ten player can enter the secret TV room through the awakened membrane");
+        ok &= expect(secretWake.state().player.secretVisitTimer>100.0f&&secretWake.state().camera.pos.x>36.8f,
+            "secret TV entry gives the player a readable visit window and keeps the camera in the off-map room");
     }
 
     {
