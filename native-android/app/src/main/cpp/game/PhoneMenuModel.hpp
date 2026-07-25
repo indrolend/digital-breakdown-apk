@@ -118,8 +118,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         page.paletteTitle = true;
         addPhoneMenuItem(page, "Start", PhoneMenuAction::Start);
     } else if (state.dead) {
-        addPhoneMenuItem(page, "Restart", PhoneMenuAction::Restart);
-        addPhoneMenuItem(page, "Exit", PhoneMenuAction::Exit);
+        addPhoneMenuItem(page, "Again?", PhoneMenuAction::Restart);
     } else if (pausedSolo && state.localSettings.menuPage == LocalMenuPage::Main) {
         page.title = "PAUSED";
         addPhoneMenuItem(page, "Resume", PhoneMenuAction::Resume);

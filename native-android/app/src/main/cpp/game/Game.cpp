@@ -122,7 +122,7 @@ constexpr float FLOWER_DROP_CHANCE = 0.26f;
 constexpr float FLOWER_PICKUP_RADIUS = 1.05f;
 
 bool localPhoneMenuPresentation(const GameState& state) {
-    return (((!state.started && !state.dead) || state.cinematic.introActive || state.uiPaused) &&
+    return (((!state.started && !state.dead) || state.dead || state.cinematic.introActive || state.uiPaused) &&
         !state.multiplayer.enabled && !state.upgradeMenu.active);
 }
 
@@ -738,6 +738,7 @@ void Game::triggerRunDeath() {
     state_.cinematic.baseYaw=state_.camera.yaw;
     state_.cinematic.startCameraPos=state_.camera.pos;
     state_.camera.firstPerson=false;
+    state_.hud.menuSelection=0;
     state_.player.alive=false; state_.player.battery=0.0f; state_.player.vel={}; state_.player.jumpVel=0.0f;
     state_.vacuum=VacuumState{};
     clearActivePowerups();
@@ -919,10 +920,9 @@ void Game::clearInputState() {
 
 void Game::setTouch(int action, float x, float y, int pointerCount) {
     (void)pointerCount;
-    if(state_.dead && action==TOUCH_DOWN){restart(); return;}
     // Android's role-based controller owns gameplay input.  This legacy raw
-    // touch channel is retained only for restart/touch diagnostics; allowing it
-    // to own primaryHeld made every action-button press vacuum simultaneously.
+    // touch channel is retained only for touch diagnostics; allowing it to own
+    // primaryHeld made every action-button press vacuum simultaneously.
     InputState& input = state_.input;
     if (action == TOUCH_DOWN) {
         input.touching = true;
@@ -954,7 +954,9 @@ void Game::update(float dt) {
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
-        updateDeathCamera(dt);
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
+        updatePhoneTransform();
+        updateCamera(dt);
         updateParticles(dt*DEATH_PRESENTATION_SCALE);
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;

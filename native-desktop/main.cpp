@@ -233,7 +233,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         return;
     }
     if(!state.started){
-        if(state.dead){if(selection==1){glfwSetWindowShouldClose(window,GLFW_TRUE);return;}host.game.restart();setMouseCaptured(window,host,true);return;}
+        if(state.dead){host.game.restart();setMouseCaptured(window,host,true);return;}
         auto& settings=state.localSettings;
         const PhoneMenuRow row=selectedPhoneRow(state);
         if(settings.menuPage==LocalMenuPage::Main){const PhoneMenuAction action=selectedPhoneAction(state);if(action==PhoneMenuAction::Solo){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(action==PhoneMenuAction::Online)openMenuPage(host,LocalMenuPage::Online);else if(action==PhoneMenuAction::Settings)openMenuPage(host,LocalMenuPage::Settings);else if(action==PhoneMenuAction::Exit)glfwSetWindowShouldClose(window,GLFW_TRUE);}
@@ -797,6 +797,7 @@ int main(int argc, char** argv) {
         else if(page&&std::strcmp(page,"controls1")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.controlsPage=0;}
         else if(page&&std::strcmp(page,"audio")==0)fixture.localSettings.menuPage=LocalMenuPage::Audio;
         else if(page&&std::strcmp(page,"graphics")==0)fixture.localSettings.menuPage=LocalMenuPage::Graphics;
+        else if(page&&std::strcmp(page,"death")==0){fixture.dead=true;fixture.started=false;fixture.player.alive=false;fixture.player.battery=0.0f;}
         else fixture.localSettings.menuPage=LocalMenuPage::Main;
         fixture.hud.menuSelection=0;
     }

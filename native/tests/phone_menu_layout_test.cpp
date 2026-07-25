@@ -132,5 +132,16 @@ int main() {
     assert(join.selectableCount == 0);
     assert(join.joinCode);
 
+    state.dead = true;
+    state.started = false;
+    state.localSettings.menuPage = LocalMenuPage::Main;
+    PhoneMenuPageViewModel deathModel = makePhoneMenuPageModel(state);
+    assert(deathModel.selectableCount == 1);
+    assert(selectionElement(deathModel, 0).label == "Again?");
+    assert(selectionElement(deathModel, 0).action == PhoneMenuAction::Restart);
+    PhoneMenuLayout death = makePhoneMenuLayout(state);
+    assert(death.selectableCount == 1);
+    expectRowsInsideSafe(death);
+
     return 0;
 }
