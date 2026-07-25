@@ -290,6 +290,13 @@ void cpuRect(CpuCanvas& canvas, float x, float y, float w, float h, float r, flo
     }
 }
 
+void cpuMeter(CpuCanvas& canvas, float x, float y, float w, float h, float fill, VisualColor color, float alpha = 0.82f) {
+    cpuRect(canvas, x, y, w, h, 0.005f, 0.020f, 0.025f, 0.68f);
+    cpuRect(canvas, x, y, w, 2.0f, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.30f);
+    cpuRect(canvas, x, y + h - 2.0f, w, 2.0f, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.18f);
+    cpuRect(canvas, x, y, w * clampf(fill, 0.0f, 1.0f), h, color.r, color.g, color.b, alpha);
+}
+
 const MenuFontAtlas& cpuMenuFont(bool semibold) {
     return semibold && menuSemiboldFont.cpuReady ? menuSemiboldFont : menuRegularFont;
 }
@@ -357,8 +364,66 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
     const bool menuVisible = state.cinematic.introActive || !state.started || state.dead ||
         (state.started && state.uiPaused && !state.multiplayer.enabled && !state.upgradeMenu.active);
     if (!menuVisible) {
-        cpuRect(canvas, 80, 1020, 560, 34, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.22f + state.vacuum.power * 0.28f);
-        cpuRect(canvas, 80, 1070, 560 * state.hud.batteryFill, 20, 0.86f, 0.98f, 1.0f, 0.56f);
+        const float x = 92.0f;
+        const float w = 536.0f;
+        const float battery = clampf(state.hud.batteryFill, 0.0f, 1.0f);
+        const float vacuum = clampf(state.vacuum.power, 0.0f, 1.0f);
+        const float lock = clampf(state.hud.lockStrength, 0.0f, 1.0f);
+        const VisualColor batteryColor = state.hud.lowBattery ? Pass7Visual::Copper : Pass7Visual::ElectricCyan;
+        const VisualColor vacuumColor = state.hud.hasTarget ? Pass7Visual::AcidChartreuse : Pass7Visual::MetallicTeal;
+        cpuText(canvas, "Data", 360.0f, 180.0f, 46.0f, 0.78f, 0.98f, 1.0f, 0.76f, true, true);
+
+        const int required = std::max(1, state.hud.requiredGoals);
+        const float goalGap = 12.0f;
+        const float goalSize = std::min(54.0f, (w - goalGap * static_cast<float>(required - 1)) / static_cast<float>(required));
+        const float goalsW = goalSize * static_cast<float>(required) + goalGap * static_cast<float>(required - 1);
+        float gx = 360.0f - goalsW * 0.5f;
+        for (int i = 0; i < required; ++i) {
+            const bool filled = i < state.hud.filledGoals;
+            cpuRect(canvas, gx, 270.0f, goalSize, goalSize, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.58f);
+            cpuRect(canvas, gx + 5.0f, 275.0f, goalSize - 10.0f, goalSize - 10.0f,
+                filled ? Pass7Visual::AcidChartreuse.r : 0.005f,
+                filled ? Pass7Visual::AcidChartreuse.g : 0.020f,
+                filled ? Pass7Visual::AcidChartreuse.b : 0.025f,
+                filled ? 0.88f : 0.72f);
+            gx += goalSize + goalGap;
+        }
+
+        const int soulCells = 30;
+        const int filledSouls = std::max(0, std::min(soulCells, state.hud.storedSouls));
+        const float cell = 42.0f;
+        const float gap = 8.0f;
+        const float gridW = 6.0f * cell + 5.0f * gap;
+        const float gridX = 360.0f - gridW * 0.5f;
+        const float gridY = 430.0f;
+        for (int i = 0; i < soulCells; ++i) {
+            const int col = i % 6;
+            const int row = i / 6;
+            const bool filled = i < filledSouls;
+            const VisualColor c = Pass7Visual::DataMosaicPalette[i % 25];
+            cpuRect(canvas, gridX + static_cast<float>(col) * (cell + gap), gridY + static_cast<float>(row) * (cell + gap), cell, cell,
+                filled ? c.r : 0.010f,
+                filled ? c.g : 0.026f,
+                filled ? c.b : 0.032f,
+                filled ? 0.78f : 0.45f);
+        }
+        cpuText(canvas, "Souls " + std::to_string(state.hud.storedSouls), x, 765.0f, 34.0f, 0.72f, 0.92f, 1.0f, 0.72f, true);
+        const std::string roomLabel = "Room " + std::to_string(state.roomIndex);
+        cpuText(canvas, roomLabel, 628.0f - cpuTextWidth(roomLabel, 34.0f, true), 765.0f, 34.0f, 0.52f, 0.82f, 0.88f, 0.66f, true);
+
+        cpuText(canvas, "Battery", x, 900.0f, 32.0f, state.hud.lowBattery ? 1.0f : 0.70f, state.hud.lowBattery ? 0.42f : 0.92f, state.hud.lowBattery ? 0.34f : 1.0f, 0.76f, true);
+        cpuMeter(canvas, x, 930.0f, w, 28.0f, battery, batteryColor, state.hud.lowBattery ? 0.96f : 0.74f);
+        cpuText(canvas, "Signal", x, 1018.0f, 32.0f, 0.70f, 0.92f, 1.0f, 0.66f, true);
+        cpuMeter(canvas, x, 1048.0f, w, 26.0f, vacuum, vacuumColor, 0.74f + vacuum * 0.18f);
+        if (state.hud.hasTarget || lock > 0.02f) {
+            cpuRect(canvas, x, 1118.0f, w * std::max(0.08f, lock), 8.0f, Pass7Visual::AcidChartreuse.r, Pass7Visual::AcidChartreuse.g, Pass7Visual::AcidChartreuse.b, 0.76f);
+            cpuText(canvas, "Lock", x, 1164.0f, 28.0f, Pass7Visual::AcidChartreuse.r, Pass7Visual::AcidChartreuse.g, Pass7Visual::AcidChartreuse.b, 0.70f, true);
+        }
+        if (state.hud.lowBattery) {
+            const float pulse = 0.35f + 0.25f * std::sin(state.time * 4.1f);
+            cpuRect(canvas, 0, 0, static_cast<float>(canvas.w), 18.0f, Pass7Visual::Copper.r, Pass7Visual::Copper.g, Pass7Visual::Copper.b, pulse);
+            cpuRect(canvas, 0, static_cast<float>(canvas.h) - 18.0f, static_cast<float>(canvas.w), 18.0f, Pass7Visual::Copper.r, Pass7Visual::Copper.g, Pass7Visual::Copper.b, pulse);
+        }
         return;
     }
 
@@ -445,6 +510,14 @@ std::uint64_t phoneDisplayRenderKey(const GameState& state) {
     hashPhoneDisplayFloat(hash, state.localSettings.controllerLookSensitivity, 100.0f);
     hashPhoneDisplayFloat(hash, state.hud.batteryFill, 240.0f);
     hashPhoneDisplayFloat(hash, state.vacuum.power, 240.0f);
+    hashPhoneDisplayFloat(hash, state.hud.vacuumField, 100.0f);
+    hashPhoneDisplayFloat(hash, state.hud.lockStrength, 100.0f);
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.hud.storedSouls)));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.hud.filledGoals)));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.hud.requiredGoals)));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.roomIndex)));
+    hashPhoneDisplayValue(hash, state.hud.lowBattery ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.hud.hasTarget ? 1u : 0u);
     for (int key : state.localSettings.keyboardBindings) {
         hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, key)));
     }
@@ -467,6 +540,9 @@ std::uint64_t phoneDisplayRenderKey(const GameState& state) {
     }
     if (page.paletteTitle) {
         hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::floor(state.time * 15.0f)));
+    }
+    if (!state.dead && state.started && !state.uiPaused && state.hud.lowBattery) {
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::floor(state.time * 12.0f)));
     }
     return hash;
 }
