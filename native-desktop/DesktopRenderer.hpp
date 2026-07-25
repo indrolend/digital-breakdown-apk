@@ -30,6 +30,9 @@ private:
     mutable unsigned int tvScreenTexture_ = 0;
     mutable unsigned int phoneDisplayTexture_ = 0;
     mutable std::vector<unsigned char> phoneDisplayPixels_;
+    mutable unsigned long long phoneDisplayCacheKey_ = 0;
+    mutable bool phoneDisplayCacheValid_ = false;
+    mutable bool phoneDisplayTextureAllocated_ = false;
     mutable bool datamoshFrameReady_ = false;
 
     static void drawRoomTile(const GameState& state, int tileIndex);

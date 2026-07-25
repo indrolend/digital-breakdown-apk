@@ -22,6 +22,7 @@
 #include <cmath>
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -54,6 +55,20 @@ struct MenuFontAtlas {
 
 MenuFontAtlas menuRegularFont;
 MenuFontAtlas menuSemiboldFont;
+
+void hashPhoneDisplayValue(std::uint64_t& hash, std::uint64_t value) {
+    hash ^= value;
+    hash *= 1099511628211ull;
+}
+
+void hashPhoneDisplayString(std::uint64_t& hash, const std::string& value) {
+    for (unsigned char c : value) hashPhoneDisplayValue(hash, c);
+    hashPhoneDisplayValue(hash, 0xffu);
+}
+
+void hashPhoneDisplayFloat(std::uint64_t& hash, float value, float scale) {
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::lround(value * scale)));
+}
 
 Vec3 gradedSceneColor(float r,float g,float b) {
     const float luma=r*0.2126f+g*0.7152f+b*0.0722f;
@@ -397,6 +412,65 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
     }
 }
 
+std::uint64_t phoneDisplayRenderKey(const GameState& state) {
+    std::uint64_t hash = 1469598103934665603ull;
+    const PhoneDisplayState& display = state.phoneDisplay;
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(display.mode));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(display.previousMode));
+    hashPhoneDisplayValue(hash, display.interactive ? 1u : 0u);
+    hashPhoneDisplayFloat(hash, display.brightness, 255.0f);
+    hashPhoneDisplayFloat(hash, display.contentOpacity, 255.0f);
+    hashPhoneDisplayFloat(hash, display.screenTint.x, 255.0f);
+    hashPhoneDisplayFloat(hash, display.screenTint.y, 255.0f);
+    hashPhoneDisplayFloat(hash, display.screenTint.z, 255.0f);
+    hashPhoneDisplayFloat(hash, display.material.rimEmission, 255.0f);
+    hashPhoneDisplayValue(hash, state.started ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.dead ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.uiPaused ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.cinematic.introActive ? 1u : 0u);
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(state.localSettings.menuPage));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(state.localSettings.controlsPage));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.hud.menuSelection)));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(-1, state.localSettings.rebindingAction) + 1));
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(-1, state.localSettings.conflictingAction) + 1));
+    hashPhoneDisplayValue(hash, state.localSettings.musicMuted ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.localSettings.sfxMuted ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.localSettings.shadows ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.localSettings.particles ? 1u : 0u);
+    hashPhoneDisplayValue(hash, state.localSettings.fpsCounter ? 1u : 0u);
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.localSettings.graphicsPreset)));
+    hashPhoneDisplayFloat(hash, state.localSettings.musicVolume, 100.0f);
+    hashPhoneDisplayFloat(hash, state.localSettings.sfxVolume, 100.0f);
+    hashPhoneDisplayFloat(hash, state.localSettings.mouseLookSensitivity, 100.0f);
+    hashPhoneDisplayFloat(hash, state.localSettings.controllerLookSensitivity, 100.0f);
+    hashPhoneDisplayFloat(hash, state.hud.batteryFill, 240.0f);
+    hashPhoneDisplayFloat(hash, state.vacuum.power, 240.0f);
+    for (int key : state.localSettings.keyboardBindings) {
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, key)));
+    }
+    hashPhoneDisplayString(hash, state.multiplayer.roomCode.data());
+
+    const PhoneMenuPageViewModel page = makePhoneMenuPageModel(state);
+    hashPhoneDisplayString(hash, page.title);
+    hashPhoneDisplayValue(hash, page.paletteTitle ? 1u : 0u);
+    hashPhoneDisplayValue(hash, page.joinCode ? 1u : 0u);
+    hashPhoneDisplayValue(hash, page.tablePage ? 1u : 0u);
+    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(page.elementCount));
+    for (int i = 0; i < page.elementCount; ++i) {
+        const PhoneMenuElement& element = page.elements[i];
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(element.kind));
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(element.action));
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(-1, element.bindingAction) + 1));
+        hashPhoneDisplayValue(hash, element.selectable ? 1u : 0u);
+        hashPhoneDisplayString(hash, element.label);
+        hashPhoneDisplayString(hash, element.value);
+    }
+    if (page.paletteTitle) {
+        hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::floor(state.time * 15.0f)));
+    }
+    return hash;
+}
+
 void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, const Quat& q, float r, float g, float b) {
     const float matrix[16] = {
         1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y+q.z*q.w), 2*(q.x*q.z-q.y*q.w), 0,
@@ -455,7 +529,6 @@ void DesktopRenderer::drawSecretTvScreen(const GameState& state, float phoneProx
 }
 
 void DesktopRenderer::drawPhoneDisplayTexture(const GameState& state) const {
-    renderPhoneDisplayPixels(state, phoneDisplayPixels_);
     if (!phoneDisplayTexture_) glGenTextures(1, &phoneDisplayTexture_);
     glBindTexture(GL_TEXTURE_2D, phoneDisplayTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -463,7 +536,18 @@ void DesktopRenderer::drawPhoneDisplayTexture(const GameState& state) const {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, phoneDisplayPixels_.data());
+    const std::uint64_t renderKey = phoneDisplayRenderKey(state);
+    if (!phoneDisplayCacheValid_ || renderKey != phoneDisplayCacheKey_ || !phoneDisplayTextureAllocated_) {
+        renderPhoneDisplayPixels(state, phoneDisplayPixels_);
+        if (!phoneDisplayTextureAllocated_) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, phoneDisplayPixels_.data());
+            phoneDisplayTextureAllocated_ = true;
+        } else {
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, GL_RGBA, GL_UNSIGNED_BYTE, phoneDisplayPixels_.data());
+        }
+        phoneDisplayCacheKey_ = renderKey;
+        phoneDisplayCacheValid_ = true;
+    }
 
     const PhoneTransformState& phone = state.phoneTransform;
     const float halfW = PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x * 0.5f;
