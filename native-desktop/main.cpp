@@ -1,6 +1,4 @@
 #include "DesktopRenderer.hpp"
-#include "DesktopAudio.hpp"
-#include "DesktopMultiplayer.hpp"
 #include "Game.hpp"
 
 #ifdef _WIN32
@@ -10,6 +8,8 @@
 #include <GL/gl.h>
 #undef near
 #undef far
+#elif defined(__APPLE__)
+#include <OpenGL/gl.h>
 #endif
 #include <GLFW/glfw3.h>
 
@@ -39,11 +39,6 @@ constexpr int KEY_SPACE_ANDROID = 62;
 struct HostState {
     Game game;
     DesktopRenderer renderer;
-    DesktopAudio audio;
-    DesktopMultiplayer multiplayer;
-    std::string multiplayerService="https://digital-breakdown-multiplayer.indrolend.workers.dev";
-    std::string joinCode;
-    bool enteringJoinCode=false;
     double lookX = 0.0;
     double lookY = 0.0;
     double lastMouseX = 0.0;
@@ -90,16 +85,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
 
-    if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
-        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();return;}
-        if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}
-        if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;return;}
-        if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){host->joinCode.push_back(static_cast<char>(key));host->game.setNetworkRoom(host->joinCode.c_str(),"ENTER ROOM CODE",false);return;}
-        return;
-    }
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_J){host->enteringJoinCode=true;host->joinCode.clear();host->game.setNetworkRoom("","ENTER ROOM CODE",false);return;}
-    if (action == GLFW_PRESS && !host->game.state().started && host->multiplayer.role()==DesktopMultiplayer::Role::Offline &&
+    if (action == GLFW_PRESS && !host->game.state().started &&
         (key == GLFW_KEY_ENTER || key == GLFW_KEY_R || key == GLFW_KEY_SPACE)) {
         host->game.restart();
         setMouseCaptured(window, *host, true);
@@ -157,7 +143,6 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     }
     if(button!=GLFW_MOUSE_BUTTON_LEFT) return;
     if (!host->game.state().started) {
-        if(host->multiplayer.role()!=DesktopMultiplayer::Role::Offline)return;
         host->game.restart();
         setMouseCaptured(window, *host, true);
         return;
@@ -345,15 +330,12 @@ int main(int argc, char** argv) {
     }
 
     HostState host;
-    if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
     if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(capturePaused)host.game.setUiPaused(true);
     if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;}
-    host.audio.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"audio");
-
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
@@ -362,7 +344,6 @@ int main(int argc, char** argv) {
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 
     glfwMakeContextCurrent(window);
-    host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     glfwSwapInterval(1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused)host.game.setUiPaused(true);
@@ -371,10 +352,6 @@ int main(int argc, char** argv) {
     int framebufferHeight = 1;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
-    if(const char* service=argValue(argc,argv,"--service-url"))host.multiplayerService=service;
-    if(hasArg(argc,argv,"--host-room"))host.multiplayer.host(host.multiplayerService);
-    if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
-
     std::printf("Digital Breakdown native desktop host running.\n");
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
@@ -406,23 +383,15 @@ int main(int argc, char** argv) {
         host.lookX = 0.0;
         host.lookY = 0.0;
 
-        host.multiplayer.update(host.game);
-        if (host.game.state().started && host.game.state().multiplayer.connected && !host.mouseCaptured) {
-            setMouseCaptured(window, host, true);
-        }
-
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         host.game.update(capturePath?1.0f/60.0f:std::min(dt, 0.033f));
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
-        host.audio.update(host.game.state());
         host.renderer.draw(host.game.state());
         if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
         glfwSwapBuffers(window);
     }
 
     glfwDestroyWindow(window);
-    host.audio.stopAll();
-    host.multiplayer.disconnect();
     glfwTerminate();
     return 0;
 }

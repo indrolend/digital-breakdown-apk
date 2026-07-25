@@ -23,13 +23,6 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(glfw)
-FetchContent_Declare(
-    miniaudio
-    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG 0.11.25
-    GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(miniaudio)
 find_package(OpenGL REQUIRED)
 
 set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/cpp")
@@ -38,10 +31,6 @@ add_executable(
     DigitalBreakdown
     main.cpp
     DesktopRenderer.cpp
-    DesktopAudio.cpp
-    DesktopMultiplayer.cpp
-    "${miniaudio_SOURCE_DIR}/miniaudio.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
 
@@ -50,8 +39,6 @@ target_include_directories(
     PRIVATE
     "${DB_SHARED_ROOT}/game"
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
-    "${miniaudio_SOURCE_DIR}"
 )
 
 target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
@@ -71,20 +58,9 @@ add_executable(
 )
 target_include_directories(Pass7ParityTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
-add_executable(MultiplayerProtocolTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
-target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
 endif()
-
-add_custom_command(TARGET DigitalBreakdown POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/audio"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/audio"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/../native-models"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/models")
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)

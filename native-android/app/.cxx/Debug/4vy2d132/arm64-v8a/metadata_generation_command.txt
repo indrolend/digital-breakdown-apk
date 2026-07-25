@@ -1,0 +1,19 @@
+                        -H/Users/joelgutierrez/digital-breakdown-apk/native-android/app/src/main/cpp
+-DCMAKE_SYSTEM_NAME=Android
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+-DCMAKE_SYSTEM_VERSION=27
+-DANDROID_PLATFORM=android-27
+-DANDROID_ABI=arm64-v8a
+-DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+-DANDROID_NDK=/Users/joelgutierrez/Library/Android/sdk/ndk/27.2.12479018
+-DCMAKE_ANDROID_NDK=/Users/joelgutierrez/Library/Android/sdk/ndk/27.2.12479018
+-DCMAKE_TOOLCHAIN_FILE=/Users/joelgutierrez/Library/Android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=/Users/joelgutierrez/Library/Android/sdk/cmake/3.22.1/bin/ninja
+-DCMAKE_CXX_FLAGS=-std=c++17 -Wall -Wextra
+-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=/Users/joelgutierrez/digital-breakdown-apk/native-android/app/build/intermediates/cxx/Debug/4vy2d132/obj/arm64-v8a
+-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/Users/joelgutierrez/digital-breakdown-apk/native-android/app/build/intermediates/cxx/Debug/4vy2d132/obj/arm64-v8a
+-DCMAKE_BUILD_TYPE=Debug
+-B/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/arm64-v8a
+-GNinja
+                        Build command args: []
+                        Version: 2

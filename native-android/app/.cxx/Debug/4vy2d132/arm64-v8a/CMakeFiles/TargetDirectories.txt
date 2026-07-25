@@ -1,0 +1,3 @@
+/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/arm64-v8a/CMakeFiles/digitalbreakdown.dir
+/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/arm64-v8a/CMakeFiles/edit_cache.dir
+/Users/joelgutierrez/digital-breakdown-apk/native-android/app/.cxx/Debug/4vy2d132/arm64-v8a/CMakeFiles/rebuild_cache.dir

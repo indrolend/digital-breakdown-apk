@@ -5,7 +5,6 @@ project(digitalbreakdown LANGUAGES CXX)
 set(DB_SHARED_SOURCES
     game/Game.cpp
     render/Renderer.cpp
-    ../../../../../native-network/MultiplayerProtocol.cpp
 )
 
 set(DB_SOURCE_COMMIT "unknown")
@@ -52,7 +51,6 @@ if(EMSCRIPTEN)
         PRIVATE
         game
         render
-        ../../../../../native-network
         web/include
     )
 
@@ -98,7 +96,6 @@ else()
         PRIVATE
         game
         render
-        ../../../../../native-network
     )
 
     target_compile_features(digitalbreakdown PRIVATE cxx_std_17)
