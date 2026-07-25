@@ -133,10 +133,18 @@ add_executable(
 target_include_directories(GameplayStateContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(GameplayStateContractsTest PRIVATE cxx_std_17)
 
+add_executable(
+    PhoneBodyContractTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_body_contract_test.cpp"
+)
+target_include_directories(PhoneBodyContractTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(PhoneBodyContractTest PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
 add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
+add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
