@@ -2,6 +2,7 @@
 #include "DesktopAudio.hpp"
 #include "DesktopMultiplayer.hpp"
 #include "Game.hpp"
+#include "PhoneMenuLayout.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -142,20 +143,16 @@ bool projectWorldToFramebuffer(const GameState& state,const Vec3& world,int fw,i
 int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
     if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
     if(state.started&&!soloPauseMenu(state))return -1;
-    const int count=menuItemCount(state);
-    if(count<=0)return -1;
-    const bool compactList=state.localSettings.menuPage==LocalMenuPage::Controls;
-    const float screenW=PHONE_SCREEN_WIDTH*std::max(0.65f,state.phoneVisual.screenScale.x);
-    const float screenH=PHONE_SCREEN_HEIGHT*std::max(0.65f,state.phoneVisual.screenScale.y);
-    const float rowStep=compactList?screenH*0.055f:screenH*0.094f;
-    const float rowH=compactList?screenH*0.040f:screenH*0.064f;
-    const float startY=compactList?screenH*0.15f:screenH*0.12f;
+    const PhoneMenuLayout layout=makePhoneMenuLayout(state);
+    if(layout.selectableCount<=0)return -1;
     const PhoneTransformState& phone=state.phoneTransform;
-    for(int row=0;row<count;++row){
-        const float y=startY-static_cast<float>(row)*rowStep-rowH*0.34f;
+    for(int row=0;row<layout.rowCount;++row){
+        const PhoneMenuRow& menuRow=layout.rows[row];
+        if(!menuRow.selectable)continue;
+        const float y=menuRow.hit.y;
         const Vec3 center=phone.screenCenter+phone.screenNormal*0.020f+phone.screenUp*y;
-        const Vec3 rx=phone.screenRight*(screenW*0.36f);
-        const Vec3 uy=phone.screenUp*(rowH*0.62f);
+        const Vec3 rx=phone.screenRight*(menuRow.hit.w*0.5f);
+        const Vec3 uy=phone.screenUp*(menuRow.hit.h*0.62f);
         float minX=1.0e9f,minY=1.0e9f,maxX=-1.0e9f,maxY=-1.0e9f;
         const Vec3 corners[4]={center-rx-uy,center+rx-uy,center+rx+uy,center-rx+uy};
         bool projected=true;
@@ -165,8 +162,8 @@ int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,in
             minX=std::min(minX,sx);maxX=std::max(maxX,sx);minY=std::min(minY,sy);maxY=std::max(maxY,sy);
         }
         if(!projected)continue;
-        const float pad=compactList?3.0f:5.0f;
-        if(cursorX>=minX-pad&&cursorX<=maxX+pad&&cursorY>=minY-pad&&cursorY<=maxY+pad)return row;
+        const float pad=4.0f;
+        if(cursorX>=minX-pad&&cursorX<=maxX+pad&&cursorY>=minY-pad&&cursorY<=maxY+pad)return menuRow.selectableIndex;
     }
     return -1;
 }
@@ -176,7 +173,7 @@ int menuItemCount(const GameState& state) {
     if(soloPauseMenu(state)){
         switch(state.localSettings.menuPage){
             case LocalMenuPage::Main:return 5;
-            case LocalMenuPage::Controls:return 14;
+            case LocalMenuPage::Controls:return makePhoneMenuLayout(state).selectableCount;
             case LocalMenuPage::Audio:return 5;
             case LocalMenuPage::Graphics:return 5;
             default:return 5;
@@ -189,7 +186,7 @@ int menuItemCount(const GameState& state) {
             case LocalMenuPage::Online:return 3;
             case LocalMenuPage::JoinCode:return 0;
             case LocalMenuPage::Settings:return 4;
-            case LocalMenuPage::Controls:return 14;
+            case LocalMenuPage::Controls:return makePhoneMenuLayout(state).selectableCount;
             case LocalMenuPage::Audio:return 5;
             case LocalMenuPage::Graphics:return 5;
         }
@@ -198,9 +195,11 @@ int menuItemCount(const GameState& state) {
     return 0;
 }
 
-void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.36f;}
+void openMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;if(page==LocalMenuPage::Controls)state.localSettings.controlsPage=0;state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.36f;}
 
-bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const int item=state.hud.menuSelection;if(settings.menuPage==LocalMenuPage::Controls){if(item==10)settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);else if(item==11)settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);else return false;state.cinematic.textInteraction=0.65f;return true;}if(settings.menuPage==LocalMenuPage::Audio){if(item==0)settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);else if(item==1)settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);else return false;state.cinematic.textInteraction=0.65f;return true;}if(settings.menuPage==LocalMenuPage::Graphics&&item==0){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
+PhoneMenuRow selectedPhoneRow(const GameState& state){const PhoneMenuLayout layout=makePhoneMenuLayout(state);const PhoneMenuRow* row=phoneMenuRowForSelection(layout,state.hud.menuSelection);return row?*row:PhoneMenuRow{};}
+
+bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneRow(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
 
 void setMenuSelection(HostState& host,int selection) {
     const int count=menuItemCount(host.game.state());
@@ -227,15 +226,7 @@ int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double wi
     }
     const int phoneItem=phoneMenuItemAt(state,framebufferX,framebufferY,fw,fh);
     if(phoneItem>=0)return phoneItem;
-    if(!state.started||soloPauseMenu(state)){
-        const bool controls=state.localSettings.menuPage==LocalMenuPage::Controls;
-        const float pw=std::min(controls?390.0f:340.0f,canvasW*0.72f),ph=controls?560.0f:470.0f,px=(canvasW-pw)*0.5f;
-        const float py=(canvasH-ph)*0.5f,buttonW=std::min(360.0f,pw-48.0f),buttonX=px+(pw-buttonW)*0.5f;
-        if(x<buttonX||x>buttonX+buttonW)return -1;
-        const int count=menuItemCount(state);
-        const float step=controls?32.0f:52.0f,height=controls?27.0f:44.0f;for(int row=0;row<count;++row)if(y>=py+82+row*step&&y<py+82+height+row*step)return row;
-        return -1;
-    }
+    if(!state.started||soloPauseMenu(state))return -1;
     if(state.uiPaused){const float pw=360.0f,px=canvasW-pw-12.0f,py=48.0f;if(x>=px+12&&x<=px+pw-12&&y>=py+34&&y<=py+92)return 0;}
     return -1;
 }
@@ -250,8 +241,9 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
     }
     if(soloPauseMenu(state)){
         auto& settings=state.localSettings;
+        const PhoneMenuRow row=selectedPhoneRow(state);
         if(settings.menuPage==LocalMenuPage::Main){if(selection==0){setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Controls);else if(selection==2)openMenuPage(host,LocalMenuPage::Audio);else if(selection==3)openMenuPage(host,LocalMenuPage::Graphics);else{host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);}}
-        else if(settings.menuPage==LocalMenuPage::Controls){if(selection<10){settings.rebindingAction=selection;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(selection==10||selection==11){adjustMenuSetting(host,1);}else if(selection==12){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Main);}
+        else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Main);}
         return;
@@ -259,10 +251,11 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
     if(!state.started){
         if(state.dead){if(selection==1){glfwSetWindowShouldClose(window,GLFW_TRUE);return;}host.game.restart();setMouseCaptured(window,host,true);return;}
         auto& settings=state.localSettings;
+        const PhoneMenuRow row=selectedPhoneRow(state);
         if(settings.menuPage==LocalMenuPage::Main){if(selection==0){host.multiplayer.disconnect();host.game.restart();setMouseCaptured(window,host,true);}else if(selection==1)openMenuPage(host,LocalMenuPage::Online);else if(selection==2)openMenuPage(host,LocalMenuPage::Settings);else glfwSetWindowShouldClose(window,GLFW_TRUE);}
         else if(settings.menuPage==LocalMenuPage::Online){if(selection==0){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}else if(selection==1){host.enteringJoinCode=true;host.joinCode.clear();openMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}else openMenuPage(host,LocalMenuPage::Main);}
         else if(settings.menuPage==LocalMenuPage::Settings){if(selection==0)openMenuPage(host,LocalMenuPage::Controls);else if(selection==1)openMenuPage(host,LocalMenuPage::Audio);else if(selection==2)openMenuPage(host,LocalMenuPage::Graphics);else openMenuPage(host,LocalMenuPage::Main);}
-        else if(settings.menuPage==LocalMenuPage::Controls){if(selection<10){settings.rebindingAction=selection;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(selection==10||selection==11){adjustMenuSetting(host,1);}else if(selection==12){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Settings);}
+        else if(settings.menuPage==LocalMenuPage::Controls){if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}else if(row.action==PhoneMenuAction::AdjustMouse||row.action==PhoneMenuAction::AdjustController){adjustMenuSetting(host,1);}else if(row.action==PhoneMenuAction::NextControls){settings.controlsPage=1;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::PreviousControls){settings.controlsPage=0;state.hud.menuSelection=0;state.cinematic.textInteraction=0.65f;}else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}else openMenuPage(host,LocalMenuPage::Settings);}
         else if(settings.menuPage==LocalMenuPage::Audio){if(selection==0){settings.musicVolume=std::fmod(settings.musicVolume+0.10f,1.01f);}else if(selection==1){settings.sfxVolume=std::fmod(settings.sfxVolume+0.10f,1.01f);}else if(selection==2)settings.musicMuted=!settings.musicMuted;else if(selection==3)settings.sfxMuted=!settings.sfxMuted;else openMenuPage(host,LocalMenuPage::Settings);}
         else if(settings.menuPage==LocalMenuPage::Graphics){if(selection==0)adjustMenuSetting(host,1);else if(selection==1)settings.shadows=!settings.shadows;else if(selection==2)settings.particles=!settings.particles;else if(selection==3)settings.fpsCounter=!settings.fpsCounter;else openMenuPage(host,LocalMenuPage::Settings);}
         return;
@@ -273,11 +266,13 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
 void controllerMenuBack(GLFWwindow* window,HostState& host){
     const GameState& state=host.game.state();
     if(soloPauseMenu(state)){
+        if(state.localSettings.menuPage==LocalMenuPage::Controls&&state.localSettings.controlsPage!=0){GameState& mutableState=host.game.networkMutableState();mutableState.localSettings.controlsPage=0;mutableState.hud.menuSelection=0;mutableState.cinematic.textInteraction=0.65f;return;}
         if(state.localSettings.menuPage!=LocalMenuPage::Main){openMenuPage(host,LocalMenuPage::Main);return;}
         setMouseCaptured(window,host,true);return;
     }
     if(!state.started&&state.localSettings.menuPage!=LocalMenuPage::Main){
         if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();openMenuPage(host,LocalMenuPage::Online);return;}
+        if(state.localSettings.menuPage==LocalMenuPage::Controls&&state.localSettings.controlsPage!=0){GameState& mutableState=host.game.networkMutableState();mutableState.localSettings.controlsPage=0;mutableState.hud.menuSelection=0;mutableState.cinematic.textInteraction=0.65f;return;}
         const auto page=state.localSettings.menuPage;
         openMenuPage(host,page==LocalMenuPage::Settings||page==LocalMenuPage::Online?LocalMenuPage::Main:LocalMenuPage::Settings);
         return;
@@ -562,6 +557,7 @@ void printUsage() {
     std::printf("  --controller-test    Print connected controller state once and exit.\n");
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
+    std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
 }
 
 bool near(float a, float b, float eps = 0.025f) {
@@ -747,9 +743,10 @@ int main(int argc, char** argv) {
     const bool capturePaused=argValue(argc,argv,"--capture-paused-frame")!=nullptr;
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
+    const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
-    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):argValue(argc,argv,"--capture-frame"))))));
+    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
     }
@@ -802,6 +799,21 @@ int main(int argc, char** argv) {
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
+    if(captureMenu){
+        const char* page=argValue(argc,argv,"--menu-page");
+        GameState& fixture=host.game.networkMutableState();
+        host.game.prepareStartScreen();
+        fixture.localSettings.menuPage=LocalMenuPage::Main;
+        if(page&&std::strcmp(page,"pause")==0){host.game.restart();host.game.setUiPaused(true);}
+        else if(page&&std::strcmp(page,"online")==0)fixture.localSettings.menuPage=LocalMenuPage::Online;
+        else if(page&&std::strcmp(page,"settings")==0)fixture.localSettings.menuPage=LocalMenuPage::Settings;
+        else if(page&&std::strcmp(page,"controls2")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.controlsPage=1;}
+        else if(page&&std::strcmp(page,"controls1")==0){fixture.localSettings.menuPage=LocalMenuPage::Controls;fixture.localSettings.controlsPage=0;}
+        else if(page&&std::strcmp(page,"audio")==0)fixture.localSettings.menuPage=LocalMenuPage::Audio;
+        else if(page&&std::strcmp(page,"graphics")==0)fixture.localSettings.menuPage=LocalMenuPage::Graphics;
+        else fixture.localSettings.menuPage=LocalMenuPage::Main;
+        fixture.hud.menuSelection=0;
+    }
     if(tvRoomTest||tvRoomEnter){
         host.game.debugStartSecretTvTest(tvRoomEnter);
         const auto& tv=host.game.state().secretTv;

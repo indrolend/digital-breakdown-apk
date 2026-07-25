@@ -1,6 +1,7 @@
 #include "DesktopRenderer.hpp"
 #include "HumanVisual.hpp"
 #include "BitmapFont.hpp"
+#include "PhoneMenuLayout.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -256,54 +257,42 @@ void drawPhoneMenuSurface(const GameState& state){
     const bool menuVisible=state.cinematic.introActive||!state.started||pausedSolo;
     if(!menuVisible||state.camera.firstPerson)return;
     const PhoneTransformState& phone=state.phoneTransform;
-    const float screenW=PHONE_SCREEN_WIDTH*std::max(0.65f,state.phoneVisual.screenScale.x);
-    const float screenH=PHONE_SCREEN_HEIGHT*std::max(0.65f,state.phoneVisual.screenScale.y);
+    const PhoneMenuLayout layout=makePhoneMenuLayout(state);
+    const float screenW=layout.screenW;
+    const float screenH=layout.screenH;
     const float alpha=state.cinematic.introActive?1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f)):1.0f;
-    std::vector<std::string> items;
-    std::string title;
-    if(state.cinematic.introActive){title="DATA";items={"START"};}
-    else if(state.dead){title="";items={"RESTART","EXIT"};}
-    else if(pausedSolo&&state.localSettings.menuPage==LocalMenuPage::Main){title="PAUSED";items={"RESUME","CONTROLS","AUDIO","GRAPHICS","EXIT RUN"};}
-    else if(state.localSettings.menuPage==LocalMenuPage::Main){title="DATA";items={"SOLO","ONLINE","SETTINGS","EXIT"};}
-    else if(state.localSettings.menuPage==LocalMenuPage::Online){title="ONLINE";items={"HOST","JOIN","BACK"};}
-    else if(state.localSettings.menuPage==LocalMenuPage::JoinCode){title="ENTER CODE";items={};}
-    else if(state.localSettings.menuPage==LocalMenuPage::Settings){title="SETTINGS";items={"CONTROLS","AUDIO","GRAPHICS","BACK"};}
-    else if(state.localSettings.menuPage==LocalMenuPage::Controls){
-        title="CONTROLS";const char* actions[]={"FORWARD","BACK","LEFT","RIGHT","RUN","JUMP","LUNGE","SHOOT","CAMERA","ALT"};
-        const auto keyName=[](int key){if(key>=65&&key<=90)return std::string(1,static_cast<char>(key));if(key>=48&&key<=57)return std::string(1,static_cast<char>(key));if(key==32)return std::string("SPACE");if(key==340)return std::string("SHIFT");return std::string("KEY ")+std::to_string(key);};
-        for(int i=0;i<10;++i)items.push_back(std::string(actions[i])+" "+keyName(state.localSettings.keyboardBindings[i]));
-        items.push_back("LOOK "+std::to_string(static_cast<int>(std::round(state.localSettings.mouseLookSensitivity*100)))+"%");
-        items.push_back("PAD "+std::to_string(static_cast<int>(std::round(state.localSettings.controllerLookSensitivity*100)))+"%");
-        items.push_back("DEFAULTS");items.push_back("BACK");
-    }else if(state.localSettings.menuPage==LocalMenuPage::Audio){title="AUDIO";items={"MUSIC "+std::to_string(static_cast<int>(std::round(state.localSettings.musicVolume*100)))+"%","SFX "+std::to_string(static_cast<int>(std::round(state.localSettings.sfxVolume*100)))+"%",state.localSettings.musicMuted?"MUSIC ON":"MUSIC MUTE",state.localSettings.sfxMuted?"SFX ON":"SFX MUTE","BACK"};}
-    else {title="GRAPHICS";const char* presets[]={"LEGACY","NORMAL","PRETTY"};items={std::string("PRESET ")+presets[std::max(0,std::min(2,state.localSettings.graphicsPreset))],state.localSettings.shadows?"SHADOWS ON":"SHADOWS OFF",state.localSettings.particles?"PARTICLES ON":"PARTICLES OFF",state.localSettings.fpsCounter?"FPS ON":"FPS OFF","BACK"};}
 
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    phoneScreenQuad(phone,0,0,screenW*0.92f,screenH*0.92f,0.003f,0.010f,0.014f,0.56f*alpha);
-    phoneScreenQuad(phone,0,screenH*0.40f,screenW*0.72f,0.004f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.34f*alpha);
-    phoneScreenQuad(phone,0,-screenH*0.40f,screenW*0.72f,0.004f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.24f*alpha);
-    const bool compactList=state.localSettings.menuPage==LocalMenuPage::Controls;
-    const float titleScale=screenW*(compactList?0.022f:0.023f);
-    const float rowScale=screenW*(compactList?0.0105f:0.0165f);
-    if(!title.empty()){
-        const float tw=phoneTextWidth(title,titleScale);
-        if(title=="DATA")phoneScreenPaletteText(phone,title,-tw*0.5f,screenH*0.30f,titleScale,state.time,0.96f*alpha);
-        else phoneScreenText(phone,title,-tw*0.5f,screenH*0.30f,titleScale,0.90f,0.97f,1.0f,0.96f*alpha);
+    phoneScreenQuad(phone,layout.panel.x,layout.panel.y,layout.panel.w,layout.panel.h,0.003f,0.010f,0.014f,0.56f*alpha);
+    phoneScreenQuad(phone,0,layout.header.y-layout.header.h*0.47f,layout.safe.w*0.92f,layout.tokens.dividerThickness*screenH,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.34f*alpha);
+    phoneScreenQuad(phone,0,layout.footer.y+layout.footer.h*0.47f,layout.safe.w*0.92f,layout.tokens.dividerThickness*screenH,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.24f*alpha);
+    if(!layout.title.empty()){
+        const float tw=phoneTextWidth(layout.title,layout.titleScale);
+        if(layout.paletteTitle)phoneScreenPaletteText(phone,layout.title,-tw*0.5f,layout.titleY,layout.titleScale,state.time,0.96f*alpha);
+        else phoneScreenText(phone,layout.title,-tw*0.5f,layout.titleY,layout.titleScale,0.90f,0.97f,1.0f,0.96f*alpha);
     }
-    if(state.localSettings.menuPage==LocalMenuPage::JoinCode){
+    if(layout.joinCode){
         const std::string room=state.multiplayer.roomCode.data();std::string typed;for(int i=0;i<6;++i){typed+=i<static_cast<int>(room.size())?room[i]:'_';if(i<5)typed+=' ';}
-        const float scale=screenW*0.021f,tw=phoneTextWidth(typed,scale);phoneScreenText(phone,typed,-tw*0.5f,0.02f,scale,0.88f,1.0f,1.0f,0.94f*alpha);
+        const float scale=screenW*0.021f,tw=phoneTextWidth(typed,scale);phoneScreenText(phone,typed,-tw*0.5f,layout.content.y,scale,0.88f,1.0f,1.0f,0.94f*alpha);
     }
-    const float rowStep=compactList?screenH*0.055f:screenH*0.094f;
-    const float rowH=compactList?screenH*0.040f:screenH*0.064f;
-    const float startY=compactList?screenH*0.15f:screenH*0.12f;
-    for(int i=0;i<static_cast<int>(items.size());++i){
-        const bool selected=state.hud.menuSelection==i;const float y=startY-static_cast<float>(i)*rowStep;
+    for(int i=0;i<layout.rowCount;++i){
+        const PhoneMenuRow& row=layout.rows[i];
+        const bool selected=row.selectable&&state.hud.menuSelection==row.selectableIndex;
+        if(row.kind==PhoneMenuRowKind::Section){
+            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,Pass7Visual::MetallicTeal.r,Pass7Visual::MetallicTeal.g,Pass7Visual::MetallicTeal.b,0.70f*alpha);
+            continue;
+        }
         const float breath=selected?(0.5f+0.5f*std::sin(state.time*1.18f+i*0.11f)):0.0f;
-        phoneScreenQuad(phone,0,y-rowH*0.34f,screenW*0.72f,rowH,selected?0.08f:0.01f,selected?0.54f:0.06f,selected?0.62f:0.08f,(selected?0.24f+breath*0.045f:0.07f)*alpha);
-        phoneScreenQuad(phone,0,y-rowH*0.78f,screenW*0.62f,0.004f,0.62f,0.96f,1.0f,(selected?0.68f:0.24f)*alpha);
-        const float scale=rowScale,tw=phoneTextWidth(items[i],scale);
-        phoneScreenText(phone,items[i],-tw*0.5f,y,scale,selected?0.96f:0.72f,selected?1.0f:0.92f,1.0f,0.96f*alpha);
+        phoneScreenQuad(phone,row.visual.x,row.visual.y,row.visual.w,row.visual.h,selected?0.08f:0.01f,selected?0.54f:0.06f,selected?0.62f:0.08f,(selected?layout.tokens.selectedFillOpacity+breath*0.045f:layout.tokens.inactiveFillOpacity)*alpha);
+        phoneScreenQuad(phone,row.visual.x,row.visual.y-row.visual.h*0.44f,row.visual.w*0.84f,layout.tokens.dividerThickness*screenH,0.62f,0.96f,1.0f,(selected?0.68f:0.24f)*alpha);
+        if(row.kind==PhoneMenuRowKind::TwoColumn){
+            const float vw=phoneTextWidth(row.value,row.scale);
+            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,selected?0.96f:0.72f,selected?1.0f:0.92f,1.0f,0.96f*alpha);
+            phoneScreenText(phone,row.value,row.valueRightX-vw,row.textY,row.scale,selected?Pass7Visual::AcidChartreuse.r:Pass7Visual::MetallicTeal.r,selected?Pass7Visual::AcidChartreuse.g:Pass7Visual::MetallicTeal.g,selected?Pass7Visual::AcidChartreuse.b:Pass7Visual::MetallicTeal.b,0.96f*alpha);
+        }else{
+            const float tw=phoneTextWidth(row.label,row.scale);
+            phoneScreenText(phone,row.label,-tw*0.5f,row.textY,row.scale,selected?0.96f:0.72f,selected?1.0f:0.92f,1.0f,0.96f*alpha);
+        }
     }
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
 }
