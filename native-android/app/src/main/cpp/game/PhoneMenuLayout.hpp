@@ -48,17 +48,17 @@ struct PhoneMenuTokens {
     float footerZone = 0.12f;
     float panelInset = 0.04f;
     float titleScale = 0.0225f;
-    float itemScale = 0.0158f;
-    float metadataScale = 0.0100f;
-    float sectionScale = 0.0086f;
+    float itemScale = 0.0148f;
+    float metadataScale = 0.0098f;
+    float sectionScale = 0.0082f;
     float majorSpacing = 0.030f;
     float rowSpacing = 0.092f;
     float denseRowSpacing = 0.066f;
     float rowHeight = 0.062f;
     float denseRowHeight = 0.044f;
     float dividerThickness = 0.004f;
-    float selectedFillOpacity = 0.24f;
-    float inactiveFillOpacity = 0.070f;
+    float selectedFillOpacity = 0.0f;
+    float inactiveFillOpacity = 0.0f;
     float inactiveTextIntensity = 0.72f;
     float activeTextIntensity = 0.96f;
 };
@@ -216,76 +216,76 @@ inline PhoneMenuLayout makePhoneMenuLayout(const GameState& state) {
 
     const bool pausedSolo = state.started && state.uiPaused && !state.multiplayer.enabled && !state.upgradeMenu.active;
     if (state.cinematic.introActive) {
-        layout.title = "DATA"; layout.paletteTitle = true; addPhoneMenuItem(layout, "START", PhoneMenuAction::Start);
+        layout.title = "DATA"; layout.paletteTitle = true; addPhoneMenuItem(layout, "Start", PhoneMenuAction::Start);
     } else if (state.dead) {
-        layout.title = ""; addPhoneMenuItem(layout, "RESTART", PhoneMenuAction::Restart); addPhoneMenuItem(layout, "EXIT", PhoneMenuAction::Exit);
+        layout.title = ""; addPhoneMenuItem(layout, "Restart", PhoneMenuAction::Restart); addPhoneMenuItem(layout, "Exit", PhoneMenuAction::Exit);
     } else if (pausedSolo && state.localSettings.menuPage == LocalMenuPage::Main) {
         layout.title = "PAUSED";
-        addPhoneMenuItem(layout, "RESUME", PhoneMenuAction::Resume);
-        addPhoneMenuItem(layout, "CONTROLS", PhoneMenuAction::Controls);
-        addPhoneMenuItem(layout, "AUDIO", PhoneMenuAction::Audio);
-        addPhoneMenuItem(layout, "GRAPHICS", PhoneMenuAction::Graphics);
-        addPhoneMenuItem(layout, "EXIT RUN", PhoneMenuAction::ExitRun);
+        addPhoneMenuItem(layout, "Resume", PhoneMenuAction::Resume);
+        addPhoneMenuItem(layout, "Controls", PhoneMenuAction::Controls);
+        addPhoneMenuItem(layout, "Audio", PhoneMenuAction::Audio);
+        addPhoneMenuItem(layout, "Graphics", PhoneMenuAction::Graphics);
+        addPhoneMenuItem(layout, "Exit Run", PhoneMenuAction::ExitRun);
     } else if (state.localSettings.menuPage == LocalMenuPage::Main) {
         layout.title = "DATA"; layout.paletteTitle = true;
-        addPhoneMenuItem(layout, "SOLO", PhoneMenuAction::Solo);
-        addPhoneMenuItem(layout, "ONLINE", PhoneMenuAction::Online);
-        addPhoneMenuItem(layout, "SETTINGS", PhoneMenuAction::Settings);
-        addPhoneMenuItem(layout, "EXIT", PhoneMenuAction::Exit);
+        addPhoneMenuItem(layout, "Solo", PhoneMenuAction::Solo);
+        addPhoneMenuItem(layout, "Online", PhoneMenuAction::Online);
+        addPhoneMenuItem(layout, "Settings", PhoneMenuAction::Settings);
+        addPhoneMenuItem(layout, "Exit", PhoneMenuAction::Exit);
     } else if (state.localSettings.menuPage == LocalMenuPage::Online) {
-        layout.title = "ONLINE";
-        addPhoneMenuItem(layout, "HOST", PhoneMenuAction::Host);
-        addPhoneMenuItem(layout, "JOIN", PhoneMenuAction::Join);
-        addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+        layout.title = "Online";
+        addPhoneMenuItem(layout, "Host", PhoneMenuAction::Host);
+        addPhoneMenuItem(layout, "Join", PhoneMenuAction::Join);
+        addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::JoinCode) {
-        layout.title = "ENTER CODE"; layout.joinCode = true;
+        layout.title = "Enter Code"; layout.joinCode = true;
     } else if (state.localSettings.menuPage == LocalMenuPage::Settings) {
-        layout.title = "SETTINGS";
-        addPhoneMenuItem(layout, "CONTROLS", PhoneMenuAction::Controls);
-        addPhoneMenuItem(layout, "AUDIO", PhoneMenuAction::Audio);
-        addPhoneMenuItem(layout, "GRAPHICS", PhoneMenuAction::Graphics);
-        addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+        layout.title = "Settings";
+        addPhoneMenuItem(layout, "Controls", PhoneMenuAction::Controls);
+        addPhoneMenuItem(layout, "Audio", PhoneMenuAction::Audio);
+        addPhoneMenuItem(layout, "Graphics", PhoneMenuAction::Graphics);
+        addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Controls) {
         const bool pageTwo = state.localSettings.controlsPage != 0;
-        layout.title = pageTwo ? "CONTROLS 2/2" : "CONTROLS 1/2";
+        layout.title = pageTwo ? "Controls 2/2" : "Controls 1/2";
         if (!pageTwo) {
-            addPhoneMenuSection(layout, "MOVE");
-            addPhoneMenuValue(layout, "FORWARD", phoneMenuKeyName(state.localSettings.keyboardBindings[0]), PhoneMenuAction::Rebind, 0);
-            addPhoneMenuValue(layout, "BACK", phoneMenuKeyName(state.localSettings.keyboardBindings[1]), PhoneMenuAction::Rebind, 1);
-            addPhoneMenuValue(layout, "LEFT", phoneMenuKeyName(state.localSettings.keyboardBindings[2]), PhoneMenuAction::Rebind, 2);
-            addPhoneMenuValue(layout, "RIGHT", phoneMenuKeyName(state.localSettings.keyboardBindings[3]), PhoneMenuAction::Rebind, 3);
-            addPhoneMenuValue(layout, "RUN", phoneMenuKeyName(state.localSettings.keyboardBindings[4]), PhoneMenuAction::Rebind, 4);
-            addPhoneMenuValue(layout, "JUMP", phoneMenuKeyName(state.localSettings.keyboardBindings[5]), PhoneMenuAction::Rebind, 5);
-            addPhoneMenuItem(layout, "NEXT", PhoneMenuAction::NextControls);
-            addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+            addPhoneMenuSection(layout, "Move");
+            addPhoneMenuValue(layout, "Forward", phoneMenuKeyName(state.localSettings.keyboardBindings[0]), PhoneMenuAction::Rebind, 0);
+            addPhoneMenuValue(layout, "Back", phoneMenuKeyName(state.localSettings.keyboardBindings[1]), PhoneMenuAction::Rebind, 1);
+            addPhoneMenuValue(layout, "Left", phoneMenuKeyName(state.localSettings.keyboardBindings[2]), PhoneMenuAction::Rebind, 2);
+            addPhoneMenuValue(layout, "Right", phoneMenuKeyName(state.localSettings.keyboardBindings[3]), PhoneMenuAction::Rebind, 3);
+            addPhoneMenuValue(layout, "Run", phoneMenuKeyName(state.localSettings.keyboardBindings[4]), PhoneMenuAction::Rebind, 4);
+            addPhoneMenuValue(layout, "Jump", phoneMenuKeyName(state.localSettings.keyboardBindings[5]), PhoneMenuAction::Rebind, 5);
+            addPhoneMenuItem(layout, "Next", PhoneMenuAction::NextControls);
+            addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
         } else {
-            addPhoneMenuSection(layout, "ACTION");
-            addPhoneMenuValue(layout, "LUNGE", phoneMenuKeyName(state.localSettings.keyboardBindings[6]), PhoneMenuAction::Rebind, 6);
-            addPhoneMenuValue(layout, "SHOOT", phoneMenuKeyName(state.localSettings.keyboardBindings[7]), PhoneMenuAction::Rebind, 7);
-            addPhoneMenuValue(layout, "CAMERA", phoneMenuKeyName(state.localSettings.keyboardBindings[8]), PhoneMenuAction::Rebind, 8);
-            addPhoneMenuValue(layout, "ALTERNATE", phoneMenuKeyName(state.localSettings.keyboardBindings[9]), PhoneMenuAction::Rebind, 9);
-            addPhoneMenuSection(layout, "LOOK");
-            addPhoneMenuValue(layout, "MOUSE", std::to_string(phoneMenuPercent(state.localSettings.mouseLookSensitivity)) + "%", PhoneMenuAction::AdjustMouse);
-            addPhoneMenuValue(layout, "CONTROLLER", std::to_string(phoneMenuPercent(state.localSettings.controllerLookSensitivity)) + "%", PhoneMenuAction::AdjustController);
-            addPhoneMenuItem(layout, "PREVIOUS", PhoneMenuAction::PreviousControls);
-            addPhoneMenuItem(layout, "DEFAULTS", PhoneMenuAction::Defaults);
-            addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+            addPhoneMenuSection(layout, "Action");
+            addPhoneMenuValue(layout, "Lunge", phoneMenuKeyName(state.localSettings.keyboardBindings[6]), PhoneMenuAction::Rebind, 6);
+            addPhoneMenuValue(layout, "Shoot", phoneMenuKeyName(state.localSettings.keyboardBindings[7]), PhoneMenuAction::Rebind, 7);
+            addPhoneMenuValue(layout, "Camera", phoneMenuKeyName(state.localSettings.keyboardBindings[8]), PhoneMenuAction::Rebind, 8);
+            addPhoneMenuValue(layout, "Alternate", phoneMenuKeyName(state.localSettings.keyboardBindings[9]), PhoneMenuAction::Rebind, 9);
+            addPhoneMenuSection(layout, "Look");
+            addPhoneMenuValue(layout, "Mouse", std::to_string(phoneMenuPercent(state.localSettings.mouseLookSensitivity)) + "%", PhoneMenuAction::AdjustMouse);
+            addPhoneMenuValue(layout, "Controller", std::to_string(phoneMenuPercent(state.localSettings.controllerLookSensitivity)) + "%", PhoneMenuAction::AdjustController);
+            addPhoneMenuItem(layout, "Previous", PhoneMenuAction::PreviousControls);
+            addPhoneMenuItem(layout, "Defaults", PhoneMenuAction::Defaults);
+            addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
         }
     } else if (state.localSettings.menuPage == LocalMenuPage::Audio) {
-        layout.title = "AUDIO";
-        addPhoneMenuValue(layout, "MUSIC", std::to_string(phoneMenuPercent(state.localSettings.musicVolume)) + "%", PhoneMenuAction::MusicVolume);
+        layout.title = "Audio";
+        addPhoneMenuValue(layout, "Music", std::to_string(phoneMenuPercent(state.localSettings.musicVolume)) + "%", PhoneMenuAction::MusicVolume);
         addPhoneMenuValue(layout, "SFX", std::to_string(phoneMenuPercent(state.localSettings.sfxVolume)) + "%", PhoneMenuAction::SfxVolume);
-        addPhoneMenuItem(layout, state.localSettings.musicMuted ? "MUSIC ON" : "MUSIC MUTE", PhoneMenuAction::MusicMute);
-        addPhoneMenuItem(layout, state.localSettings.sfxMuted ? "SFX ON" : "SFX MUTE", PhoneMenuAction::SfxMute);
-        addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+        addPhoneMenuItem(layout, state.localSettings.musicMuted ? "Music On" : "Music Mute", PhoneMenuAction::MusicMute);
+        addPhoneMenuItem(layout, state.localSettings.sfxMuted ? "SFX On" : "SFX Mute", PhoneMenuAction::SfxMute);
+        addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
     } else {
-        const char* presets[] = {"LEGACY", "NORMAL", "PRETTY"};
-        layout.title = "GRAPHICS";
-        addPhoneMenuValue(layout, "PRESET", presets[std::max(0, std::min(2, state.localSettings.graphicsPreset))], PhoneMenuAction::GraphicsPreset);
-        addPhoneMenuItem(layout, state.localSettings.shadows ? "SHADOWS ON" : "SHADOWS OFF", PhoneMenuAction::ToggleShadows);
-        addPhoneMenuItem(layout, state.localSettings.particles ? "PARTICLES ON" : "PARTICLES OFF", PhoneMenuAction::ToggleParticles);
-        addPhoneMenuItem(layout, state.localSettings.fpsCounter ? "FPS ON" : "FPS OFF", PhoneMenuAction::ToggleFps);
-        addPhoneMenuItem(layout, "BACK", PhoneMenuAction::Back);
+        const char* presets[] = {"Legacy", "Normal", "Pretty"};
+        layout.title = "Graphics";
+        addPhoneMenuValue(layout, "Preset", presets[std::max(0, std::min(2, state.localSettings.graphicsPreset))], PhoneMenuAction::GraphicsPreset);
+        addPhoneMenuItem(layout, state.localSettings.shadows ? "Shadows On" : "Shadows Off", PhoneMenuAction::ToggleShadows);
+        addPhoneMenuItem(layout, state.localSettings.particles ? "Particles On" : "Particles Off", PhoneMenuAction::ToggleParticles);
+        addPhoneMenuItem(layout, state.localSettings.fpsCounter ? "FPS On" : "FPS Off", PhoneMenuAction::ToggleFps);
+        addPhoneMenuItem(layout, "Back", PhoneMenuAction::Back);
     }
 
     layout.titleScale = phoneMenuFitScale(layout.titleScale, layout.safe.w * 0.94f, layout.title);

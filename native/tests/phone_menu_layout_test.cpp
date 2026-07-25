@@ -59,7 +59,7 @@ int main() {
     state.localSettings.menuPage = LocalMenuPage::Controls;
     state.localSettings.controlsPage = 0;
     PhoneMenuLayout controlsOne = makePhoneMenuLayout(state);
-    assert(controlsOne.title == "CONTROLS 1/2");
+    assert(controlsOne.title == "Controls 1/2");
     assert(controlsOne.selectableCount == 8);
     assert(selectionRow(controlsOne, 0).action == PhoneMenuAction::Rebind);
     assert(selectionRow(controlsOne, 0).bindingAction == 0);
@@ -70,7 +70,7 @@ int main() {
 
     state.localSettings.controlsPage = 1;
     PhoneMenuLayout controlsTwo = makePhoneMenuLayout(state);
-    assert(controlsTwo.title == "CONTROLS 2/2");
+    assert(controlsTwo.title == "Controls 2/2");
     assert(controlsTwo.selectableCount == 9);
     assert(selectionRow(controlsTwo, 0).bindingAction == 6);
     assert(selectionRow(controlsTwo, 3).bindingAction == 9);

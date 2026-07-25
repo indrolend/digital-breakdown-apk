@@ -64,6 +64,7 @@ target_include_directories(
     PRIVATE
     "${DB_SHARED_ROOT}/game"
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
     "${miniaudio_SOURCE_DIR}"
 )
@@ -162,6 +163,9 @@ add_custom_command(TARGET DigitalBreakdown POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/audio"
         "$<TARGET_FILE_DIR:DigitalBreakdown>/audio"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/fonts"
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/fonts"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/../native-models"
         "$<TARGET_FILE_DIR:DigitalBreakdown>/models"

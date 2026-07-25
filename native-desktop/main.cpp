@@ -744,6 +744,8 @@ int main(int argc, char** argv) {
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
+    const char* captureMenuPage=argValue(argc,argv,"--menu-page");
+    const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
@@ -800,7 +802,7 @@ int main(int argc, char** argv) {
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
     if(captureMenu){
-        const char* page=argValue(argc,argv,"--menu-page");
+        const char* page=captureMenuPage;
         GameState& fixture=host.game.networkMutableState();
         host.game.prepareStartScreen();
         fixture.localSettings.menuPage=LocalMenuPage::Main;
@@ -842,7 +844,7 @@ int main(int argc, char** argv) {
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
     glfwSwapInterval(1);
     setMouseCaptured(window, host, host.game.state().started);
-    if(capturePaused)host.game.setUiPaused(true);
+    if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
     int framebufferWidth = 1;
     int framebufferHeight = 1;
@@ -916,6 +918,15 @@ int main(int argc, char** argv) {
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
+        if(captureMenuPause){
+            renderState.started=true;
+            renderState.uiPaused=true;
+            renderState.multiplayer.enabled=false;
+            renderState.upgradeMenu.active=false;
+            renderState.camera.firstPerson=false;
+            renderState.cinematic.introActive=false;
+            renderState.localSettings.menuPage=LocalMenuPage::Main;
+        }
         if (!capturePath) {
             const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);
             const auto& currentCamera = host.game.state().camera;
