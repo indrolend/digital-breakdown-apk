@@ -379,6 +379,7 @@ struct LocalSettingsState {
     float touchLookSensitivity = 1.0f;
     float controllerLookSensitivity = 1.0f;
     bool mobileFraming = false;
+    int controlsPage = 0;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
     std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
