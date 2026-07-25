@@ -3,6 +3,7 @@
 #include "DesktopMultiplayer.hpp"
 #include "Game.hpp"
 #include "PhoneMenuLayout.hpp"
+#include "PhoneDisplayLayout.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -123,49 +124,33 @@ int menuItemCount(const GameState& state);
 
 Vec3 cross3(const Vec3& a,const Vec3& b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 
-bool projectWorldToFramebuffer(const GameState& state,const Vec3& world,int fw,int fh,float& sx,float& sy){
+int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
+    if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
+    if(state.started&&!soloPauseMenu(state))return -1;
+    const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);
+    if(layout.selectableCount<=0)return -1;
+    const PhoneTransformState& phone=state.phoneTransform;
     const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos);
     Vec3 right=normalized(cross3(forward,{0.0f,1.0f,0.0f}));
     if(lengthSq(right)<0.00001f)right={1.0f,0.0f,0.0f};
     const Vec3 up=cross3(right,forward);
-    const Vec3 delta=world-state.camera.pos;
-    const float depth=dot3(delta,forward);
-    if(depth<=0.02f)return false;
     const float aspect=static_cast<float>(fw)/std::max(1,fh);
     const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f);
-    const float nx=dot3(delta,right)/(depth*tanHalf*aspect);
-    const float ny=dot3(delta,up)/(depth*tanHalf);
-    sx=(nx*0.5f+0.5f)*static_cast<float>(fw);
-    sy=(0.5f-ny*0.5f)*static_cast<float>(fh);
-    return std::isfinite(sx)&&std::isfinite(sy);
-}
-
-int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
-    if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
-    if(state.started&&!soloPauseMenu(state))return -1;
-    const PhoneMenuLayout layout=makePhoneMenuLayout(state);
-    if(layout.selectableCount<=0)return -1;
-    const PhoneTransformState& phone=state.phoneTransform;
-    for(int row=0;row<layout.rowCount;++row){
-        const PhoneMenuRow& menuRow=layout.rows[row];
-        if(!menuRow.selectable)continue;
-        const float y=menuRow.hit.y;
-        const Vec3 center=phone.screenCenter+phone.screenNormal*0.020f+phone.screenUp*y;
-        const Vec3 rx=phone.screenRight*(menuRow.hit.w*0.5f);
-        const Vec3 uy=phone.screenUp*(menuRow.hit.h*0.62f);
-        float minX=1.0e9f,minY=1.0e9f,maxX=-1.0e9f,maxY=-1.0e9f;
-        const Vec3 corners[4]={center-rx-uy,center+rx-uy,center+rx+uy,center-rx+uy};
-        bool projected=true;
-        for(const Vec3& corner:corners){
-            float sx=0.0f,sy=0.0f;
-            if(!projectWorldToFramebuffer(state,corner,fw,fh,sx,sy)){projected=false;break;}
-            minX=std::min(minX,sx);maxX=std::max(maxX,sx);minY=std::min(minY,sy);maxY=std::max(maxY,sy);
-        }
-        if(!projected)continue;
-        const float pad=4.0f;
-        if(cursorX>=minX-pad&&cursorX<=maxX+pad&&cursorY>=minY-pad&&cursorY<=maxY+pad)return menuRow.selectableIndex;
-    }
-    return -1;
+    const float nx=cursorX/static_cast<float>(std::max(1,fw))*2.0f-1.0f;
+    const float ny=1.0f-cursorY/static_cast<float>(std::max(1,fh))*2.0f;
+    const Vec3 ray=normalized(forward+right*(nx*tanHalf*aspect)+up*(ny*tanHalf));
+    const float denom=dot3(ray,phone.screenNormal);
+    if(std::abs(denom)<0.00001f)return -1;
+    const float t=dot3(phone.screenCenter-state.camera.pos,phone.screenNormal)/denom;
+    if(t<=0.0f)return -1;
+    const Vec3 hit=state.camera.pos+ray*t;
+    const Vec3 local=hit-phone.screenCenter;
+    const float screenW=PHONE_SCREEN_WIDTH*std::max(0.65f,state.phoneVisual.screenScale.x);
+    const float screenH=PHONE_SCREEN_HEIGHT*std::max(0.65f,state.phoneVisual.screenScale.y);
+    const float u=dot3(local,phone.screenRight)/screenW+0.5f;
+    const float v=0.5f-dot3(local,phone.screenUp)/screenH;
+    if(u<0.0f||u>1.0f||v<0.0f||v>1.0f)return -1;
+    return phoneDisplayItemAt(layout,u*static_cast<float>(layout.logicalW),v*static_cast<float>(layout.logicalH));
 }
 
 int menuItemCount(const GameState& state) {

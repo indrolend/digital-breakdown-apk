@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include "Game.hpp"
+#include "PhoneDisplayLayout.hpp"
 
 namespace {
 
@@ -29,6 +30,43 @@ void expectFiniteAndBounded(const PhoneDisplayState& display) {
     assert(finite(display.lighting.radius));
 }
 
+void expectRectInside(const PhoneDisplayRect& outer, const PhoneDisplayRect& inner) {
+    constexpr float epsilon = 0.001f;
+    assert(inner.x + epsilon >= outer.x);
+    assert(inner.y + epsilon >= outer.y);
+    assert(inner.x + inner.w <= outer.x + outer.w + epsilon);
+    assert(inner.y + inner.h <= outer.y + outer.h + epsilon);
+}
+
+void expectLayoutInside(const PhoneDisplayMenuLayout& layout) {
+    assert(layout.logicalW == PhoneDisplayState::LogicalWidth);
+    assert(layout.logicalH == PhoneDisplayState::LogicalHeight);
+    assert(layout.safe.x > 0.0f && layout.safe.y > 0.0f);
+    assert(layout.safe.x + layout.safe.w < static_cast<float>(layout.logicalW));
+    assert(layout.safe.y + layout.safe.h < static_cast<float>(layout.logicalH));
+    for (int i = 0; i < layout.rowCount; ++i) {
+        const PhoneDisplayMenuRow& row = layout.rows[i];
+        assert(row.baselineY >= layout.safe.y);
+        assert(row.baselineY <= layout.safe.y + layout.safe.h);
+        expectRectInside(layout.safe, row.visual);
+        if (row.selectable) {
+            expectRectInside(layout.safe, row.hit);
+            assert(row.selectableIndex >= 0);
+        } else {
+            assert(row.selectableIndex < 0);
+            assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
+        }
+    }
+}
+
+void expectSelectableHit(const PhoneDisplayMenuLayout& layout, int selection) {
+    const PhoneDisplayMenuRow* row = phoneDisplayRowForSelection(layout, selection);
+    assert(row != nullptr);
+    const float cx = row->hit.x + row->hit.w * 0.5f;
+    const float cy = row->hit.y + row->hit.h * 0.5f;
+    assert(phoneDisplayItemAt(layout, cx, cy) == selection);
+}
+
 } // namespace
 
 int main() {
@@ -39,7 +77,36 @@ int main() {
     expectFiniteAndBounded(game.state().phoneDisplay);
 
     GameState& menu = const_cast<GameState&>(game.state());
+    PhoneDisplayMenuLayout mainLayout = makePhoneDisplayMenuLayout(menu);
+    expectLayoutInside(mainLayout);
+    assert(mainLayout.title == "DATA");
+    assert(mainLayout.selectableCount == 4);
+    expectSelectableHit(mainLayout, 0);
+
     menu.localSettings.menuPage = LocalMenuPage::Controls;
+    menu.localSettings.controlsPage = 0;
+    PhoneDisplayMenuLayout controlsOne = makePhoneDisplayMenuLayout(menu);
+    expectLayoutInside(controlsOne);
+    assert(controlsOne.title == "Controls 1/2");
+    assert(controlsOne.selectableCount == 8);
+    assert(controlsOne.rowCount == 9);
+    assert(controlsOne.rows[0].kind == PhoneMenuRowKind::Section);
+    assert(!controlsOne.rows[0].selectable);
+    expectSelectableHit(controlsOne, 0);
+    expectSelectableHit(controlsOne, controlsOne.selectableCount - 1);
+
+    menu.localSettings.controlsPage = 1;
+    PhoneDisplayMenuLayout controlsTwo = makePhoneDisplayMenuLayout(menu);
+    expectLayoutInside(controlsTwo);
+    assert(controlsTwo.title == "Controls 2/2");
+    assert(controlsTwo.selectableCount == 10);
+    assert(controlsTwo.rowCount == 12);
+    assert(controlsTwo.rows[0].kind == PhoneMenuRowKind::Section);
+    assert(controlsTwo.rows[5].kind == PhoneMenuRowKind::Section);
+    assert(!controlsTwo.rows[0].selectable && !controlsTwo.rows[5].selectable);
+    expectSelectableHit(controlsTwo, 0);
+    expectSelectableHit(controlsTwo, controlsTwo.selectableCount - 1);
+
     step(game);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Controls);
     assert(game.state().phoneDisplay.previousMode == PhoneDisplayMode::MainMenu);
@@ -71,10 +138,16 @@ int main() {
     death.dead = true;
     death.started = false;
     death.uiPaused = false;
+    death.localSettings.menuPage = LocalMenuPage::Main;
     step(game);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Death);
     assert(game.state().phoneDisplay.interactive);
     expectFiniteAndBounded(game.state().phoneDisplay);
+    PhoneDisplayMenuLayout deathLayout = makePhoneDisplayMenuLayout(death);
+    expectLayoutInside(deathLayout);
+    assert(deathLayout.selectableCount == 1);
+    assert(deathLayout.rows[0].label == "Again?");
+    expectSelectableHit(deathLayout, 0);
 
     return 0;
 }

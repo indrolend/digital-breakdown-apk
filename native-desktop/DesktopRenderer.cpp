@@ -1,7 +1,7 @@
 #include "DesktopRenderer.hpp"
 #include "HumanVisual.hpp"
 #include "BitmapFont.hpp"
-#include "PhoneMenuLayout.hpp"
+#include "PhoneDisplayLayout.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -36,43 +36,19 @@ constexpr float ROOM_DEPTH = 42.0f;
 constexpr int ROOM_VISUAL_HORIZON = 2;
 constexpr float ROOM_WALL_HEIGHT = 7.2f;
 constexpr float PI = 3.14159265358979323846f;
-constexpr int MENU_FONT_FIRST_CHAR = 32;
-constexpr int MENU_FONT_CHAR_COUNT = 95;
-constexpr int MENU_FONT_ATLAS_SIZE = 1024;
-constexpr float MENU_FONT_BAKE_PX = 64.0f;
 
 struct MenuFontAtlas {
-    GLuint texture = 0;
-    bool ready = false;
-    std::array<stbtt_bakedchar, MENU_FONT_CHAR_COUNT> glyphs{};
+    std::vector<unsigned char> bytes;
+    stbtt_fontinfo info{};
+    bool cpuReady = false;
 
     bool load(const std::filesystem::path& path) {
         std::ifstream in(path, std::ios::binary);
         if (!in) return false;
-        std::vector<unsigned char> fontBytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (fontBytes.empty()) return false;
-        std::vector<unsigned char> atlasPixels(MENU_FONT_ATLAS_SIZE * MENU_FONT_ATLAS_SIZE, 0);
-        const int bakeResult = stbtt_BakeFontBitmap(
-            fontBytes.data(),
-            0,
-            MENU_FONT_BAKE_PX,
-            atlasPixels.data(),
-            MENU_FONT_ATLAS_SIZE,
-            MENU_FONT_ATLAS_SIZE,
-            MENU_FONT_FIRST_CHAR,
-            MENU_FONT_CHAR_COUNT,
-            glyphs.data());
-        if (bakeResult <= 0) return false;
-        if (!texture) glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, MENU_FONT_ATLAS_SIZE, MENU_FONT_ATLAS_SIZE, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasPixels.data());
-        ready = texture != 0;
-        return ready;
+        bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        if (bytes.empty()) return false;
+        cpuReady = stbtt_InitFont(&info, bytes.data(), stbtt_GetFontOffsetForIndex(bytes.data(), 0)) != 0;
+        return cpuReady;
     }
 };
 
@@ -262,148 +238,163 @@ void fxStreak(const Vec3& p,const Quat& q,float length,float width,float r,float
     for(int i=0;i<=segments;++i){const float angle=i*PI*2.0f/segments,c=std::cos(angle),s=std::sin(angle); glVertex3f(c*width,s*width,-length*0.5f); glVertex3f(c*width*0.32f,s*width*0.32f,length*0.5f);} glEnd(); glPopMatrix();
 }
 
-void phoneScreenQuad(const PhoneTransformState& phone,float x,float y,float w,float h,float r,float g,float b,float a){
-    const Vec3 c=phone.screenCenter+phone.screenNormal*0.020f+phone.screenRight*x+phone.screenUp*y;
-    const Vec3 rx=phone.screenRight*(w*0.5f),uy=phone.screenUp*(h*0.5f);
-    gradedColor(r,g,b,a);
-    glBegin(GL_QUADS);
-    glVertex3f((c-rx-uy).x,(c-rx-uy).y,(c-rx-uy).z);
-    glVertex3f((c+rx-uy).x,(c+rx-uy).y,(c+rx-uy).z);
-    glVertex3f((c+rx+uy).x,(c+rx+uy).y,(c+rx+uy).z);
-    glVertex3f((c-rx+uy).x,(c-rx+uy).y,(c-rx+uy).z);
-    glEnd();
-}
+struct CpuCanvas {
+    int w = PhoneDisplayState::LogicalWidth;
+    int h = PhoneDisplayState::LogicalHeight;
+    std::vector<unsigned char>& pixels;
+};
 
-float bitmapPhoneTextWidth(const std::string& value,float scale){return static_cast<float>(value.size())*6.0f*scale;}
-
-void phoneScreenBitmapText(const PhoneTransformState& phone,const std::string& value,float x,float y,float scale,float r,float g,float b,float a){
-    float pen=x;
-    for(char c:value){
-        if(c==' '){pen+=6.0f*scale;continue;}
-        const auto rows=bitmapGlyph(c);
-        for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){
-            const float px=pen+static_cast<float>(col)*scale;
-            const float py=y-static_cast<float>(row)*scale;
-            phoneScreenQuad(phone,px,py,scale*0.82f,scale*0.82f,r,g,b,a);
-        }
-        pen+=6.0f*scale;
+void cpuClear(CpuCanvas& canvas, float r, float g, float b, float a = 1.0f) {
+    const unsigned char rr = static_cast<unsigned char>(clampf(r, 0.0f, 1.0f) * 255.0f);
+    const unsigned char gg = static_cast<unsigned char>(clampf(g, 0.0f, 1.0f) * 255.0f);
+    const unsigned char bb = static_cast<unsigned char>(clampf(b, 0.0f, 1.0f) * 255.0f);
+    const unsigned char aa = static_cast<unsigned char>(clampf(a, 0.0f, 1.0f) * 255.0f);
+    for (int i = 0; i < canvas.w * canvas.h; ++i) {
+        const int at = i * 4;
+        canvas.pixels[at + 0] = rr;
+        canvas.pixels[at + 1] = gg;
+        canvas.pixels[at + 2] = bb;
+        canvas.pixels[at + 3] = aa;
     }
 }
 
-const MenuFontAtlas& menuFont(bool semibold) {
-    return semibold && menuSemiboldFont.ready ? menuSemiboldFont : menuRegularFont;
-}
-
-float phoneTextWidth(const std::string& value,float scale,bool semibold=false){
-    const MenuFontAtlas& font = menuFont(semibold);
-    if (!font.ready) return bitmapPhoneTextWidth(value, scale);
-    float widthPx = 0.0f;
-    for (unsigned char c : value) {
-        if (c < MENU_FONT_FIRST_CHAR || c >= MENU_FONT_FIRST_CHAR + MENU_FONT_CHAR_COUNT) {
-            widthPx += MENU_FONT_BAKE_PX * 0.32f;
-            continue;
+void cpuRect(CpuCanvas& canvas, float x, float y, float w, float h, float r, float g, float b, float a) {
+    const int x0 = std::max(0, static_cast<int>(std::floor(x)));
+    const int y0 = std::max(0, static_cast<int>(std::floor(y)));
+    const int x1 = std::min(canvas.w, static_cast<int>(std::ceil(x + w)));
+    const int y1 = std::min(canvas.h, static_cast<int>(std::ceil(y + h)));
+    const float alpha = clampf(a, 0.0f, 1.0f);
+    for (int py = y0; py < y1; ++py) {
+        for (int px = x0; px < x1; ++px) {
+            const int at = (py * canvas.w + px) * 4;
+            canvas.pixels[at + 0] = static_cast<unsigned char>((static_cast<float>(canvas.pixels[at + 0]) * (1.0f - alpha) + r * 255.0f * alpha));
+            canvas.pixels[at + 1] = static_cast<unsigned char>((static_cast<float>(canvas.pixels[at + 1]) * (1.0f - alpha) + g * 255.0f * alpha));
+            canvas.pixels[at + 2] = static_cast<unsigned char>((static_cast<float>(canvas.pixels[at + 2]) * (1.0f - alpha) + b * 255.0f * alpha));
+            canvas.pixels[at + 3] = 255;
         }
-        widthPx += font.glyphs[c - MENU_FONT_FIRST_CHAR].xadvance;
     }
-    return widthPx * ((scale * 7.0f) / MENU_FONT_BAKE_PX);
 }
 
-void phoneScreenTexturedQuad(const PhoneTransformState& phone,float x0,float y0,float x1,float y1,float s0,float t0,float s1,float t1){
-    const Vec3 a=phone.screenCenter+phone.screenNormal*0.022f+phone.screenRight*x0+phone.screenUp*y1;
-    const Vec3 b=phone.screenCenter+phone.screenNormal*0.022f+phone.screenRight*x1+phone.screenUp*y1;
-    const Vec3 c=phone.screenCenter+phone.screenNormal*0.022f+phone.screenRight*x1+phone.screenUp*y0;
-    const Vec3 d=phone.screenCenter+phone.screenNormal*0.022f+phone.screenRight*x0+phone.screenUp*y0;
-    glBegin(GL_QUADS);
-    glTexCoord2f(s0,t1); glVertex3f(a.x,a.y,a.z);
-    glTexCoord2f(s1,t1); glVertex3f(b.x,b.y,b.z);
-    glTexCoord2f(s1,t0); glVertex3f(c.x,c.y,c.z);
-    glTexCoord2f(s0,t0); glVertex3f(d.x,d.y,d.z);
-    glEnd();
+const MenuFontAtlas& cpuMenuFont(bool semibold) {
+    return semibold && menuSemiboldFont.cpuReady ? menuSemiboldFont : menuRegularFont;
 }
 
-void phoneScreenText(const PhoneTransformState& phone,const std::string& value,float x,float y,float scale,float r,float g,float b,float a,bool semibold=false){
-    const MenuFontAtlas& font = menuFont(semibold);
-    if (!font.ready) {
-        phoneScreenBitmapText(phone, value, x, y, scale, r, g, b, a);
+float cpuTextWidth(const std::string& text, float px, bool semibold = false) {
+    const MenuFontAtlas& font = cpuMenuFont(semibold);
+    if (!font.cpuReady) return static_cast<float>(text.size()) * px * 0.55f;
+    const float scale = stbtt_ScaleForPixelHeight(&font.info, px);
+    float width = 0.0f;
+    int previous = 0;
+    for (unsigned char c : text) {
+        int advance = 0, bearing = 0;
+        stbtt_GetCodepointHMetrics(&font.info, c, &advance, &bearing);
+        if (previous) width += static_cast<float>(stbtt_GetCodepointKernAdvance(&font.info, previous, c)) * scale;
+        width += static_cast<float>(advance) * scale;
+        previous = c;
+    }
+    return width;
+}
+
+void cpuText(CpuCanvas& canvas, const std::string& text, float x, float baseline, float px, float r, float g, float b, float a, bool semibold = false, bool centered = false) {
+    const MenuFontAtlas& font = cpuMenuFont(semibold);
+    if (!font.cpuReady) return;
+    float pen = centered ? x - cpuTextWidth(text, px, semibold) * 0.5f : x;
+    const float scale = stbtt_ScaleForPixelHeight(&font.info, px);
+    int previous = 0;
+    for (unsigned char c : text) {
+        int advance = 0, bearing = 0;
+        stbtt_GetCodepointHMetrics(&font.info, c, &advance, &bearing);
+        if (previous) pen += static_cast<float>(stbtt_GetCodepointKernAdvance(&font.info, previous, c)) * scale;
+        int bw = 0, bh = 0, xoff = 0, yoff = 0;
+        unsigned char* bitmap = stbtt_GetCodepointBitmap(&font.info, scale, scale, c, &bw, &bh, &xoff, &yoff);
+        if (bw > 0 && bh > 0) {
+            const int dstX = static_cast<int>(std::floor(pen)) + xoff;
+            const int dstY = static_cast<int>(std::floor(baseline)) + yoff;
+            for (int yy = 0; yy < bh; ++yy) {
+                const int py = dstY + yy;
+                if (py < 0 || py >= canvas.h) continue;
+                for (int xx = 0; xx < bw; ++xx) {
+                    const int pxOut = dstX + xx;
+                    if (pxOut < 0 || pxOut >= canvas.w) continue;
+                    const float alpha = (static_cast<float>(bitmap[yy * bw + xx]) / 255.0f) * clampf(a, 0.0f, 1.0f);
+                    const int at = (py * canvas.w + pxOut) * 4;
+                    canvas.pixels[at + 0] = static_cast<unsigned char>(static_cast<float>(canvas.pixels[at + 0]) * (1.0f - alpha) + r * 255.0f * alpha);
+                    canvas.pixels[at + 1] = static_cast<unsigned char>(static_cast<float>(canvas.pixels[at + 1]) * (1.0f - alpha) + g * 255.0f * alpha);
+                    canvas.pixels[at + 2] = static_cast<unsigned char>(static_cast<float>(canvas.pixels[at + 2]) * (1.0f - alpha) + b * 255.0f * alpha);
+                    canvas.pixels[at + 3] = 255;
+                }
+            }
+        }
+        stbtt_FreeBitmap(bitmap, nullptr);
+        pen += static_cast<float>(advance) * scale;
+        previous = c;
+    }
+}
+
+void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>& pixels) {
+    pixels.resize(PhoneDisplayState::LogicalWidth * PhoneDisplayState::LogicalHeight * 4);
+    CpuCanvas canvas{PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, pixels};
+    const PhoneDisplayState& display = state.phoneDisplay;
+    const Vec3 tint = display.screenTint;
+    cpuClear(canvas, 0.025f + tint.x * 0.18f, 0.045f + tint.y * 0.16f, 0.060f + tint.z * 0.15f, 1.0f);
+    cpuRect(canvas, 0, 0, static_cast<float>(canvas.w), static_cast<float>(canvas.h), 0.03f, 0.55f, 0.62f, 0.10f + display.brightness * 0.08f);
+
+    const bool menuVisible = state.cinematic.introActive || !state.started || state.dead ||
+        (state.started && state.uiPaused && !state.multiplayer.enabled && !state.upgradeMenu.active);
+    if (!menuVisible) {
+        cpuRect(canvas, 80, 1020, 560, 34, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.22f + state.vacuum.power * 0.28f);
+        cpuRect(canvas, 80, 1070, 560 * state.hud.batteryFill, 20, 0.86f, 0.98f, 1.0f, 0.56f);
         return;
     }
-    const float worldPerPx = (scale * 7.0f) / MENU_FONT_BAKE_PX;
-    float penX = 0.0f;
-    float penY = 0.0f;
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, font.texture);
-    glColor4f(r,g,b,a);
-    for (unsigned char c : value) {
-        if (c < MENU_FONT_FIRST_CHAR || c >= MENU_FONT_FIRST_CHAR + MENU_FONT_CHAR_COUNT) {
-            penX += MENU_FONT_BAKE_PX * 0.32f;
+
+    const PhoneDisplayMenuLayout layout = makePhoneDisplayMenuLayout(state);
+    if (!layout.title.empty()) {
+        if (layout.paletteTitle) {
+            float pen = layout.logicalW * 0.5f - cpuTextWidth(layout.title, layout.titlePx, true) * 0.5f;
+            for (std::size_t i = 0; i < layout.title.size(); ++i) {
+                const std::string letter(1, layout.title[i]);
+                const float hue = std::fmod(state.time * 0.026f + static_cast<float>(i) * 0.115f, 1.0f);
+                const float k = hue * 6.0f, f = k - std::floor(k), q = 1.0f - f;
+                Vec3 color{1.0f, f, 0.0f};
+                switch (static_cast<int>(k) % 6) {
+                    case 1: color = {q, 1.0f, 0.0f}; break;
+                    case 2: color = {0.0f, 1.0f, f}; break;
+                    case 3: color = {0.0f, q, 1.0f}; break;
+                    case 4: color = {f, 0.0f, 1.0f}; break;
+                    case 5: color = {1.0f, 0.0f, q}; break;
+                }
+                cpuText(canvas, letter, pen, layout.titleCenterY + layout.titlePx * 0.34f, layout.titlePx, 0.55f + color.x * 0.42f, 0.65f + color.y * 0.34f, 0.72f + color.z * 0.28f, 0.96f, true);
+                pen += cpuTextWidth(letter, layout.titlePx, true) + 2.0f;
+            }
+        } else {
+            cpuText(canvas, layout.title, layout.logicalW * 0.5f, layout.titleCenterY + layout.titlePx * 0.34f, layout.titlePx, 0.90f, 0.97f, 1.0f, 0.96f, true, true);
+        }
+    }
+    if (layout.joinCode) {
+        const std::string room = state.multiplayer.roomCode.data();
+        std::string typed;
+        for (int i = 0; i < 6; ++i) { typed += i < static_cast<int>(room.size()) ? room[i] : '_'; if (i < 5) typed += ' '; }
+        cpuText(canvas, typed, layout.logicalW * 0.5f, layout.content.y + layout.content.h * 0.50f, 46.0f, 0.88f, 1.0f, 1.0f, 0.94f, true, true);
+    }
+    for (int i = 0; i < layout.rowCount; ++i) {
+        const PhoneDisplayMenuRow& row = layout.rows[i];
+        const bool selected = row.selectable && state.hud.menuSelection == row.selectableIndex;
+        if (row.kind == PhoneMenuRowKind::Section) {
+            cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g, Pass7Visual::MetallicTeal.b, 0.62f, true);
             continue;
         }
-        stbtt_aligned_quad q{};
-        stbtt_GetBakedQuad(font.glyphs.data(), MENU_FONT_ATLAS_SIZE, MENU_FONT_ATLAS_SIZE, c - MENU_FONT_FIRST_CHAR, &penX, &penY, &q, 1);
-        const float x0 = x + q.x0 * worldPerPx;
-        const float x1 = x + q.x1 * worldPerPx;
-        const float y0 = y - q.y0 * worldPerPx;
-        const float y1 = y - q.y1 * worldPerPx;
-        phoneScreenTexturedQuad(phone, x0, y0, x1, y1, q.s0, q.t0, q.s1, q.t1);
-    }
-    glDisable(GL_TEXTURE_2D);
-}
-
-void phoneScreenPaletteText(const PhoneTransformState& phone,const std::string& value,float x,float y,float scale,float time,float a){
-    const auto rainbow=[](float hue){hue-=std::floor(hue);const float k=hue*6.0f,i=std::floor(k),f=k-i,q=1.0f-f;switch(static_cast<int>(i)%6){case 0:return Vec3{1,f,0};case 1:return Vec3{q,1,0};case 2:return Vec3{0,1,f};case 3:return Vec3{0,q,1};case 4:return Vec3{f,0,1};default:return Vec3{1,0,q};}};
-    float pen=x;
-    for(std::size_t i=0;i<value.size();++i){
-        const char c=value[i];
-        if(c==' '){pen+=6.0f*scale;continue;}
-        const Vec3 color=rainbow(time*0.026f+static_cast<float>(i)*0.115f);
-        const std::string letter(1,c);
-        phoneScreenText(phone,letter,pen,y+std::sin(time*1.45f+static_cast<float>(i)*0.42f)*scale*0.10f,scale,0.55f+color.x*0.42f,0.65f+color.y*0.34f,0.72f+color.z*0.28f,a,true);
-        pen+=phoneTextWidth(letter,scale,true)+scale*0.10f;
-    }
-}
-
-void drawPhoneMenuSurface(const GameState& state){
-    const bool pausedSolo=state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;
-    const bool menuVisible=state.cinematic.introActive||!state.started||state.dead||pausedSolo;
-    if(!menuVisible||state.camera.firstPerson)return;
-    const PhoneTransformState& phone=state.phoneTransform;
-    const PhoneMenuLayout layout=makePhoneMenuLayout(state);
-    const float screenW=layout.screenW;
-    const float alpha=state.cinematic.introActive?1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f)):1.0f;
-
-    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    if(!layout.title.empty()){
-        const float tw=phoneTextWidth(layout.title,layout.titleScale,true);
-        if(layout.paletteTitle)phoneScreenPaletteText(phone,layout.title,-tw*0.5f,layout.titleY,layout.titleScale,state.time,0.96f*alpha);
-        else phoneScreenText(phone,layout.title,-tw*0.5f,layout.titleY,layout.titleScale,0.90f,0.97f,1.0f,0.96f*alpha,true);
-    }
-    if(layout.joinCode){
-        const std::string room=state.multiplayer.roomCode.data();std::string typed;for(int i=0;i<6;++i){typed+=i<static_cast<int>(room.size())?room[i]:'_';if(i<5)typed+=' ';}
-        const float scale=screenW*0.020f,tw=phoneTextWidth(typed,scale,true);phoneScreenText(phone,typed,-tw*0.5f,layout.content.y,scale,0.88f,1.0f,1.0f,0.94f*alpha,true);
-    }
-    for(int i=0;i<layout.rowCount;++i){
-        const PhoneMenuRow& row=layout.rows[i];
-        const bool selected=row.selectable&&state.hud.menuSelection==row.selectableIndex;
-        if(row.kind==PhoneMenuRowKind::Section){
-            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,Pass7Visual::MetallicTeal.r,Pass7Visual::MetallicTeal.g,Pass7Visual::MetallicTeal.b,0.62f*alpha,true);
-            continue;
+        if (selected) {
+            const float markerX = (state.dead && row.action == PhoneMenuAction::Restart) ? layout.logicalW * 0.5f - cpuTextWidth(row.label, row.fontPx, true) * 0.5f - 34.0f : row.labelX - 34.0f;
+            cpuRect(canvas, markerX, row.baselineY - row.fontPx * 0.36f, 8.0f, 8.0f, Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g, Pass7Visual::ElectricCyan.b, 0.94f);
         }
-        const float markerPulse=selected?(0.72f+0.28f*std::sin(state.time*2.2f+i*0.17f)):0.0f;
-        const bool centeredRestart=state.dead&&row.action==PhoneMenuAction::Restart;
-        const float centeredWidth=centeredRestart?phoneTextWidth(row.label,row.scale,selected):0.0f;
-        const float itemX = row.kind==PhoneMenuRowKind::TwoColumn ? row.labelX : (centeredRestart ? -centeredWidth*0.5f : -layout.safe.w*0.22f);
-        if(selected){
-            phoneScreenQuad(phone,itemX-layout.safe.w*0.090f,row.textY-row.scale*0.34f,layout.screenW*0.012f,layout.screenW*0.012f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,(0.78f+markerPulse*0.18f)*alpha);
-        }
-        if(row.kind==PhoneMenuRowKind::TwoColumn){
-            const float vw=phoneTextWidth(row.value,row.scale,selected);
-            phoneScreenText(phone,row.label,row.labelX,row.textY,row.scale,selected?1.0f:0.70f,selected?1.0f:0.88f,1.0f,selected?1.0f*alpha:0.76f*alpha,selected);
-            phoneScreenText(phone,row.value,row.valueRightX-vw,row.textY,row.scale,selected?Pass7Visual::AcidChartreuse.r:Pass7Visual::MetallicTeal.r,selected?Pass7Visual::AcidChartreuse.g:Pass7Visual::MetallicTeal.g,selected?Pass7Visual::AcidChartreuse.b:Pass7Visual::MetallicTeal.b,selected?0.98f*alpha:0.78f*alpha,selected);
-        }else{
-            phoneScreenText(phone,row.label,itemX,row.textY,row.scale,selected?1.0f:0.70f,selected?1.0f:0.88f,1.0f,selected?1.0f*alpha:0.76f*alpha,selected);
+        const float alpha = selected ? 1.0f : 0.72f;
+        if (row.kind == PhoneMenuRowKind::TwoColumn) {
+            cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, selected ? 1.0f : 0.70f, selected ? 1.0f : 0.88f, 1.0f, alpha, selected);
+            cpuText(canvas, row.value, row.valueRightX - cpuTextWidth(row.value, row.fontPx, selected), row.baselineY, row.fontPx, selected ? Pass7Visual::AcidChartreuse.r : Pass7Visual::MetallicTeal.r, selected ? Pass7Visual::AcidChartreuse.g : Pass7Visual::MetallicTeal.g, selected ? Pass7Visual::AcidChartreuse.b : Pass7Visual::MetallicTeal.b, selected ? 0.98f : 0.78f, selected);
+        } else {
+            cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, selected ? 1.0f : 0.70f, selected ? 1.0f : 0.88f, 1.0f, alpha, selected, state.dead && row.action == PhoneMenuAction::Restart);
         }
     }
-    glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
 }
 
 void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, const Quat& q, float r, float g, float b) {
@@ -461,6 +452,54 @@ void DesktopRenderer::drawSecretTvScreen(const GameState& state, float phoneProx
     glVertex3f(x-0.002f,cy+halfY,cz-halfZ);
     glEnd();
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glDisable(GL_TEXTURE_2D);glEnable(GL_LIGHTING);
+}
+
+void DesktopRenderer::drawPhoneDisplayTexture(const GameState& state) const {
+    renderPhoneDisplayPixels(state, phoneDisplayPixels_);
+    if (!phoneDisplayTexture_) glGenTextures(1, &phoneDisplayTexture_);
+    glBindTexture(GL_TEXTURE_2D, phoneDisplayTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, phoneDisplayPixels_.data());
+
+    const PhoneTransformState& phone = state.phoneTransform;
+    const float halfW = PHONE_SCREEN_WIDTH * state.phoneVisual.screenScale.x * 0.5f;
+    const float halfH = PHONE_SCREEN_HEIGHT * state.phoneVisual.screenScale.y * 0.5f;
+    const Vec3 center = phone.screenCenter + phone.screenNormal * 0.023f;
+    const Vec3 rx = phone.screenRight * halfW;
+    const Vec3 uy = phone.screenUp * halfH;
+    const PhoneDisplayState& display = state.phoneDisplay;
+    const float alpha = clampf(0.80f + display.brightness * 0.20f, 0.0f, 1.0f);
+
+    glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    glColor4f(1.0f, 1.0f, 1.0f, alpha);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 1); glVertex3f((center-rx-uy).x, (center-rx-uy).y, (center-rx-uy).z);
+    glTexCoord2f(1, 1); glVertex3f((center+rx-uy).x, (center+rx-uy).y, (center+rx-uy).z);
+    glTexCoord2f(1, 0); glVertex3f((center+rx+uy).x, (center+rx+uy).y, (center+rx+uy).z);
+    glTexCoord2f(0, 0); glVertex3f((center-rx+uy).x, (center-rx+uy).y, (center-rx+uy).z);
+    glEnd();
+
+    const Vec3 rim = display.emissionColor;
+    glDisable(GL_TEXTURE_2D);
+    glColor4f(rim.x, rim.y, rim.z, clampf(display.material.rimEmission * 0.22f, 0.03f, 0.16f));
+    glBegin(GL_LINE_LOOP);
+    glVertex3f((center-rx-uy).x, (center-rx-uy).y, (center-rx-uy).z);
+    glVertex3f((center+rx-uy).x, (center+rx-uy).y, (center+rx-uy).z);
+    glVertex3f((center+rx+uy).x, (center+rx+uy).y, (center+rx+uy).z);
+    glVertex3f((center-rx+uy).x, (center-rx+uy).y, (center-rx+uy).z);
+    glEnd();
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_LIGHTING);
 }
 
 void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Vec3& s, const Quat& q) {
@@ -747,7 +786,7 @@ void DesktopRenderer::draw(const GameState& state) const {
         else drawBox(phonePos,{PHONE_BODY_WIDTH*pv.bodyScale.x,PHONE_BODY_HEIGHT*pv.bodyScale.y,PHONE_BODY_DEPTH},phoneOrientation,Pass7Visual::PhoneBody.r,Pass7Visual::PhoneBody.g,Pass7Visual::PhoneBody.b);
         const float glow=std::min(1.0f,0.45f+pv.screenGlow*0.36f);
         drawBox(state.phoneTransform.screenCenter,{PHONE_SCREEN_WIDTH*pv.screenScale.x,PHONE_SCREEN_HEIGHT*pv.screenScale.y,PHONE_SCREEN_DEPTH},phoneOrientation,Pass7Visual::PhoneEmission.r*glow,Pass7Visual::PhoneEmission.g*glow,Pass7Visual::PhoneEmission.b*glow);
-        drawPhoneMenuSurface(state);
+        drawPhoneDisplayTexture(state);
     }
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){const auto& pv=peer.phoneVisual;if(phoneModelList_)drawStaticModel(phoneModelList_,peer.phoneTransform.position,pv.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.32f,0.86f,1.0f);drawBox(peer.phoneTransform.screenCenter,{PHONE_SCREEN_WIDTH,PHONE_SCREEN_HEIGHT,PHONE_SCREEN_DEPTH},peer.phoneTransform.orientation,0.05f,0.55f,0.78f);}
 

@@ -61,7 +61,7 @@ constexpr float INTRO_CAMERA_DURATION = 1.15f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float MENU_EXIT_CAMERA_DURATION = 0.42f;
 constexpr float MENU_CAMERA_VERTICAL_FOV = 42.0f;
-constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.60f;
+constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.66f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
