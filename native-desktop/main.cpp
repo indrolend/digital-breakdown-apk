@@ -123,6 +123,45 @@ int menuItemCount(const GameState& state);
 
 Vec3 cross3(const Vec3& a,const Vec3& b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 
+PhoneTransformState interpolatePhoneTransform(
+    const PhoneTransformState& previous,
+    const PhoneTransformState& current,
+    float alpha
+) {
+    PhoneTransformState result = current;
+
+    result.position =
+        previous.position +
+        (current.position - previous.position) * alpha;
+
+    result.orientation =
+        quatSlerp(previous.orientation, current.orientation, alpha);
+
+    result.screenRight =
+        normalized(rotate(result.orientation, {1.0f, 0.0f, 0.0f}));
+    result.screenUp =
+        normalized(rotate(result.orientation, {0.0f, 1.0f, 0.0f}));
+    result.screenNormal =
+        normalized(rotate(result.orientation, {0.0f, 0.0f, 1.0f}));
+
+    const float previousScreenOffset =
+        dot3(previous.screenCenter - previous.position, previous.screenNormal);
+    const float currentScreenOffset =
+        dot3(current.screenCenter - current.position, current.screenNormal);
+    const float screenOffset =
+        previousScreenOffset +
+        (currentScreenOffset - previousScreenOffset) * alpha;
+
+    result.screenCenter =
+        result.position + result.screenNormal * screenOffset;
+
+    result.vacuumPullPoint =
+        previous.vacuumPullPoint +
+        (current.vacuumPullPoint - previous.vacuumPullPoint) * alpha;
+
+    return result;
+}
+
 int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
     if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
     if(state.started&&!soloPauseMenu(state))return -1;
@@ -192,9 +231,39 @@ bool toggleMenuSetting(HostState& host){GameState& state=host.game.networkMutabl
 void setMenuSelection(HostState& host,int selection) {
     const int count=menuItemCount(host.game.state());
     if(count<=0)return;
-    GameState& state=host.game.networkMutableState();const int next=(selection%count+count)%count;
-    if(state.dead){state.hud.menuSelection=next;state.cinematic.deathChoice=next;state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);return;}
-    if(state.hud.menuSelection!=next){state.hud.menuSelection=next;const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);state.localSettings.menuScroll=phoneDisplayScrollForSelection(layout,next);state.cinematic.textInteraction=std::max(state.cinematic.textInteraction,0.22f);host.audio.playMenuCue(false);}
+
+    GameState& state=host.game.networkMutableState();
+
+    // The two-choice death menu must not wrap. A tiny repeated stick,
+    // key, or mouse movement should stop at Again?/Quit rather than
+    // cycling through both choices.
+    const int next=state.dead
+        ? std::max(0,std::min(count-1,selection))
+        : (selection%count+count)%count;
+
+    // Ignore repeated hover and held-input reports for the same row.
+    if(state.hud.menuSelection==next){
+        if(state.dead)state.cinematic.deathChoice=next;
+        return;
+    }
+
+    state.hud.menuSelection=next;
+
+    if(state.dead){
+        state.cinematic.deathChoice=next;
+        state.cinematic.textInteraction=
+            std::max(state.cinematic.textInteraction,0.22f);
+        host.audio.playMenuCue(false);
+        return;
+    }
+
+    const PhoneDisplayMenuLayout layout=
+        makePhoneDisplayMenuLayout(state);
+    state.localSettings.menuScroll=
+        phoneDisplayScrollForSelection(layout,next);
+    state.cinematic.textInteraction=
+        std::max(state.cinematic.textInteraction,0.22f);
+    host.audio.playMenuCue(false);
 }
 
 int menuItemAt(GLFWwindow* window,const HostState& host,double windowX,double windowY) {
@@ -245,7 +314,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(row.action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);openMenuRoot(host);}
         else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
-        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
@@ -265,7 +334,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
         else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
-        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
@@ -298,7 +367,30 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickIsGamepad(candidate)&&!preferRawXboxLayout(candidate)){jid=candidate;break;}
         if(jid<0)for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickPresent(candidate)){jid=candidate;break;}
         mapped=jid>=0&&glfwJoystickIsGamepad(jid)&&!preferRawXboxLayout(jid);
-        if(jid!=host.gamepadId||mapped!=host.gamepadMapped){resetGamepadHistory(host);host.gamepadId=jid;host.gamepadMapped=mapped;if(jid>=0)std::printf("Controller connected: %s%s\n",mapped?glfwGetGamepadName(jid):glfwGetJoystickName(jid),mapped?"":" (raw joystick fallback)");}
+        if(jid!=host.gamepadId||mapped!=host.gamepadMapped){
+            resetGamepadHistory(host);
+            host.gamepadId=jid;
+            host.gamepadMapped=mapped;
+
+            if(jid>=0){
+                const char* controllerName=mapped
+                    ? glfwGetGamepadName(jid)
+                    : glfwGetJoystickName(jid);
+
+                std::printf(
+                    "Controller connected: %s%s\n",
+                    controllerName&&*controllerName
+                        ? controllerName
+                        : "Unknown controller",
+                    mapped ? "" : " (raw joystick fallback)"
+                );
+            }
+
+            // A Bluetooth device can be reported as present before Windows and
+            // GLFW have finished exposing its complete state. Do not query axes
+            // or buttons until the following frame.
+            return input;
+        }
     }
     if(jid<0)return input;
     GLFWgamepadstate pad{};
@@ -500,7 +592,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     if(menuItemCount(host->game.state())>0){
         double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
-        if(button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT){
+        if((button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)&&hovered>=0){
             activateMenuSelection(window,*host);
             if(button==GLFW_MOUSE_BUTTON_LEFT&&host->mouseCaptured)host->suppressLeftMouseUntilRelease=true;
         }
@@ -873,6 +965,7 @@ int main(int argc, char** argv) {
     auto previous = std::chrono::steady_clock::now();
     double simulationAccumulator = 0.0;
     auto previousCamera = host.game.state().camera;
+    auto previousPhoneTransform = host.game.state().phoneTransform;
     int captureFrames=0;
     bool multiplayerAutoStartIssued=false;
     while (!glfwWindowShouldClose(window)) {
@@ -934,11 +1027,13 @@ int main(int argc, char** argv) {
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         if (capturePath) {
             previousCamera = host.game.state().camera;
+            previousPhoneTransform = host.game.state().phoneTransform;
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
         } else {
             int simulationSteps = 0;
             while (simulationAccumulator >= SIMULATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
                 previousCamera = host.game.state().camera;
+                previousPhoneTransform = host.game.state().phoneTransform;
                 host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
                 simulationAccumulator -= SIMULATION_STEP_SECONDS;
                 ++simulationSteps;
@@ -962,14 +1057,47 @@ int main(int argc, char** argv) {
         if (!capturePath) {
             const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);
             const auto& currentCamera = host.game.state().camera;
-            const bool cameraCut = previousCamera.firstPerson != currentCamera.firstPerson ||
+            const auto& currentPhoneTransform = host.game.state().phoneTransform;
+
+            const bool cameraCut =
+                previousCamera.firstPerson != currentCamera.firstPerson ||
                 lengthSq(previousCamera.pos - currentCamera.pos) > 25.0f ||
                 lengthSq(previousCamera.lookTarget - currentCamera.lookTarget) > 25.0f;
+
+            const bool phoneCut =
+                lengthSq(
+                    previousPhoneTransform.position -
+                    currentPhoneTransform.position
+                ) > 4.0f;
+
             if (!cameraCut) {
-                renderState.camera.pos = previousCamera.pos + (currentCamera.pos - previousCamera.pos) * alpha;
-                renderState.camera.lookTarget = previousCamera.lookTarget + (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;
-                renderState.camera.forward = normalized(renderState.camera.lookTarget - renderState.camera.pos);
-                renderState.time = std::max(0.0f, host.game.state().time - (1.0f - alpha) * static_cast<float>(SIMULATION_STEP_SECONDS));
+                renderState.camera.pos =
+                    previousCamera.pos +
+                    (currentCamera.pos - previousCamera.pos) * alpha;
+                renderState.camera.lookTarget =
+                    previousCamera.lookTarget +
+                    (currentCamera.lookTarget - previousCamera.lookTarget) * alpha;
+                renderState.camera.forward =
+                    normalized(
+                        renderState.camera.lookTarget -
+                        renderState.camera.pos
+                    );
+                renderState.time =
+                    std::max(
+                        0.0f,
+                        host.game.state().time -
+                        (1.0f - alpha) *
+                            static_cast<float>(SIMULATION_STEP_SECONDS)
+                    );
+            }
+
+            if (!cameraCut && !phoneCut) {
+                renderState.phoneTransform =
+                    interpolatePhoneTransform(
+                        previousPhoneTransform,
+                        currentPhoneTransform,
+                        alpha
+                    );
             }
         }
         host.renderer.draw(renderState);
