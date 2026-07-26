@@ -348,6 +348,7 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     }
     const auto pressed=[&](int button){return currentButtons[button]==GLFW_PRESS&&host.previousGamepadButtons[button]!=GLFW_PRESS;};
     const bool menuActive=menuItemCount(host.game.state())>0;
+        if(host.multiplayer.pending())host.multiplayer.disconnect();
     const bool menuLeft=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]==GLFW_PRESS||leftX<-0.55f;
     const bool menuRight=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]==GLFW_PRESS||leftX>0.55f;
     const bool menuUp=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_UP]==GLFW_PRESS||leftY<-0.55f;
@@ -425,10 +426,10 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     }
 
     if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
-        if(key==GLFW_KEY_ESCAPE){host->enteringJoinCode=false;host->joinCode.clear();popMenuPage(*host);return;}
+        if(key==GLFW_KEY_ESCAPE){if(host->multiplayer.pending())host->multiplayer.disconnect();host->enteringJoinCode=false;host->joinCode.clear();popMenuPage(*host);return;}
         if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}
         if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;return;}
-        if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){host->joinCode.push_back(static_cast<char>(key));host->game.setNetworkRoom(host->joinCode.c_str(),"ENTER CODE",false);if(host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;}return;}
+        if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){const char value=static_cast<char>(key);if(dbmultiplayer::isRoomCharacter(value))host->joinCode.push_back(value);host->game.setNetworkRoom(host->joinCode.c_str(),host->joinCode.size()==6?"PRESS ENTER":"ENTER CODE",false);return;}
         return;
     }
     if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
@@ -959,3 +960,8 @@ int main(int argc, char** argv) {
     glfwTerminate();
     return 0;
 }
+        if(host.multiplayer.failed()&&!host.game.state().started&&host.game.state().localSettings.menuPage==LocalMenuPage::JoinCode){
+            host.enteringJoinCode=false;
+            host.joinCode.clear();
+            popMenuPage(host);
+        }

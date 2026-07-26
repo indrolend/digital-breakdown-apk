@@ -107,6 +107,13 @@ target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/ga
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
 
 add_executable(
+    MultiplayerConnectionStateTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_connection_state_test.cpp"
+)
+target_include_directories(MultiplayerConnectionStateTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MultiplayerConnectionStateTest PRIVATE cxx_std_17)
+
+add_executable(
     GameplayRoleAndSoulMotionTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_role_and_soul_motion_test.cpp"
 )
@@ -157,6 +164,8 @@ target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_SHARED_ROOT}/game
 target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
 
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
+add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
+add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
 add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
