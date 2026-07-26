@@ -1120,6 +1120,30 @@ void Game::configureNetworkGuest(int localPlayerId){state_.multiplayer=Multiplay
 void Game::disableNetwork(){state_.multiplayer=MultiplayerRuntimeState{};}
 void Game::setNetworkRoom(const char* code,const char* status,bool connected){const bool changed=(code&&std::strncmp(state_.multiplayer.roomCode.data(),code,6)!=0)||(status&&std::strncmp(state_.multiplayer.status.data(),status,63)!=0)||state_.multiplayer.connected!=connected;if(code)std::snprintf(state_.multiplayer.roomCode.data(),state_.multiplayer.roomCode.size(),"%.6s",code);if(status)std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"%.63s",status);state_.multiplayer.connected=connected;if(changed)state_.cinematic.textInteraction=0.42f;}
 void Game::setNetworkPeerActive(int playerId,bool active){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT||playerId==state_.multiplayer.localPlayerId)return;auto& peer=state_.multiplayer.peers[playerId];if(active&&!peer.active){peer=NetworkPeerState{};peer.active=true;peer.playerId=playerId;peer.player.pos=state_.player.pos+Vec3{static_cast<float>(playerId)*0.75f,0,0};peer.camera=state_.camera;peer.energy=state_.energy;}else if(!active)peer=NetworkPeerState{};}
+PlayerCommand Game::capturePlayerCommand(unsigned int sequence,unsigned int localTick) const {
+    const InputState& input=state_.input;
+    PlayerCommand command;
+    command.sequence=sequence;command.localTick=localTick;
+    command.moveX=clampf((input.right?1.0f:0.0f)-(input.left?1.0f:0.0f)+input.touchMoveX,-1.0f,1.0f);
+    command.moveZ=clampf((input.forward?1.0f:0.0f)-(input.back?1.0f:0.0f)+input.touchMoveZ,-1.0f,1.0f);
+    command.yaw=state_.camera.yaw;command.pitch=state_.camera.pitch;
+    if(input.forward)command.buttons|=CommandForward;if(input.back)command.buttons|=CommandBack;
+    if(input.left)command.buttons|=CommandLeft;if(input.right)command.buttons|=CommandRight;
+    if(input.sprint||input.touchSprint)command.buttons|=CommandSprint;
+    if(input.jumpPressed)command.buttons|=CommandJump;
+    if(input.primaryHeld||input.touchPrimaryHeld)command.buttons|=CommandVacuum;
+    if(input.meleePressed)command.buttons|=CommandMelee;if(input.shootPressed)command.buttons|=CommandShoot;
+    if(input.cameraTogglePressed)command.buttons|=CommandCameraToggle;
+    if(input.wiggleAxis<0)command.buttons|=CommandWiggleLeft;else if(input.wiggleAxis>0)command.buttons|=CommandWiggleRight;
+    if(input.commSignalPressed==1)command.buttons|=CommandCommHelp;
+    else if(input.commSignalPressed==2)command.buttons|=CommandCommPing;
+    else if(input.commSignalPressed==3)command.buttons|=CommandCommGroup;
+    else if(input.commSignalPressed==4)command.buttons|=CommandCommOk;
+    return command;
+}
+void Game::setNetworkPeerCommand(int playerId,const PlayerCommand& command){
+    setNetworkPeerInput(playerId,command.sequence,command.moveX,command.moveZ,command.yaw,command.pitch,command.buttons);
+}
 void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;for(int signal=1;signal<=4;++signal){const unsigned short bit=static_cast<unsigned short>(1u<<(11+signal));if((buttons&bit)!=0&&(previous&bit)==0)peer.input.commSignalPressed=signal;}peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
 void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float pitch,float vacuumPower,float vacuumPose,int vacuumTarget,float meleeTimer,float dischargeAmount){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT)return;if(playerId==state_.multiplayer.localPlayerId){state_.player=player;state_.camera.pitch=pitch;state_.vacuum.power=vacuumPower;state_.vacuum.pose=vacuumPose;state_.vacuum.target=vacuumTarget;state_.meleeVisual.visualTimer=meleeTimer;state_.energy.dischargePositionAmount=dischargeAmount;updatePhoneTransform();return;}setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];peer.player=player;peer.camera.pitch=pitch;peer.vacuum.power=vacuumPower;peer.vacuum.pose=vacuumPose;peer.vacuum.target=vacuumTarget;peer.meleeVisual.visualTimer=meleeTimer;peer.energy.dischargePositionAmount=dischargeAmount;peer.phoneVisual=makePhoneVisualState(vacuumPose,vacuumPower,0,state_.time,false);peer.phoneTransform.position=player.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},player.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}
 

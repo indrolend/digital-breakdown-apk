@@ -64,6 +64,30 @@ struct InputState {
     bool touching = false;
 };
 
+enum PlayerCommandButton : std::uint16_t {
+    CommandForward = 1u << 0, CommandBack = 1u << 1,
+    CommandLeft = 1u << 2, CommandRight = 1u << 3,
+    CommandSprint = 1u << 4, CommandJump = 1u << 5,
+    CommandVacuum = 1u << 6, CommandMelee = 1u << 7,
+    CommandShoot = 1u << 8, CommandCameraToggle = 1u << 9,
+    CommandWiggleLeft = 1u << 10, CommandWiggleRight = 1u << 11,
+    CommandCommHelp = 1u << 12, CommandCommPing = 1u << 13,
+    CommandCommGroup = 1u << 14, CommandCommOk = 1u << 15
+};
+
+// Canonical semantic input consumed by local play, host authority, prediction,
+// replay, tests, and network serialization. Platform input remains InputState;
+// this is the stable command boundary after keyboard/controller/touch merging.
+struct PlayerCommand {
+    std::uint32_t sequence = 0;
+    std::uint32_t localTick = 0;
+    float moveX = 0.0f;
+    float moveZ = 0.0f;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    std::uint16_t buttons = 0;
+};
+
 struct PlayerState {
     Vec3 pos {0.0f, 0.08f, 0.0f};
     Vec3 vel {0.0f, 0.0f, 0.0f};
@@ -624,6 +648,8 @@ public:
     bool chooseTemporaryUpgrade(int track);
     bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);
+    PlayerCommand capturePlayerCommand(unsigned int sequence, unsigned int localTick) const;
+    void setNetworkPeerCommand(int playerId, const PlayerCommand& command);
     void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons);
     void applyNetworkPeerSnapshot(int playerId, const PlayerState& player, float pitch, float vacuumPower, float vacuumPose, int vacuumTarget, float meleeTimer, float dischargeAmount);
 

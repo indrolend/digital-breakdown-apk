@@ -52,6 +52,8 @@ private:
     void* connection_=nullptr;
     void* request_=nullptr;
     std::uint32_t outgoingSequence_=0,lastSnapshotTick_=0;
+    std::uint32_t localInputTick_=0;
+    std::int64_t lastInputSendMs_=0;
     std::uint32_t lastSnapshotSequence_=0;
     std::uint32_t startId_=0;
     std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
