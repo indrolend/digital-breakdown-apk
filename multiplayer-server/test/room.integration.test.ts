@@ -2,14 +2,46 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { BINARY_HEADER_BYTES, BINARY_MAGIC, PROTOCOL_VERSION } from "../src/protocol";
 
+interface Inbox {
+  queue: MessageEvent[];
+  waiters: Array<(event: MessageEvent) => void>;
+}
+const inboxes = new WeakMap<WebSocket, Inbox>();
+
+function inbox(socket: WebSocket): Inbox {
+  let value = inboxes.get(socket);
+  if (value) return value;
+  value = { queue: [], waiters: [] };
+  inboxes.set(socket, value);
+  socket.addEventListener("message", (event) => {
+    const waiter = value!.waiters.shift();
+    if (waiter) waiter(event);
+    else value!.queue.push(event);
+  });
+  return value;
+}
+
 function nextMessage(socket: WebSocket, timeoutMs = 2000): Promise<MessageEvent> {
+  const messages = inbox(socket);
+  const queued = messages.queue.shift();
+  if (queued) return Promise.resolve(queued);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("websocket message timeout")), timeoutMs);
-    socket.addEventListener("message", (event) => {
+    messages.waiters.push((event) => {
       clearTimeout(timer);
       resolve(event);
-    }, { once: true });
+    });
   });
+}
+
+async function nextJsonType(socket: WebSocket, type: string): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < 8; ++attempt) {
+    const event = await nextMessage(socket);
+    if (typeof event.data !== "string") continue;
+    const value = JSON.parse(event.data) as Record<string, unknown>;
+    if (value.type === type) return value;
+  }
+  throw new Error(`did not receive ${type}`);
 }
 
 function packet(type: number, playerId: number, sequence: number): ArrayBuffer {
@@ -35,6 +67,7 @@ async function connect(path: string): Promise<WebSocket> {
   const socket = response.webSocket!;
   socket.binaryType = "arraybuffer";
   socket.accept();
+  inbox(socket);
   return socket;
 }
 
@@ -50,14 +83,20 @@ describe("room relay integration", () => {
     expect(room.protocol).toBe(PROTOCOL_VERSION);
 
     const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
-    const hostWelcome = JSON.parse(String((await nextMessage(host)).data));
+    const hostWelcome = await nextJsonType(host, "welcome");
     expect(hostWelcome).toMatchObject({ type: "welcome", playerId: 0, role: "host", room: room.code });
+    expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 1, capacity: 2, started: false });
 
-    const joinedAtHost = nextMessage(host);
     const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
-    const guestWelcome = JSON.parse(String((await nextMessage(guest)).data));
+    const guestWelcome = await nextJsonType(guest, "welcome");
     expect(guestWelcome).toMatchObject({ type: "welcome", playerId: 1, role: "guest", room: room.code });
-    expect(JSON.parse(String((await joinedAtHost).data))).toMatchObject({ type: "player_joined", playerId: 1 });
+    expect(await nextJsonType(host, "player_joined")).toMatchObject({ playerId: 1 });
+    expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 2 });
+    expect(await nextJsonType(guest, "lobby_state")).toMatchObject({ playerCount: 2 });
+
+    host.send(JSON.stringify({ type: "start_match", startId: 7, gameplayVersion: 5, roomSeed: 41, roomIndex: 3, startTick: 10 }));
+    expect(await nextJsonType(host, "start_match")).toMatchObject({ startId: 7, roomSeed: 41, roomIndex: 3 });
+    expect(await nextJsonType(guest, "start_match")).toMatchObject({ startId: 7 });
 
     const guestInput = packet(1, 1, 1);
     const inputAtHost = nextMessage(host);
@@ -68,6 +107,18 @@ describe("room relay integration", () => {
     const snapshotAtGuest = nextMessage(guest);
     host.send(hostSnapshot);
     expect((await snapshotAtGuest).data).toBeInstanceOf(ArrayBuffer);
+
+    guest.send(JSON.stringify({ type: "start_ack", startId: 7, snapshotSequence: 2 }));
+    expect(await nextJsonType(host, "start_ack")).toMatchObject({ startId: 7, snapshotSequence: 2, playerId: 1 });
+    host.send(JSON.stringify({ type: "start_confirm", startId: 7 }));
+    expect(await nextJsonType(host, "start_confirm")).toMatchObject({ startId: 7 });
+    expect(await nextJsonType(guest, "start_confirm")).toMatchObject({ startId: 7 });
+
+    const lateJoin = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(lateJoin.status).toBe(409);
+    expect(await lateJoin.json()).toMatchObject({ error: "match_started" });
 
     const leftAtHost = nextMessage(host);
     guest.close(1000, "leaving");

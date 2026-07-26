@@ -5,19 +5,60 @@
 
 namespace dbmultiplayer {
 
-enum class Phase { Offline, Connecting, Connected, Failed, HostLeft };
-enum class Event { Begin, Welcome, Failure, HostDisconnected, Reset };
+enum class Phase {
+    Offline,
+    CreatingRoom,
+    JoiningRoom,
+    Connecting,
+    Lobby,
+    Starting,
+    Synchronizing,
+    Playing,
+    Failed,
+    HostLeft
+};
+enum class Event {
+    CreateRoom,
+    JoinRoom,
+    RoomReady,
+    Welcome,
+    StartRequested,
+    StartReceived,
+    InitialSnapshot,
+    StartConfirmed,
+    Failure,
+    HostDisconnected,
+    Reset
+};
 
 inline Phase transition(Phase current, Event event) {
     switch (event) {
-    case Event::Begin:
-        return current == Phase::Connecting || current == Phase::Connected ? current : Phase::Connecting;
+    case Event::CreateRoom:
+        return current == Phase::Offline || current == Phase::Failed || current == Phase::HostLeft
+            ? Phase::CreatingRoom : current;
+    case Event::JoinRoom:
+        return current == Phase::Offline || current == Phase::Failed || current == Phase::HostLeft
+            ? Phase::JoiningRoom : current;
+    case Event::RoomReady:
+        return current == Phase::CreatingRoom || current == Phase::JoiningRoom
+            ? Phase::Connecting : current;
     case Event::Welcome:
-        return current == Phase::Connecting ? Phase::Connected : current;
+        return current == Phase::Connecting ? Phase::Lobby : current;
+    case Event::StartRequested:
+        return current == Phase::Lobby ? Phase::Starting : current;
+    case Event::StartReceived:
+        return current == Phase::Lobby || current == Phase::Starting
+            ? Phase::Synchronizing : current;
+    case Event::InitialSnapshot:
+        return current == Phase::Synchronizing ? Phase::Synchronizing : current;
+    case Event::StartConfirmed:
+        return current == Phase::Synchronizing ? Phase::Playing : current;
     case Event::Failure:
-        return current == Phase::Connecting || current == Phase::Connected ? Phase::Failed : current;
+        return current == Phase::Offline || current == Phase::HostLeft ? current : Phase::Failed;
     case Event::HostDisconnected:
-        return current == Phase::Connected ? Phase::HostLeft : current;
+        return current == Phase::Lobby || current == Phase::Starting ||
+                       current == Phase::Synchronizing || current == Phase::Playing
+            ? Phase::HostLeft : current;
     case Event::Reset:
         return Phase::Offline;
     }

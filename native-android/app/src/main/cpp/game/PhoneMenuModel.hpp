@@ -147,8 +147,23 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Exit", PhoneMenuAction::Exit);
     } else if (state.localSettings.menuPage == LocalMenuPage::Online) {
         page.title = "Online";
-        addPhoneMenuItem(page, "Host", PhoneMenuAction::Host);
-        addPhoneMenuItem(page, "Join", PhoneMenuAction::Join);
+        const std::string networkStatus=state.multiplayer.status.data();
+        const std::string roomCode=state.multiplayer.roomCode.data();
+        const bool inRoom=!roomCode.empty()&&
+            (networkStatus.find("WAITING")!=std::string::npos||
+             networkStatus.find("READY")!=std::string::npos||
+             networkStatus.find("CONNECTED")!=std::string::npos||
+             networkStatus.find("STARTING")!=std::string::npos||
+             networkStatus.find("SYNCHRONIZING")!=std::string::npos);
+        if(inRoom){
+            addPhoneMenuSection(page,"Room "+roomCode);
+            addPhoneMenuSection(page,networkStatus);
+            if(networkStatus.find("READY 2/2")!=std::string::npos)
+                addPhoneMenuItem(page,"Start Game",PhoneMenuAction::Start);
+        }else{
+            addPhoneMenuItem(page, "Host", PhoneMenuAction::Host);
+            addPhoneMenuItem(page, "Join", PhoneMenuAction::Join);
+        }
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::JoinCode) {
         page.title = "Enter Code";

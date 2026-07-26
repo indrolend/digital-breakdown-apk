@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\build\pr27-windows\bin\DigitalBreakdown.exe"),
+    [string]$Exe = "",
     [string]$ServiceUrl = "https://digital-breakdown-multiplayer.indrolend.workers.dev",
     [int]$TimeoutSeconds = 20
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot "..\build\pr27-windows\bin\Release\DigitalBreakdown.exe" }
 $Exe = (Resolve-Path $Exe).Path
 $runRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("digital-breakdown-multiplayer-" + [Guid]::NewGuid().ToString("N"))
 $hostData = Join-Path $runRoot "host-data"
@@ -22,7 +23,7 @@ function Start-Game([string]$LocalData, [string]$Log, [string]$Arguments) {
 }
 
 try {
-    $hostProcess = Start-Game $hostData $hostLog "--host-room"
+    $hostProcess = Start-Game $hostData $hostLog "--host-room --auto-start-multiplayer --multiplayer-test"
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $room = $null
     while ((Get-Date) -lt $deadline) {
@@ -35,24 +36,36 @@ try {
     }
     if (-not $room) { throw "Timed out waiting for a room code. See $hostLog" }
 
-    $guestProcess = Start-Game $guestData $guestLog "--join-room $room"
-    $hostPattern = "MULTIPLAYER_CONNECTED role=host player=0 room=$room"
-    $guestPattern = "MULTIPLAYER_CONNECTED role=guest player=1 room=$room"
+    $guestProcess = Start-Game $guestData $guestLog "--join-room $room --multiplayer-test"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $hostPattern = "MULTIPLAYER_PLAYING role=host room=$room"
+    $guestPattern = "MULTIPLAYER_PLAYING role=guest room=$room"
     while ((Get-Date) -lt $deadline) {
-        $hostConnected = (Test-Path $hostLog) -and (Select-String -Path $hostLog -SimpleMatch $hostPattern -Quiet)
-        $guestConnected = (Test-Path $guestLog) -and (Select-String -Path $guestLog -SimpleMatch $guestPattern -Quiet)
-        if ($hostConnected -and $guestConnected) {
-            Write-Host "MULTIPLAYER_TWO_INSTANCE_OK room=$room"
-            Write-Host "Host log: $hostLog"
-            Write-Host "Guest log: $guestLog"
-            exit 0
+        $hostPlaying = (Test-Path $hostLog) -and (Select-String -Path $hostLog -SimpleMatch $hostPattern -Quiet)
+        $guestPlaying = (Test-Path $guestLog) -and (Select-String -Path $guestLog -SimpleMatch $guestPattern -Quiet)
+        $inputRelayed = (Test-Path $hostLog) -and (Select-String -Path $hostLog -Pattern 'MULTIPLAYER_INPUT_RECEIVED player=1' -Quiet)
+        $snapshotRelayed = (Test-Path $guestLog) -and (Select-String -Path $guestLog -Pattern 'MULTIPLAYER_INITIAL_SNAPSHOT_APPLIED' -Quiet)
+        if ($hostPlaying -and $guestPlaying -and $inputRelayed -and $snapshotRelayed) {
+            & "$env:SystemRoot\System32\taskkill.exe" /PID $hostProcess.Id /T /F 2>$null | Out-Null
+            $hostProcess = $null
+            $disconnectDeadline = (Get-Date).AddSeconds(5)
+            while ((Get-Date) -lt $disconnectDeadline) {
+                if (Select-String -Path $guestLog -Pattern 'MULTIPLAYER_HOST_LEFT' -Quiet) {
+                    Write-Host "MULTIPLAYER_TWO_INSTANCE_OK room=$room"
+                    Write-Host "Host log: $hostLog"
+                    Write-Host "Guest log: $guestLog"
+                    exit 0
+                }
+                Start-Sleep -Milliseconds 100
+            }
+            throw "Gameplay synchronized, but guest did not report host departure. See $guestLog"
         }
         if ((Test-Path $guestLog) -and (Select-String -Path $guestLog -Pattern 'ROOM NOT FOUND|VERSION MISMATCH|CONNECTION FAILED|MULTIPLAYER_FAILED' -Quiet)) {
             throw "Guest connection failed. See $guestLog"
         }
         Start-Sleep -Milliseconds 100
     }
-    throw "Timed out waiting for both welcome messages. Host: $hostLog Guest: $guestLog"
+    throw "Timed out waiting for lobby, synchronized start, input, and snapshot relay. Host: $hostLog Guest: $guestLog"
 }
 finally {
     foreach ($process in @($guestProcess, $hostProcess)) {

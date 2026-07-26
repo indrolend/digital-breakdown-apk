@@ -257,12 +257,13 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Online)pushMenuPage(host,LocalMenuPage::Online);
         else if(action==PhoneMenuAction::Settings)pushMenuPage(host,LocalMenuPage::Settings);
         else if(action==PhoneMenuAction::Exit)glfwSetWindowShouldClose(window,GLFW_TRUE);
+        else if(action==PhoneMenuAction::Start&&host.multiplayer.role()==DesktopMultiplayer::Role::Host)host.multiplayer.startMatch();
         else if(action==PhoneMenuAction::Host){host.multiplayer.host(host.multiplayerService);host.game.setNetworkRoom("","CREATING",false);}
         else if(action==PhoneMenuAction::Join){host.enteringJoinCode=true;host.joinCode.clear();pushMenuPage(host,LocalMenuPage::JoinCode);host.game.setNetworkRoom("","ENTER CODE",false);}
         else if(action==PhoneMenuAction::Controls)pushMenuPage(host,LocalMenuPage::Controls);
         else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
-        else if(action==PhoneMenuAction::Back)popMenuPage(host);
+        else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.0f;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
@@ -279,6 +280,7 @@ void controllerMenuBack(GLFWwindow* window,HostState& host){
         setMouseCaptured(window,host,true);return;
     }
     if(!state.started&&state.localSettings.menuPage!=LocalMenuPage::Main){
+        if(host.multiplayer.pending())host.multiplayer.disconnect();
         if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();}
         popMenuPage(host);
         return;
@@ -348,7 +350,6 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     }
     const auto pressed=[&](int button){return currentButtons[button]==GLFW_PRESS&&host.previousGamepadButtons[button]!=GLFW_PRESS;};
     const bool menuActive=menuItemCount(host.game.state())>0;
-        if(host.multiplayer.pending())host.multiplayer.disconnect();
     const bool menuLeft=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]==GLFW_PRESS||leftX<-0.55f;
     const bool menuRight=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]==GLFW_PRESS||leftX>0.55f;
     const bool menuUp=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_UP]==GLFW_PRESS||leftY<-0.55f;
@@ -428,7 +429,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&!host->game.state().started&&host->enteringJoinCode){
         if(key==GLFW_KEY_ESCAPE){if(host->multiplayer.pending())host->multiplayer.disconnect();host->enteringJoinCode=false;host->joinCode.clear();popMenuPage(*host);return;}
         if(key==GLFW_KEY_BACKSPACE){if(!host->joinCode.empty())host->joinCode.pop_back();return;}
-        if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;return;}
+        if(key==GLFW_KEY_ENTER&&host->joinCode.size()==6){host->multiplayer.join(host->multiplayerService,host->joinCode);host->enteringJoinCode=false;popMenuPage(*host);return;}
         if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){const char value=static_cast<char>(key);if(dbmultiplayer::isRoomCharacter(value))host->joinCode.push_back(value);host->game.setNetworkRoom(host->joinCode.c_str(),host->joinCode.size()==6?"PRESS ENTER":"ENTER CODE",false);return;}
         return;
     }
@@ -755,6 +756,7 @@ int main(int argc, char** argv) {
     const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
+    const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -787,7 +789,7 @@ int main(int argc, char** argv) {
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
     glfwWindowHint(GLFW_SAMPLES, 4);
-    if(capturePath)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
+    if(capturePath||multiplayerTest)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(
         1280,
@@ -851,7 +853,7 @@ int main(int argc, char** argv) {
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval(1);
+    glfwSwapInterval(multiplayerTest?0:1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -872,7 +874,18 @@ int main(int argc, char** argv) {
     double simulationAccumulator = 0.0;
     auto previousCamera = host.game.state().camera;
     int captureFrames=0;
+    bool multiplayerAutoStartIssued=false;
     while (!glfwWindowShouldClose(window)) {
+        if(multiplayerTest){
+            host.multiplayer.update(host.game);
+            if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
+               host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
+               host.multiplayer.phase()==dbmultiplayer::Phase::Lobby&&host.multiplayer.playerCount()==2)
+                multiplayerAutoStartIssued=host.multiplayer.startMatch();
+            host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
         glfwPollEvents();
 
         const auto now = std::chrono::steady_clock::now();
@@ -903,6 +916,16 @@ int main(int argc, char** argv) {
         host.lookY = 0.0;
 
         host.multiplayer.update(host.game);
+        if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
+           host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
+           host.multiplayer.phase()==dbmultiplayer::Phase::Lobby&&host.multiplayer.playerCount()==2){
+            multiplayerAutoStartIssued=host.multiplayer.startMatch();
+        }
+        if(host.multiplayer.failed()&&!host.game.state().started&&host.game.state().localSettings.menuPage==LocalMenuPage::JoinCode){
+            host.enteringJoinCode=false;
+            host.joinCode.clear();
+            popMenuPage(host);
+        }
         if((!host.game.state().started||host.game.state().upgradeMenu.active)&&host.mouseCaptured)setMouseCaptured(window,host,false);
         if (host.game.state().started && host.game.state().multiplayer.connected && !host.game.state().upgradeMenu.active && !host.game.state().uiPaused && !host.mouseCaptured) {
             setMouseCaptured(window, host, true);
@@ -960,8 +983,3 @@ int main(int argc, char** argv) {
     glfwTerminate();
     return 0;
 }
-        if(host.multiplayer.failed()&&!host.game.state().started&&host.game.state().localSettings.menuPage==LocalMenuPage::JoinCode){
-            host.enteringJoinCode=false;
-            host.joinCode.clear();
-            popMenuPage(host);
-        }
