@@ -1,6 +1,7 @@
 #include "MultiplayerProtocol.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace dbnet {
@@ -34,8 +35,8 @@ void header(Writer& w,MessageType type,std::uint8_t playerId,std::uint32_t seq,s
 
 void writePlayer(Writer& w,const PlayerSnapshot& p){w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);w.f32(p.yaw);w.f32(p.pitch);w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.i8(p.vacuumTarget);w.f32(p.meleeTimer);w.f32(p.dischargeAmount);w.f32(p.bleedoutTimer);w.f32(p.reviveCharge);w.f32(p.grabEscape);w.i8(p.grabbedByTarget);w.i32(p.secretVisitRoom);w.f32(p.secretVisitTimer);w.u8(p.commSignal);w.f32(p.commSignalTimer);}
 bool readPlayer(Reader& r,PlayerSnapshot& p){std::uint8_t active=0;return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&r.f32(p.yaw)&&r.f32(p.pitch)&&r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.i8(p.vacuumTarget)&&r.f32(p.meleeTimer)&&r.f32(p.dischargeAmount)&&r.f32(p.bleedoutTimer)&&r.f32(p.reviveCharge)&&r.f32(p.grabEscape)&&r.i8(p.grabbedByTarget)&&r.i32(p.secretVisitRoom)&&r.f32(p.secretVisitTimer)&&r.u8(p.commSignal)&&r.f32(p.commSignalTimer);}
-void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);}
-bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown);}
+void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.f32(t.animationTime);w.f32(t.locomotionAmount);w.vec(t.attackDirection);w.u8(t.attackVariant);w.u8(t.visualFlags);w.f32(t.hitFlash);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);}
+bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.f32(t.animationTime)&&r.f32(t.locomotionAmount)&&r.vec(t.attackDirection)&&r.u8(t.attackVariant)&&r.u8(t.visualFlags)&&r.f32(t.hitFlash)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown);}
 void writeBullet(Writer& w,const BulletSnapshot& b){w.u8(b.active?1:0);w.u8(b.brute?1:0);w.vec(b.pos);w.vec(b.vel);w.f32(b.life);w.f32(b.spin);}
 bool readBullet(Reader& r,BulletSnapshot& b){std::uint8_t active=0,brute=0;return r.u8(active)&&r.u8(brute)&&((b.active=active!=0),(b.brute=brute!=0),true)&&r.vec(b.pos)&&r.vec(b.vel)&&r.f32(b.life)&&r.f32(b.spin);}
 void writeFlower(Writer& w,const FlowerSnapshot& f){w.u8(f.active?1:0);w.vec(f.pos);w.f32(f.age);w.f32(f.rotation);}
@@ -211,6 +212,12 @@ captureWorld(const GameState &state,
     b.soulMorph = a.soulMorph;
     b.attackTimer = a.attackTimer;
     b.attackCooldown = a.attackCooldown;
+    b.animationTime = a.humanAnimationTime;
+    b.locomotionAmount = a.locomotionAmount;
+    b.attackDirection = a.attackDirection;
+    b.attackVariant = static_cast<std::uint8_t>(a.attackVariant);
+    b.visualFlags = (a.attackHit ? 1 : 0) | (a.latchedToScreen ? 2 : 0);
+    b.hitFlash = a.hitFlash;
     b.ownerPlayerId = static_cast<std::int8_t>(a.networkOwnerPlayerId);
     b.grabbedPlayerId=static_cast<std::int8_t>(a.grabbedPlayerId);b.grabCooldown=a.grabCooldown;
   }
@@ -242,6 +249,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   // Authoritative and local clocks are deliberately separate. The snapshot
   // tick is ordered by DesktopMultiplayer and must never replace simulation
   // or presentation time on the receiving client.
+  const bool roomChanged=state.multiplayer.hasWorldSnapshot&&state.roomIndex!=s.roomIndex;
   state.roomIndex = s.roomIndex;
   state.roomSeed = s.roomSeed;
   state.requiredSouls = s.requiredSouls;
@@ -260,12 +268,24 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   for (const auto &p : s.players)
     if (p.active) {
       if (p.id == localPlayerId) {
-        state.player.pos = p.pos;
-        state.player.vel = p.vel;
+        const Vec3 predictionError=p.pos-state.player.pos;
+        const float correctionMagnitude=length(predictionError);
+        const bool hardCorrection=!state.multiplayer.hasWorldSnapshot||correctionMagnitude>1.5f;
+        if(state.multiplayer.hasWorldSnapshot&&correctionMagnitude>0.05f){
+          std::printf("MULTIPLAYER_GUEST_PREDICTION_CORRECTION magnitude=%.3f mode=%s\n",correctionMagnitude,correctionMagnitude>1.5f?"snap":"smooth");
+          std::fflush(stdout);
+        }
+        if(hardCorrection){
+          state.player.pos=p.pos;
+          state.multiplayer.localPredictionCorrection={};
+        }else{
+          state.multiplayer.localPredictionCorrection=predictionError;
+        }
+        if(hardCorrection)state.player.vel = p.vel;
         state.player.yaw = p.yaw;
         state.player.battery = p.battery;
         state.player.souls = p.souls;
-        state.player.grounded = (p.flags & 1) != 0;
+        if(hardCorrection)state.player.grounded = (p.flags & 1) != 0;
         state.player.alive = (p.flags & 4) != 0;
         state.player.downed=(p.flags&8)!=0;state.player.bleedoutTimer=p.bleedoutTimer;state.player.reviveCharge=p.reviveCharge;state.player.grabEscape=p.grabEscape;state.player.grabbedByTarget=p.grabbedByTarget;
         state.player.inSecretRoom=(p.flags&16)!=0;state.player.secretVisitRoom=p.secretVisitRoom;state.player.secretVisitTimer=p.secretVisitTimer;
@@ -318,13 +338,23 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   for (int i = 0; i < TARGET_COUNT; ++i) {
     const auto &a = s.targets[i];
     auto &b = state.targets[i];
+    const bool visualTransition=state.multiplayer.hasWorldSnapshot&&
+      (b.alive!=((a.flags&1)!=0)||b.slurpable!=((a.flags&2)!=0)||
+       b.soulState!=a.soulState||(b.attackTimer<=0.0f)!=(a.attackTimer<=0.0f));
+    if(visualTransition){
+      std::printf("MULTIPLAYER_ENEMY_VISUAL_TRANSITION target=%d alive=%d soul=%d attack=%d\n",i,(a.flags&1)!=0,static_cast<int>(a.soulState),a.attackTimer>0.0f);
+      std::fflush(stdout);
+    }
     b.alive = (a.flags & 1) != 0;
     b.slurpable = (a.flags & 2) != 0;
     b.brute = (a.flags & 4) != 0;
     b.captureQueued = (a.flags & 8) != 0;
     b.captureCommitted = (a.flags & 16) != 0;
     b.soulState = a.soulState;
+    const Vec3 previousVisualPos=b.pos+b.networkVisualOffset;
+    const bool hadSnapshot=state.multiplayer.hasWorldSnapshot;
     b.pos = a.pos;
+    b.networkVisualOffset=hadSnapshot&&!roomChanged?previousVisualPos-a.pos:Vec3{};
     b.vel = a.vel;
     b.armor = a.armor;
     b.health = a.health;
@@ -336,6 +366,13 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.soulMorph = a.soulMorph;
     b.attackTimer = a.attackTimer;
     b.attackCooldown = a.attackCooldown;
+    b.humanAnimationTime = a.animationTime;
+    b.locomotionAmount = a.locomotionAmount;
+    b.attackDirection = a.attackDirection;
+    b.attackVariant = a.attackVariant;
+    b.attackHit = (a.visualFlags & 1) != 0;
+    b.latchedToScreen = (a.visualFlags & 2) != 0;
+    b.hitFlash = a.hitFlash;
     b.networkOwnerPlayerId = a.ownerPlayerId;
     b.grabbedPlayerId=a.grabbedPlayerId;b.grabCooldown=a.grabCooldown;
   }

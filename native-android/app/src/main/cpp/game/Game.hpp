@@ -198,6 +198,8 @@ struct VacuumState {
 struct TargetState {
     Vec3 pos;
     Vec3 vel;
+    // Snapshot interpolation is presentation-only; pos remains canonical.
+    Vec3 networkVisualOffset;
     Vec3 latchPoint;
     bool alive = false;
     bool slurpable = false;
@@ -561,6 +563,7 @@ struct MultiplayerRuntimeState {
     std::array<char, 64> status{};
     std::array<NetworkPeerState, NETWORK_PLAYER_COUNT> peers{};
     bool hasWorldSnapshot = false;
+    Vec3 localPredictionCorrection;
 };
 
 struct GameState {

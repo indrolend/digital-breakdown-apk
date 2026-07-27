@@ -122,6 +122,7 @@ HostState* stateFor(GLFWwindow* window) {
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured);
 bool soloPauseMenu(const GameState& state){return state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;}
+bool multiplayerPauseMenu(const GameState& state){return state.started&&state.uiPaused&&state.multiplayer.enabled&&!state.upgradeMenu.active;}
 int menuItemCount(const GameState& state);
 
 Vec3 cross3(const Vec3& a,const Vec3& b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
@@ -494,10 +495,20 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
     host.lookY = 0.0;
     glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     host.game.setUiPaused(!captured);
+    if(host.game.state().multiplayer.enabled&&wasPaused==captured){
+        std::printf("MULTIPLAYER_MENU_%s player=%d\n",captured?"CLOSED":"OPENED",host.game.state().multiplayer.localPlayerId);
+        std::fflush(stdout);
+    }
     if(!captured&&host.game.state().started&&!host.game.state().multiplayer.enabled&&!wasPaused)openMenuRoot(host,LocalMenuPage::Main);
     if (captured) {
         glfwGetCursorPos(window, &host.lastMouseX, &host.lastMouseY);
         host.haveMouse = true;
+        if(host.game.state().multiplayer.enabled){
+            std::printf("MULTIPLAYER_MOUSE_CAPTURE_RESTORED player=%d\n",host.game.state().multiplayer.localPlayerId);
+            std::fflush(stdout);
+        }
+    } else if(host.game.state().multiplayer.enabled) {
+        host.game.clearInputState();
     }
 }
 
@@ -511,7 +522,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
-        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
         const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
         const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
         if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
@@ -542,7 +553,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (host->mouseCaptured) {
             setMouseCaptured(window, *host, false);
-        } else if (soloPauseMenu(host->game.state())) {
+        } else if (soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())) {
             controllerMenuBack(window, *host);
         } else {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -1060,6 +1071,8 @@ int main(int argc, char** argv) {
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
+        if(renderState.multiplayer.enabled&&!renderState.multiplayer.authoritativeHost)
+            for(auto& target:renderState.targets)target.pos+=target.networkVisualOffset;
         if(captureMenuPause){
             renderState.started=true;
             renderState.uiPaused=true;

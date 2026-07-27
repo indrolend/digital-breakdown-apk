@@ -48,6 +48,15 @@ int main() {
   players[1].reviveCharge = 4.0f;
   players[1].grabbedByTarget = 2;
   auto world = captureWorld(game.state(), players, 123);
+  GameState &worldState = const_cast<GameState &>(game.state());
+  worldState.targets[0].alive = true;
+  worldState.targets[0].humanAnimationTime = 4.25f;
+  worldState.targets[0].locomotionAmount = 1.0f;
+  worldState.targets[0].attackTimer = 0.42f;
+  worldState.targets[0].attackVariant = 3;
+  worldState.targets[0].attackDirection = {0.6f, 0.0f, -0.8f};
+  worldState.targets[0].hitFlash = 0.7f;
+  world = captureWorld(game.state(), players, 123);
   auto snapshotBytes = encodeSnapshot(0, world, 8);
   WorldSnapshot roundtrip;
   ok &= decodeSnapshot(snapshotBytes.data(), snapshotBytes.size(), h,
@@ -58,7 +67,10 @@ int main() {
         (roundtrip.players[1].flags & (1u << 3)) != 0 &&
         std::abs(roundtrip.players[1].bleedoutTimer - 9.5f) < 0.0001f &&
         roundtrip.players[1].grabbedByTarget == 2 &&
-        roundtrip.roomSeed == 12345;
+        roundtrip.roomSeed == 12345 &&
+        std::abs(roundtrip.targets[0].animationTime - 4.25f) < 0.0001f &&
+        roundtrip.targets[0].attackVariant == 3 &&
+        std::abs(roundtrip.targets[0].attackDirection.x - 0.6f) < 0.0001f;
   game.configureNetworkHost();
   game.setNetworkPeerActive(1, true);
   const Vec3 hostBefore = game.state().player.pos;
@@ -70,6 +82,11 @@ int main() {
   ok &= capturedPlayers[0].active && capturedPlayers[1].active &&
         length(game.state().player.pos - hostBefore) < 0.001f &&
         game.state().multiplayer.peers[1].player.pos.z < peerBefore.z - 0.05f;
+  const int pausedHostFrame=game.state().frame;
+  game.setUiPaused(true);
+  game.update(1.0f/60.0f);
+  ok &= game.state().frame>pausedHostFrame;
+  game.setUiPaused(false);
   Game combat;
   combat.reset();
   combat.configureNetworkHost();
@@ -132,6 +149,26 @@ int main() {
         guestProgression.state().camera.firstPerson &&
         guestProgression.state()
                 .progression.run.networkSharedPermanentLevels[0] == 4;
+  ok &= std::abs(guestProgression.state().targets[0].humanAnimationTime -
+                 progressionWorld.targets[0].animationTime) < 0.0001f;
+  Game predictionGuest;
+  predictionGuest.reset();
+  predictionGuest.configureNetworkGuest(1);
+  auto predictionWorld=captureWorld(predictionGuest.state(),capturePlayers(predictionGuest.state()),299);
+  predictionWorld.players[1].active=true;
+  predictionWorld.players[1].id=1;
+  predictionWorld.players[1].pos=predictionGuest.state().player.pos;
+  applyWorld(predictionGuest.networkMutableState(),predictionWorld,1);
+  predictionGuest.setTouchControls(0,0,0,0,false,false,true,false,false,false);
+  predictionGuest.update(1.0f/60.0f);
+  const float immediateJumpY=predictionGuest.state().player.pos.y;
+  predictionWorld.tick=300;
+  predictionWorld.players[1].pos=predictionGuest.state().player.pos+Vec3{0.1f,0,0};
+  const Vec3 predictedBefore=predictionGuest.state().player.pos;
+  applyWorld(predictionGuest.networkMutableState(),predictionWorld,1);
+  ok &= immediateJumpY>0.08f &&
+        length(predictionGuest.state().player.pos-predictedBefore)<0.001f &&
+        length(predictionGuest.state().multiplayer.localPredictionCorrection)>0.09f;
   progressionWorld.captures[0] = false;
   applyWorld(guestProgression.networkMutableState(), progressionWorld, 1);
   progressionWorld.captures[0] = true;

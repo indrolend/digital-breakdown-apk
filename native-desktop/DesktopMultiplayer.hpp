@@ -55,6 +55,7 @@ private:
     std::uint32_t localInputTick_=0;
     std::int64_t lastInputSendMs_=0;
     std::uint32_t lastSnapshotSequence_=0;
+    std::int64_t lastSnapshotReceiveMs_=0;
     std::uint32_t startId_=0;
     std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
     bool configuredGame_=false;

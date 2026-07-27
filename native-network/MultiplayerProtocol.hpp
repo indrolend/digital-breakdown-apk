@@ -10,7 +10,7 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 5;
+constexpr std::uint16_t PROTOCOL_VERSION = 6;
 constexpr std::uint16_t GAMEPLAY_VERSION = 5;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
@@ -76,6 +76,12 @@ struct TargetSnapshot {
     float soulMorph = 0.0f;
     float attackTimer = 0.0f;
     float attackCooldown = 0.0f;
+    float animationTime = 0.0f;
+    float locomotionAmount = 0.0f;
+    Vec3 attackDirection{0.0f,0.0f,-1.0f};
+    std::uint8_t attackVariant = 0;
+    std::uint8_t visualFlags = 0;
+    float hitFlash = 0.0f;
     std::int8_t ownerPlayerId = -1;
     std::int8_t grabbedPlayerId = -1;
     float grabCooldown = 0.0f;
