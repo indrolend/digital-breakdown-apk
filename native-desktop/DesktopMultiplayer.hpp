@@ -23,6 +23,9 @@ public:
     void disconnect();
     bool startMatch();
     void update(Game& game);
+    void applyPresentation(GameState& renderState) const;
+    void configureImpairment(int latencyMs,int jitterMs,int dropSnapshotEvery,
+                             int dropInputEvery,std::uint32_t seed);
     Role role() const { return role_.load(); }
     bool connected() const { return connected_.load(); }
     dbmultiplayer::Phase phase() const { return phase_.load(); }
@@ -60,6 +63,9 @@ private:
     std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
     bool configuredGame_=false;
     bool loggedInput_=false,loggedSnapshot_=false;
+    dbnet::SnapshotInterpolator snapshotInterpolator_;
+    int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
+    std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
     bool createRoom();

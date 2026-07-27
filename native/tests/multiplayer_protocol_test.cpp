@@ -1,6 +1,7 @@
 #include "MultiplayerProtocol.hpp"
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 int main() {
   using namespace dbnet;
@@ -57,6 +58,8 @@ int main() {
   players[1].flowerStacks = 1;
   players[1].phoneRoll = 0.42f;
   players[1].doubleJumpFlip = 0.65f;
+  players[1].phoneOrientation = quatAxisAngle({0,1,0},0.8f);
+  players[1].phoneActionState = 6;
   players[1].meleeVariant = 3;
   players[1].airLungeRotation = 1.2f;
   players[1].flags |= 1u << 3;
@@ -88,6 +91,11 @@ int main() {
   worldState.captures[0].pos = {-1.25f,3.05f,-15};
   worldState.secretTv.available = true;
   worldState.secretTv.entrancePos = {13,0.5f,4};
+  worldState.bullets[0].alive = true;
+  worldState.bullets[0].brute = true;
+  worldState.bullets[0].pos = {2,1,-4};
+  worldState.bullets[0].vel = {0,0,-9};
+  worldState.bullets[0].life = 1.2f;
   world = captureWorld(game.state(), players, 123);
   auto snapshotBytes = encodeSnapshot(0, world, 8);
   WorldSnapshot roundtrip;
@@ -104,6 +112,9 @@ int main() {
         roundtrip.players[1].ledgeCollider == 3 &&
         std::abs(roundtrip.players[1].supplementalValue - 32.0f) < 0.0001f &&
         roundtrip.players[1].meleeVariant == 3 &&
+        std::abs(roundtrip.players[1].phoneOrientation.w -
+                 world.players[1].phoneOrientation.w) < 0.0001f &&
+        roundtrip.players[1].phoneActionState == 6 &&
         std::abs(roundtrip.targets[0].animationTime - 4.25f) < 0.0001f &&
         roundtrip.targets[0].attackVariant == 3 &&
         std::abs(roundtrip.targets[0].attackDirection.x - 0.6f) < 0.0001f &&
@@ -113,6 +124,8 @@ int main() {
         roundtrip.roomColliderCount == 1 &&
         std::abs(roundtrip.roomColliders[0].center.x - 2.0f) < 0.0001f &&
         std::abs(roundtrip.capturePositions[0].x + 1.25f) < 0.0001f &&
+        roundtrip.bullets[0].active && roundtrip.bullets[0].brute &&
+        std::abs(roundtrip.bullets[0].pos.z + 4.0f) < 0.0001f &&
         roundtrip.tvAvailable &&
         snapshotBytes.size() <= MAX_SNAPSHOT_BYTES;
   Game completeGuest;
@@ -245,6 +258,72 @@ int main() {
     std::vector<std::uint8_t> oversized(MAX_PACKET_BYTES+1,0);
     ok &= !decodeSnapshot(oversized.data(),oversized.size(),h,invalid);
   }
+  const auto decodedHash=authoritativeStateHash(roundtrip);
+  ok &= decodedHash==authoritativeStateHash(roundtrip) &&
+        decodedHash==authoritativeStateHash(world) &&
+        visualStateHash(roundtrip)==visualStateHash(world);
+  auto changedWorld=std::make_unique<WorldSnapshot>(roundtrip);
+  changedWorld->depositedSouls++;
+  ok &= authoritativeStateHash(*changedWorld)!=decodedHash;
+  auto localOnlyHashState=std::make_unique<GameState>(completeGuest.state());
+  const auto localOnlyBase=authoritativeStateHash(
+      captureWorld(*localOnlyHashState,roundtrip.players,roundtrip.tick));
+  localOnlyHashState->camera.pitch+=0.5f;
+  localOnlyHashState->uiPaused=!localOnlyHashState->uiPaused;
+  localOnlyHashState->localSettings.musicVolume=0.17f;
+  ok &= authoritativeStateHash(captureWorld(*localOnlyHashState,roundtrip.players,
+                                             roundtrip.tick))==localOnlyBase;
+
+  auto interpolationA=std::make_unique<WorldSnapshot>(roundtrip);
+  auto interpolationB=std::make_unique<WorldSnapshot>(roundtrip);
+  interpolationA->tick=300;interpolationB->tick=303;
+  interpolationA->players[0].active=interpolationB->players[0].active=true;
+  interpolationA->players[0].pos={0,1,0};
+  interpolationB->players[0].pos={2,1,0};
+  interpolationA->players[0].yaw=3.10f;
+  interpolationB->players[0].yaw=-3.10f;
+  interpolationA->targets[0].flags=interpolationB->targets[0].flags=1;
+  interpolationA->targets[0].pos={0,0,-2};
+  interpolationB->targets[0].pos={2,0,-2};
+  interpolationA->bullets[0].active=interpolationB->bullets[0].active=true;
+  interpolationA->bullets[0].pos={0,1,-1};
+  interpolationB->bullets[0].pos={4,1,-1};
+  auto interpolator=std::make_unique<SnapshotInterpolator>();
+  interpolator->push(*interpolationA,1000);
+  interpolator->push(*interpolationB,1100);
+  auto interpolationGame=std::make_unique<Game>();
+  interpolationGame->reset();
+  interpolationGame->configureNetworkGuest(1);
+  applyWorld(interpolationGame->networkMutableState(),*interpolationB,1);
+  auto visualState=std::make_unique<GameState>(interpolationGame->state());
+  interpolator->apply(*visualState,1,1100);
+  ok &= std::abs(visualState->multiplayer.peers[0].player.pos.x-1.0f)<0.001f &&
+        std::abs(std::abs(visualState->multiplayer.peers[0].player.yaw)-DB_PI)<0.05f &&
+        std::abs(visualState->targets[0].pos.x-1.0f)<0.001f &&
+        std::abs(visualState->bullets[0].pos.x-2.0f)<0.001f;
+
+  interpolationA->tick=306;interpolationA->players[0].pos={30,1,0};
+  interpolator->push(*interpolationA,1200);
+  *visualState=interpolationGame->state();
+  interpolator->apply(*visualState,1,1200);
+  ok &= std::abs(visualState->multiplayer.peers[0].player.pos.x-30.0f)<0.001f;
+
+  interpolationA->tick=309;interpolationA->roomIndex++;
+  interpolationA->players[0].pos={3,1,0};
+  interpolator->push(*interpolationA,1300);
+  *visualState=interpolationGame->state();
+  interpolator->apply(*visualState,1,1300);
+  ok &= std::abs(visualState->multiplayer.peers[0].player.pos.x-3.0f)<0.001f;
+
+  *interpolationB=*interpolationA;
+  interpolationA->tick=312;interpolationB->tick=315;
+  interpolationA->players[0].flags&=static_cast<std::uint8_t>(~(1u<<2));
+  interpolationB->players[0].flags|=1u<<2;
+  interpolationA->players[0].pos={1,1,0};interpolationB->players[0].pos={2,1,0};
+  interpolator->push(*interpolationA,1400);interpolator->push(*interpolationB,1500);
+  *visualState=interpolationGame->state();
+  interpolator->apply(*visualState,1,1500);
+  ok &= std::abs(visualState->multiplayer.peers[0].player.pos.x-2.0f)<0.001f;
   std::printf("MULTIPLAYER_PROTOCOL_%s input=%zu snapshot=%zu peerBattery=%.2f "
               "hostBattery=%.2f attackHit=%d owner=%d\n",
               ok ? "OK" : "FAILED", bytes.size(),

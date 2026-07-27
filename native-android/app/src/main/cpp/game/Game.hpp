@@ -198,8 +198,6 @@ struct VacuumState {
 struct TargetState {
     Vec3 pos;
     Vec3 vel;
-    // Snapshot interpolation is presentation-only; pos remains canonical.
-    Vec3 networkVisualOffset;
     Vec3 latchPoint;
     bool alive = false;
     bool slurpable = false;
@@ -533,6 +531,7 @@ struct HudState {
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
+constexpr float NETWORK_LOCAL_CORRECTION_SMOOTHING_RATE = 10.0f;
 struct NetworkPeerState {
     bool active = false;
     int playerId = -1;

@@ -16,6 +16,11 @@ constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr std::size_t MAX_SNAPSHOT_BYTES = 12u * 1024u;
 constexpr int MAX_PLAYERS = 4;
+constexpr std::int64_t REMOTE_INTERPOLATION_DELAY_MS = 50;
+constexpr std::int64_t REMOTE_MAX_EXTRAPOLATION_MS = 100;
+constexpr float REMOTE_TELEPORT_RESET_DISTANCE = 4.0f;
+constexpr float LOCAL_PREDICTION_SNAP_DISTANCE = 1.5f;
+constexpr float LOCAL_PREDICTION_LOG_DISTANCE = 0.05f;
 
 enum class MessageType : std::uint8_t { Input = 1, Snapshot = 2, Event = 3, Ping = 4, Pong = 5 };
 enum InputButton : std::uint16_t {
@@ -77,6 +82,7 @@ struct PlayerSnapshot {
     float doubleJumpTimer = 0.0f;
     float doubleJumpFlipYaw = 0.0f;
     float doubleJumpFlip = 0.0f;
+    Quat phoneOrientation;
     std::uint8_t phoneActionState = 0;
     std::uint8_t meleeVariant = 0;
     std::uint8_t meleeComboIndex = 0;
@@ -188,5 +194,29 @@ bool decodeSnapshot(const std::uint8_t* data, std::size_t size, PacketHeader& he
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
 void applyWorld(GameState& state, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
+
+std::uint64_t authoritativeStateHash(const WorldSnapshot& snapshot);
+std::uint64_t visualStateHash(const WorldSnapshot& snapshot);
+
+class SnapshotInterpolator {
+public:
+    void reset();
+    void push(const WorldSnapshot& snapshot, std::int64_t receiveTimeMs);
+    bool ready() const { return hasCurrent_; }
+    void apply(GameState& renderState, std::uint8_t localPlayerId,
+               std::int64_t renderTimeMs) const;
+    std::uint32_t currentTick() const {
+        return hasCurrent_ ? current_.snapshot.tick : 0;
+    }
+private:
+    struct TimedSnapshot {
+        WorldSnapshot snapshot;
+        std::int64_t receiveTimeMs = 0;
+    };
+    TimedSnapshot previous_{};
+    TimedSnapshot current_{};
+    bool hasPrevious_ = false;
+    bool hasCurrent_ = false;
+};
 
 }

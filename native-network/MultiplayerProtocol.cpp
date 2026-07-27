@@ -1,6 +1,7 @@
 #include "MultiplayerProtocol.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -16,6 +17,7 @@ public:
     void i32(std::int32_t v){u32(static_cast<std::uint32_t>(v));}
     void f32(float v){std::uint32_t bits=0;static_assert(sizeof(bits)==sizeof(v));std::memcpy(&bits,&v,sizeof(v));u32(bits);}
     void vec(const Vec3& v){f32(v.x);f32(v.y);f32(v.z);}
+    void quat(const Quat& q){f32(q.w);f32(q.x);f32(q.y);f32(q.z);}
 };
 
 class Reader {
@@ -27,7 +29,9 @@ public:
     bool u32(std::uint32_t& v){v=0;for(int i=0;i<4;++i){std::uint8_t x=0;if(!u8(x))return false;v|=static_cast<std::uint32_t>(x)<<(i*8);}return true;}
     bool i32(std::int32_t& v){std::uint32_t x=0;if(!u32(x))return false;v=static_cast<std::int32_t>(x);return true;}
     bool f32(float& v){std::uint32_t bits=0;if(!u32(bits))return false;std::memcpy(&v,&bits,sizeof(v));return true;}
-    bool vec(Vec3& v){return f32(v.x)&&f32(v.y)&&f32(v.z);} bool done()const{return at==size;}
+    bool vec(Vec3& v){return f32(v.x)&&f32(v.y)&&f32(v.z);}
+    bool quat(Quat& q){return f32(q.w)&&f32(q.x)&&f32(q.y)&&f32(q.z);}
+    bool done()const{return at==size;}
 private: const std::uint8_t* data;std::size_t size=0,at=0;
 };
 
@@ -45,7 +49,7 @@ void writePlayer(Writer& w,const PlayerSnapshot& p){
   w.f32(p.supplementalValue);w.f32(p.supplementalMax);w.u8(p.flowerStacks);
   w.f32(p.phonePitch);w.f32(p.phoneRoll);w.f32(p.phoneYaw);w.f32(p.phoneLift);
   w.f32(p.phoneForward);w.f32(p.phoneSide);w.f32(p.doubleJumpTimer);
-  w.f32(p.doubleJumpFlipYaw);w.f32(p.doubleJumpFlip);w.u8(p.phoneActionState);
+  w.f32(p.doubleJumpFlipYaw);w.f32(p.doubleJumpFlip);w.quat(p.phoneOrientation);w.u8(p.phoneActionState);
   w.u8(p.meleeVariant);w.u8(p.meleeComboIndex);w.vec(p.meleeDirection);
   w.f32(p.airLungeRotation);w.f32(p.landingRecovery);
   w.f32(p.bleedoutTimer);w.f32(p.reviveCharge);w.f32(p.grabEscape);
@@ -65,7 +69,7 @@ bool readPlayer(Reader& r,PlayerSnapshot& p){
     r.f32(p.supplementalValue)&&r.f32(p.supplementalMax)&&r.u8(p.flowerStacks)&&
     r.f32(p.phonePitch)&&r.f32(p.phoneRoll)&&r.f32(p.phoneYaw)&&r.f32(p.phoneLift)&&
     r.f32(p.phoneForward)&&r.f32(p.phoneSide)&&r.f32(p.doubleJumpTimer)&&
-    r.f32(p.doubleJumpFlipYaw)&&r.f32(p.doubleJumpFlip)&&r.u8(p.phoneActionState)&&
+    r.f32(p.doubleJumpFlipYaw)&&r.f32(p.doubleJumpFlip)&&r.quat(p.phoneOrientation)&&r.u8(p.phoneActionState)&&
     r.u8(p.meleeVariant)&&r.u8(p.meleeComboIndex)&&r.vec(p.meleeDirection)&&
     r.f32(p.airLungeRotation)&&r.f32(p.landingRecovery)&&
     r.f32(p.bleedoutTimer)&&r.f32(p.reviveCharge)&&r.f32(p.grabEscape)&&
@@ -233,7 +237,8 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
     out.phonePitch=phonePose.pitch;out.phoneRoll=phonePose.roll;out.phoneYaw=phonePose.yaw;
     out.phoneLift=phonePose.lift;out.phoneForward=phonePose.forward;out.phoneSide=phonePose.side;
     out.doubleJumpTimer=phonePose.doubleJumpTimer;out.doubleJumpFlipYaw=phonePose.doubleJumpFlipYaw;
-    out.doubleJumpFlip=phonePose.doubleJumpFlip;out.phoneActionState=static_cast<std::uint8_t>(phonePose.actionState);
+    out.doubleJumpFlip=phonePose.doubleJumpFlip;out.phoneOrientation=phonePose.orientation;
+    out.phoneActionState=static_cast<std::uint8_t>(phonePose.actionState);
     out.meleeVariant=static_cast<std::uint8_t>(melee.variant);out.meleeComboIndex=static_cast<std::uint8_t>(melee.comboIndex);
     out.meleeDirection=melee.direction;out.airLungeRotation=melee.airLungeRotation;out.landingRecovery=melee.landingRecovery;
     out.bleedoutTimer=player.bleedoutTimer;out.reviveCharge=player.reviveCharge;out.grabEscape=player.grabEscape;out.grabbedByTarget=static_cast<std::int8_t>(player.grabbedByTarget);
@@ -342,7 +347,6 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   // Authoritative and local clocks are deliberately separate. The snapshot
   // tick is ordered by DesktopMultiplayer and must never replace simulation
   // or presentation time on the receiving client.
-  const bool roomChanged=state.multiplayer.hasWorldSnapshot&&state.roomIndex!=s.roomIndex;
   state.roomIndex = s.roomIndex;
   state.roomSeed = s.roomSeed;
   state.requiredSouls = s.requiredSouls;
@@ -368,9 +372,9 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
       if (p.id == localPlayerId) {
         const Vec3 predictionError=p.pos-state.player.pos;
         const float correctionMagnitude=length(predictionError);
-        const bool hardCorrection=!state.multiplayer.hasWorldSnapshot||correctionMagnitude>1.5f;
-        if(state.multiplayer.hasWorldSnapshot&&correctionMagnitude>0.05f){
-          std::printf("MULTIPLAYER_GUEST_PREDICTION_CORRECTION magnitude=%.3f mode=%s\n",correctionMagnitude,correctionMagnitude>1.5f?"snap":"smooth");
+        const bool hardCorrection=!state.multiplayer.hasWorldSnapshot||correctionMagnitude>LOCAL_PREDICTION_SNAP_DISTANCE;
+        if(state.multiplayer.hasWorldSnapshot&&correctionMagnitude>LOCAL_PREDICTION_LOG_DISTANCE){
+          std::printf("MULTIPLAYER_GUEST_PREDICTION_CORRECTION magnitude=%.3f mode=%s\n",correctionMagnitude,correctionMagnitude>LOCAL_PREDICTION_SNAP_DISTANCE?"snap":"smooth");
           std::fflush(stdout);
         }
         if(hardCorrection){
@@ -414,7 +418,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.phonePose.pitch=p.phonePitch;state.phonePose.roll=p.phoneRoll;state.phonePose.yaw=p.phoneYaw;
         state.phonePose.lift=p.phoneLift;state.phonePose.forward=p.phoneForward;state.phonePose.side=p.phoneSide;
         state.phonePose.doubleJumpTimer=p.doubleJumpTimer;state.phonePose.doubleJumpFlipYaw=p.doubleJumpFlipYaw;
-        state.phonePose.doubleJumpFlip=p.doubleJumpFlip;state.phonePose.actionState=p.phoneActionState;
+        state.phonePose.doubleJumpFlip=p.doubleJumpFlip;state.phonePose.orientation=p.phoneOrientation;
+        state.phonePose.actionState=p.phoneActionState;
       } else if (p.id < MAX_PLAYERS) {
         auto &peer = state.multiplayer.peers[p.id];
         peer.active = true;
@@ -454,11 +459,22 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.phonePose.pitch=p.phonePitch;peer.phonePose.roll=p.phoneRoll;peer.phonePose.yaw=p.phoneYaw;
         peer.phonePose.lift=p.phoneLift;peer.phonePose.forward=p.phoneForward;peer.phonePose.side=p.phoneSide;
         peer.phonePose.doubleJumpTimer=p.doubleJumpTimer;peer.phonePose.doubleJumpFlipYaw=p.doubleJumpFlipYaw;
-        peer.phonePose.doubleJumpFlip=p.doubleJumpFlip;peer.phonePose.actionState=p.phoneActionState;
+        peer.phonePose.doubleJumpFlip=p.doubleJumpFlip;peer.phonePose.orientation=p.phoneOrientation;
+        peer.phonePose.actionState=p.phoneActionState;
         peer.phoneVisual =
             makePhoneVisualState(p.vacuumPose, p.vacuumPower, 0, s.time, false);
-        peer.phoneTransform.position = p.pos + Vec3{0, 0.54f, 0};
-        peer.phoneTransform.orientation = peer.player.downed?quatNormalized(quatAxisAngle({0,1,0},p.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatAxisAngle({0, 1, 0}, p.yaw);
+        const float phoneActionAmount=std::max(p.vacuumPose,p.dischargeAmount);
+        peer.phoneVisual.actionLift=phoneActionAmount*0.65f;
+        peer.phoneVisual.actionForward=phoneActionAmount*0.25f;
+        const Vec3 forward{-std::sin(p.yaw),0.0f,-std::cos(p.yaw)};
+        const Vec3 right{std::cos(p.yaw),0.0f,-std::sin(p.yaw)};
+        peer.phoneTransform.position=p.pos+Vec3{0,peer.phonePose.lift+peer.phoneVisual.actionLift,0}
+          +forward*(peer.phonePose.forward-peer.phoneVisual.actionForward)+right*peer.phonePose.side;
+        peer.phoneTransform.orientation=peer.player.downed
+          ?quatNormalized(quatAxisAngle({0,1,0},p.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f))
+          :quatNormalized(peer.phonePose.orientation*
+             quatAxisAngle({1,0,0},peer.phoneVisual.pitch)*
+             quatAxisAngle({0,0,1},peer.phoneVisual.roll));
         peer.phoneTransform.screenRight =
             rotate(peer.phoneTransform.orientation, {1, 0, 0});
         peer.phoneTransform.screenUp =
@@ -489,10 +505,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.captureQueued = (a.flags & 8) != 0;
     b.captureCommitted = (a.flags & 16) != 0;
     b.soulState = a.soulState;
-    const Vec3 previousVisualPos=b.pos+b.networkVisualOffset;
-    const bool hadSnapshot=state.multiplayer.hasWorldSnapshot;
     b.pos = a.pos;
-    b.networkVisualOffset=hadSnapshot&&!roomChanged?previousVisualPos-a.pos:Vec3{};
     b.vel = a.vel;
     b.armor = a.armor;
     b.health = a.health;
@@ -556,6 +569,204 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.pos = a.pos;
     b.age = a.age;
     b.rotationY = a.rotation;
+  }
+}
+
+namespace {
+struct StableHash {
+  std::uint64_t value=1469598103934665603ull;
+  void byte(std::uint8_t v){value^=v;value*=1099511628211ull;}
+  void u32(std::uint32_t v){for(int i=0;i<4;++i)byte(static_cast<std::uint8_t>(v>>(i*8)));}
+  void i32(std::int32_t v){u32(static_cast<std::uint32_t>(v));}
+  void boolean(bool v){byte(v?1:0);}
+  void scalar(float v){i32(static_cast<std::int32_t>(std::lround(clampf(v,-1000000.0f,1000000.0f)*1000.0f)));}
+  void vec(const Vec3& v){scalar(v.x);scalar(v.y);scalar(v.z);}
+};
+void hashPlayerGameplay(StableHash& h,const PlayerSnapshot& p){
+  h.boolean(p.active);h.byte(p.id);h.vec(p.pos);h.vec(p.vel);h.scalar(p.yaw);
+  h.scalar(p.jumpVel);h.scalar(p.battery);h.byte(p.souls);h.byte(p.flags);
+  h.byte(p.actionFlags);h.byte(p.storedSoulBruteMask);h.byte(static_cast<std::uint8_t>(p.airJumpsRemaining));
+  h.byte(static_cast<std::uint8_t>(p.ledgeCollider));h.vec(p.ledgeNormal);
+  h.scalar(p.ledgeHangTime);h.scalar(p.ledgeMantleTimer);h.byte(static_cast<std::uint8_t>(p.vacuumTarget));
+  h.scalar(p.meleeTimer);h.scalar(p.dischargeTimer);h.scalar(p.bleedoutTimer);
+  h.scalar(p.reviveCharge);h.scalar(p.grabEscape);h.byte(static_cast<std::uint8_t>(p.grabbedByTarget));
+  h.i32(p.secretVisitRoom);h.scalar(p.secretVisitTimer);
+}
+void hashTargetGameplay(StableHash& h,const TargetSnapshot& t){
+  h.byte(t.flags);h.byte(static_cast<std::uint8_t>(t.soulState));h.vec(t.pos);h.vec(t.vel);
+  h.scalar(t.armor);h.scalar(t.health);h.scalar(t.capture);h.scalar(t.ingest);
+  h.scalar(t.recoil);h.scalar(t.attackTimer);h.scalar(t.attackCooldown);
+  h.vec(t.attackDirection);h.byte(t.attackVariant);h.byte(t.visualFlags);
+  h.scalar(t.armorRegenDelay);h.scalar(t.respawnTimer);
+  h.byte(static_cast<std::uint8_t>(t.ownerPlayerId));h.byte(static_cast<std::uint8_t>(t.grabbedPlayerId));
+}
+float angleDelta(float from,float to){
+  float d=std::fmod(to-from+DB_PI,DB_PI*2.0f);
+  if(d<0.0f)d+=DB_PI*2.0f;
+  return d-DB_PI;
+}
+float lerpf(float a,float b,float t){return a+(b-a)*t;}
+float angleLerp(float a,float b,float t){return a+angleDelta(a,b)*t;}
+Vec3 vectorLerp(const Vec3& a,const Vec3& b,float t){return a+(b-a)*t;}
+bool farApart(const Vec3& a,const Vec3& b){
+  return lengthSq(a-b)>REMOTE_TELEPORT_RESET_DISTANCE*REMOTE_TELEPORT_RESET_DISTANCE;
+}
+void rebuildPeerTransform(NetworkPeerState& peer){
+  const float yaw=peer.player.yaw;
+  const Vec3 forward{-std::sin(yaw),0.0f,-std::cos(yaw)};
+  const Vec3 right{std::cos(yaw),0.0f,-std::sin(yaw)};
+  peer.phoneTransform.position=peer.player.pos+Vec3{0,peer.phonePose.lift+peer.phoneVisual.actionLift,0}
+    +forward*(peer.phonePose.forward-peer.phoneVisual.actionForward)+right*peer.phonePose.side;
+  peer.phoneTransform.orientation=peer.player.downed
+    ?quatNormalized(quatAxisAngle({0,1,0},yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f))
+    :quatNormalized(peer.phonePose.orientation*
+       quatAxisAngle({1,0,0},peer.phoneVisual.pitch)*
+       quatAxisAngle({0,0,1},peer.phoneVisual.roll));
+  peer.phoneTransform.screenRight=normalized(rotate(peer.phoneTransform.orientation,{1,0,0}));
+  peer.phoneTransform.screenUp=normalized(rotate(peer.phoneTransform.orientation,{0,1,0}));
+  peer.phoneTransform.screenNormal=normalized(rotate(peer.phoneTransform.orientation,{0,0,1}));
+  peer.phoneTransform.screenCenter=peer.phoneTransform.position+
+    peer.phoneTransform.screenNormal*(PHONE_SCREEN_Z_OFFSET+peer.phoneVisual.screenOffset);
+  peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter;
+}
+}
+
+std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
+  StableHash h;
+  h.i32(s.roomIndex);h.i32(s.roomSeed);h.i32(s.requiredSouls);h.i32(s.depositedSouls);
+  h.boolean(s.roomClear);h.boolean(s.started);h.boolean(s.dead);
+  h.i32(s.runRules.requiredSlotStacks);h.i32(s.runRules.crowdedRoomStacks);
+  h.i32(s.runRules.fasterSlurpStacks);h.i32(s.runRules.nextId);h.i32(s.runRules.lastAdded);
+  h.boolean(s.upgradeMenuActive);
+  for(auto v:s.temporaryUpgradeLevels)h.i32(v);
+  for(auto v:s.sharedPermanentUpgradeLevels)h.i32(v);
+  h.scalar(s.roomHeat);h.i32(s.tvSignal);h.i32(s.tvDamage);h.i32(s.tvTolerance);
+  h.boolean(s.tvBroken);h.boolean(s.tvAvailable);h.vec(s.tvEntrancePos);h.vec(s.tvEntranceNormal);
+  h.i32(s.topology.currentTileIndex);h.i32(s.topology.previousTileIndex);h.boolean(s.topology.advancing);
+  h.boolean(s.doorTransition.active);h.scalar(s.doorTransition.progress);
+  for(const auto& p:s.players)hashPlayerGameplay(h,p);
+  for(const auto& t:s.targets)hashTargetGameplay(h,t);
+  for(std::size_t i=0;i<s.captures.size();++i){h.boolean(s.captures[i]);h.vec(s.capturePositions[i]);}
+  for(const auto& b:s.bullets){h.boolean(b.active);h.boolean(b.brute);h.vec(b.pos);h.vec(b.vel);h.scalar(b.life);}
+  for(const auto& f:s.flowers){h.boolean(f.active);h.vec(f.pos);h.scalar(f.age);}
+  return h.value;
+}
+
+std::uint64_t visualStateHash(const WorldSnapshot& s){
+  StableHash h;
+  h.i32(s.roomIndex);h.boolean(s.doorTransition.active);h.scalar(s.doorTransition.progress);
+  for(const auto& p:s.players){
+    h.boolean(p.active);h.byte(p.id);h.vec(p.pos);h.vec(p.vel);h.scalar(p.yaw);
+    h.byte(p.flags);h.byte(p.actionFlags);h.scalar(p.vacuumPose);h.scalar(p.meleeTimer);
+    h.scalar(p.dischargeAmount);h.byte(p.phoneActionState);
+  }
+  for(const auto& t:s.targets){
+    h.byte(t.flags);h.byte(static_cast<std::uint8_t>(t.soulState));h.vec(t.pos);
+    h.scalar(t.visualYaw);h.scalar(t.animationTime);h.scalar(t.locomotionAmount);
+    h.scalar(t.attackTimer);h.byte(t.attackVariant);h.scalar(t.hitFlash);
+    h.scalar(t.armor);h.scalar(t.soulMorph);h.scalar(t.ingest);h.scalar(t.recoil);
+  }
+  for(const auto& b:s.bullets){h.boolean(b.active);h.vec(b.pos);h.scalar(b.spin);}
+  for(const auto& f:s.flowers){h.boolean(f.active);h.vec(f.pos);h.scalar(f.rotation);}
+  return h.value;
+}
+
+void SnapshotInterpolator::reset(){
+  previous_=TimedSnapshot{};current_=TimedSnapshot{};hasPrevious_=hasCurrent_=false;
+}
+
+void SnapshotInterpolator::push(const WorldSnapshot& snapshot,std::int64_t receiveTimeMs){
+  if(hasCurrent_&&(snapshot.tick<=current_.snapshot.tick||
+      snapshot.roomIndex!=current_.snapshot.roomIndex||
+      snapshot.topology.currentTileIndex!=current_.snapshot.topology.currentTileIndex||
+      snapshot.dead!=current_.snapshot.dead)){
+    reset();
+  }
+  if(hasCurrent_){previous_=current_;hasPrevious_=true;}
+  current_.snapshot=snapshot;current_.receiveTimeMs=receiveTimeMs;hasCurrent_=true;
+}
+
+void SnapshotInterpolator::apply(GameState& state,std::uint8_t localPlayerId,
+                                 std::int64_t renderTimeMs) const{
+  if(!hasCurrent_)return;
+  const WorldSnapshot& b=current_.snapshot;
+  const WorldSnapshot& a=hasPrevious_?previous_.snapshot:b;
+  const std::int64_t targetTime=renderTimeMs-REMOTE_INTERPOLATION_DELAY_MS;
+  float alpha=1.0f;
+  float extrapolationSeconds=0.0f;
+  if(hasPrevious_&&current_.receiveTimeMs>previous_.receiveTimeMs){
+    alpha=clampf(static_cast<float>(targetTime-previous_.receiveTimeMs)/
+      static_cast<float>(current_.receiveTimeMs-previous_.receiveTimeMs),0.0f,1.0f);
+    if(targetTime>current_.receiveTimeMs)
+      extrapolationSeconds=static_cast<float>(std::min<std::int64_t>(
+        targetTime-current_.receiveTimeMs,REMOTE_MAX_EXTRAPOLATION_MS))*0.001f;
+  }
+  for(int id=0;id<MAX_PLAYERS;++id){
+    if(id==localPlayerId||!b.players[id].active)continue;
+    const auto& from=a.players[id];const auto& to=b.players[id];
+    auto& peer=state.multiplayer.peers[id];
+    const bool reset=!hasPrevious_||!from.active||farApart(from.pos,to.pos)||
+      ((from.flags^to.flags)&((1u<<2)|(1u<<3)|(1u<<4)))!=0||
+      from.secretVisitRoom!=to.secretVisitRoom;
+    const float t=reset?1.0f:alpha;
+    peer.player.pos=vectorLerp(from.pos,to.pos,t)+(reset?Vec3{}:to.vel*extrapolationSeconds);
+    peer.player.vel=vectorLerp(from.vel,to.vel,t);
+    peer.player.yaw=reset?to.yaw:angleLerp(from.yaw,to.yaw,t);
+    peer.phonePose.pitch=lerpf(from.phonePitch,to.phonePitch,t);
+    peer.phonePose.roll=lerpf(from.phoneRoll,to.phoneRoll,t);
+    peer.phonePose.yaw=lerpf(from.phoneYaw,to.phoneYaw,t);
+    peer.phonePose.lift=lerpf(from.phoneLift,to.phoneLift,t);
+    peer.phonePose.forward=lerpf(from.phoneForward,to.phoneForward,t);
+    peer.phonePose.side=lerpf(from.phoneSide,to.phoneSide,t);
+    peer.phonePose.orientation=reset?to.phoneOrientation:quatSlerp(from.phoneOrientation,to.phoneOrientation,t);
+    peer.vacuum.pose=lerpf(from.vacuumPose,to.vacuumPose,t);
+    peer.vacuum.power=lerpf(from.vacuumPower,to.vacuumPower,t);
+    peer.energy.dischargePositionAmount=lerpf(from.dischargeAmount,to.dischargeAmount,t);
+    peer.meleeVisual.visualTimer=lerpf(from.meleeTimer,to.meleeTimer,t);
+    peer.phoneVisual=makePhoneVisualState(peer.vacuum.pose,peer.vacuum.power,0,state.time,false);
+    const float action=std::max(peer.vacuum.pose,peer.energy.dischargePositionAmount);
+    peer.phoneVisual.actionLift=action*0.65f;peer.phoneVisual.actionForward=action*0.25f;
+    rebuildPeerTransform(peer);
+  }
+  for(int i=0;i<TARGET_COUNT;++i){
+    const auto& from=a.targets[i];const auto& to=b.targets[i];auto& out=state.targets[i];
+    const bool reset=!hasPrevious_||((from.flags^to.flags)&0x17u)!=0||
+      from.soulState!=to.soulState||farApart(from.pos,to.pos);
+    const float t=reset?1.0f:alpha;
+    out.pos=vectorLerp(from.pos,to.pos,t)+(reset?Vec3{}:to.vel*extrapolationSeconds);
+    out.vel=vectorLerp(from.vel,to.vel,t);
+    out.visualYaw=reset?to.visualYaw:angleLerp(from.visualYaw,to.visualYaw,t);
+    out.humanAnimationTime=lerpf(from.animationTime,to.animationTime,t);
+    out.visualWalkPhase=lerpf(from.visualWalkPhase,to.visualWalkPhase,t);
+    out.locomotionAmount=lerpf(from.locomotionAmount,to.locomotionAmount,t);
+    out.attackTimer=lerpf(from.attackTimer,to.attackTimer,t);
+    out.hitFlash=lerpf(from.hitFlash,to.hitFlash,t);
+    out.armor=lerpf(from.armor,to.armor,t);out.health=lerpf(from.health,to.health,t);
+    out.soulMorph=lerpf(from.soulMorph,to.soulMorph,t);
+    out.capture=lerpf(from.capture,to.capture,t);out.ingestProgress=lerpf(from.ingest,to.ingest,t);
+    out.recoilTime=lerpf(from.recoil,to.recoil,t);
+    out.visualReaction=makeHumanReactionVisual(out.visualWalkPhase,out.locomotionAmount,
+      out.hitFlash,out.hitDirectionLocal,out.vacuumPullAmount,out.captureCollapseAmount,
+      out.soulMorph,out.visibility>0.5f,out.attackTimer,out.attackVariant);
+  }
+  for(int i=0;i<BULLET_COUNT;++i){
+    const auto& from=a.bullets[i];const auto& to=b.bullets[i];auto& out=state.bullets[i];
+    if(!to.active)continue;
+    const bool reset=!hasPrevious_||!from.active||from.brute!=to.brute||farApart(from.pos,to.pos);
+    const float t=reset?1.0f:alpha;
+    out.pos=vectorLerp(from.pos,to.pos,t)+(reset?Vec3{}:to.vel*extrapolationSeconds);
+    out.spin=lerpf(from.spin,to.spin,t);out.life=lerpf(from.life,to.life,t);
+  }
+  for(int i=0;i<FLOWER_POWERUP_COUNT;++i){
+    const auto& from=a.flowers[i];const auto& to=b.flowers[i];auto& out=state.flowers[i];
+    if(to.active&&hasPrevious_&&from.active&&!farApart(from.pos,to.pos)){
+      out.pos=vectorLerp(from.pos,to.pos,alpha);
+      out.rotationY=angleLerp(from.rotation,to.rotation,alpha);
+    }
+  }
+  if(hasPrevious_&&a.doorTransition.active==b.doorTransition.active){
+    state.doorTransition.progress=lerpf(a.doorTransition.progress,b.doorTransition.progress,alpha);
+    state.doorTransition.frameMotion=vectorLerp(a.doorTransition.frameMotion,b.doorTransition.frameMotion,alpha);
   }
 }
 }

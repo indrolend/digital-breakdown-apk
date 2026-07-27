@@ -676,6 +676,8 @@ void printUsage() {
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
+    std::printf("  --net-latency-ms N --net-jitter-ms N  Enable explicit deterministic network impairment.\n");
+    std::printf("  --net-drop-snapshot-every N --net-drop-input-every N --net-seed N\n");
 }
 
 bool near(float a, float b, float eps = 0.025f) {
@@ -772,6 +774,7 @@ int runSmokeTest() {
     return 0;
 }
 const char* argValue(int argc,char** argv,const char* expected){for(int i=1;i+1<argc;++i)if(std::strcmp(argv[i],expected)==0)return argv[i+1];return nullptr;}
+int argInt(int argc,char** argv,const char* expected,int fallback=0){const char* value=argValue(argc,argv,expected);if(!value)return fallback;try{return std::stoi(value);}catch(...){return fallback;}}
 bool captureFramebuffer(const std::filesystem::path& path,int width,int height){std::vector<unsigned char> pixels(static_cast<std::size_t>(width)*height*3u);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());std::ofstream out(path,std::ios::binary);if(!out)return false;out<<"P6\n"<<width<<" "<<height<<"\n255\n";for(int y=height-1;y>=0;--y)out.write(reinterpret_cast<const char*>(pixels.data()+static_cast<std::size_t>(y)*width*3u),static_cast<std::streamsize>(width*3));return static_cast<bool>(out);}
 
 int runModelTest(const std::filesystem::path& root) {
@@ -866,7 +869,8 @@ int main(int argc, char** argv) {
     const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
-    const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test");
+    const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
+    const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -979,6 +983,12 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(!tvRoomTest&&!tvRoomEnter){
+        host.multiplayer.configureImpairment(
+            argInt(argc,argv,"--net-latency-ms"),
+            argInt(argc,argv,"--net-jitter-ms"),
+            argInt(argc,argv,"--net-drop-snapshot-every"),
+            argInt(argc,argv,"--net-drop-input-every"),
+            static_cast<std::uint32_t>(std::max(1,argInt(argc,argv,"--net-seed",1))));
         if(const char* service=argValue(argc,argv,"--service-url"))host.multiplayerService=service;
         if(hasArg(argc,argv,"--host-room"))host.multiplayer.host(host.multiplayerService);
         if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
@@ -994,6 +1004,7 @@ int main(int argc, char** argv) {
     auto previousPhoneTransform = host.game.state().phoneTransform;
     int captureFrames=0;
     bool multiplayerAutoStartIssued=false;
+    int multiplayerParityFrame=0;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
             host.multiplayer.update(host.game);
@@ -1001,7 +1012,50 @@ int main(int argc, char** argv) {
                host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
                host.multiplayer.phase()==dbmultiplayer::Phase::Lobby&&host.multiplayer.playerCount()==2)
                 multiplayerAutoStartIssued=host.multiplayer.startMatch();
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
+                ++multiplayerParityFrame;
+                const bool guest=host.multiplayer.role()==DesktopMultiplayer::Role::Guest;
+                const bool move=guest&&multiplayerParityFrame<240;
+                const bool jump=guest&&(multiplayerParityFrame==30||multiplayerParityFrame==75);
+                host.game.setTouchControls(0.0f,move?1.0f:0.0f,0.0f,0.0f,false,
+                                           move,jump,false,false,false);
+                if(jump){
+                    std::printf("MULTIPLAYER_TEST_GUEST_JUMP frame=%d kind=%s\n",
+                                multiplayerParityFrame,
+                                multiplayerParityFrame==30?"jump":"double_jump");
+                    std::fflush(stdout);
+                }
+                if(multiplayerParityFrame==100)setMouseCaptured(window,host,false);
+                if(multiplayerParityFrame==130)setMouseCaptured(window,host,true);
+            }
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
+                if(host.multiplayer.role()==DesktopMultiplayer::Role::Guest&&
+                   (multiplayerParityFrame==30||multiplayerParityFrame==75)){
+                    std::printf("MULTIPLAYER_TEST_GUEST_JUMP_PREDICTED frame=%d jump_vel=%.3f y=%.3f\n",
+                                multiplayerParityFrame,host.game.state().player.jumpVel,
+                                host.game.state().player.pos.y);
+                    std::fflush(stdout);
+                }
+                if(multiplayerParityFrame==60&&host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
+                    std::printf("MULTIPLAYER_TEST_GUEST_MOVEMENT x=%.3f y=%.3f z=%.3f\n",
+                                host.game.state().player.pos.x,host.game.state().player.pos.y,
+                                host.game.state().player.pos.z);
+                    std::fflush(stdout);
+                }
+                if((multiplayerParityFrame%30)==0){
+                    GameState parityRender=host.game.state();
+                    host.multiplayer.applyPresentation(parityRender);
+                    const int remoteId=host.multiplayer.role()==DesktopMultiplayer::Role::Guest?0:1;
+                    const auto& remote=parityRender.multiplayer.peers[remoteId];
+                    if(remote.active){
+                        std::printf("MULTIPLAYER_VISUAL_STATE entity=player id=%d tick=%d x=%.3f y=%.3f z=%.3f yaw=%.3f action=%d\n",
+                          remoteId,parityRender.frame,remote.player.pos.x,remote.player.pos.y,
+                          remote.player.pos.z,remote.player.yaw,remote.phonePose.actionState);
+                        std::fflush(stdout);
+                    }
+                }
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
@@ -1071,8 +1125,7 @@ int main(int argc, char** argv) {
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
-        if(renderState.multiplayer.enabled&&!renderState.multiplayer.authoritativeHost)
-            for(auto& target:renderState.targets)target.pos+=target.networkVisualOffset;
+        host.multiplayer.applyPresentation(renderState);
         if(captureMenuPause){
             renderState.started=true;
             renderState.uiPaused=true;

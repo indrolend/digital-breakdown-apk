@@ -31,19 +31,35 @@ std::string readResponse(HINTERNET request){std::string response;DWORD available
 }
 
 DesktopMultiplayer::~DesktopMultiplayer(){disconnect();}
+void DesktopMultiplayer::applyPresentation(GameState& renderState) const{
+  if(role_.load()==Role::Guest&&snapshotInterpolator_.ready())
+    snapshotInterpolator_.apply(renderState,static_cast<std::uint8_t>(playerId_.load()),steadyMilliseconds());
+}
+void DesktopMultiplayer::configureImpairment(int latencyMs,int jitterMs,
+    int dropSnapshotEvery,int dropInputEvery,std::uint32_t seed){
+  netLatencyMs_=std::max(0,latencyMs);netJitterMs_=std::max(0,jitterMs);
+  dropSnapshotEvery_=std::max(0,dropSnapshotEvery);
+  dropInputEvery_=std::max(0,dropInputEvery);impairmentSeed_=seed?seed:1;
+  snapshotSendCount_=inputSendCount_=0;
+  if(netLatencyMs_||netJitterMs_||dropSnapshotEvery_||dropInputEvery_){
+    std::printf("MULTIPLAYER_NET_IMPAIRMENT latency_ms=%d jitter_ms=%d drop_snapshot_every=%d drop_input_every=%d seed=%u\n",
+      netLatencyMs_,netJitterMs_,dropSnapshotEvery_,dropInputEvery_,impairmentSeed_);
+    std::fflush(stdout);
+  }
+}
 std::string DesktopMultiplayer::roomCode()const{std::lock_guard<std::mutex> lock(stateMutex_);return roomCode_;}
 std::string DesktopMultiplayer::status()const{std::lock_guard<std::mutex> lock(stateMutex_);return status_;}
 void DesktopMultiplayer::setStatus(const std::string& value){std::lock_guard<std::mutex> lock(stateMutex_);status_=value;}
 void DesktopMultiplayer::host(const std::string& serviceUrl){begin(Role::Host,serviceUrl,{});}
 void DesktopMultiplayer::join(const std::string& serviceUrl,const std::string& roomCode){const std::string code=dbmultiplayer::normalizeRoomCode(roomCode);if(code.empty()){role_=Role::Guest;phase_=dbmultiplayer::Phase::Failed;setStatus("ROOM NOT FOUND");std::printf("MULTIPLAYER_REJECT stage=room_code reason=invalid\n");std::fflush(stdout);return;}begin(Role::Guest,serviceUrl,code);}
-void DesktopMultiplayer::begin(Role role,const std::string& service,const std::string& code){if(pending()||connected()){std::printf("MULTIPLAYER_DUPLICATE_IGNORED role=%s\n",roleName(role));std::fflush(stdout);return;}disconnect();role_=role;phase_=dbmultiplayer::transition(phase_.load(),role==Role::Host?dbmultiplayer::Event::CreateRoom:dbmultiplayer::Event::JoinRoom);serviceUrl_=service;{std::lock_guard<std::mutex> lock(stateMutex_);roomCode_=code;hostKey_.clear();status_=role==Role::Host?"CREATING ROOM":"JOINING "+code;}std::printf("MULTIPLAYER_BEGIN role=%s service=%s room=%s\n",roleName(role),service.c_str(),code.c_str());std::fflush(stdout);stop_=false;configuredGame_=false;loggedInput_=loggedSnapshot_=false;playerCount_=0;startId_=0;outgoingSequence_=0;localInputTick_=0;lastInputSendMs_=0;lastSnapshotTick_=0;lastSnapshotSequence_=0;lastSnapshotReceiveMs_=0;lastInputSequence_.fill(0);const auto now=steadyMilliseconds();lastValidMessageMs_=lastHeartbeatMs_=phaseStartedMs_=now;worker_=std::thread(&DesktopMultiplayer::workerMain,this);}
+void DesktopMultiplayer::begin(Role role,const std::string& service,const std::string& code){if(pending()||connected()){std::printf("MULTIPLAYER_DUPLICATE_IGNORED role=%s\n",roleName(role));std::fflush(stdout);return;}disconnect();role_=role;phase_=dbmultiplayer::transition(phase_.load(),role==Role::Host?dbmultiplayer::Event::CreateRoom:dbmultiplayer::Event::JoinRoom);serviceUrl_=service;{std::lock_guard<std::mutex> lock(stateMutex_);roomCode_=code;hostKey_.clear();status_=role==Role::Host?"CREATING ROOM":"JOINING "+code;}std::printf("MULTIPLAYER_BEGIN role=%s service=%s room=%s\n",roleName(role),service.c_str(),code.c_str());std::fflush(stdout);stop_=false;configuredGame_=false;loggedInput_=loggedSnapshot_=false;playerCount_=0;startId_=0;outgoingSequence_=0;localInputTick_=0;lastInputSendMs_=0;lastSnapshotTick_=0;lastSnapshotSequence_=0;lastSnapshotReceiveMs_=0;lastInputSequence_.fill(0);snapshotInterpolator_.reset();const auto now=steadyMilliseconds();lastValidMessageMs_=lastHeartbeatMs_=phaseStartedMs_=now;worker_=std::thread(&DesktopMultiplayer::workerMain,this);}
 void DesktopMultiplayer::disconnect(){stop_=true;void* session=nullptr;void* connection=nullptr;void* request=nullptr;void* socket=nullptr;{std::lock_guard<std::mutex> sendLock(sendMutex_);std::lock_guard<std::mutex> handleLock(handleMutex_);session=session_;connection=connection_;request=request_;socket=webSocket_;session_=connection_=request_=webSocket_=nullptr;}
 #ifdef _WIN32
 if(socket)WinHttpCloseHandle(static_cast<HINTERNET>(socket));if(request)WinHttpCloseHandle(static_cast<HINTERNET>(request));if(connection)WinHttpCloseHandle(static_cast<HINTERNET>(connection));if(session)WinHttpCloseHandle(static_cast<HINTERNET>(session));
 #elif defined(__APPLE__)
 if(socket)static_cast<ix::WebSocket*>(socket)->stop();
 #endif
-if(worker_.joinable()&&worker_.get_id()!=std::this_thread::get_id())worker_.join();connected_=false;role_=Role::Offline;phase_=dbmultiplayer::Phase::Offline;configuredGame_=false;}
+if(worker_.joinable()&&worker_.get_id()!=std::this_thread::get_id())worker_.join();connected_=false;role_=Role::Offline;phase_=dbmultiplayer::Phase::Offline;configuredGame_=false;snapshotInterpolator_.reset();}
 
 void DesktopMultiplayer::fail(const std::string& visibleStatus,const char* stage,unsigned long error){connected_=false;phase_=dbmultiplayer::transition(phase_.load(),dbmultiplayer::Event::Failure);setStatus(visibleStatus);std::printf("MULTIPLAYER_FAILED stage=%s status=%s error=%lu\n",stage,visibleStatus.c_str(),error);std::fflush(stdout);}
 void DesktopMultiplayer::publishHandles(void* session,void* connection,void* request,void* socket){std::lock_guard<std::mutex> lock(handleMutex_);session_=session;connection_=connection;request_=request;if(socket)webSocket_=socket;}
@@ -343,7 +359,25 @@ void DesktopMultiplayer::receiveLoop(){
 std::vector<std::uint8_t> assembled;while(!stop_){HINTERNET socket=nullptr;{std::lock_guard<std::mutex> lock(handleMutex_);socket=static_cast<HINTERNET>(webSocket_);}if(!socket)break;std::uint8_t buffer[8192];DWORD read=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE type=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;DWORD result=WinHttpWebSocketReceive(socket,buffer,sizeof(buffer),&read,&type);if(result!=NO_ERROR){if(!stop_)std::printf("MULTIPLAYER_SOCKET_RECEIVE_FAILED error=%lu\n",static_cast<unsigned long>(result));std::fflush(stdout);break;}if(type==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE){USHORT closeCode=0;DWORD reasonBytes=0;WinHttpWebSocketQueryCloseStatus(socket,&closeCode,nullptr,0,&reasonBytes);std::printf("MULTIPLAYER_SOCKET_CLOSE code=%u reason_bytes=%lu\n",static_cast<unsigned>(closeCode),static_cast<unsigned long>(reasonBytes));std::fflush(stdout);break;}assembled.insert(assembled.end(),buffer,buffer+read);const bool complete=type==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE||type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;if(!complete)continue;Incoming item;if(type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE){item.text.assign(reinterpret_cast<const char*>(assembled.data()),assembled.size());const std::string kind=jsonString(item.text,"type");if(kind=="welcome")acceptWelcome(item.text);else if(kind.empty()){std::printf("MULTIPLAYER_PACKET_REJECT type=text reason=malformed\n");std::fflush(stdout);}}else{item.binary=true;item.bytes=assembled;} {std::lock_guard<std::mutex> lock(queueMutex_);incoming_.push_back(std::move(item));}assembled.clear();if(stop_)break;}
 #endif
 }
-bool DesktopMultiplayer::sendBinary(const std::vector<std::uint8_t>& packet){std::lock_guard<std::mutex> lock(sendMutex_);if(!webSocket_||packet.empty())return false;
+bool DesktopMultiplayer::sendBinary(const std::vector<std::uint8_t>& packet){
+dbnet::PacketHeader impairmentHeader;
+if(dbnet::decodeHeader(packet.data(),packet.size(),impairmentHeader)){
+  std::uint32_t* count=nullptr;int every=0;
+  if(impairmentHeader.type==dbnet::MessageType::Snapshot){count=&snapshotSendCount_;every=dropSnapshotEvery_;}
+  else if(impairmentHeader.type==dbnet::MessageType::Input){count=&inputSendCount_;every=dropInputEvery_;}
+  if(count&&every>0&&++(*count)%static_cast<std::uint32_t>(every)==0){
+    std::printf("MULTIPLAYER_NET_DROP type=%s sequence=%u\n",
+      impairmentHeader.type==dbnet::MessageType::Snapshot?"snapshot":"input",impairmentHeader.sequence);
+    std::fflush(stdout);return true;
+  }
+  if(netLatencyMs_||netJitterMs_){
+    impairmentSeed_=impairmentSeed_*1664525u+1013904223u;
+    const int span=netJitterMs_*2+1;
+    const int jitter=span>1?static_cast<int>(impairmentSeed_%static_cast<std::uint32_t>(span))-netJitterMs_:0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(std::max(0,netLatencyMs_+jitter)));
+  }
+}
+std::lock_guard<std::mutex> lock(sendMutex_);if(!webSocket_||packet.empty())return false;
 #ifdef _WIN32
 return WinHttpWebSocketSend(static_cast<HINTERNET>(webSocket_),WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,const_cast<std::uint8_t*>(packet.data()),static_cast<DWORD>(packet.size()))==NO_ERROR;
 #elif defined(__APPLE__)
@@ -406,7 +440,7 @@ void DesktopMultiplayer::update(Game& game){
         startId_=incomingStart;phase_=dbmultiplayer::transition(phase_.load(),dbmultiplayer::Event::StartReceived);phaseStartedMs_=steadyMilliseconds();setStatus("SYNCHRONIZING");
         if(!configuredGame_){game.restart();if(role_==Role::Host){game.configureNetworkHost();game.setNetworkPeerActive(1,true);}else game.configureNetworkGuest(playerId_);configuredGame_=true;}
         std::printf("MULTIPLAYER_SYNCHRONIZING role=%s start=%u\n",roleName(role_.load()),startId_);std::fflush(stdout);
-        if(role_==Role::Host){const GameState& state=game.state();auto world=dbnet::captureWorld(state,dbnet::capturePlayers(state),static_cast<std::uint32_t>(std::max(0,state.frame)));sendBinary(dbnet::encodeSnapshot(0,world,++outgoingSequence_));}
+        if(role_==Role::Host){const GameState& state=game.state();auto world=dbnet::captureWorld(state,dbnet::capturePlayers(state),static_cast<std::uint32_t>(std::max(0,state.frame)));std::printf("MULTIPLAYER_AUTH_STATE_HASH tick=%u hash=%llu\n",world.tick,static_cast<unsigned long long>(dbnet::authoritativeStateHash(world)));std::printf("MULTIPLAYER_VISUAL_STATE entity=world id=0 tick=%u hash=%llu\n",world.tick,static_cast<unsigned long long>(dbnet::visualStateHash(world)));std::fflush(stdout);sendBinary(dbnet::encodeSnapshot(0,world,++outgoingSequence_));}
       }else if(kind=="start_ack"&&role_==Role::Host&&phase_.load()==dbmultiplayer::Phase::Synchronizing){
         if(static_cast<std::uint32_t>(jsonInt(message.text,"startId",0))==startId_)sendText("{\"type\":\"start_confirm\",\"startId\":"+std::to_string(startId_)+"}");
       }else if(kind=="start_confirm"){
@@ -434,7 +468,7 @@ void DesktopMultiplayer::update(Game& game){
       dbnet::InputCommand input;if(dbnet::decodeInput(message.bytes.data(),message.bytes.size(),header,input)){lastInputSequence_[header.playerId]=header.sequence;game.setNetworkPeerCommand(header.playerId,input);if(!loggedInput_){loggedInput_=true;std::printf("MULTIPLAYER_INPUT_RECEIVED player=%u sequence=%u\n",header.playerId,header.sequence);std::fflush(stdout);}}
     }else if(role_==Role::Guest&&header.type==dbnet::MessageType::Snapshot){
       if(header.sequence<=lastSnapshotSequence_){std::printf("MULTIPLAYER_PACKET_REJECT type=snapshot reason=stale\n");std::fflush(stdout);continue;}
-      dbnet::WorldSnapshot snapshot;if(dbnet::decodeSnapshot(message.bytes.data(),message.bytes.size(),header,snapshot)){const auto receivedAt=steadyMilliseconds();if(lastSnapshotReceiveMs_!=0){const auto gap=receivedAt-lastSnapshotReceiveMs_;if(gap>=100){std::printf("MULTIPLAYER_SNAPSHOT_GAP duration_ms=%lld\n",static_cast<long long>(gap));std::fflush(stdout);}}lastSnapshotReceiveMs_=receivedAt;lastSnapshotSequence_=header.sequence;dbnet::applyWorld(game.networkMutableState(),snapshot,static_cast<std::uint8_t>(playerId_.load()));if(!loggedSnapshot_){loggedSnapshot_=true;std::printf("MULTIPLAYER_SNAPSHOT_RECEIVED sequence=%u\n",header.sequence);std::fflush(stdout);}if(phase_.load()==dbmultiplayer::Phase::Synchronizing){sendText("{\"type\":\"start_ack\",\"startId\":"+std::to_string(startId_)+",\"snapshotSequence\":"+std::to_string(header.sequence)+"}");std::printf("MULTIPLAYER_INITIAL_SNAPSHOT_APPLIED sequence=%u\n",header.sequence);std::fflush(stdout);}}
+      dbnet::WorldSnapshot snapshot;if(dbnet::decodeSnapshot(message.bytes.data(),message.bytes.size(),header,snapshot)){const auto receivedAt=steadyMilliseconds();if(lastSnapshotReceiveMs_!=0){const auto gap=receivedAt-lastSnapshotReceiveMs_;if(gap>=100){std::printf("MULTIPLAYER_SNAPSHOT_GAP duration_ms=%lld\n",static_cast<long long>(gap));std::fflush(stdout);}}lastSnapshotReceiveMs_=receivedAt;lastSnapshotSequence_=header.sequence;std::printf("MULTIPLAYER_AUTH_STATE_HASH tick=%u hash=%llu\n",snapshot.tick,static_cast<unsigned long long>(dbnet::authoritativeStateHash(snapshot)));std::printf("MULTIPLAYER_VISUAL_STATE entity=world id=0 tick=%u hash=%llu\n",snapshot.tick,static_cast<unsigned long long>(dbnet::visualStateHash(snapshot)));std::fflush(stdout);snapshotInterpolator_.push(snapshot,receivedAt);dbnet::applyWorld(game.networkMutableState(),snapshot,static_cast<std::uint8_t>(playerId_.load()));if(!loggedSnapshot_){loggedSnapshot_=true;std::printf("MULTIPLAYER_SNAPSHOT_RECEIVED sequence=%u\n",header.sequence);std::fflush(stdout);}if(phase_.load()==dbmultiplayer::Phase::Synchronizing){sendText("{\"type\":\"start_ack\",\"startId\":"+std::to_string(startId_)+",\"snapshotSequence\":"+std::to_string(header.sequence)+"}");std::printf("MULTIPLAYER_INITIAL_SNAPSHOT_APPLIED sequence=%u\n",header.sequence);std::fflush(stdout);}}
     }else{std::printf("MULTIPLAYER_PACKET_REJECT type=binary reason=role_or_type\n");std::fflush(stdout);}
   }
   if(connected_){
@@ -452,5 +486,5 @@ void DesktopMultiplayer::update(Game& game){
     const PlayerCommand input=game.capturePlayerCommand(++outgoingSequence_,++localInputTick_);
     sendBinary(dbnet::encodeInput(static_cast<std::uint8_t>(playerId_.load()),input));
   }
-  else if(role_==Role::Host&&static_cast<std::uint32_t>(state.frame)>=lastSnapshotTick_+3){lastSnapshotTick_=static_cast<std::uint32_t>(state.frame);auto world=dbnet::captureWorld(state,dbnet::capturePlayers(state),lastSnapshotTick_);sendBinary(dbnet::encodeSnapshot(0,world,++outgoingSequence_));}
+  else if(role_==Role::Host&&static_cast<std::uint32_t>(state.frame)>=lastSnapshotTick_+3){lastSnapshotTick_=static_cast<std::uint32_t>(state.frame);auto world=dbnet::captureWorld(state,dbnet::capturePlayers(state),lastSnapshotTick_);std::printf("MULTIPLAYER_AUTH_STATE_HASH tick=%u hash=%llu\n",world.tick,static_cast<unsigned long long>(dbnet::authoritativeStateHash(world)));std::printf("MULTIPLAYER_VISUAL_STATE entity=world id=0 tick=%u hash=%llu\n",world.tick,static_cast<unsigned long long>(dbnet::visualStateHash(world)));std::fflush(stdout);sendBinary(dbnet::encodeSnapshot(0,world,++outgoingSequence_));}
 }
