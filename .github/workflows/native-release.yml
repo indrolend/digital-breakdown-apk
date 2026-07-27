@@ -2,18 +2,26 @@ name: Native Cross-Platform Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish latest-native when run from main'
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
       - 'native-desktop/**'
       - 'native-android/**'
+      - 'native-network/**'
+      - 'multiplayer-server/**'
       - 'tools/desktop/**'
       - 'tools/release/**'
       - 'tools/dbdev.ps1'
       - '.github/workflows/native-release.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: native-release-${{ github.ref }}
@@ -28,8 +36,11 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Check protocol declarations
+        run: node tools/release/protocol-consistency.mjs
+
       - name: Configure desktop release
-        run: cmake -S native-desktop -B build/desktop-release -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S native-desktop -B build/desktop-release -A x64 -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}"
 
       - name: Build desktop release
         run: cmake --build build/desktop-release --config Release --parallel
@@ -101,6 +112,9 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Check protocol declarations
+        run: node tools/release/protocol-consistency.mjs
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -193,10 +207,14 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Check protocol declarations
+        run: node tools/release/protocol-consistency.mjs
+
       - name: Configure universal release
         run: >-
           cmake -S native-desktop -B build/macos-release
           -DCMAKE_BUILD_TYPE=Release
+          -DDB_COMMIT_SHA="${{ github.sha }}"
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
@@ -231,11 +249,16 @@ jobs:
           retention-days: 30
 
   publish:
-    name: Publish unified native bundle
-    needs: [windows, android]
+    name: Publish unified experimental bundle
+    needs: [windows, android, macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
       - name: Download Windows package
         uses: actions/download-artifact@v4
         with:
@@ -248,46 +271,17 @@ jobs:
           name: native-android-package
           path: release
 
+      - name: Download macOS package
+        uses: actions/download-artifact@v4
+        with:
+          name: native-macos-universal
+          path: release
+
       - name: Generate checksums and manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd release
+        run: node tools/release/write-native-manifest.mjs release
 
-          WINDOWS_SHA=$(sha256sum DigitalBreakdown-Windows.zip | awk '{print $1}')
-          ANDROID_SHA=$(sha256sum DigitalBreakdown-Android.apk | awk '{print $1}')
-          SHORT_SHA="${GITHUB_SHA::7}"
-          ANDROID_VARIANT=$(cat android-variant.txt)
-          RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
-
-          sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk > checksums.txt
-
-          cat > build-manifest.json <<EOF
-          {
-            "schemaVersion": 2,
-            "commit": "${GITHUB_SHA}",
-            "shortCommit": "${SHORT_SHA}",
-            "channel": "latest-native",
-            "workflow": "${GITHUB_WORKFLOW}",
-            "runId": "${GITHUB_RUN_ID}",
-            "windows": {
-              "available": true,
-              "architecture": "x64",
-              "configuration": "Release",
-              "portable": true,
-              "url": "${RELEASE_BASE}/DigitalBreakdown-Windows.zip",
-              "sha256": "${WINDOWS_SHA}"
-            },
-            "android": {
-              "available": true,
-              "architecture": "armeabi-v7a",
-              "configuration": "${ANDROID_VARIANT}",
-              "applicationId": "com.indrolend.digitalbreakdown.native",
-              "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk",
-              "sha256": "${ANDROID_SHA}"
-            }
-          }
-          EOF
+      - name: Verify release manifest
+        run: node tools/release/verify-native-manifest.mjs release/build-manifest.json release
 
       - name: Upload unified release artifact
         uses: actions/upload-artifact@v4
@@ -296,6 +290,8 @@ jobs:
           path: |
             release/DigitalBreakdown-Windows.zip
             release/DigitalBreakdown-Android.apk
+            release/DigitalBreakdown-macOS-Universal.zip
+            release/DigitalBreakdown-macOS-Universal.zip.sha256
             release/build-manifest.json
             release/checksums.txt
             release/android-build-info.json
@@ -304,7 +300,7 @@ jobs:
           retention-days: 30
 
       - name: Publish rolling latest-native release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.publish)
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -325,12 +321,12 @@ jobs:
             gh release edit latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes "Automated native Windows, macOS, and Android builds from ${GITHUB_SHA}."
           else
             gh release create latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes "Automated native Windows, macOS, and Android builds from ${GITHUB_SHA}."
           fi
 
           gh release upload latest-native release/* \

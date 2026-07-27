@@ -1,4 +1,4 @@
-name: Native macOS Package
+name: Native macOS Validation
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   macos:
-    name: Build universal macOS app
+    name: Build universal macOS app for validation
     runs-on: macos-14
 
     steps:

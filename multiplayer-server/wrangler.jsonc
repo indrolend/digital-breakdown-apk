@@ -4,6 +4,14 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "DEPLOY_COMMIT": "",
+    "DEPLOYED_AT": ""
+  },
   "durable_objects": {
     "bindings": [
       { "name": "MATCH_ROOMS", "class_name": "MatchRoom" }
@@ -15,5 +23,45 @@
   "observability": {
     "enabled": true,
     "logs": { "head_sampling_rate": 1 }
+  },
+  "env": {
+    "staging": {
+      "name": "digital-breakdown-multiplayer-staging",
+      "version_metadata": {
+        "binding": "CF_VERSION_METADATA"
+      },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "DEPLOY_COMMIT": "",
+        "DEPLOYED_AT": ""
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "MATCH_ROOMS", "class_name": "MatchRoom" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["MatchRoom"] }
+      ]
+    },
+    "production": {
+      "name": "digital-breakdown-multiplayer",
+      "version_metadata": {
+        "binding": "CF_VERSION_METADATA"
+      },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "DEPLOY_COMMIT": "",
+        "DEPLOYED_AT": ""
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "MATCH_ROOMS", "class_name": "MatchRoom" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["MatchRoom"] }
+      ]
+    }
   }
 }

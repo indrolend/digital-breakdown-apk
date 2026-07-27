@@ -1,6 +1,26 @@
 import { DurableObject } from "cloudflare:workers";
 import { MAX_MESSAGE_BYTES, MAX_PLAYERS, PROTOCOL_VERSION, isRoomCode, jsonResponse, makeRoomCode, parseBinaryHeader, parseEnvelope } from "./protocol";
 
+const SERVICE_NAME = "digital-breakdown-multiplayer";
+
+function deploymentIdentity(env: Env): Record<string, unknown> {
+  const environment = typeof env.ENVIRONMENT === "string" && env.ENVIRONMENT.length > 0 ? env.ENVIRONMENT : "local";
+  const metadata = env.CF_VERSION_METADATA;
+  const commit = typeof env.DEPLOY_COMMIT === "string" && env.DEPLOY_COMMIT.length > 0 ? env.DEPLOY_COMMIT : metadata?.id ?? "local";
+  const deployedAt = typeof env.DEPLOYED_AT === "string" && env.DEPLOYED_AT.length > 0 ? env.DEPLOYED_AT : metadata?.timestamp ?? "local";
+  return {
+    status: "ok",
+    ok: true,
+    service: SERVICE_NAME,
+    environment,
+    protocolVersion: PROTOCOL_VERSION,
+    protocol: PROTOCOL_VERSION,
+    commit,
+    workerVersion: metadata?.id ?? "local",
+    deployedAt,
+  };
+}
+
 interface SocketAttachment {
   playerId: number;
   role: "host" | "guest";
@@ -303,7 +323,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (request.method === "GET" && url.pathname === "/health") return jsonResponse({ ok: true, protocol: PROTOCOL_VERSION });
+      if (request.method === "GET" && url.pathname === "/health") return jsonResponse(deploymentIdentity(env));
       if (request.method === "POST" && url.pathname === "/v1/rooms") return await createRoom(env, request);
       const match = url.pathname.match(/^\/v1\/rooms\/([A-Z2-9]{6})\/connect$/);
       if (request.method === "GET" && match) {

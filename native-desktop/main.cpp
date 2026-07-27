@@ -1,6 +1,8 @@
 #include "DesktopRenderer.hpp"
 #include "DesktopAudio.hpp"
 #include "DesktopMultiplayer.hpp"
+#include "DesktopUpdateService.hpp"
+#include "BuildIdentity.hpp"
 #include "Game.hpp"
 #include "PhoneDisplayLayout.hpp"
 
@@ -51,6 +53,7 @@ struct HostState {
     DesktopRenderer renderer;
     DesktopAudio audio;
     DesktopMultiplayer multiplayer;
+    DesktopUpdateService updater;
     std::string multiplayerService="https://digital-breakdown-multiplayer.indrolend.workers.dev";
     std::string joinCode;
     bool enteringJoinCode=false;
@@ -315,6 +318,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
+        else if(row.action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
@@ -332,6 +336,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Controls)pushMenuPage(host,LocalMenuPage::Controls);
         else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
+        else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
@@ -650,9 +655,11 @@ bool hasArg(int argc, char** argv, const char* expected) {
 
 void printUsage() {
     std::printf("Data native desktop host\n");
+    std::printf("  build: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
+    std::printf("  --check-updates      Check the latest native manifest and exit.\n");
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
     std::printf("  --controller-test    Print connected controller state once and exit.\n");
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
@@ -859,6 +866,13 @@ int main(int argc, char** argv) {
     if (hasArg(argc, argv, "--model-test")) {
         return runModelTest(std::filesystem::absolute(argv[0]).parent_path());
     }
+    if (hasArg(argc, argv, "--check-updates")) {
+        DesktopUpdateService updater;
+        updater.checkForUpdates(desktopBuildIdentity());
+        updater.disconnect();
+        const DesktopUpdateService::State result = updater.state();
+        return result == DesktopUpdateService::State::Failed ? 1 : 0;
+    }
 
     glfwSetErrorCallback(errorCallback);
     if (!glfwInit()) {
@@ -960,6 +974,7 @@ int main(int argc, char** argv) {
     }
 
     std::printf("Digital Breakdown native desktop host running.\n");
+    std::printf("Build identity: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
     auto previous = std::chrono::steady_clock::now();
@@ -1108,6 +1123,7 @@ int main(int argc, char** argv) {
     glfwDestroyWindow(window);
     host.audio.stopAll();
     host.multiplayer.disconnect();
+    host.updater.disconnect();
     glfwTerminate();
     return 0;
 }

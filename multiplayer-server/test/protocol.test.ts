@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BINARY_HEADER_BYTES, BINARY_MAGIC, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, isRoomCode, makeRoomCode, parseBinaryHeader, parseEnvelope } from "../src/protocol";
+import { exports } from "cloudflare:workers";
 
 describe("room codes", () => {
   it("uses six unambiguous uppercase characters", () => {
@@ -38,5 +39,19 @@ describe("wire envelopes", () => {
     expect(parseEnvelope(JSON.stringify({ v: PROTOCOL_VERSION - 1, type: "input", seq: 1, tick: 1 }))).toBeNull();
     expect(parseEnvelope(JSON.stringify({ v: PROTOCOL_VERSION, type: "unknown", seq: 1, tick: 1 }))).toBeNull();
     expect(parseEnvelope("x".repeat(MAX_MESSAGE_BYTES + 1))).toBeNull();
+  });
+});
+
+describe("deployment identity", () => {
+  it("reports service and protocol health", async () => {
+    const response = await exports.default.fetch(new Request("http://local.test/health"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: "ok",
+      ok: true,
+      service: "digital-breakdown-multiplayer",
+      protocolVersion: PROTOCOL_VERSION,
+      protocol: PROTOCOL_VERSION,
+    });
   });
 });

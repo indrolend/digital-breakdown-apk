@@ -1,0 +1,33 @@
+#include "BuildIdentity.hpp"
+
+#include "MultiplayerProtocol.hpp"
+
+#include <sstream>
+
+const BuildIdentity& desktopBuildIdentity() {
+    static const BuildIdentity identity{
+        "@DB_HUMAN_VERSION@",
+        "@DB_COMMIT_SHA@",
+        "@DB_COMMIT_SHORT@",
+        dbnet::PROTOCOL_VERSION,
+        dbnet::GAMEPLAY_VERSION,
+        @DB_SAVE_FORMAT_VERSION@,
+        "@DB_PLATFORM@",
+        "@DB_ARCHITECTURE@",
+        "@DB_BUILD_TIME@",
+        "@DB_CHANNEL@"
+    };
+    return identity;
+}
+
+std::string desktopBuildIdentityLine() {
+    const BuildIdentity& identity = desktopBuildIdentity();
+    std::ostringstream out;
+    out << identity.humanVersion
+        << " " << identity.commitShort
+        << " " << identity.platform << "/" << identity.architecture
+        << " protocol " << identity.protocolVersion
+        << " gameplay " << identity.gameplayVersion
+        << " save " << identity.saveFormatVersion;
+    return out.str();
+}

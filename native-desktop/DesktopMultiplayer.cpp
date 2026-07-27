@@ -52,6 +52,56 @@ bool DesktopMultiplayer::releaseHandles(void* session,void* connection,void* req
 std::string DesktopMultiplayer::jsonString(const std::string& json,const char* key){const std::string needle=std::string("\"")+key+"\"";std::size_t at=json.find(needle);if(at==std::string::npos)return{};at=json.find(':',at+needle.size());if(at==std::string::npos)return{};at=json.find('"',at+1);if(at==std::string::npos)return{};const std::size_t end=json.find('"',at+1);return end==std::string::npos?std::string{}:json.substr(at+1,end-at-1);}
 int DesktopMultiplayer::jsonInt(const std::string& json,const char* key,int fallback){const std::string needle=std::string("\"")+key+"\"";std::size_t at=json.find(needle);if(at==std::string::npos)return fallback;at=json.find(':',at+needle.size());if(at==std::string::npos)return fallback;try{return std::stoi(json.substr(at+1));}catch(...){return fallback;}}
 
+bool DesktopMultiplayer::checkServiceCompatibility() {
+  setStatus("CHECKING COMPATIBILITY");
+#ifdef _WIN32
+  UrlParts url;
+  if (!crack(serviceUrl_ + "/health", url)) {
+    fail("CONNECTION FAILED","health_url",GetLastError());
+    return false;
+  }
+  HINTERNET session =
+      WinHttpOpen(L"DigitalBreakdown/1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!session) {
+    fail("CONNECTION FAILED","health_session",GetLastError());
+    return false;
+  }
+  WinHttpSetTimeouts(session, 5000, 5000, 5000, 10000);
+  HINTERNET connection = WinHttpConnect(session, url.host.c_str(), url.port, 0);
+  HINTERNET request =
+      connection
+          ? WinHttpOpenRequest(connection, L"GET", url.path.c_str(), nullptr,
+                               WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                               url.secure ? WINHTTP_FLAG_SECURE : 0)
+          : nullptr;
+  BOOL ok = request &&
+            WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                               WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+            WinHttpReceiveResponse(request, nullptr);
+  DWORD status=0,statusSize=sizeof(status);if(ok)WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&status,&statusSize,WINHTTP_NO_HEADER_INDEX);
+  const DWORD error=ok?0:GetLastError();
+  const std::string response=ok?readResponse(request):std::string{};
+  if(request)WinHttpCloseHandle(request);if(connection)WinHttpCloseHandle(connection);WinHttpCloseHandle(session);
+  std::printf("MULTIPLAYER_HEALTH status=%lu error=%lu\n",static_cast<unsigned long>(status),static_cast<unsigned long>(error));std::fflush(stdout);
+  if(!ok||status<200||status>=300){fail("CONNECTION FAILED","health",error);return false;}
+  const int protocol=jsonInt(response,"protocolVersion",jsonInt(response,"protocol",-1));
+  if(protocol!=dbnet::PROTOCOL_VERSION){std::printf("MULTIPLAYER_HEALTH_REJECT protocol=%d expected=%u\n",protocol,dbnet::PROTOCOL_VERSION);std::fflush(stdout);fail("VERSION MISMATCH","health_version");return false;}
+  return true;
+#elif defined(__APPLE__)
+  ix::HttpClient client;
+  const auto response=client.get(serviceUrl_+"/health",std::make_shared<ix::HttpRequestArgs>());
+  if(!response||response->statusCode<200||response->statusCode>=300){fail("CONNECTION FAILED","health");return false;}
+  const int protocol=jsonInt(response->body,"protocolVersion",jsonInt(response->body,"protocol",-1));
+  std::printf("MULTIPLAYER_HEALTH status=%d protocol=%d\n",response->statusCode,protocol);std::fflush(stdout);
+  if(protocol!=dbnet::PROTOCOL_VERSION){fail("VERSION MISMATCH","health_version");return false;}
+  return true;
+#else
+  fail("CONNECTION FAILED","health_unsupported");
+  return false;
+#endif
+}
+
 bool DesktopMultiplayer::acceptWelcome(const std::string& message){
   if(jsonString(message,"type")!="welcome")return false;
   const int protocol=jsonInt(message,"protocol"),gameplay=jsonInt(message,"gameplayVersion");
@@ -88,11 +138,11 @@ bool DesktopMultiplayer::createRoom() {
                                url.secure ? WINHTTP_FLAG_SECURE : 0)
           : nullptr;
   publishHandles(session,connection,request,nullptr);
-  const char body[] = "{\"gameplayVersion\":5}";
+  const std::string body = "{\"gameplayVersion\":" + std::to_string(dbnet::GAMEPLAY_VERSION) + "}";
   BOOL ok = request &&
             WinHttpSendRequest(request, L"Content-Type: application/json\r\n",
-                               static_cast<DWORD>(-1), const_cast<char *>(body),
-                               sizeof(body) - 1, sizeof(body) - 1, 0) &&
+                               static_cast<DWORD>(-1), const_cast<char *>(body.data()),
+                               static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) &&
             WinHttpReceiveResponse(request, nullptr);
   DWORD status=0,statusSize=sizeof(status);if(ok)WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&status,&statusSize,WINHTTP_NO_HEADER_INDEX);
   const DWORD error=ok?0:GetLastError();
@@ -120,7 +170,7 @@ bool DesktopMultiplayer::createRoom() {
   ix::HttpClient client;
   auto args=std::make_shared<ix::HttpRequestArgs>();
   args->extraHeaders["Content-Type"]="application/json";
-  const auto response=client.post(serviceUrl_+"/v1/rooms","{\"gameplayVersion\":5}",args);
+  const auto response=client.post(serviceUrl_+"/v1/rooms","{\"gameplayVersion\":"+std::to_string(dbnet::GAMEPLAY_VERSION)+"}",args);
   if(!response||response->statusCode<200||response->statusCode>=300)return false;
   const std::string code=jsonString(response->body,"code"),key=jsonString(response->body,"hostKey");
   if(code.size()!=6||key.empty()||jsonInt(response->body,"protocol")!=dbnet::PROTOCOL_VERSION||jsonInt(response->body,"gameplayVersion")!=dbnet::GAMEPLAY_VERSION){fail("VERSION MISMATCH","create_version");return false;}
@@ -287,7 +337,7 @@ bool DesktopMultiplayer::connectWebSocket() {
 #endif
 }
 
-void DesktopMultiplayer::workerMain(){std::printf("MULTIPLAYER_WORKER role=%s\n",roleName(role_.load()));std::fflush(stdout);if(role_==Role::Host&&!createRoom()){if(!failed())fail("CONNECTION FAILED","create");return;}if(stop_)return;phase_=dbmultiplayer::transition(phase_.load(),dbmultiplayer::Event::RoomReady);setStatus("CONNECTING "+roomCode());if(!connectWebSocket()&&!stop_&&!failed())fail("CONNECTION FAILED","connect");if(connected_&&!stop_){fail("CONNECTION FAILED","socket_ended");}connected_=false;}
+void DesktopMultiplayer::workerMain(){std::printf("MULTIPLAYER_WORKER role=%s\n",roleName(role_.load()));std::fflush(stdout);if(!checkServiceCompatibility())return;if(role_==Role::Host&&!createRoom()){if(!failed())fail("CONNECTION FAILED","create");return;}if(stop_)return;phase_=dbmultiplayer::transition(phase_.load(),dbmultiplayer::Event::RoomReady);setStatus("CONNECTING "+roomCode());if(!connectWebSocket()&&!stop_&&!failed())fail("CONNECTION FAILED","connect");if(connected_&&!stop_){fail("CONNECTION FAILED","socket_ended");}connected_=false;}
 void DesktopMultiplayer::receiveLoop(){
 #ifdef _WIN32
 std::vector<std::uint8_t> assembled;while(!stop_){HINTERNET socket=nullptr;{std::lock_guard<std::mutex> lock(handleMutex_);socket=static_cast<HINTERNET>(webSocket_);}if(!socket)break;std::uint8_t buffer[8192];DWORD read=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE type=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;DWORD result=WinHttpWebSocketReceive(socket,buffer,sizeof(buffer),&read,&type);if(result!=NO_ERROR){if(!stop_)std::printf("MULTIPLAYER_SOCKET_RECEIVE_FAILED error=%lu\n",static_cast<unsigned long>(result));std::fflush(stdout);break;}if(type==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE){USHORT closeCode=0;DWORD reasonBytes=0;WinHttpWebSocketQueryCloseStatus(socket,&closeCode,nullptr,0,&reasonBytes);std::printf("MULTIPLAYER_SOCKET_CLOSE code=%u reason_bytes=%lu\n",static_cast<unsigned>(closeCode),static_cast<unsigned long>(reasonBytes));std::fflush(stdout);break;}assembled.insert(assembled.end(),buffer,buffer+read);const bool complete=type==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE||type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;if(!complete)continue;Incoming item;if(type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE){item.text.assign(reinterpret_cast<const char*>(assembled.data()),assembled.size());const std::string kind=jsonString(item.text,"type");if(kind=="welcome")acceptWelcome(item.text);else if(kind.empty()){std::printf("MULTIPLAYER_PACKET_REJECT type=text reason=malformed\n");std::fflush(stdout);}}else{item.binary=true;item.bytes=assembled;} {std::lock_guard<std::mutex> lock(queueMutex_);incoming_.push_back(std::move(item));}assembled.clear();if(stop_)break;}

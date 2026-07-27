@@ -62,6 +62,7 @@ private:
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
     bool createRoom();
+    bool checkServiceCompatibility();
     bool connectWebSocket();
     void receiveLoop();
     bool sendBinary(const std::vector<std::uint8_t>& packet);

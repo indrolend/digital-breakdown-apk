@@ -35,6 +35,7 @@ enum class PhoneMenuAction : unsigned char {
     ToggleShadows,
     ToggleParticles,
     ToggleFps,
+    CheckUpdates,
     Restart
 };
 
@@ -173,6 +174,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Controls", PhoneMenuAction::Controls);
         addPhoneMenuItem(page, "Audio", PhoneMenuAction::Audio);
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
+        addPhoneMenuItem(page, "Check Updates", PhoneMenuAction::CheckUpdates);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Controls) {
         page.title = "Controls";

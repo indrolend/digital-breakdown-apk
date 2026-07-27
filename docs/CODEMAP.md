@@ -9,6 +9,22 @@ This document identifies the current gameplay ownership boundaries and the inten
 - Current orchestration and most gameplay behavior: `native-android/app/src/main/cpp/game/Game.cpp`
 - Shared state and public game interface: `native-android/app/src/main/cpp/game/Game.hpp`
 
+## Experimental release ownership
+
+- Authoritative rolling native release workflow: `.github/workflows/native-release.yml`
+- Validation-only macOS workflow: `.github/workflows/native-macos.yml`
+- Release manifest generator and verifier: `tools/release/write-native-manifest.mjs`,
+  `tools/release/verify-native-manifest.mjs`
+- PowerShell recovery installer: `tools/release/get-latest-native.ps1`
+- Desktop build identity and update checks: `native-desktop/BuildIdentity.*`,
+  `native-desktop/DesktopUpdateService.*`
+- Multiplayer Worker deployment contract: `multiplayer-server/wrangler.jsonc`,
+  `multiplayer-server/src/index.ts`
+- Protocol drift check: `tools/release/protocol-consistency.mjs`
+
+See `docs/EXPERIMENTAL_RELEASES.md` for the manifest schema, update recovery
+flow, and staging/production Worker contract.
+
 ## Target lifecycle
 
 The same fixed-pool `TargetState` object moves through these semantic roles:
