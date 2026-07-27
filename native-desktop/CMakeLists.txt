@@ -64,6 +64,7 @@ target_include_directories(
     PRIVATE
     "${DB_SHARED_ROOT}/game"
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
     "${miniaudio_SOURCE_DIR}"
 )
@@ -106,6 +107,13 @@ target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/ga
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
 
 add_executable(
+    MultiplayerConnectionStateTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_connection_state_test.cpp"
+)
+target_include_directories(MultiplayerConnectionStateTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MultiplayerConnectionStateTest PRIVATE cxx_std_17)
+
+add_executable(
     GameplayRoleAndSoulMotionTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_role_and_soul_motion_test.cpp"
 )
@@ -140,11 +148,30 @@ add_executable(
 target_include_directories(PhoneBodyContractTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(PhoneBodyContractTest PRIVATE cxx_std_17)
 
+add_executable(
+    PhoneMenuLayoutTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_menu_layout_test.cpp"
+)
+target_include_directories(PhoneMenuLayoutTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(PhoneMenuLayoutTest PRIVATE cxx_std_17)
+
+add_executable(
+    PhoneDisplayStateTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_display_state_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
+add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
+add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
 add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
 add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
+add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
+add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
@@ -154,6 +181,9 @@ add_custom_command(TARGET DigitalBreakdown POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/audio"
         "$<TARGET_FILE_DIR:DigitalBreakdown>/audio"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/fonts"
+        "$<TARGET_FILE_DIR:DigitalBreakdown>/fonts"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/../native-models"
         "$<TARGET_FILE_DIR:DigitalBreakdown>/models"

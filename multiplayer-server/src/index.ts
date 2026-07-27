@@ -15,6 +15,12 @@ interface RoomMetadata {
 
 const encoder = new TextEncoder();
 const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000;
+const MATCH_CAPACITY = 2;
+
+interface MatchLifecycle {
+  started: boolean;
+  startId: number;
+}
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
@@ -69,6 +75,29 @@ export class MatchRoom extends DurableObject<Env> {
     });
   }
 
+  private async lifecycle(): Promise<MatchLifecycle> {
+    return (await this.ctx.storage.get<MatchLifecycle>("match_lifecycle")) ??
+      { started: false, startId: 0 };
+  }
+
+  private lobbyState(lifecycle: MatchLifecycle): Record<string, unknown> {
+    const players = this.sockets().map(({ attachment }) => attachment.playerId).sort();
+    return {
+      type: "lobby_state",
+      protocol: PROTOCOL_VERSION,
+      players,
+      playerCount: players.length,
+      capacity: MATCH_CAPACITY,
+      state: lifecycle.started ? "started" : "lobby",
+      started: lifecycle.started,
+      startId: lifecycle.startId,
+    };
+  }
+
+  private async broadcastLobby(): Promise<void> {
+    this.broadcast(this.lobbyState(await this.lifecycle()));
+  }
+
   private send(socket: WebSocket, value: unknown): void {
     try { socket.send(JSON.stringify(value)); } catch { socket.close(1011, "send_failed"); }
   }
@@ -99,16 +128,17 @@ export class MatchRoom extends DurableObject<Env> {
     if (!build || gameplayVersion !== metadata.gameplayVersion) return jsonResponse({ error: "incompatible_build" }, 409);
 
     const connected = this.sockets();
+    const lifecycle = await this.lifecycle();
     if (role === "host") {
       if (connected.some(({ attachment }) => attachment.role === "host")) return jsonResponse({ error: "host_already_connected" }, 409);
       const key = url.searchParams.get("key") ?? "";
       if ((await sha256(key)) !== metadata.hostKeyHash) return jsonResponse({ error: "invalid_host_key" }, 403);
-    } else if (connected.length >= MAX_PLAYERS || !connected.some(({ attachment }) => attachment.role === "host")) {
-      return jsonResponse({ error: connected.length >= MAX_PLAYERS ? "room_full" : "host_offline" }, 409);
+    } else if (lifecycle.started || connected.length >= MATCH_CAPACITY || !connected.some(({ attachment }) => attachment.role === "host")) {
+      return jsonResponse({ error: lifecycle.started ? "match_started" : connected.length >= MATCH_CAPACITY ? "room_full" : "host_offline" }, 409);
     }
 
     const used = new Set(connected.map(({ attachment }) => attachment.playerId));
-    const playerId = role === "host" ? 0 : [1, 2, 3].find((id) => !used.has(id));
+    const playerId = role === "host" ? 0 : [1].find((id) => !used.has(id));
     if (playerId === undefined) return jsonResponse({ error: "room_full" }, 409);
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -117,6 +147,7 @@ export class MatchRoom extends DurableObject<Env> {
     server.serializeAttachment({ playerId, role, build } satisfies SocketAttachment);
     this.send(server, { type: "welcome", protocol: PROTOCOL_VERSION, gameplayVersion, room: metadata.code, playerId, role, players: [...used, playerId].sort() });
     this.broadcast({ type: role === "host" ? "host_reconnected" : "player_joined", playerId, build }, playerId);
+    await this.broadcastLobby();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -134,6 +165,79 @@ export class MatchRoom extends DurableObject<Env> {
         if (attachment.role === "guest" && peer.attachment.role !== "host") continue;
         try { peer.socket.send(message); } catch { peer.socket.close(1011, "send_failed"); }
       }
+      return;
+    }
+    let control: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(message);
+      if (parsed && typeof parsed === "object") control = parsed as Record<string, unknown>;
+    } catch { /* handled by parseEnvelope below */ }
+    const controlType = typeof control?.type === "string" ? control.type : "";
+    if (controlType === "heartbeat") {
+      this.send(socket, { type: "heartbeat_ack", sentAt: Number(control?.sentAt) || 0 });
+      return;
+    }
+    if (controlType === "lobby_ready") {
+      await this.broadcastLobby();
+      return;
+    }
+    if (controlType === "start_match") {
+      const lifecycle = await this.lifecycle();
+      if (attachment.role !== "host") {
+        this.send(socket, { type: "error", code: "host_only" });
+        return;
+      }
+      if (lifecycle.started) {
+        this.send(socket, { type: "error", code: "already_started" });
+        return;
+      }
+      if (this.sockets().length !== MATCH_CAPACITY) {
+        this.send(socket, { type: "error", code: "waiting_for_player" });
+        return;
+      }
+      const startId = Number(control?.startId);
+      const gameplayVersion = Number(control?.gameplayVersion);
+      if (!Number.isSafeInteger(startId) || startId <= 0 || gameplayVersion !== this.metadata()?.gameplayVersion) {
+        this.send(socket, { type: "error", code: "invalid_start" });
+        return;
+      }
+      await this.ctx.storage.put("match_lifecycle", { started: true, startId } satisfies MatchLifecycle);
+      this.broadcast({
+        type: "start_match",
+        startId,
+        gameplayVersion,
+        roomSeed: Number(control?.roomSeed) || 1,
+        roomIndex: Number(control?.roomIndex) || 0,
+        startTick: Number(control?.startTick) || 0,
+      });
+      return;
+    }
+    if (controlType === "start_ack") {
+      if (attachment.role !== "guest") {
+        this.send(socket, { type: "error", code: "guest_only" });
+        return;
+      }
+      const lifecycle = await this.lifecycle();
+      const startId = Number(control?.startId);
+      if (!lifecycle.started || startId !== lifecycle.startId) {
+        this.send(socket, { type: "error", code: "invalid_start_ack" });
+        return;
+      }
+      this.broadcast({
+        type: "start_ack",
+        startId,
+        snapshotSequence: Number(control?.snapshotSequence) || 0,
+        playerId: attachment.playerId,
+      }, attachment.playerId);
+      return;
+    }
+    if (controlType === "start_confirm") {
+      const lifecycle = await this.lifecycle();
+      if (attachment.role !== "host" || Number(control?.startId) !== lifecycle.startId) {
+        this.send(socket, { type: "error", code: "invalid_start_confirm" });
+        return;
+      }
+      this.broadcast({ type: "start_confirm", startId: lifecycle.startId });
       return;
     }
     const envelope = parseEnvelope(message);
@@ -157,7 +261,10 @@ export class MatchRoom extends DurableObject<Env> {
       if (code === 1000 && reason === "leaving") this.closeMatch("host_left");
       else this.broadcast({ type: "host_disconnected", reason: reason || "connection_lost" }, attachment.playerId);
     }
-    else this.broadcast({ type: "player_left", playerId: attachment.playerId, code, reason }, attachment.playerId);
+    else {
+      this.broadcast({ type: "player_left", playerId: attachment.playerId, code, reason }, attachment.playerId);
+      await this.broadcastLobby();
+    }
   }
 
   override async webSocketError(socket: WebSocket): Promise<void> {

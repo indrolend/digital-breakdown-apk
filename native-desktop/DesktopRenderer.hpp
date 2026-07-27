@@ -5,6 +5,7 @@
 #include "HumanModelData.hpp"
 
 #include <filesystem>
+#include <vector>
 #include "../native-android/app/src/main/cpp/game/TvGifWall.hpp"
 
 class DesktopRenderer {
@@ -26,6 +27,12 @@ private:
     HumanModelData humanModel_;
     mutable std::vector<float> humanVertices_;
     mutable unsigned int datamoshTexture_ = 0;
+    mutable unsigned int tvScreenTexture_ = 0;
+    mutable unsigned int phoneDisplayTexture_ = 0;
+    mutable std::vector<unsigned char> phoneDisplayPixels_;
+    mutable unsigned long long phoneDisplayCacheKey_ = 0;
+    mutable bool phoneDisplayCacheValid_ = false;
+    mutable bool phoneDisplayTextureAllocated_ = false;
     mutable bool datamoshFrameReady_ = false;
 
     static void drawRoomTile(const GameState& state, int tileIndex);
@@ -33,6 +40,8 @@ private:
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
     void drawHumanModel(const TargetState& target, float time, bool shadow = false) const;
     static void drawSoulFlesh(const TargetState& target,const Vec3& center);
+    void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
+    void drawPhoneDisplayTexture(const GameState& state) const;
     void drawHud(const GameState& state) const;
     void drawDoorDataMosh(const GameState& state) const;
 };

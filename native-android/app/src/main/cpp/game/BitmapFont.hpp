@@ -26,6 +26,7 @@ inline std::array<unsigned char,7> bitmapGlyph(char raw){
         case '8':return{14,17,17,14,17,17,14};case '9':return{14,17,17,15,1,1,14};
         case ':':return{0,4,4,0,4,4,0};case '/':return{1,2,2,4,8,8,16};
         case '-':return{0,0,0,31,0,0,0};case '.':return{0,0,0,0,0,12,12};
+        case '%':return{17,18,2,4,8,9,17};
         case '+':return{0,4,4,31,4,4,0};
         default:return{};
     }

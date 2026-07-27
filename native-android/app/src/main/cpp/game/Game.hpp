@@ -6,6 +6,7 @@
 #include "HumanVisual.hpp"
 #include "VisualIdentity.hpp"
 #include "Math.hpp"
+#include "PhoneDisplay.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -61,6 +62,30 @@ struct InputState {
     float wiggleAxis = 0.0f;
     int commSignalPressed = 0;
     bool touching = false;
+};
+
+enum PlayerCommandButton : std::uint16_t {
+    CommandForward = 1u << 0, CommandBack = 1u << 1,
+    CommandLeft = 1u << 2, CommandRight = 1u << 3,
+    CommandSprint = 1u << 4, CommandJump = 1u << 5,
+    CommandVacuum = 1u << 6, CommandMelee = 1u << 7,
+    CommandShoot = 1u << 8, CommandCameraToggle = 1u << 9,
+    CommandWiggleLeft = 1u << 10, CommandWiggleRight = 1u << 11,
+    CommandCommHelp = 1u << 12, CommandCommPing = 1u << 13,
+    CommandCommGroup = 1u << 14, CommandCommOk = 1u << 15
+};
+
+// Canonical semantic input consumed by local play, host authority, prediction,
+// replay, tests, and network serialization. Platform input remains InputState;
+// this is the stable command boundary after keyboard/controller/touch merging.
+struct PlayerCommand {
+    std::uint32_t sequence = 0;
+    std::uint32_t localTick = 0;
+    float moveX = 0.0f;
+    float moveZ = 0.0f;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    std::uint16_t buttons = 0;
 };
 
 struct PlayerState {
@@ -150,7 +175,14 @@ struct CinematicState {
     float deathElapsed = 0.0f;
     float textInteraction = 0.0f;
     float baseYaw = 0.0f;
+    bool menuExitActive = false;
+    float menuExitElapsed = 0.0f;
     Vec3 startCameraPos;
+    Vec3 menuExitCameraPos;
+    Vec3 menuExitLookTarget;
+    float overlayFade = 0.0f;
+    float restartAwaken = 0.0f;
+    int deathChoice = 0;
 };
 
 struct VacuumState {
@@ -349,6 +381,8 @@ struct SecretTvState {
     int tolerance = 3;
     bool broken = false;
     bool available = false;
+    Vec3 entrancePos {13.9f, PHONE_BODY_HEIGHT * 0.5f, 4.8f};
+    Vec3 entranceNormal {-1.0f, 0.0f, 0.0f};
     float donationCooldown = 0.0f;
     float knockCueTimer = 0.0f;
     float knockVolume = 0.0f;
@@ -358,7 +392,14 @@ struct SecretTvState {
 
 enum class LocalMenuPage : unsigned char { Main, Online, JoinCode, Settings, Controls, Audio, Graphics };
 
+struct LocalMenuHistoryEntry {
+    LocalMenuPage page = LocalMenuPage::Main;
+    int selection = 0;
+    float scroll = 0.0f;
+};
+
 struct LocalSettingsState {
+    static constexpr int MenuHistoryCapacity = 8;
     LocalMenuPage menuPage = LocalMenuPage::Main;
     float musicVolume = 0.70f;
     float sfxVolume = 0.55f;
@@ -371,8 +412,11 @@ struct LocalSettingsState {
     bool fpsCounter = false;
     float mouseLookSensitivity = 1.0f;
     float touchLookSensitivity = 1.0f;
-    float controllerLookSensitivity = 1.0f;
+    float controllerLookSensitivity = 1.15f;
     bool mobileFraming = false;
+    float menuScroll = 0.0f;
+    std::array<LocalMenuHistoryEntry, MenuHistoryCapacity> menuHistory{};
+    int menuHistoryDepth = 0;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
     std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
@@ -480,6 +524,7 @@ struct HudState {
     float headshotPulse = 0.0f;
     float perfectPulse = 0.0f;
     float headshotKillCharge = 0.0f;
+    float criticalHitPulse = 0.0f;
     float critMarkerOpacity = 0.0f;
     std::array<char,32> buildLabel{};
     int menuSelection = 0;
@@ -545,6 +590,7 @@ struct GameState {
     PhonePoseState phonePose;
     PhoneTransformState phoneTransform;
     PhoneVisualState phoneVisual;
+    PhoneDisplayState phoneDisplay;
     HudState hud;
     PlayerDebugState debug;
     float time = 0.0f;
@@ -573,6 +619,8 @@ public:
     void reset();
     void restart();
     void prepareStartScreen();
+    // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
+    void debugStartSecretTvTest(bool enterRoom);
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);
@@ -600,6 +648,8 @@ public:
     bool chooseTemporaryUpgrade(int track);
     bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);
+    PlayerCommand capturePlayerCommand(unsigned int sequence, unsigned int localTick) const;
+    void setNetworkPeerCommand(int playerId, const PlayerCommand& command);
     void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons);
     void applyNetworkPeerSnapshot(int playerId, const PlayerState& player, float pitch, float vacuumPower, float vacuumPose, int vacuumTarget, float meleeTimer, float dischargeAmount);
 
@@ -613,6 +663,7 @@ private:
 
     void resetRoom();
     void buildRoomColliders();
+    void chooseSecretTvEntrance();
     void updateInputActions(float dt);
     void updateNetworkPeers(float dt);
     void updateTeamRevival(float dt);
@@ -632,6 +683,7 @@ private:
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updatePhoneTransform();
+    void updatePhoneDisplay(float dt);
     void updateTargets(float dt);
     void chooseHumanWalkTarget(int index);
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;

@@ -1,0 +1,20 @@
+digraph includes {
+  rankdir=LR;
+  node [shape=box];
+
+  "main.cpp" -> "Game.hpp";
+  "main.cpp" -> "PhoneDisplayLayout.hpp";
+  "main.cpp" -> "PhoneMenuModel.hpp";
+  "PhoneDisplayLayout.hpp" -> "PhoneDisplay.hpp";
+  "PhoneDisplayLayout.hpp" -> "PhoneMenuModel.hpp";
+  "PhoneMenuModel.hpp" -> "Game.hpp";
+
+  "DesktopRenderer.cpp" -> "DesktopRenderer.hpp";
+  "DesktopRenderer.cpp" -> "Game.hpp";
+  "DesktopRenderer.cpp" -> "PhoneDisplayLayout.hpp";
+  "DesktopRenderer.cpp" -> "BitmapFont.hpp";
+  "DesktopRenderer.cpp" -> "stb_truetype.h";
+
+  "Game.cpp" -> "Game.hpp";
+  "Game.cpp" -> "PhoneDisplay.hpp";
+}

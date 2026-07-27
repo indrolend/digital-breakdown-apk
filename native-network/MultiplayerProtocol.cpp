@@ -45,8 +45,8 @@ bool readFlower(Reader& r,FlowerSnapshot& f){std::uint8_t active=0;return r.u8(a
 
 bool decodeHeader(const std::uint8_t* data,std::size_t size,PacketHeader& out){if(!data||size<HEADER_BYTES||size>MAX_PACKET_BYTES)return false;Reader r(data,size);std::uint32_t magic=0;std::uint16_t version=0;std::uint8_t type=0;if(!r.u32(magic)||!r.u16(version)||!r.u8(type)||!r.u8(out.playerId)||!r.u32(out.sequence)||!r.u32(out.tick)||!r.u32(out.payloadBytes))return false;if(magic!=MAGIC||version!=PROTOCOL_VERSION||type<1||type>5||out.playerId>=MAX_PLAYERS||out.payloadBytes!=size-HEADER_BYTES)return false;out.type=static_cast<MessageType>(type);return true;}
 
-std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){Writer payload;payload.f32(input.moveX);payload.f32(input.moveZ);payload.f32(input.yaw);payload.f32(input.pitch);payload.u16(input.buttons);Writer packet;header(packet,MessageType::Input,playerId,input.sequence,input.tick,static_cast<std::uint32_t>(payload.data.size()));packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;}
-bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){if(!decodeHeader(data,size,h)||h.type!=MessageType::Input)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);input.sequence=h.sequence;input.tick=h.tick;return r.f32(input.moveX)&&r.f32(input.moveZ)&&r.f32(input.yaw)&&r.f32(input.pitch)&&r.u16(input.buttons)&&r.done();}
+std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){Writer payload;payload.f32(input.moveX);payload.f32(input.moveZ);payload.f32(input.yaw);payload.f32(input.pitch);payload.u16(input.buttons);Writer packet;header(packet,MessageType::Input,playerId,input.sequence,input.localTick,static_cast<std::uint32_t>(payload.data.size()));packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;}
+bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){if(!decodeHeader(data,size,h)||h.type!=MessageType::Input)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);input.sequence=h.sequence;input.localTick=h.tick;return r.f32(input.moveX)&&r.f32(input.moveZ)&&r.f32(input.yaw)&&r.f32(input.pitch)&&r.u16(input.buttons)&&r.done();}
 
 std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
                                          const WorldSnapshot &s,
@@ -239,8 +239,9 @@ captureWorld(const GameState &state,
 
 void applyWorld(GameState &state, const WorldSnapshot &s,
                 std::uint8_t localPlayerId) {
-  state.time = s.time;
-  state.frame = static_cast<int>(s.tick);
+  // Authoritative and local clocks are deliberately separate. The snapshot
+  // tick is ordered by DesktopMultiplayer and must never replace simulation
+  // or presentation time on the receiving client.
   state.roomIndex = s.roomIndex;
   state.roomSeed = s.roomSeed;
   state.requiredSouls = s.requiredSouls;
@@ -248,7 +249,6 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   state.roomClear = s.roomClear;
   state.runRules = s.runRules;
   state.upgradeMenu.active = s.upgradeMenuActive;
-  state.uiPaused = s.upgradeMenuActive;
   for (int i = 0; i < 3; ++i)
     state.progression.run.temporaryLevels[i] = s.temporaryUpgradeLevels[i];
   for (int i = 0; i < 3; ++i)
@@ -270,8 +270,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.player.downed=(p.flags&8)!=0;state.player.bleedoutTimer=p.bleedoutTimer;state.player.reviveCharge=p.reviveCharge;state.player.grabEscape=p.grabEscape;state.player.grabbedByTarget=p.grabbedByTarget;
         state.player.inSecretRoom=(p.flags&16)!=0;state.player.secretVisitRoom=p.secretVisitRoom;state.player.secretVisitTimer=p.secretVisitTimer;
         state.player.commSignal=p.commSignal;state.player.commSignalTimer=p.commSignalTimer;
-        state.camera.pitch = p.pitch;
-        state.camera.firstPerson = (p.flags & 2) != 0;
+        // Camera pitch/mode are local presentation state. Body yaw remains
+        // authoritative, but routine snapshots must not move the local camera.
         state.vacuum.power = p.vacuumPower;
         state.vacuum.pose = p.vacuumPose;
         state.vacuum.target = p.vacuumTarget;

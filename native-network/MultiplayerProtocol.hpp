@@ -18,10 +18,12 @@ constexpr int MAX_PLAYERS = 4;
 
 enum class MessageType : std::uint8_t { Input = 1, Snapshot = 2, Event = 3, Ping = 4, Pong = 5 };
 enum InputButton : std::uint16_t {
-    Forward = 1u << 0, Back = 1u << 1, Left = 1u << 2, Right = 1u << 3,
-    Sprint = 1u << 4, Jump = 1u << 5, Vacuum = 1u << 6, Melee = 1u << 7,
-    Shoot = 1u << 8, CameraToggle = 1u << 9, WiggleLeft = 1u << 10, WiggleRight = 1u << 11,
-    CommHelp = 1u << 12, CommPing = 1u << 13, CommGroup = 1u << 14, CommOk = 1u << 15
+    Forward=CommandForward, Back=CommandBack, Left=CommandLeft, Right=CommandRight,
+    Sprint=CommandSprint, Jump=CommandJump, Vacuum=CommandVacuum, Melee=CommandMelee,
+    Shoot=CommandShoot, CameraToggle=CommandCameraToggle,
+    WiggleLeft=CommandWiggleLeft, WiggleRight=CommandWiggleRight,
+    CommHelp=CommandCommHelp, CommPing=CommandCommPing,
+    CommGroup=CommandCommGroup, CommOk=CommandCommOk
 };
 
 struct PacketHeader {
@@ -32,15 +34,7 @@ struct PacketHeader {
     std::uint32_t payloadBytes = 0;
 };
 
-struct InputCommand {
-    std::uint32_t sequence = 0;
-    std::uint32_t tick = 0;
-    float moveX = 0.0f;
-    float moveZ = 0.0f;
-    float yaw = 0.0f;
-    float pitch = 0.0f;
-    std::uint16_t buttons = 0;
-};
+using InputCommand = PlayerCommand;
 
 struct PlayerSnapshot {
     bool active = false;

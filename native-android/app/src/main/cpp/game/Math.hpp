@@ -95,6 +95,10 @@ inline float lengthSq(const Vec3& v) {
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
+inline float dot3(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 inline float length(const Vec3& v) {
     return std::sqrt(lengthSq(v));
 }

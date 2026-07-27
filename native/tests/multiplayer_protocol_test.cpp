@@ -7,7 +7,7 @@ int main() {
   bool ok = true;
   InputCommand input;
   input.sequence = 7;
-  input.tick = 99;
+  input.localTick = 99;
   input.moveX = -0.5f;
   input.moveZ = 0.75f;
   input.yaw = 1.25f;
@@ -18,8 +18,20 @@ int main() {
   InputCommand decoded;
   ok &= decodeInput(bytes.data(), bytes.size(), h, decoded) &&
         h.playerId == 2 && decoded.sequence == 7 &&
+        decoded.localTick == 99 &&
         decoded.buttons == (Vacuum | Sprint) &&
         std::abs(decoded.moveZ - 0.75f) < 0.0001f;
+  Game commandGame;
+  commandGame.reset();
+  commandGame.setTouchControls(0.25f, 1.0f, 0.0f, 0.0f, true, true,
+                               true, true, false, false);
+  const PlayerCommand canonical = commandGame.capturePlayerCommand(41, 73);
+  ok &= canonical.sequence == 41 && canonical.localTick == 73 &&
+        canonical.moveX > 0.24f && canonical.moveZ > 0.99f &&
+        (canonical.buttons & CommandSprint) != 0 &&
+        (canonical.buttons & CommandJump) != 0 &&
+        (canonical.buttons & CommandVacuum) != 0 &&
+        (canonical.buttons & CommandMelee) != 0;
   Game game;
   game.reset();
   std::array<PlayerSnapshot, MAX_PLAYERS> players{};
@@ -107,9 +119,17 @@ int main() {
   guestProgression.reset();
   guestProgression.configureNetworkGuest(1);
   progressionWorld.captures[0] = true;
+  guestProgression.networkMutableState().frame = 777;
+  guestProgression.networkMutableState().time = 12.5f;
+  guestProgression.networkMutableState().camera.pitch = 0.37f;
+  guestProgression.networkMutableState().camera.firstPerson = true;
   applyWorld(guestProgression.networkMutableState(), progressionWorld, 1);
   ok &= guestProgression.state().progression.permanent.tokens == 0 &&
         guestProgression.state().upgradeMenu.active &&
+        guestProgression.state().frame == 777 &&
+        std::abs(guestProgression.state().time - 12.5f) < 0.0001f &&
+        std::abs(guestProgression.state().camera.pitch - 0.37f) < 0.0001f &&
+        guestProgression.state().camera.firstPerson &&
         guestProgression.state()
                 .progression.run.networkSharedPermanentLevels[0] == 4;
   progressionWorld.captures[0] = false;
