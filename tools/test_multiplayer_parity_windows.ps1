@@ -113,6 +113,22 @@ try {
         -not (Log-Contains $guestLog 'MULTIPLAYER_VISUAL_STATE entity=player id=0')) { Fail-Parity "structured remote-player render state missing" }
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_ENEMY_VISUAL_TRANSITION')) { Fail-Parity "enemy visual transition missing" }
 
+    $stage = "combat-events"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline -and
+           (-not (Log-Contains $hostLog 'MULTIPLAYER_ACTION_STARTED') -or
+            -not (Log-Contains $hostLog 'MULTIPLAYER_HIT_CONFIRMED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_ACTION_CONFIRMED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_HIT_CONFIRMED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_SHELL_BROKEN'))) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Log-Contains $hostLog 'MULTIPLAYER_ACTION_STARTED')) { Fail-Parity "host never authored guest action" }
+    if (-not (Log-Contains $hostLog 'MULTIPLAYER_HIT_CONFIRMED')) { Fail-Parity "host never confirmed enemy hit" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_ACTION_CONFIRMED')) { Fail-Parity "guest action remained unconfirmed" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_HIT_CONFIRMED')) { Fail-Parity "guest missed authoritative hit event" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_SHELL_BROKEN')) { Fail-Parity "guest missed shell-break event" }
+
     $stage = "pause-resume"
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline -and
@@ -137,6 +153,7 @@ try {
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_HOST_LEFT')) { Fail-Parity "guest did not reach stable host-left state" }
 
     Write-Host "MULTIPLAYER_PARITY_OK room=$room"
+    Write-Host "MULTIPLAYER_COMBAT_PARITY_OK room=$room action=confirmed enemy=0"
     Write-Host "Host log: $hostLog"
     Write-Host "Guest log: $guestLog"
 }

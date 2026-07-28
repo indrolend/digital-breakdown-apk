@@ -1007,6 +1007,11 @@ int main(int argc, char** argv) {
     int multiplayerParityFrame=0;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
+               host.multiplayer.role()==DesktopMultiplayer::Role::Guest&&
+               multiplayerParityFrame>=129&&multiplayerParityFrame<189){
+                host.game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
+            }
             host.multiplayer.update(host.game);
             if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
                host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
@@ -1015,10 +1020,32 @@ int main(int argc, char** argv) {
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
                 ++multiplayerParityFrame;
                 const bool guest=host.multiplayer.role()==DesktopMultiplayer::Role::Guest;
-                const bool move=guest&&multiplayerParityFrame<240;
+                const bool move=guest&&multiplayerParityFrame<80;
                 const bool jump=guest&&(multiplayerParityFrame==30||multiplayerParityFrame==75);
+                const bool melee=guest&&multiplayerParityFrame>=130&&multiplayerParityFrame<190;
+                if(!guest&&multiplayerParityFrame==100){
+                    GameState& fixture=host.game.networkMutableState();
+                    fixture.player.pos={8,0.08f,8};
+                    fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
+                    fixture.multiplayer.peers[1].player.vel={};
+                    fixture.multiplayer.peers[1].player.grounded=true;
+                    fixture.multiplayer.peers[1].player.battery=100;
+                    for(auto& target:fixture.targets)target.alive=false;
+                    auto& enemy=fixture.targets[0];enemy=TargetState{};enemy.alive=true;
+                    enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.armor=0.45f;
+                    std::printf("MULTIPLAYER_COMBAT_FIXTURE enemy=0 armor=%.2f\n",enemy.armor);
+                    std::fflush(stdout);
+                }
+                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<240){
+                    GameState& fixture=host.game.networkMutableState();
+                    fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
+                    fixture.multiplayer.peers[1].player.vel={};
+                    auto& enemy=fixture.targets[0];
+                    if(enemy.alive&&!enemy.slurpable){enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.attackCooldown=10.0f;}
+                }
                 host.game.setTouchControls(0.0f,move?1.0f:0.0f,0.0f,0.0f,false,
-                                           move,jump,false,false,false);
+                                           move,jump,melee,false,false);
+                if(multiplayerParityFrame==130&&guest){std::printf("MULTIPLAYER_TEST_GUEST_MELEE frame=%d\n",multiplayerParityFrame);std::fflush(stdout);}
                 if(jump){
                     std::printf("MULTIPLAYER_TEST_GUEST_JUMP frame=%d kind=%s\n",
                                 multiplayerParityFrame,
