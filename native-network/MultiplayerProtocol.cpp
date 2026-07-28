@@ -699,6 +699,63 @@ void rebuildPeerTransform(NetworkPeerState& peer){
 }
 }
 
+DurableSectionHashes durableSectionHashes(const WorldSnapshot& s){
+  DurableSectionHashes result;
+  StableHash world;
+  world.i32(s.roomIndex);world.i32(s.roomSeed);world.boolean(s.started);
+  world.boolean(s.dead);world.scalar(s.roomHeat);
+  world.i32(s.tvSignal);world.i32(s.tvDamage);world.i32(s.tvTolerance);
+  world.boolean(s.tvBroken);world.boolean(s.tvAvailable);
+  world.vec(s.tvEntrancePos);world.vec(s.tvEntranceNormal);
+  world.i32(s.topology.currentTileIndex);world.i32(s.topology.previousTileIndex);
+  world.boolean(s.topology.advancing);
+  world.boolean(s.doorTransition.active);world.scalar(s.doorTransition.progress);
+  world.byte(s.roomColliderCount);
+  for(const auto& collider:s.roomColliders){
+    world.scalar(collider.minX);world.scalar(collider.maxX);
+    world.scalar(collider.minZ);world.scalar(collider.maxZ);
+    world.scalar(collider.bottomY);world.scalar(collider.topY);
+    world.scalar(collider.width);world.scalar(collider.depth);
+    world.scalar(collider.height);world.vec(collider.center);
+  }
+  for(const auto& flower:s.flowers){
+    world.boolean(flower.active);world.vec(flower.pos);world.scalar(flower.age);
+  }
+  result.world=world.value;
+
+  StableHash players;
+  for(const auto& player:s.players)hashPlayerGameplay(players,player);
+  result.players=players.value;
+
+  StableHash targets;
+  for(const auto& target:s.targets)hashTargetGameplay(targets,target);
+  result.targets=targets.value;
+
+  StableHash projectiles;
+  for(const auto& bullet:s.bullets){
+    projectiles.boolean(bullet.active);projectiles.boolean(bullet.brute);
+    projectiles.vec(bullet.pos);projectiles.vec(bullet.vel);
+    projectiles.scalar(bullet.life);
+  }
+  result.projectiles=projectiles.value;
+
+  StableHash progression;
+  progression.i32(s.requiredSouls);progression.i32(s.depositedSouls);
+  progression.boolean(s.roomClear);
+  progression.i32(s.runRules.requiredSlotStacks);
+  progression.i32(s.runRules.crowdedRoomStacks);
+  progression.i32(s.runRules.fasterSlurpStacks);
+  progression.i32(s.runRules.nextId);progression.i32(s.runRules.lastAdded);
+  progression.boolean(s.upgradeMenuActive);
+  for(auto value:s.temporaryUpgradeLevels)progression.i32(value);
+  for(auto value:s.sharedPermanentUpgradeLevels)progression.i32(value);
+  for(std::size_t i=0;i<s.captures.size();++i){
+    progression.boolean(s.captures[i]);progression.vec(s.capturePositions[i]);
+  }
+  result.progression=progression.value;
+  return result;
+}
+
 std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
   StableHash h;
   h.i32(s.roomIndex);h.i32(s.roomSeed);h.i32(s.requiredSouls);h.i32(s.depositedSouls);

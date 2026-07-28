@@ -268,6 +268,21 @@ WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapsh
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
 void applyWorld(GameState& state, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
 
+struct DurableSectionHashes {
+    std::uint64_t world = 0;
+    std::uint64_t players = 0;
+    std::uint64_t targets = 0;
+    std::uint64_t projectiles = 0;
+    std::uint64_t progression = 0;
+    bool operator==(const DurableSectionHashes& other) const {
+        return world == other.world && players == other.players &&
+               targets == other.targets && projectiles == other.projectiles &&
+               progression == other.progression;
+    }
+    bool operator!=(const DurableSectionHashes& other) const { return !(*this == other); }
+};
+
+DurableSectionHashes durableSectionHashes(const WorldSnapshot& snapshot);
 std::uint64_t authoritativeStateHash(const WorldSnapshot& snapshot);
 std::uint64_t visualStateHash(const WorldSnapshot& snapshot);
 
