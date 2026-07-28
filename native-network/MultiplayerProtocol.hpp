@@ -10,7 +10,7 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 6;
+constexpr std::uint16_t PROTOCOL_VERSION = 7;
 constexpr std::uint16_t GAMEPLAY_VERSION = 5;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
@@ -38,6 +38,23 @@ struct PacketHeader {
     std::uint32_t sequence = 0;
     std::uint32_t tick = 0;
     std::uint32_t payloadBytes = 0;
+};
+
+struct NetworkWorldContext {
+    std::uint32_t sessionId = 0;
+    std::uint32_t runGeneration = 0;
+    std::uint32_t roomGeneration = 0;
+    std::uint16_t roomIndex = 0;
+    bool operator==(const NetworkWorldContext& other) const {
+        return sessionId == other.sessionId &&
+               runGeneration == other.runGeneration &&
+               roomGeneration == other.roomGeneration &&
+               roomIndex == other.roomIndex;
+    }
+};
+
+enum class WorldContextCompatibility : std::uint8_t {
+    Compatible, Older, NewerRoom, Incompatible
 };
 
 using InputCommand = PlayerCommand;
@@ -152,6 +169,7 @@ struct FlowerSnapshot {
 };
 
 struct WorldSnapshot {
+    NetworkWorldContext world;
     std::uint32_t tick = 0;
     float time = 0.0f;
     std::int32_t roomIndex = 1;
@@ -186,6 +204,9 @@ struct WorldSnapshot {
 };
 
 bool decodeHeader(const std::uint8_t* data, std::size_t size, PacketHeader& header);
+WorldContextCompatibility compareWorldContext(const NetworkWorldContext& packet, const NetworkWorldContext& current);
+std::vector<std::uint8_t> encodeInput(std::uint8_t playerId, const NetworkWorldContext& world, const InputCommand& input);
+bool decodeInput(const std::uint8_t* data, std::size_t size, PacketHeader& header, NetworkWorldContext& world, InputCommand& input);
 std::vector<std::uint8_t> encodeInput(std::uint8_t playerId, const InputCommand& input);
 bool decodeInput(const std::uint8_t* data, std::size_t size, PacketHeader& header, InputCommand& input);
 std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId, const WorldSnapshot& snapshot, std::uint32_t sequence);

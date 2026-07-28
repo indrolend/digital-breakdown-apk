@@ -60,12 +60,17 @@ private:
     std::uint32_t lastSnapshotSequence_=0;
     std::int64_t lastSnapshotReceiveMs_=0;
     std::uint32_t startId_=0;
+    dbnet::NetworkWorldContext worldContext_{};
     std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
     bool configuredGame_=false;
     bool loggedInput_=false,loggedSnapshot_=false;
     dbnet::SnapshotInterpolator snapshotInterpolator_;
     int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
     std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
+    bool acceptWorldContext(const dbnet::NetworkWorldContext& packet,
+                            const dbnet::PacketHeader& header,
+                            bool allowNewerRoom);
+    void setWorldContext(const dbnet::NetworkWorldContext& world,const char* reason);
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
     bool createRoom();

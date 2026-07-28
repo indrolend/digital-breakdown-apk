@@ -14,14 +14,21 @@ int main() {
   input.yaw = 1.25f;
   input.pitch = -0.4f;
   input.buttons = Vacuum | Sprint;
-  auto bytes = encodeInput(2, input);
+  const NetworkWorldContext inputWorld{17,2,4,3};
+  auto bytes = encodeInput(2, inputWorld, input);
   PacketHeader h;
+  NetworkWorldContext decodedWorld;
   InputCommand decoded;
-  ok &= decodeInput(bytes.data(), bytes.size(), h, decoded) &&
-        h.playerId == 2 && decoded.sequence == 7 &&
-        decoded.localTick == 99 &&
-        decoded.buttons == (Vacuum | Sprint) &&
-        std::abs(decoded.moveZ - 0.75f) < 0.0001f;
+  ok &= decodeInput(bytes.data(), bytes.size(), h, decodedWorld, decoded) &&
+         h.playerId == 2 && decoded.sequence == 7 &&
+         decoded.localTick == 99 &&
+         decodedWorld == inputWorld &&
+         decoded.buttons == (Vacuum | Sprint) &&
+         std::abs(decoded.moveZ - 0.75f) < 0.0001f;
+  ok &= compareWorldContext({17,2,3,2},inputWorld)==WorldContextCompatibility::Older &&
+        compareWorldContext({17,2,5,4},inputWorld)==WorldContextCompatibility::NewerRoom &&
+        compareWorldContext({18,2,4,3},inputWorld)==WorldContextCompatibility::Incompatible &&
+        compareWorldContext(inputWorld,inputWorld)==WorldContextCompatibility::Compatible;
   Game commandGame;
   commandGame.reset();
   commandGame.setTouchControls(0.25f, 1.0f, 0.0f, 0.0f, true, true,
@@ -67,6 +74,7 @@ int main() {
   players[1].reviveCharge = 4.0f;
   players[1].grabbedByTarget = 2;
   auto world = captureWorld(game.state(), players, 123);
+  world.world=inputWorld;
   GameState &worldState = const_cast<GameState &>(game.state());
   worldState.targets[0].alive = true;
   worldState.targets[0].humanAnimationTime = 4.25f;
@@ -97,11 +105,13 @@ int main() {
   worldState.bullets[0].vel = {0,0,-9};
   worldState.bullets[0].life = 1.2f;
   world = captureWorld(game.state(), players, 123);
+  world.world=inputWorld;
   auto snapshotBytes = encodeSnapshot(0, world, 8);
   WorldSnapshot roundtrip;
   ok &= decodeSnapshot(snapshotBytes.data(), snapshotBytes.size(), h,
                        roundtrip) &&
         h.type == MessageType::Snapshot && roundtrip.tick == 123 &&
+        roundtrip.world == inputWorld &&
         roundtrip.players[1].active &&
         std::abs(roundtrip.players[1].pos.x - 2) < 0.0001f &&
         (roundtrip.players[1].flags & (1u << 3)) != 0 &&

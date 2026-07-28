@@ -119,10 +119,10 @@ Before working, verify the current remote branch tip rather than assuming this S
 
 ## Current versions
 
-- Multiplayer protocol: 6
+- Multiplayer protocol: 7
 - Gameplay version: 5
 - The deployed production Worker may still be protocol 5.
-- Do not assume production is compatible with protocol-6 clients.
+- Do not assume production is compatible with protocol-7 clients.
 - Do not deploy the Worker without explicit user approval.
 
 ## Completed multiplayer work
@@ -137,7 +137,7 @@ The branch includes:
 - buffered remote interpolation
 - state hashing and parity diagnostics
 - a Windows multiplayer parity harness
-- local protocol-6 Worker validation
+- local protocol-7 Worker validation
 
 ## Current objective
 
@@ -231,7 +231,7 @@ npm.cmd test
 Pop-Location
 ```
 
-Parity validation should use a protocol-6 local or staging Worker, not the protocol-5 production Worker:
+Parity validation should use a protocol-7 local or staging Worker, not the protocol-5 production Worker:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `

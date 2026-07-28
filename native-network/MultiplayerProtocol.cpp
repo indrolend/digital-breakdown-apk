@@ -36,6 +36,8 @@ private: const std::uint8_t* data;std::size_t size=0,at=0;
 };
 
 void header(Writer& w,MessageType type,std::uint8_t playerId,std::uint32_t seq,std::uint32_t tick,std::uint32_t payload){w.u32(MAGIC);w.u16(PROTOCOL_VERSION);w.u8(static_cast<std::uint8_t>(type));w.u8(playerId);w.u32(seq);w.u32(tick);w.u32(payload);}
+void writeWorldContext(Writer& w,const NetworkWorldContext& c){w.u32(c.sessionId);w.u32(c.runGeneration);w.u32(c.roomGeneration);w.u16(c.roomIndex);}
+bool readWorldContext(Reader& r,NetworkWorldContext& c){return r.u32(c.sessionId)&&r.u32(c.runGeneration)&&r.u32(c.roomGeneration)&&r.u16(c.roomIndex);}
 
 void writePlayer(Writer& w,const PlayerSnapshot& p){
   w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);
@@ -89,13 +91,23 @@ bool readFlower(Reader& r,FlowerSnapshot& f){std::uint8_t active=0;return r.u8(a
 
 bool decodeHeader(const std::uint8_t* data,std::size_t size,PacketHeader& out){if(!data||size<HEADER_BYTES||size>MAX_PACKET_BYTES)return false;Reader r(data,size);std::uint32_t magic=0;std::uint16_t version=0;std::uint8_t type=0;if(!r.u32(magic)||!r.u16(version)||!r.u8(type)||!r.u8(out.playerId)||!r.u32(out.sequence)||!r.u32(out.tick)||!r.u32(out.payloadBytes))return false;if(magic!=MAGIC||version!=PROTOCOL_VERSION||type<1||type>5||out.playerId>=MAX_PLAYERS||out.payloadBytes!=size-HEADER_BYTES)return false;out.type=static_cast<MessageType>(type);return true;}
 
-std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){Writer payload;payload.f32(input.moveX);payload.f32(input.moveZ);payload.f32(input.yaw);payload.f32(input.pitch);payload.u16(input.buttons);Writer packet;header(packet,MessageType::Input,playerId,input.sequence,input.localTick,static_cast<std::uint32_t>(payload.data.size()));packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;}
-bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){if(!decodeHeader(data,size,h)||h.type!=MessageType::Input)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);input.sequence=h.sequence;input.localTick=h.tick;return r.f32(input.moveX)&&r.f32(input.moveZ)&&r.f32(input.yaw)&&r.f32(input.pitch)&&r.u16(input.buttons)&&r.done();}
+WorldContextCompatibility compareWorldContext(const NetworkWorldContext& packet,const NetworkWorldContext& current){
+  if(packet.sessionId!=current.sessionId||packet.runGeneration!=current.runGeneration)return WorldContextCompatibility::Incompatible;
+  if(packet.roomGeneration<current.roomGeneration)return WorldContextCompatibility::Older;
+  if(packet.roomGeneration>current.roomGeneration)return WorldContextCompatibility::NewerRoom;
+  return packet.roomIndex==current.roomIndex?WorldContextCompatibility::Compatible:WorldContextCompatibility::Incompatible;
+}
+
+std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const NetworkWorldContext& world,const InputCommand& input){Writer payload;writeWorldContext(payload,world);payload.f32(input.moveX);payload.f32(input.moveZ);payload.f32(input.yaw);payload.f32(input.pitch);payload.u16(input.buttons);Writer packet;header(packet,MessageType::Input,playerId,input.sequence,input.localTick,static_cast<std::uint32_t>(payload.data.size()));packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;}
+bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,NetworkWorldContext& world,InputCommand& input){if(!decodeHeader(data,size,h)||h.type!=MessageType::Input)return false;Reader r(data+HEADER_BYTES,h.payloadBytes);input.sequence=h.sequence;input.localTick=h.tick;return readWorldContext(r,world)&&r.f32(input.moveX)&&r.f32(input.moveZ)&&r.f32(input.yaw)&&r.f32(input.pitch)&&r.u16(input.buttons)&&r.done();}
+std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){return encodeInput(playerId,{},input);}
+bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){NetworkWorldContext ignored;return decodeInput(data,size,h,ignored,input);}
 
 std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
                                          const WorldSnapshot &s,
                                          std::uint32_t sequence) {
   Writer p;
+  writeWorldContext(p,s.world);
   p.f32(s.time);
   p.i32(s.roomIndex);
   p.i32(s.roomSeed);
@@ -149,7 +161,7 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
   Reader r(data + HEADER_BYTES, h.payloadBytes);
   s.tick = h.tick;
   std::uint8_t clear = 0, started = 0, dead = 0, upgradeMenu = 0;
-  if (!r.f32(s.time) || !r.i32(s.roomIndex) || !r.i32(s.roomSeed) ||
+  if (!readWorldContext(r,s.world) || !r.f32(s.time) || !r.i32(s.roomIndex) || !r.i32(s.roomSeed) ||
       !r.i32(s.requiredSouls) || !r.i32(s.depositedSouls) || !r.u8(clear) ||
       !r.u8(started) || !r.u8(dead))
     return false;
