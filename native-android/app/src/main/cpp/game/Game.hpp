@@ -739,7 +739,7 @@ private:
     void tryJump();
     void startGroundJump();
     void startAirJump();
-    void triggerMelee();
+    void triggerMelee(bool authoritativeDamage = true);
     void shootStoredSoul();
     void releaseSoul(int index);
     void captureSoul(int index);

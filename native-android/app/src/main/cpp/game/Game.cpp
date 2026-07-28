@@ -1253,6 +1253,8 @@ void Game::setCommSignal(int signal) {
 void Game::updateNetworkGuest(float dt){
     simulationPlayerId_=state_.multiplayer.localPlayerId;
     const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;
+    if(melee&&!state_.meleeVisual.airLungeLandingPending&&!state_.vacuum.active)
+        triggerMelee(false);
     state_.input.meleePressed=false;state_.input.shootPressed=false;
     updateInputActions(dt);
     state_.input.meleePressed=melee;state_.input.shootPressed=shoot;
@@ -2266,7 +2268,7 @@ void Game::startAirJump() {
         : state_.camera.yaw;
 }
 
-void Game::triggerMelee() {
+void Game::triggerMelee(bool authoritativeDamage) {
     // A body lunge owns the player until its computed ground contact. The
     // shorter grounded-combo cooldown must never be allowed to renew flight.
     if(state_.meleeVisual.airLungeLandingPending) return;
@@ -2306,10 +2308,11 @@ void Game::triggerMelee() {
     if(lengthSq(visual.direction)<0.0001f)visual.direction=cameraForwardFlat();else visual.direction=normalized(visual.direction);
     visual.origin=state_.player.pos+visual.direction*0.22f+Vec3{0,0.42f,0};
     visual.impact=visual.origin+visual.direction*(combo.range*0.72f);
-    if(!airborne) applyMeleeHits();
+    if(!airborne&&authoritativeDamage) applyMeleeHits();
 }
 
 int Game::applyMeleeHits() {
+    if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)return 0;
     MeleeVisualState& visual=state_.meleeVisual;
     const Vec3 phoneCurrent=state_.phoneTransform.position;
     const Vec3 phonePrevious=visual.contactPositionValid?visual.previousContactPosition:phoneCurrent;

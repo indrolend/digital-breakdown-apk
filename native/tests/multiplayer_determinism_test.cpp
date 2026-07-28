@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -297,10 +298,293 @@ bool verifyProfile(const NetworkProfile& profile) {
   return true;
 }
 
+struct MeleeEventSummary {
+  std::vector<dbnet::GameplayEventType> acceptedTypes;
+  std::uint32_t accepted = 0;
+  std::uint32_t duplicateRejected = 0;
+  std::uint32_t staleRejected = 0;
+  std::uint32_t wrongWorldRejected = 0;
+  bool operator==(const MeleeEventSummary& other) const {
+    return acceptedTypes == other.acceptedTypes &&
+           accepted == other.accepted &&
+           duplicateRejected == other.duplicateRejected &&
+           staleRejected == other.staleRejected &&
+           wrongWorldRejected == other.wrongWorldRejected;
+  }
+};
+
+struct MeleeRunResult {
+  DeliverySummary delivery;
+  MeleeEventSummary events;
+  std::vector<std::pair<std::uint32_t, dbnet::DurableSectionHashes>> checkpoints;
+  dbnet::DurableSectionHashes hostFinal;
+  dbnet::DurableSectionHashes guestFinal;
+  std::uint64_t hostFinalHash = 0;
+  std::uint64_t guestFinalHash = 0;
+  float initialArmor = 0.0f;
+  float guestArmorAfterPrediction = 0.0f;
+  float hostArmorAfterContact = 0.0f;
+  bool guestPredictedStartup = false;
+  bool hostConfirmedAction = false;
+  bool missingEventInjected = false;
+};
+
+void configureMeleeFixture(Game& game, bool host) {
+  GameState& state = game.networkMutableState();
+  for (auto& target : state.targets) target.alive = false;
+  state.player.pos = host ? Vec3{8.0f, 0.08f, 8.0f}
+                          : Vec3{0.0f, 0.08f, 0.0f};
+  if (host) {
+    auto& peer = state.multiplayer.peers[1];
+    peer.player.pos = {0.0f, 0.08f, 0.0f};
+    peer.player.vel = {};
+    peer.player.battery = 100.0f;
+    peer.player.grounded = true;
+    peer.camera.yaw = 0.0f;
+  }
+  TargetState& enemy = state.targets[0];
+  enemy = TargetState{};
+  enemy.alive = true;
+  enemy.armor = 0.5f;
+  enemy.armorRegenDelay = 1000.0f;
+  enemy.pos = {0.0f, 0.08f, -0.7f};
+  enemy.walkTarget = enemy.pos;
+  enemy.attackCooldown = 1000.0f;
+}
+
+bool containsMeleeEvents(const MeleeEventSummary& summary) {
+  const std::array<dbnet::GameplayEventType, 5> expected{
+      dbnet::GameplayEventType::PlayerActionStarted,
+      dbnet::GameplayEventType::PlayerActionContact,
+      dbnet::GameplayEventType::EnemyHitConfirmed,
+      dbnet::GameplayEventType::EnemyShellBroken,
+      dbnet::GameplayEventType::SoulEmergenceStarted};
+  std::size_t next = 0;
+  for (const auto type : summary.acceptedTypes)
+    if (next < expected.size() && type == expected[next]) ++next;
+  return next == expected.size();
+}
+
+MeleeRunResult runMeleeScenario(const NetworkProfile& profile) {
+  constexpr std::uint32_t meleeTick = 20;
+  constexpr std::uint32_t activeTicks = 180;
+  constexpr std::uint32_t settleTicks = 180;
+  Game host;
+  Game guest;
+  host.reset();
+  guest.reset();
+  host.configureNetworkHost();
+  host.setNetworkPeerActive(1, true);
+  guest.configureNetworkGuest(1);
+  setSeed(host, EXPLICIT_SEED + 1);
+  setSeed(guest, EXPLICIT_SEED + 1);
+  configureMeleeFixture(host, true);
+  configureMeleeFixture(guest, false);
+
+  const dbnet::NetworkWorldContext world{EXPLICIT_SEED + 1, 1, 1, 1};
+  dbnet::GameplayEventTracker tracker;
+  tracker.reset(world);
+  dbnet::GameplayEventTracker lossyPresentationTracker;
+  lossyPresentationTracker.reset(world);
+  DeterministicPacketQueue queue(profile, EXPLICIT_SEED + 1);
+  MeleeRunResult result;
+  result.initialArmor = host.state().targets[0].armor;
+  std::set<std::uint32_t> seenEventIds;
+  std::uint32_t inputSequence = 0;
+  std::uint32_t snapshotSequence = 0;
+  std::uint32_t nextEventId = 0;
+  auto previous = dbnet::captureWorld(
+      host.state(), dbnet::capturePlayers(host.state()), 0);
+  previous.world = world;
+
+  auto receive = [&](const Packet& packet) {
+    dbnet::PacketHeader header;
+    if (packet.direction == Direction::GuestToHost) {
+      dbnet::NetworkWorldContext inputWorld;
+      dbnet::InputCommand input;
+      if (dbnet::decodeInput(packet.bytes.data(), packet.bytes.size(), header,
+                             inputWorld, input) &&
+          inputWorld == world) {
+        host.setNetworkPeerCommand(header.playerId, input);
+        queue.summary().lastInput = header.sequence;
+      }
+      return;
+    }
+    if (packet.type == dbnet::MessageType::Snapshot) {
+      dbnet::WorldSnapshot snapshot;
+      if (dbnet::decodeSnapshot(packet.bytes.data(), packet.bytes.size(), header,
+                                snapshot) &&
+          snapshot.world == world) {
+        dbnet::applyWorld(guest.networkMutableState(), snapshot, 1);
+        queue.summary().lastSnapshot = header.sequence;
+      }
+      return;
+    }
+    dbnet::GameplayEvent event;
+    if (!dbnet::decodeEvent(packet.bytes.data(), packet.bytes.size(), header, event))
+      return;
+    const bool duplicate = seenEventIds.count(event.eventId) != 0;
+    if (event.world != world) {
+      ++result.events.wrongWorldRejected;
+    } else if (!tracker.accept(event)) {
+      if (duplicate) ++result.events.duplicateRejected;
+      else ++result.events.staleRejected;
+    } else {
+      ++result.events.accepted;
+      result.events.acceptedTypes.push_back(event.type);
+      queue.summary().lastEvent = event.eventId;
+      if (event.type == dbnet::GameplayEventType::EnemyHitConfirmed)
+        result.missingEventInjected = true;
+      else
+        lossyPresentationTracker.accept(event);
+    }
+    seenEventIds.insert(event.eventId);
+  };
+
+  const std::uint32_t totalTicks = activeTicks + settleTicks;
+  for (std::uint32_t tick = 1; tick <= totalTicks; ++tick) {
+    queue.deliver(tick, receive);
+    const bool melee = tick == meleeTick;
+    guest.setTouchControls(0.0f, 0.0f, 0.0f, 0.0f,
+                           false, false, false, melee, false, false);
+    const auto command = guest.capturePlayerCommand(++inputSequence, tick);
+    queue.send(Direction::GuestToHost, dbnet::MessageType::Input, tick,
+               dbnet::encodeInput(1, world, command));
+    guest.update(FIXED_DT);
+    if (melee) {
+      result.guestPredictedStartup =
+          guest.state().meleeVisual.actionSequence != 0 &&
+          guest.state().meleeVisual.visualTimer > 0.0f;
+      result.guestArmorAfterPrediction = guest.state().targets[0].armor;
+    }
+    host.update(FIXED_DT);
+
+    auto current = dbnet::captureWorld(
+        host.state(), dbnet::capturePlayers(host.state()), tick);
+    current.world = world;
+    const auto events = dbnet::deriveMeleeEvents(previous, current, nextEventId);
+    for (const auto& event : events) {
+      const auto packet = dbnet::encodeEvent(0, event);
+      queue.send(Direction::HostToGuest, dbnet::MessageType::Event, tick, packet);
+      queue.send(Direction::HostToGuest, dbnet::MessageType::Event, tick, packet);
+      queue.send(Direction::HostToGuest, dbnet::MessageType::Event, tick, packet);
+    }
+    previous = current;
+    if (current.players[1].actionSequence != 0)
+      result.hostConfirmedAction = true;
+    if (current.targets[0].armor < result.initialArmor)
+      result.hostArmorAfterContact = current.targets[0].armor;
+
+    if (tick == 90) {
+      dbnet::GameplayEvent stale;
+      stale.world = world;
+      stale.authoritativeTick = tick;
+      stale.eventId = 0;
+      stale.type = dbnet::GameplayEventType::EnemyHitConfirmed;
+      auto wrong = stale;
+      wrong.eventId = nextEventId + 100;
+      ++wrong.world.roomGeneration;
+      for (int repeat = 0; repeat < 3; ++repeat) {
+        queue.send(Direction::HostToGuest, dbnet::MessageType::Event, tick,
+                   dbnet::encodeEvent(0, stale));
+        queue.send(Direction::HostToGuest, dbnet::MessageType::Event, tick,
+                   dbnet::encodeEvent(0, wrong));
+      }
+    }
+    if (tick % SNAPSHOT_INTERVAL == 0 || tick == totalTicks) {
+      queue.send(Direction::HostToGuest, dbnet::MessageType::Snapshot, tick,
+                 dbnet::encodeSnapshot(0, current, ++snapshotSequence));
+    }
+    if (tick % CHECKPOINT_INTERVAL == 0)
+      result.checkpoints.push_back(
+          {tick, dbnet::durableSectionHashes(current)});
+  }
+
+  auto finalSnapshot = dbnet::captureWorld(
+      host.state(), dbnet::capturePlayers(host.state()), totalTicks);
+  finalSnapshot.world = world;
+  for (int repeat = 0; repeat < 5; ++repeat)
+    queue.send(Direction::HostToGuest, dbnet::MessageType::Snapshot, totalTicks,
+               dbnet::encodeSnapshot(0, finalSnapshot, ++snapshotSequence));
+  for (std::uint32_t tick = totalTicks + 1;
+       !queue.empty() && tick <= totalTicks + profile.latencyTicks + 2; ++tick)
+    queue.deliver(tick, receive);
+
+  auto hostFinal = finalSnapshot;
+  auto guestFinal = dbnet::captureWorld(
+      guest.state(), dbnet::capturePlayers(guest.state()), totalTicks);
+  guestFinal.world = world;
+  result.delivery = queue.summary();
+  result.hostFinal = dbnet::durableSectionHashes(hostFinal);
+  result.guestFinal = dbnet::durableSectionHashes(guestFinal);
+  result.hostFinalHash = dbnet::authoritativeStateHash(hostFinal);
+  result.guestFinalHash = dbnet::authoritativeStateHash(guestFinal);
+  return result;
+}
+
+bool verifyMeleeProfile(const NetworkProfile& profile) {
+  const auto first = runMeleeScenario(profile);
+  const auto second = runMeleeScenario(profile);
+  const bool repeated =
+      first.delivery == second.delivery &&
+      first.events == second.events &&
+      first.checkpoints == second.checkpoints &&
+      first.hostFinal == second.hostFinal &&
+      first.guestFinal == second.guestFinal &&
+      first.hostFinalHash == second.hostFinalHash &&
+      first.guestFinalHash == second.guestFinalHash;
+  const bool authority =
+      first.guestPredictedStartup && first.hostConfirmedAction &&
+      first.guestArmorAfterPrediction == first.initialArmor &&
+      first.hostArmorAfterContact < first.initialArmor;
+  const bool eventChecks =
+      containsMeleeEvents(first.events) &&
+      first.events.duplicateRejected >= 5 &&
+      first.events.staleRejected >= 1 &&
+      first.events.wrongWorldRejected >= 1 &&
+      first.missingEventInjected;
+  const bool converged =
+      first.hostFinal == first.guestFinal &&
+      first.hostFinalHash == first.guestFinalHash;
+  if (!(repeated && authority && eventChecks && converged)) {
+    const std::string section =
+        firstDifferentSection(first.hostFinal, first.guestFinal);
+    std::fprintf(
+        stderr,
+        "MELEE_DETERMINISM_FAILURE profile=%s section=%s last_input=%u "
+        "last_snapshot=%u last_event=%u accepted=%u duplicate=%u stale=%u wrong=%u "
+        "repeated=%d authority=%d events=%d converged=%d predicted=%d confirmed=%d "
+        "armor=%.3f/%.3f/%.3f\n",
+        profile.name, section.c_str(), first.delivery.lastInput,
+        first.delivery.lastSnapshot, first.delivery.lastEvent,
+        first.events.accepted, first.events.duplicateRejected,
+        first.events.staleRejected, first.events.wrongWorldRejected,
+        repeated ? 1 : 0, authority ? 1 : 0, eventChecks ? 1 : 0,
+        converged ? 1 : 0, first.guestPredictedStartup ? 1 : 0,
+        first.hostConfirmedAction ? 1 : 0, first.initialArmor,
+        first.guestArmorAfterPrediction, first.hostArmorAfterContact);
+    printHashes("host", first.hostFinal);
+    printHashes("guest", first.guestFinal);
+    return false;
+  }
+  std::printf(
+      "MULTIPLAYER_DETERMINISTIC_MELEE_OK profile=%s enemy=0 "
+      "action=confirmed damage=host_only final_hash=%llu "
+      "accepted=%u duplicate=%u stale=%u wrong_world=%u\n",
+      profile.name, static_cast<unsigned long long>(first.hostFinalHash),
+      first.events.accepted, first.events.duplicateRejected,
+      first.events.staleRejected, first.events.wrongWorldRejected);
+  return true;
+}
+
 }  // namespace
 
 int main() {
   const NetworkProfile baseline{"baseline", 0, 0};
   const NetworkProfile impaired{"impaired", 4, 11};
-  return verifyProfile(baseline) && verifyProfile(impaired) ? 0 : 1;
+  const NetworkProfile moderate{"moderate", 4, 11};
+  const NetworkProfile poorRecoverable{"poor_recoverable", 8, 5};
+  return verifyProfile(baseline) && verifyProfile(impaired) &&
+         verifyMeleeProfile(baseline) && verifyMeleeProfile(moderate) &&
+         verifyMeleeProfile(poorRecoverable) ? 0 : 1;
 }

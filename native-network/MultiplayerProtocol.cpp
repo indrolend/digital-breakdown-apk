@@ -129,6 +129,50 @@ bool decodeEvent(const std::uint8_t* data,std::size_t size,PacketHeader& h,Gamep
     r.vec(event.position)&&r.vec(event.direction)&&r.u16(event.flags)&&r.done();
 }
 
+std::vector<GameplayEvent> deriveMeleeEvents(
+    const WorldSnapshot& previous,const WorldSnapshot& current,
+    std::uint32_t& nextEventId){
+  std::vector<GameplayEvent> events;
+  auto append=[&](GameplayEventType type,std::uint16_t source,
+                  std::uint16_t target,const Vec3& position,
+                  const Vec3& direction){
+    GameplayEvent event;
+    event.world=current.world;event.authoritativeTick=current.tick;
+    event.eventId=++nextEventId;event.type=type;
+    event.sourceEntityId=source;event.targetEntityId=target;
+    event.position=position;event.direction=direction;
+    events.push_back(event);
+  };
+  for(std::size_t i=0;i<current.players.size();++i){
+    const auto& before=previous.players[i];
+    const auto& now=current.players[i];
+    if(now.active&&now.actionSequence!=0&&
+       now.actionSequence!=before.actionSequence)
+      append(GameplayEventType::PlayerActionStarted,
+             static_cast<std::uint16_t>(i),now.actionTargetId,
+             now.pos,now.meleeDirection);
+    if(now.active&&now.actionPhase==NetActionPhase::Contact&&
+       before.actionPhase!=NetActionPhase::Contact)
+      append(GameplayEventType::PlayerActionContact,
+             static_cast<std::uint16_t>(i),now.actionTargetId,
+             now.pos,now.meleeDirection);
+  }
+  for(std::size_t i=0;i<current.targets.size();++i){
+    const auto& before=previous.targets[i];
+    const auto& now=current.targets[i];
+    if(now.armor<before.armor)
+      append(GameplayEventType::EnemyHitConfirmed,0,
+             static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if((before.flags&2u)==0&&(now.flags&2u)!=0)
+      append(GameplayEventType::EnemyShellBroken,0,
+             static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(before.soulMorph<=0.0f&&now.soulMorph>0.0f)
+      append(GameplayEventType::SoulEmergenceStarted,0,
+             static_cast<std::uint16_t>(i),now.pos,now.vel);
+  }
+  return events;
+}
+
 void GameplayEventTracker::reset(const NetworkWorldContext& world){world_=world;lastEventId_=0;}
 bool GameplayEventTracker::accept(const GameplayEvent& event){
   if(event.world!=world_||event.eventId==0||event.eventId<=lastEventId_)return false;

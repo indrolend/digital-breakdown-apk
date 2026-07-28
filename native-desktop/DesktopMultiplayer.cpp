@@ -118,12 +118,16 @@ void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
       eventMarker(type),event.eventId,source,target,event.authoritativeTick,flags);
     std::fflush(stdout);
   };
+  for(const auto& event:dbnet::deriveMeleeEvents(
+          previousEventWorld_,world,nextEventId_)){
+    sendBinary(dbnet::encodeEvent(0,event));
+    std::printf("%s event=%u source=%u target=%u tick=%u flags=%u\n",
+      eventMarker(event.type),event.eventId,event.sourceEntityId,
+      event.targetEntityId,event.authoritativeTick,event.flags);
+    std::fflush(stdout);
+  }
   for(std::size_t i=0;i<world.players.size();++i){
     const auto& before=previousEventWorld_.players[i];const auto& now=world.players[i];
-    if(now.active&&now.actionSequence!=0&&now.actionSequence!=before.actionSequence)
-      emit(dbnet::GameplayEventType::PlayerActionStarted,static_cast<std::uint16_t>(i),now.actionTargetId,now.pos,now.meleeDirection);
-    if(now.active&&now.actionPhase==dbnet::NetActionPhase::Contact&&before.actionPhase!=dbnet::NetActionPhase::Contact)
-      emit(dbnet::GameplayEventType::PlayerActionContact,static_cast<std::uint16_t>(i),now.actionTargetId,now.pos,now.meleeDirection);
     if(now.active&&now.action==dbnet::NetActionState::Vacuum&&
        before.action!=dbnet::NetActionState::Vacuum)
       emit(dbnet::GameplayEventType::VacuumStarted,static_cast<std::uint16_t>(i),
@@ -139,9 +143,6 @@ void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
   }
   for(std::size_t i=0;i<world.targets.size();++i){
     const auto& before=previousEventWorld_.targets[i];const auto& now=world.targets[i];
-    if(now.armor<before.armor)emit(dbnet::GameplayEventType::EnemyHitConfirmed,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
-    if((before.flags&2u)==0&&(now.flags&2u)!=0)emit(dbnet::GameplayEventType::EnemyShellBroken,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
-    if(before.soulMorph<=0.0f&&now.soulMorph>0.0f)emit(dbnet::GameplayEventType::SoulEmergenceStarted,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
     const bool wasCaptureCandidate=(before.flags&(2u|8u|16u))!=0||
       before.ingest>0.0f;
     const bool captureCompleted=wasCaptureCandidate&&(before.flags&1u)!=0&&

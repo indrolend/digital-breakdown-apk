@@ -263,6 +263,9 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId, const WorldSnaps
 bool decodeSnapshot(const std::uint8_t* data, std::size_t size, PacketHeader& header, WorldSnapshot& snapshot);
 std::vector<std::uint8_t> encodeEvent(std::uint8_t playerId, const GameplayEvent& event);
 bool decodeEvent(const std::uint8_t* data, std::size_t size, PacketHeader& header, GameplayEvent& event);
+std::vector<GameplayEvent> deriveMeleeEvents(
+    const WorldSnapshot& previous, const WorldSnapshot& current,
+    std::uint32_t& nextEventId);
 
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
