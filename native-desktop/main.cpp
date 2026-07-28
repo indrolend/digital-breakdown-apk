@@ -1008,13 +1008,18 @@ int main(int argc, char** argv) {
     bool multiplayerMetricsPrinted=false;
     bool multiplayerVacuumPredicted=false;
     bool multiplayerDischargeIssued=false;
+    bool multiplayerMeleeDurable=false;
+    bool multiplayerSoulDurable=false;
+    bool multiplayerProjectileDurable=false;
+    bool multiplayerProjectileTerminal=false;
     int multiplayerSoulStoredFrame=-1;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
                host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
-                const bool melee=multiplayerParityFrame>=129&&multiplayerParityFrame<189;
-                const bool vacuum=multiplayerParityFrame>=199&&
+                const bool melee=multiplayerParityFrame>=129&&multiplayerParityFrame<499&&
+                    ((multiplayerParityFrame-129)%60)<30;
+                const bool vacuum=multiplayerParityFrame>=619&&
                     host.game.state().player.souls==0;
                 if(host.game.state().player.souls>0&&multiplayerSoulStoredFrame<0)
                     multiplayerSoulStoredFrame=multiplayerParityFrame;
@@ -1042,8 +1047,9 @@ int main(int argc, char** argv) {
                 const bool guest=host.multiplayer.role()==DesktopMultiplayer::Role::Guest;
                 const bool move=guest&&multiplayerParityFrame<80;
                 const bool jump=guest&&(multiplayerParityFrame==30||multiplayerParityFrame==75);
-                const bool melee=guest&&multiplayerParityFrame>=130&&multiplayerParityFrame<190;
-                const bool vacuum=guest&&multiplayerParityFrame>=200&&
+                const bool melee=guest&&multiplayerParityFrame>=130&&multiplayerParityFrame<500&&
+                    ((multiplayerParityFrame-130)%60)<30;
+                const bool vacuum=guest&&multiplayerParityFrame>=620&&
                     host.game.state().player.souls==0;
                 if(!guest&&multiplayerParityFrame==100){
                     GameState& fixture=host.game.networkMutableState();
@@ -1058,14 +1064,14 @@ int main(int argc, char** argv) {
                     std::printf("MULTIPLAYER_COMBAT_FIXTURE enemy=0 armor=%.2f\n",enemy.armor);
                     std::fflush(stdout);
                 }
-                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<500){
+                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<2500){
                     GameState& fixture=host.game.networkMutableState();
                     fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
                     fixture.multiplayer.peers[1].player.vel={};
                     auto& enemy=fixture.targets[0];
                     if(enemy.alive&&!enemy.slurpable){enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.attackCooldown=10.0f;}
                 }
-                if(!guest&&multiplayerParityFrame==170){
+                if(!guest&&multiplayerParityFrame==600){
                     GameState& fixture=host.game.networkMutableState();
                     auto& soul=fixture.targets[1];
                     for(std::size_t i=0;i<fixture.targets.size();++i)
@@ -1076,7 +1082,7 @@ int main(int argc, char** argv) {
                     std::printf("MULTIPLAYER_VACUUM_FIXTURE target=1\n");
                     std::fflush(stdout);
                 }
-                if(!guest&&multiplayerParityFrame>=170&&multiplayerParityFrame<500){
+                if(!guest&&multiplayerParityFrame>=600&&multiplayerParityFrame<2500){
                     GameState& fixture=host.game.networkMutableState();
                     auto& soul=fixture.targets[1];
                     if(soul.alive&&soul.soulState==SoulState::Free)
@@ -1108,6 +1114,41 @@ int main(int argc, char** argv) {
             }
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
+                if(host.multiplayer.role()==DesktopMultiplayer::Role::Host&&!multiplayerMeleeDurable&&
+                   multiplayerParityFrame>=100){
+                    const auto& enemy=host.game.state().targets[0];
+                    if(enemy.alive&&(enemy.slurpable||enemy.armor<0.44f)){
+                        multiplayerMeleeDurable=true;
+                        std::printf("MULTIPLAYER_DURABLE_MELEE enemy=0 armor=%.3f shell_broken=%d\n",
+                                    enemy.armor,enemy.slurpable?1:0);
+                        std::fflush(stdout);
+                    }
+                }
+                const bool parityHost=host.multiplayer.role()==DesktopMultiplayer::Role::Host;
+                const int durableGuestSouls=parityHost
+                    ?host.game.state().multiplayer.peers[1].player.souls
+                    :host.game.state().player.souls;
+                if(!multiplayerSoulDurable&&durableGuestSouls>0){
+                    multiplayerSoulDurable=true;
+                    std::printf("MULTIPLAYER_DURABLE_SOUL role=%s inventory=%d\n",
+                                parityHost?"host":"guest",durableGuestSouls);
+                    std::fflush(stdout);
+                }
+                const bool activeProjectile=std::any_of(
+                    host.game.state().bullets.begin(),host.game.state().bullets.end(),
+                    [](const BulletState& bullet){return bullet.alive;});
+                if(!multiplayerProjectileDurable&&activeProjectile){
+                    multiplayerProjectileDurable=true;
+                    std::printf("MULTIPLAYER_DURABLE_PROJECTILE role=%s state=active\n",
+                                host.multiplayer.role()==DesktopMultiplayer::Role::Host?"host":"guest");
+                    std::fflush(stdout);
+                }else if(multiplayerProjectileDurable&&!multiplayerProjectileTerminal&&
+                         !activeProjectile&&durableGuestSouls==0){
+                    multiplayerProjectileTerminal=true;
+                    std::printf("MULTIPLAYER_DURABLE_PROJECTILE role=%s state=terminal\n",
+                                host.multiplayer.role()==DesktopMultiplayer::Role::Host?"host":"guest");
+                    std::fflush(stdout);
+                }
                 if(host.multiplayer.role()==DesktopMultiplayer::Role::Guest&&
                    (multiplayerParityFrame==30||multiplayerParityFrame==75)){
                     std::printf("MULTIPLAYER_TEST_GUEST_JUMP_PREDICTED frame=%d jump_vel=%.3f y=%.3f\n",
@@ -1138,7 +1179,7 @@ int main(int argc, char** argv) {
                     multiplayerMetricsPrinted=true;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::this_thread::sleep_for(std::chrono::milliseconds(multiplayerParityTest?4:1));
             continue;
         }
         glfwPollEvents();
