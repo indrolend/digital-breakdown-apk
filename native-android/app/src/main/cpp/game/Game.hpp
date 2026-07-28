@@ -732,6 +732,7 @@ private:
     void registerMeleeBatteryHit(int hitCount);
     void updateBattery(float dt);
     void triggerRunDeath();
+    void clearPlayerLifecycleActions();
     void emitAudio(AudioCue cue, float volume);
     void updateSlurpAudio();
     void updateBatteryAudio(float beforeValue);

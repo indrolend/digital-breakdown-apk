@@ -1030,6 +1030,328 @@ bool verifyRoomRollover(const NetworkProfile& profile){
   return true;
 }
 
+struct LifecycleRunResult {
+  DeliverySummary delivery;
+  MeleeEventSummary events;
+  std::vector<std::pair<std::uint32_t,dbnet::DurableSectionHashes>> checkpoints;
+  dbnet::DurableSectionHashes hostFinal;
+  dbnet::DurableSectionHashes guestFinal;
+  std::uint64_t finalHash=0;
+  std::uint32_t damageTick=0;
+  std::uint32_t downTick=0;
+  std::uint32_t reviveTick=0;
+  std::uint32_t deathTick=0;
+  std::uint32_t restartTick=0;
+  dbnet::NetworkWorldContext oldWorld;
+  dbnet::NetworkWorldContext newWorld;
+  std::uint32_t staleSnapshots=0;
+  std::uint32_t staleEvents=0;
+  std::uint32_t staleInputs=0;
+  bool hostOnlyDamage=false;
+  bool soulsPreserved=true;
+  bool reviveInterrupted=false;
+  bool deadMovementBlocked=false;
+  bool guestRestartRejected=false;
+  bool resetInvariants=false;
+  bool operator==(const LifecycleRunResult& other) const {
+    return delivery==other.delivery&&events==other.events&&
+      checkpoints==other.checkpoints&&hostFinal==other.hostFinal&&
+      guestFinal==other.guestFinal&&finalHash==other.finalHash&&
+      damageTick==other.damageTick&&downTick==other.downTick&&
+      reviveTick==other.reviveTick&&deathTick==other.deathTick&&
+      restartTick==other.restartTick&&oldWorld==other.oldWorld&&
+      newWorld==other.newWorld&&staleSnapshots==other.staleSnapshots&&
+      staleEvents==other.staleEvents&&staleInputs==other.staleInputs&&
+      hostOnlyDamage==other.hostOnlyDamage&&
+      soulsPreserved==other.soulsPreserved&&
+      reviveInterrupted==other.reviveInterrupted&&
+      deadMovementBlocked==other.deadMovementBlocked&&
+      guestRestartRejected==other.guestRestartRejected&&
+      resetInvariants==other.resetInvariants;
+  }
+};
+
+void armLifecycleEnemy(GameState& state){
+  auto& target=state.targets[0];
+  target=TargetState{};
+  target.alive=true;
+  target.pos={0,0.08f,-1.0f};
+  target.walkTarget=target.pos;
+  target.attackCooldown=0.0f;
+  state.enemyAttackOwner=-1;
+  state.enemyAttackCadence=0.0f;
+}
+
+LifecycleRunResult runLifecycle(const NetworkProfile& profile){
+  constexpr std::uint32_t totalTicks=1700;
+  constexpr std::uint32_t explicitRestartTick=1450;
+  const std::uint32_t seed=EXPLICIT_SEED+5;
+  Game host;Game guest;host.reset();guest.reset();
+  host.configureNetworkHost();host.setNetworkPeerActive(1,true);
+  guest.configureNetworkGuest(1);
+  auto& hostState=host.networkMutableState();
+  hostState.roomSeed=static_cast<int>(seed);
+  hostState.progression.run.batteryRegenLock=100.0f;
+  hostState.player.pos={0,0.08f,1.0f};
+  hostState.camera.yaw=0.0f;
+  auto& peer=hostState.multiplayer.peers[1];
+  peer.player.pos={0,0.08f,0};peer.player.grounded=true;
+  peer.player.battery=80.0f;peer.player.souls=2;
+  peer.player.storedSoulBrute[0]=false;peer.player.storedSoulBrute[1]=true;
+  for(auto& target:hostState.targets)target=TargetState{};
+  armLifecycleEnemy(hostState);
+
+  dbnet::NetworkWorldContext hostWorld{seed,1,1,1};
+  dbnet::NetworkWorldContext guestWorld=hostWorld;
+  auto initial=dbnet::captureWorld(host.state(),dbnet::capturePlayers(host.state()),0);
+  initial.world=hostWorld;
+  dbnet::applyWorld(guest.networkMutableState(),initial,1);
+  LifecycleRunResult result;result.oldWorld=hostWorld;
+  DeterministicPacketQueue queue(profile,seed);
+  dbnet::GameplayEventTracker tracker;tracker.reset(guestWorld);
+  dbnet::GameplayEventDerivationState derivation;
+  dbnet::SnapshotInterpolator interpolator;
+  std::set<std::uint32_t> seen;
+  std::uint32_t inputSequence=0,snapshotSequence=0;
+  auto previous=initial;
+  std::vector<std::uint8_t> retainedSnapshot;
+  std::vector<std::uint8_t> retainedInput;
+  std::vector<std::uint8_t> retainedDeathEvent;
+  std::vector<std::uint8_t> retainedReviveEvent;
+  bool secondDamageArmed=false,finalDamageArmed=false,injected=false;
+  float interruptedCharge=0.0f;
+  Vec3 deadPosition;
+
+  auto receive=[&](const Packet& packet){
+    dbnet::PacketHeader header;
+    if(packet.direction==Direction::GuestToHost){
+      dbnet::NetworkWorldContext packetWorld;dbnet::InputCommand input;
+      if(!dbnet::decodeInput(packet.bytes.data(),packet.bytes.size(),header,
+                             packetWorld,input))return;
+      if(dbnet::compareWorldContext(packetWorld,hostWorld)!=
+         dbnet::WorldContextCompatibility::Compatible){
+        ++result.staleInputs;return;
+      }
+      host.setNetworkPeerCommand(header.playerId,input);
+      queue.summary().lastInput=header.sequence;return;
+    }
+    if(packet.type==dbnet::MessageType::Snapshot){
+      dbnet::WorldSnapshot snapshot;
+      if(!dbnet::decodeSnapshot(packet.bytes.data(),packet.bytes.size(),header,
+                                snapshot))return;
+      const auto compatibility=dbnet::compareWorldContext(snapshot.world,guestWorld);
+      if(compatibility==dbnet::WorldContextCompatibility::Older){
+        ++result.staleSnapshots;return;
+      }
+      if(compatibility==dbnet::WorldContextCompatibility::NewerRun||
+         compatibility==dbnet::WorldContextCompatibility::NewerRoom){
+        guestWorld=snapshot.world;tracker.reset(guestWorld);interpolator.reset();
+      }else if(compatibility!=dbnet::WorldContextCompatibility::Compatible){
+        ++result.staleSnapshots;return;
+      }
+      interpolator.push(snapshot,static_cast<std::int64_t>(snapshot.tick)*17);
+      dbnet::applyWorld(guest.networkMutableState(),snapshot,1);
+      queue.summary().lastSnapshot=header.sequence;return;
+    }
+    dbnet::GameplayEvent event;
+    if(!dbnet::decodeEvent(packet.bytes.data(),packet.bytes.size(),header,event))return;
+    if(event.world!=guestWorld){++result.staleEvents;return;}
+    const bool duplicate=seen.count(event.eventId)!=0;
+    if(!tracker.accept(event)){
+      if(duplicate)++result.events.duplicateRejected;
+      else ++result.events.staleRejected;
+    }else{
+      ++result.events.accepted;result.events.acceptedTypes.push_back(event.type);
+      queue.summary().lastEvent=event.eventId;
+    }
+    seen.insert(event.eventId);
+  };
+
+  for(std::uint32_t tick=1;tick<=totalTicks;++tick){
+    queue.deliver(tick,receive);
+    const bool dead=result.deathTick!=0&&tick<explicitRestartTick;
+    guest.setTouchControls(0,dead?1.0f:0.0f,0,0,
+                           false,false,false,false,false,false);
+    const auto command=guest.capturePlayerCommand(++inputSequence,tick);
+    auto inputBytes=dbnet::encodeInput(1,guestWorld,command);
+    if(tick==10)retainedInput=inputBytes;
+    queue.send(Direction::GuestToHost,dbnet::MessageType::Input,tick,
+               std::move(inputBytes));
+    guest.update(FIXED_DT);
+
+    if(result.damageTick!=0&&!secondDamageArmed&&tick>=result.damageTick+30){
+      peer.player.battery=25.0f;armLifecycleEnemy(hostState);
+      secondDamageArmed=true;
+    }
+    bool reviveHeld=false;
+    if(result.downTick!=0&&result.reviveTick==0){
+      const auto elapsed=tick-result.downTick;
+      reviveHeld=(elapsed>=10&&elapsed<40)||(elapsed>=60);
+      if(elapsed==40)interruptedCharge=peer.player.reviveCharge;
+      if(elapsed==59)result.reviveInterrupted=
+        interruptedCharge>0.0f&&peer.player.reviveCharge==interruptedCharge;
+    }
+    if(result.reviveTick!=0&&!finalDamageArmed&&tick>=result.reviveTick+30){
+      peer.player.battery=25.0f;armLifecycleEnemy(hostState);
+      finalDamageArmed=true;
+    }
+    host.setTouchControls(0,0,0,0,reviveHeld,false,false,false,false,false);
+
+    if(tick==explicitRestartTick){
+      const auto guestBefore=dbnet::durableSectionHashes(dbnet::captureWorld(
+        guest.state(),dbnet::capturePlayers(guest.state()),tick));
+      guest.restart();
+      const auto guestAfter=dbnet::durableSectionHashes(dbnet::captureWorld(
+        guest.state(),dbnet::capturePlayers(guest.state()),tick));
+      result.guestRestartRejected=guestBefore==guestAfter;
+      host.restart();
+      ++hostWorld.runGeneration;hostWorld.roomGeneration=1;
+      hostWorld.roomIndex=static_cast<std::uint16_t>(host.state().roomIndex);
+      result.newWorld=hostWorld;result.restartTick=tick;
+      derivation={};
+    }
+    const float guestBatteryBefore=guest.state().player.battery;
+    const int guestSoulsBefore=guest.state().player.souls;
+    host.update(FIXED_DT);
+
+    if(result.damageTick==0&&peer.player.battery<80.0f){
+      result.damageTick=tick;
+      result.hostOnlyDamage=guest.state().player.battery==guestBatteryBefore;
+      result.soulsPreserved=peer.player.souls==2&&
+        guest.state().player.souls==guestSoulsBefore;
+      hostState.targets[0]=TargetState{};
+    }
+    if(result.downTick==0&&peer.player.downed){
+      result.downTick=tick;hostState.targets[0]=TargetState{};
+    }
+    if(result.downTick!=0&&result.reviveTick==0&&!peer.player.downed&&
+       peer.player.alive&&peer.player.battery>0.0f){
+      result.reviveTick=tick;
+    }
+    if(result.reviveTick!=0&&result.deathTick==0&&!peer.player.alive){
+      result.deathTick=tick;deadPosition=peer.player.pos;
+      result.deadMovementBlocked=true;
+    }
+    if(result.deathTick!=0&&tick>result.deathTick&&tick<explicitRestartTick)
+      result.deadMovementBlocked&=length(peer.player.pos-deadPosition)<0.0001f;
+
+    auto current=dbnet::captureWorld(
+      host.state(),dbnet::capturePlayers(host.state()),tick);
+    current.world=hostWorld;
+    if(tick==explicitRestartTick){
+      previous=current;
+    }else{
+      for(const auto& event:dbnet::deriveGameplayEvents(previous,current,derivation)){
+        const auto bytes=dbnet::encodeEvent(0,event);
+        if(event.type==dbnet::GameplayEventType::PlayerDied)
+          retainedDeathEvent=bytes;
+        if(event.type==dbnet::GameplayEventType::PlayerRevived)
+          retainedReviveEvent=bytes;
+        for(int repeat=0;repeat<3;++repeat)
+          queue.send(Direction::HostToGuest,dbnet::MessageType::Event,tick,bytes);
+      }
+      previous=current;
+    }
+    if(tick==explicitRestartTick-1)
+      retainedSnapshot=dbnet::encodeSnapshot(0,current,9002);
+    if(tick%SNAPSHOT_INTERVAL==0)
+      queue.send(Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,
+        dbnet::encodeSnapshot(0,current,++snapshotSequence));
+    if(tick%CHECKPOINT_INTERVAL==0)
+      result.checkpoints.push_back({tick,dbnet::durableSectionHashes(current)});
+
+    if(!injected&&result.restartTick!=0&&guestWorld==hostWorld){
+      injected=true;
+      receive({Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,0,
+               retainedSnapshot});
+      receive({Direction::GuestToHost,dbnet::MessageType::Input,tick,1,
+               retainedInput});
+      for(const auto* bytes:{&retainedDeathEvent,&retainedDeathEvent,
+                             &retainedReviveEvent})
+        if(!bytes->empty())receive(
+          {Direction::HostToGuest,dbnet::MessageType::Event,tick,2,*bytes});
+      dbnet::GameplayEvent valid;valid.world=hostWorld;valid.authoritativeTick=tick;
+      valid.eventId=1;valid.type=dbnet::GameplayEventType::PlayerActionStarted;
+      for(int repeat=0;repeat<3;++repeat)
+        queue.send(Direction::HostToGuest,dbnet::MessageType::Event,tick,
+                   dbnet::encodeEvent(0,valid));
+    }
+  }
+  auto finalSnapshot=dbnet::captureWorld(
+    host.state(),dbnet::capturePlayers(host.state()),totalTicks);
+  finalSnapshot.world=hostWorld;
+  for(int repeat=0;repeat<5;++repeat)
+    queue.send(Direction::HostToGuest,dbnet::MessageType::Snapshot,totalTicks,
+      dbnet::encodeSnapshot(0,finalSnapshot,++snapshotSequence));
+  for(std::uint32_t tick=totalTicks+1;
+      !queue.empty()&&tick<=totalTicks+profile.latencyTicks+2;++tick)
+    queue.deliver(tick,receive);
+  auto guestFinal=dbnet::captureWorld(
+    guest.state(),dbnet::capturePlayers(guest.state()),totalTicks);
+  guestFinal.world=guestWorld;
+  const auto& hs=host.state();const auto& gs=guest.state();
+  result.resetInvariants=result.restartTick==explicitRestartTick&&
+    hostWorld.runGeneration==2&&guestWorld==hostWorld&&
+    hs.multiplayer.authoritativeHost&&hs.multiplayer.peers[1].active&&
+    hs.player.alive&&hs.multiplayer.peers[1].player.alive&&
+    hs.player.souls==0&&hs.multiplayer.peers[1].player.souls==0&&
+    hs.player.battery==100.0f&&
+    !hs.vacuum.active&&hs.meleeVisual.visualTimer==0.0f&&
+    hs.energy.dischargeTimer==0.0f&&!hs.bullets[0].alive&&
+    !hs.flowers[0].active&&!hs.captures[0].filled&&
+    length(gs.multiplayer.localPredictionCorrection)<0.0001f;
+  result.delivery=queue.summary();
+  result.hostFinal=dbnet::durableSectionHashes(finalSnapshot);
+  result.guestFinal=dbnet::durableSectionHashes(guestFinal);
+  result.finalHash=dbnet::authoritativeStateHash(finalSnapshot);
+  return result;
+}
+
+bool verifyLifecycle(const NetworkProfile& profile){
+  const auto first=runLifecycle(profile);
+  const auto second=runLifecycle(profile);
+  const bool transitions=hasEvent(first.events,dbnet::GameplayEventType::PlayerDowned)&&
+    hasEvent(first.events,dbnet::GameplayEventType::PlayerRevived)&&
+    hasEvent(first.events,dbnet::GameplayEventType::PlayerDied);
+  const bool stale=first.staleSnapshots>=1&&first.staleEvents>=2&&
+    first.staleInputs>=1&&first.events.duplicateRejected>0;
+  const bool converged=first.hostFinal==first.guestFinal;
+  if(!(first==second&&first.damageTick>0&&first.downTick>first.damageTick&&
+       first.reviveTick>first.downTick&&first.deathTick>first.reviveTick&&
+       first.hostOnlyDamage&&first.soulsPreserved&&first.reviveInterrupted&&
+       first.deadMovementBlocked&&first.guestRestartRejected&&
+       first.resetInvariants&&transitions&&stale&&converged)){
+    std::fprintf(stderr,"LIFECYCLE_FAILURE profile=%s damage=%u down=%u "
+      "revive=%u death=%u restart=%u authority=%d souls=%d interruption=%d "
+      "blocked=%d guest_restart=%d reset=%d transitions=%d stale=%d\n",
+      profile.name,first.damageTick,first.downTick,first.reviveTick,
+      first.deathTick,first.restartTick,first.hostOnlyDamage?1:0,
+      first.soulsPreserved?1:0,first.reviveInterrupted?1:0,
+      first.deadMovementBlocked?1:0,first.guestRestartRejected?1:0,
+      first.resetInvariants?1:0,transitions?1:0,stale?1:0);
+    printHashes("host",first.hostFinal);printHashes("guest",first.guestFinal);
+    return false;
+  }
+  std::printf("MULTIPLAYER_DETERMINISTIC_DEATH_OK profile=%s player=1 "
+    "damage_tick=%u down_tick=%u revive_tick=%u death_tick=%u final_hash=%llu\n",
+    profile.name,first.damageTick,first.downTick,first.reviveTick,
+    first.deathTick,static_cast<unsigned long long>(first.finalHash));
+  std::printf("MULTIPLAYER_DETERMINISTIC_RESTART_OK profile=%s old_run=%u "
+    "new_run=%u restart_tick=%u final_hash=%llu input=%u/%u snapshot=%u/%u "
+    "event=%u/%u accepted=%u duplicate=%u\n",profile.name,
+    first.oldWorld.runGeneration,first.newWorld.runGeneration,
+    first.restartTick,static_cast<unsigned long long>(first.finalHash),
+    first.delivery.delivered[0],first.delivery.dropped[0],
+    first.delivery.delivered[1],first.delivery.dropped[1],
+    first.delivery.delivered[2],first.delivery.dropped[2],
+    first.events.accepted,first.events.duplicateRejected);
+  std::printf("MULTIPLAYER_STALE_RUN_REJECT_OK profile=%s snapshots=%u "
+    "events=%u inputs=%u\n",profile.name,first.staleSnapshots,
+    first.staleEvents,first.staleInputs);
+  printHashes("lifecycle_sections",first.hostFinal);
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -1045,5 +1367,8 @@ int main() {
          verifyVacuumDischarge(poorRecoverable) &&
          verifyRoomRollover(baseline) &&
          verifyRoomRollover(moderate) &&
-         verifyRoomRollover(poorRecoverable) ? 0 : 1;
+         verifyRoomRollover(poorRecoverable) &&
+         verifyLifecycle(baseline) &&
+         verifyLifecycle(moderate) &&
+         verifyLifecycle(poorRecoverable) ? 0 : 1;
 }

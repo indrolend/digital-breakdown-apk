@@ -27,6 +27,8 @@ int main() {
          std::abs(decoded.moveZ - 0.75f) < 0.0001f;
   ok &= compareWorldContext({17,2,3,2},inputWorld)==WorldContextCompatibility::Older &&
         compareWorldContext({17,2,5,4},inputWorld)==WorldContextCompatibility::NewerRoom &&
+        compareWorldContext({17,3,1,1},inputWorld)==WorldContextCompatibility::NewerRun &&
+        compareWorldContext({17,1,9,9},inputWorld)==WorldContextCompatibility::Older &&
         compareWorldContext({18,2,4,3},inputWorld)==WorldContextCompatibility::Incompatible &&
         compareWorldContext(inputWorld,inputWorld)==WorldContextCompatibility::Compatible;
   GameplayEvent event;

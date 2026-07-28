@@ -55,7 +55,7 @@ struct NetworkWorldContext {
 };
 
 enum class WorldContextCompatibility : std::uint8_t {
-    Compatible, Older, NewerRoom, Incompatible
+    Compatible, Older, NewerRoom, NewerRun, Incompatible
 };
 
 using InputCommand = PlayerCommand;
@@ -228,7 +228,10 @@ enum class GameplayEventType : std::uint8_t {
     DischargeStarted,
     ProjectileSpawned,
     ProjectileImpacted,
-    ProjectileDespawned
+    ProjectileDespawned,
+    PlayerDowned,
+    PlayerRevived,
+    PlayerDied
 };
 
 struct GameplayEvent {
@@ -278,6 +281,7 @@ std::vector<GameplayEvent> deriveGameplayEvents(
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
 void applyWorld(GameState& state, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
+void prepareForAuthoritativeWorldReplacement(GameState& state);
 
 struct DurableSectionHashes {
     std::uint64_t world = 0;

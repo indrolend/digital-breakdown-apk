@@ -99,7 +99,9 @@ bool readFlower(Reader& r,FlowerSnapshot& f){std::uint8_t active=0;return r.u8(a
 bool decodeHeader(const std::uint8_t* data,std::size_t size,PacketHeader& out){if(!data||size<HEADER_BYTES||size>MAX_PACKET_BYTES)return false;Reader r(data,size);std::uint32_t magic=0;std::uint16_t version=0;std::uint8_t type=0;if(!r.u32(magic)||!r.u16(version)||!r.u8(type)||!r.u8(out.playerId)||!r.u32(out.sequence)||!r.u32(out.tick)||!r.u32(out.payloadBytes))return false;if(magic!=MAGIC||version!=PROTOCOL_VERSION||type<1||type>5||out.playerId>=MAX_PLAYERS||out.payloadBytes!=size-HEADER_BYTES)return false;out.type=static_cast<MessageType>(type);return true;}
 
 WorldContextCompatibility compareWorldContext(const NetworkWorldContext& packet,const NetworkWorldContext& current){
-  if(packet.sessionId!=current.sessionId||packet.runGeneration!=current.runGeneration)return WorldContextCompatibility::Incompatible;
+  if(packet.sessionId!=current.sessionId)return WorldContextCompatibility::Incompatible;
+  if(packet.runGeneration<current.runGeneration)return WorldContextCompatibility::Older;
+  if(packet.runGeneration>current.runGeneration)return WorldContextCompatibility::NewerRun;
   if(packet.roomGeneration<current.roomGeneration)return WorldContextCompatibility::Older;
   if(packet.roomGeneration>current.roomGeneration)return WorldContextCompatibility::NewerRoom;
   return packet.roomIndex==current.roomIndex?WorldContextCompatibility::Compatible:WorldContextCompatibility::Incompatible;
@@ -123,7 +125,7 @@ bool decodeEvent(const std::uint8_t* data,std::size_t size,PacketHeader& h,Gamep
   Reader r(data+HEADER_BYTES,h.payloadBytes);std::uint8_t type=0;
   event.eventId=h.sequence;event.authoritativeTick=h.tick;
   return readWorldContext(r,event.world)&&r.u8(type)&&
-    type<=static_cast<std::uint8_t>(GameplayEventType::ProjectileDespawned)&&
+    type<=static_cast<std::uint8_t>(GameplayEventType::PlayerDied)&&
     ((event.type=static_cast<GameplayEventType>(type)),true)&&
     r.u16(event.sourceEntityId)&&r.u16(event.targetEntityId)&&
     r.vec(event.position)&&r.vec(event.direction)&&r.u16(event.flags)&&r.done();
@@ -188,6 +190,19 @@ std::vector<GameplayEvent> deriveGameplayEvents(
   };
   for(std::size_t i=0;i<current.players.size();++i){
     const auto& before=previous.players[i];const auto& now=current.players[i];
+    const bool beforeDowned=(before.flags&8u)!=0;
+    const bool nowDowned=(now.flags&8u)!=0;
+    const bool beforeAlive=(before.flags&4u)!=0;
+    const bool nowAlive=(now.flags&4u)!=0;
+    if(before.active&&now.active&&!beforeDowned&&nowDowned)
+      append(GameplayEventType::PlayerDowned,static_cast<std::uint16_t>(i),
+             static_cast<std::uint16_t>(i),now.pos,{});
+    if(before.active&&now.active&&beforeDowned&&!nowDowned&&nowAlive)
+      append(GameplayEventType::PlayerRevived,static_cast<std::uint16_t>(i),
+             static_cast<std::uint16_t>(i),now.pos,{});
+    if(before.active&&beforeAlive&&now.active&&!nowAlive)
+      append(GameplayEventType::PlayerDied,static_cast<std::uint16_t>(i),
+             static_cast<std::uint16_t>(i),now.pos,{});
     if(now.active&&now.action==NetActionState::Vacuum&&
        before.action!=NetActionState::Vacuum)
       append(GameplayEventType::VacuumStarted,static_cast<std::uint16_t>(i),
@@ -531,16 +546,11 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   // or presentation time on the receiving client.
   const bool roomChanged=state.multiplayer.hasWorldSnapshot&&
     state.roomIndex!=s.roomIndex;
-  if(roomChanged){
-    state.multiplayer.localPredictionCorrection={};
-    state.multiplayer.hasWorldSnapshot=false;
-    state.vacuum=VacuumState{};
-    state.meleeVisual=MeleeVisualState{};
-    state.meleeComboWindow=0.0f;
-    state.energy.dischargeTimer=0.0f;
-    state.energy.dischargePositionAmount=0.0f;
-    for(auto& pending:state.pendingShots)pending=PendingShotState{};
-  }
+  const bool localRespawned=localPlayerId<MAX_PLAYERS&&
+    !state.player.alive&&(s.players[localPlayerId].flags&4u)!=0;
+  const bool runRestarted=state.multiplayer.hasWorldSnapshot&&
+    ((!state.started&&s.started)||(state.dead&&!s.dead)||localRespawned);
+  if(roomChanged||runRestarted)prepareForAuthoritativeWorldReplacement(state);
   state.roomIndex = s.roomIndex;
   state.roomSeed = s.roomSeed;
   state.requiredSouls = s.requiredSouls;
@@ -766,6 +776,17 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.age = a.age;
     b.rotationY = a.rotation;
   }
+}
+
+void prepareForAuthoritativeWorldReplacement(GameState& state){
+  state.multiplayer.localPredictionCorrection={};
+  state.multiplayer.hasWorldSnapshot=false;
+  state.vacuum=VacuumState{};
+  state.meleeVisual=MeleeVisualState{};
+  state.meleeComboWindow=0.0f;
+  state.energy.dischargeTimer=0.0f;
+  state.energy.dischargePositionAmount=0.0f;
+  for(auto& pending:state.pendingShots)pending=PendingShotState{};
 }
 
 namespace {

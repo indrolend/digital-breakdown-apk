@@ -43,6 +43,9 @@ const char* eventMarker(dbnet::GameplayEventType type){
     case Type::ProjectileSpawned:return "MULTIPLAYER_PROJECTILE_SPAWNED";
     case Type::ProjectileImpacted:return "MULTIPLAYER_PROJECTILE_IMPACTED";
     case Type::ProjectileDespawned:return "MULTIPLAYER_PROJECTILE_DESPAWNED";
+    case Type::PlayerDowned:return "MULTIPLAYER_PLAYER_DOWNED";
+    case Type::PlayerRevived:return "MULTIPLAYER_PLAYER_REVIVED";
+    case Type::PlayerDied:return "MULTIPLAYER_PLAYER_DIED";
   }
   return "MULTIPLAYER_EVENT";
 }
@@ -97,8 +100,16 @@ void DesktopMultiplayer::setWorldContext(const dbnet::NetworkWorldContext& world
 bool DesktopMultiplayer::acceptWorldContext(const dbnet::NetworkWorldContext& packet,const dbnet::PacketHeader& header,bool allowNewerRoom){
   const auto compatibility=dbnet::compareWorldContext(packet,worldContext_);
   if(compatibility==dbnet::WorldContextCompatibility::Compatible)return true;
-  if(allowNewerRoom&&compatibility==dbnet::WorldContextCompatibility::NewerRoom){setWorldContext(packet,"authoritative_room_rollover");return true;}
-  const char* reason=compatibility==dbnet::WorldContextCompatibility::Older?"older_room":compatibility==dbnet::WorldContextCompatibility::NewerRoom?"unexpected_newer_room":"incompatible_session_or_room";
+  if(allowNewerRoom&&(compatibility==dbnet::WorldContextCompatibility::NewerRoom||
+      compatibility==dbnet::WorldContextCompatibility::NewerRun)){
+    setWorldContext(packet,compatibility==dbnet::WorldContextCompatibility::NewerRun
+      ?"authoritative_run_restart":"authoritative_room_rollover");
+    return true;
+  }
+  const char* reason=compatibility==dbnet::WorldContextCompatibility::Older
+    ?"older_world":compatibility==dbnet::WorldContextCompatibility::NewerRoom
+    ?"unexpected_newer_room":compatibility==dbnet::WorldContextCompatibility::NewerRun
+    ?"unexpected_newer_run":"incompatible_session_or_room";
   if(header.type==dbnet::MessageType::Snapshot)++metrics_.staleSnapshotsRejected;
   if(header.type==dbnet::MessageType::Event)++metrics_.staleEventsRejected;
   std::printf("MULTIPLAYER_STALE_PACKET_REJECTED type=%u sequence=%u packet_session=%u packet_run=%u packet_room_generation=%u packet_room=%u current_session=%u current_run=%u current_room_generation=%u current_room=%u reason=%s\n",static_cast<unsigned>(header.type),header.sequence,packet.sessionId,packet.runGeneration,packet.roomGeneration,packet.roomIndex,worldContext_.sessionId,worldContext_.runGeneration,worldContext_.roomGeneration,worldContext_.roomIndex,reason);std::fflush(stdout);return false;
@@ -567,6 +578,15 @@ void DesktopMultiplayer::update(Game& game){
   }
   if(!connected_||!configuredGame_||phase_.load()!=dbmultiplayer::Phase::Playing)return;
   const GameState& state=game.state();
+  if(role_==Role::Host&&static_cast<std::uint32_t>(
+      std::max(0,state.frame))<lastSnapshotTick_){
+    auto next=worldContext_;
+    ++next.runGeneration;
+    next.roomGeneration=1;
+    next.roomIndex=static_cast<std::uint16_t>(std::max(0,state.roomIndex));
+    setWorldContext(next,"host_run_restart");
+    lastSnapshotTick_=0;
+  }
   const auto sendNow=steadyMilliseconds();
   if(role_==Role::Guest&&(lastInputSendMs_==0||sendNow-lastInputSendMs_>=16||state.input.commSignalPressed!=0)){
     lastInputSendMs_=sendNow;
