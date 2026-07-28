@@ -59,6 +59,10 @@ enum class WorldContextCompatibility : std::uint8_t {
 
 using InputCommand = PlayerCommand;
 
+enum class NetLocomotionState : std::uint8_t { Idle, Walking, Sprinting, Airborne, LedgeHang, LedgeMantle, Dead };
+enum class NetActionState : std::uint8_t { None, Melee, AirLunge, Vacuum, Discharge, DamageReaction, Grabbed, Revive };
+enum class NetActionPhase : std::uint8_t { None, Startup, Active, Contact, Recovery };
+
 struct PlayerSnapshot {
     bool active = false;
     std::uint8_t id = 0;
@@ -72,6 +76,12 @@ struct PlayerSnapshot {
     std::uint8_t souls = 0;
     std::uint8_t flags = 0;
     std::uint8_t actionFlags = 0;
+    NetLocomotionState locomotion = NetLocomotionState::Idle;
+    NetActionState action = NetActionState::None;
+    NetActionPhase actionPhase = NetActionPhase::None;
+    std::uint16_t actionSequence = 0;
+    std::uint16_t actionTargetId = 0xffffu;
+    float actionProgress = 0.0f;
     std::uint8_t storedSoulBruteMask = 0;
     std::int8_t airJumpsRemaining = 0;
     std::int8_t ledgeCollider = -1;

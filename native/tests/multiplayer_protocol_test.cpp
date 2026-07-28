@@ -56,6 +56,12 @@ int main() {
   players[1].airJumpsRemaining = 0;
   players[1].storedSoulBruteMask = 1;
   players[1].actionFlags = 1 | 2 | 4 | 16 | 32 | 64;
+  players[1].locomotion = NetLocomotionState::Airborne;
+  players[1].action = NetActionState::AirLunge;
+  players[1].actionPhase = NetActionPhase::Contact;
+  players[1].actionSequence = 12;
+  players[1].actionTargetId = 3;
+  players[1].actionProgress = 0.65f;
   players[1].ledgeCollider = 3;
   players[1].ledgeNormal = {1,0,0};
   players[1].ledgeMantleTimer = 0.18f;
@@ -125,6 +131,12 @@ int main() {
         std::abs(roundtrip.players[1].phoneOrientation.w -
                  world.players[1].phoneOrientation.w) < 0.0001f &&
         roundtrip.players[1].phoneActionState == 6 &&
+        roundtrip.players[1].locomotion == NetLocomotionState::Airborne &&
+        roundtrip.players[1].action == NetActionState::AirLunge &&
+        roundtrip.players[1].actionPhase == NetActionPhase::Contact &&
+        roundtrip.players[1].actionSequence == 12 &&
+        roundtrip.players[1].actionTargetId == 3 &&
+        std::abs(roundtrip.players[1].actionProgress - 0.65f) < 0.0001f &&
         std::abs(roundtrip.targets[0].animationTime - 4.25f) < 0.0001f &&
         roundtrip.targets[0].attackVariant == 3 &&
         std::abs(roundtrip.targets[0].attackDirection.x - 0.6f) < 0.0001f &&
@@ -186,6 +198,20 @@ int main() {
     combat.update(1.0f / 60.0f);
   ok &= combat.state().multiplayer.peers[1].player.battery < 95 &&
         std::abs(combat.state().player.battery - hostBattery) < 0.01f;
+  Game guestCombat;
+  guestCombat.reset();
+  guestCombat.configureNetworkGuest(1);
+  GameState& guestCombatState=guestCombat.networkMutableState();
+  for(auto& target:guestCombatState.targets)target.alive=false;
+  guestCombatState.targets[0]=TargetState{};
+  guestCombatState.targets[0].alive=true;
+  guestCombatState.targets[0].armor=2.0f;
+  guestCombatState.targets[0].pos=guestCombatState.player.pos+Vec3{0,0,-0.5f};
+  guestCombatState.meleeVisual.airLungeLandingPending=true;
+  guestCombatState.meleeVisual.locomotionLunge=true;
+  guestCombatState.meleeVisual.hitRadius=2.0f;
+  guestCombat.update(1.0f/60.0f);
+  ok &= std::abs(guestCombat.state().targets[0].armor-2.0f)<0.0001f;
   Game hostProgression;
   hostProgression.setPersistentProgression(0, 4, 3, 2);
   hostProgression.reset();
@@ -256,6 +282,11 @@ int main() {
         guestProgression.state().progression.permanent.revision > 0;
   if (!snapshotBytes.empty()) {
     const auto validSnapshot = snapshotBytes;
+    auto unknownAction=validSnapshot;
+    constexpr std::size_t firstPlayerActionOffset=20+14+153+15*48+50;
+    unknownAction[firstPlayerActionOffset]=0xff;
+    WorldSnapshot unknownActionWorld;
+    ok &= !decodeSnapshot(unknownAction.data(),unknownAction.size(),h,unknownActionWorld);
     for(std::size_t cut=0;cut<validSnapshot.size();cut+=std::max<std::size_t>(1,validSnapshot.size()/13)){
       std::vector<std::uint8_t> truncated(validSnapshot.begin(),validSnapshot.begin()+cut);
       WorldSnapshot invalid;

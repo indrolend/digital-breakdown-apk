@@ -1250,7 +1250,39 @@ void Game::setCommSignal(int signal) {
     if(signal<1||signal>4)return;
     state_.input.commSignalPressed=signal;
 }
-void Game::updateNetworkGuest(float dt){simulationPlayerId_=state_.multiplayer.localPlayerId;const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;state_.input.meleePressed=false;state_.input.shootPressed=false;updateInputActions(dt);state_.input.meleePressed=melee;state_.input.shootPressed=shoot;updatePlayer(dt);const Vec3 correctionStep=state_.multiplayer.localPredictionCorrection*std::min(1.0f,dt*NETWORK_LOCAL_CORRECTION_SMOOTHING_RATE);state_.player.pos+=correctionStep;state_.multiplayer.localPredictionCorrection-=correctionStep;for(auto& target:state_.targets)syncSoulVisual(target,state_.time);const bool vacuumBlocked=state_.player.ledgeHanging||state_.player.ledgeMantleTimer>0.0f||state_.meleeVisual.airLungeLandingPending||state_.meleeVisual.visualTimer>0.0f||state_.phonePose.doubleJumpVacuumPause>0.0f;state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1&&!vacuumBlocked;state_.vacuum.power=clampf(state_.vacuum.power+(state_.vacuum.active?2.4f:-3.2f)*dt,0,1);state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*std::min(1.0f,dt*10.0f);state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,0,state_.time,state_.camera.firstPerson);updatePhoneTransform();if(state_.meleeVisual.airLungeLandingPending)applyMeleeHits();updateCamera(dt);updateSoulLattices();updateCrosshair(dt);state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);state_.hud.storedSouls=state_.player.souls;state_.input.meleePressed=false;state_.input.shootPressed=false;simulationPlayerId_=0;}
+void Game::updateNetworkGuest(float dt){
+    simulationPlayerId_=state_.multiplayer.localPlayerId;
+    const bool melee=state_.input.meleePressed,shoot=state_.input.shootPressed;
+    state_.input.meleePressed=false;state_.input.shootPressed=false;
+    updateInputActions(dt);
+    state_.input.meleePressed=melee;state_.input.shootPressed=shoot;
+    updatePlayer(dt);
+    const Vec3 correctionStep=state_.multiplayer.localPredictionCorrection*
+        std::min(1.0f,dt*NETWORK_LOCAL_CORRECTION_SMOOTHING_RATE);
+    state_.player.pos+=correctionStep;
+    state_.multiplayer.localPredictionCorrection-=correctionStep;
+    for(auto& target:state_.targets)syncSoulVisual(target,state_.time);
+    const bool vacuumBlocked=state_.player.ledgeHanging||
+        state_.player.ledgeMantleTimer>0.0f||
+        state_.meleeVisual.airLungeLandingPending||
+        state_.meleeVisual.visualTimer>0.0f||
+        state_.phonePose.doubleJumpVacuumPause>0.0f;
+    state_.vacuum.active=(state_.input.primaryHeld||state_.input.touchPrimaryHeld)&&
+        state_.player.alive&&state_.player.battery>1&&!vacuumBlocked;
+    state_.vacuum.power=clampf(state_.vacuum.power+
+        (state_.vacuum.active?2.4f:-3.2f)*dt,0,1);
+    state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*
+        std::min(1.0f,dt*10.0f);
+    state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,
+        0,state_.time,state_.camera.firstPerson);
+    updatePhoneTransform();
+    // Prediction may show contact, but only the host mutates enemy outcomes.
+    updateCamera(dt);updateSoulLattices();updateCrosshair(dt);
+    state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0,1);
+    state_.hud.storedSouls=state_.player.souls;
+    state_.input.meleePressed=false;state_.input.shootPressed=false;
+    simulationPlayerId_=0;
+}
 
 void Game::updateInputActions(float dt) {
     InputState& input = state_.input;
@@ -2239,6 +2271,7 @@ void Game::triggerMelee() {
     state_.meleeComboWindow = MELEE_COMBO_WINDOW;
     state_.meleeCooldown = combo.cooldown/(1.0f+0.045f*static_cast<float>(lungeLevel)); state_.meleePose = 1.0f;
     MeleeVisualState& visual = state_.meleeVisual;
+    ++visual.actionSequence;
     const int attackLevel=upgradeLevel(UpgradeTrack::Attack);
     const float comboEscalation=airborne?1.0f:1.0f+0.035f*static_cast<float>(attackLevel*comboIndex);
     visual.comboIndex=comboIndex; visual.variant=combo.variant; visual.range=combo.range; visual.damage=combo.damage*(1.0f+0.07f*static_cast<float>(airborne?lungeLevel:attackLevel))*comboEscalation;

@@ -43,6 +43,9 @@ void writePlayer(Writer& w,const PlayerSnapshot& p){
   w.u8(p.active?1:0);w.u8(p.id);w.vec(p.pos);w.vec(p.vel);
   w.f32(p.yaw);w.f32(p.targetYaw);w.f32(p.pitch);w.f32(p.jumpVel);
   w.f32(p.battery);w.u8(p.souls);w.u8(p.flags);w.u8(p.actionFlags);
+  w.u8(static_cast<std::uint8_t>(p.locomotion));w.u8(static_cast<std::uint8_t>(p.action));
+  w.u8(static_cast<std::uint8_t>(p.actionPhase));w.u16(p.actionSequence);
+  w.u16(p.actionTargetId);w.f32(p.actionProgress);
   w.u8(p.storedSoulBruteMask);w.i8(p.airJumpsRemaining);w.i8(p.ledgeCollider);
   w.vec(p.ledgeNormal);w.f32(p.ledgeHangTime);w.f32(p.ledgeMantleTimer);
   w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.f32(p.vacuumFieldStrength);
@@ -59,10 +62,14 @@ void writePlayer(Writer& w,const PlayerSnapshot& p){
   w.u8(p.commSignal);w.f32(p.commSignalTimer);
 }
 bool readPlayer(Reader& r,PlayerSnapshot& p){
-  std::uint8_t active=0;
+  std::uint8_t active=0,locomotion=0,action=0,phase=0;
   return r.u8(active)&&((p.active=active!=0),true)&&r.u8(p.id)&&r.vec(p.pos)&&r.vec(p.vel)&&
     r.f32(p.yaw)&&r.f32(p.targetYaw)&&r.f32(p.pitch)&&r.f32(p.jumpVel)&&
     r.f32(p.battery)&&r.u8(p.souls)&&r.u8(p.flags)&&r.u8(p.actionFlags)&&
+    r.u8(locomotion)&&locomotion<=static_cast<std::uint8_t>(NetLocomotionState::Dead)&&((p.locomotion=static_cast<NetLocomotionState>(locomotion)),true)&&
+    r.u8(action)&&action<=static_cast<std::uint8_t>(NetActionState::Revive)&&((p.action=static_cast<NetActionState>(action)),true)&&
+    r.u8(phase)&&phase<=static_cast<std::uint8_t>(NetActionPhase::Recovery)&&((p.actionPhase=static_cast<NetActionPhase>(phase)),true)&&
+    r.u16(p.actionSequence)&&r.u16(p.actionTargetId)&&r.f32(p.actionProgress)&&
     r.u8(p.storedSoulBruteMask)&&r.i8(p.airJumpsRemaining)&&r.i8(p.ledgeCollider)&&
     r.vec(p.ledgeNormal)&&r.f32(p.ledgeHangTime)&&r.f32(p.ledgeMantleTimer)&&
     r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.f32(p.vacuumFieldStrength)&&
@@ -234,6 +241,28 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
     out.actionFlags=(player.ledgeHanging?1:0)|(vacuum.active?2:0)|(energy.supplementalActive?4:0)|
       (melee.airLungePending?8:0)|(melee.airLungeLandingPending?16:0)|
       (melee.locomotionLunge?32:0)|(melee.visualHit?64:0);
+    const float speed=horizontalLength(player.vel);
+    out.locomotion=!player.alive?NetLocomotionState::Dead:
+      player.ledgeMantleTimer>0?NetLocomotionState::LedgeMantle:
+      player.ledgeHanging?NetLocomotionState::LedgeHang:
+      !player.grounded?NetLocomotionState::Airborne:
+      speed>4.0f?NetLocomotionState::Sprinting:
+      speed>0.05f?NetLocomotionState::Walking:NetLocomotionState::Idle;
+    out.action=player.grabbedByTarget>=0?NetActionState::Grabbed:
+      player.downed?NetActionState::DamageReaction:
+      melee.locomotionLunge?NetActionState::AirLunge:
+      melee.visualTimer>0?NetActionState::Melee:
+      energy.dischargeTimer>0?NetActionState::Discharge:
+      vacuum.active?NetActionState::Vacuum:NetActionState::None;
+    out.actionPhase=out.action==NetActionState::None?NetActionPhase::None:
+      melee.visualHit?NetActionPhase::Contact:
+      melee.visualTimer>melee.visualDuration*0.7f?NetActionPhase::Startup:
+      melee.visualTimer>0?NetActionPhase::Active:
+      player.downed?NetActionPhase::Recovery:NetActionPhase::Active;
+    out.actionSequence=melee.actionSequence;
+    out.actionTargetId=vacuum.target>=0?static_cast<std::uint16_t>(vacuum.target):0xffffu;
+    out.actionProgress=melee.visualDuration>0?clampf(1.0f-melee.visualTimer/melee.visualDuration,0.0f,1.0f):
+      std::max(vacuum.pose,energy.dischargePositionAmount);
     for(int i=0;i<PHONE_CAPACITY;++i)if(player.storedSoulBrute[i])out.storedSoulBruteMask|=static_cast<std::uint8_t>(1u<<i);
     out.airJumpsRemaining=static_cast<std::int8_t>(player.airJumpsRemaining);
     out.ledgeCollider=static_cast<std::int8_t>(player.ledgeCollider);
@@ -421,6 +450,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.meleeVisual.airLungeLandingPending=(p.actionFlags&16)!=0;
         state.meleeVisual.locomotionLunge=(p.actionFlags&32)!=0;state.meleeVisual.visualHit=(p.actionFlags&64)!=0;
         state.meleeVisual.variant=p.meleeVariant;state.meleeVisual.comboIndex=p.meleeComboIndex;
+        state.meleeVisual.actionSequence=p.actionSequence;
         state.meleeVisual.direction=p.meleeDirection;state.meleeVisual.airLungeRotation=p.airLungeRotation;
         state.meleeVisual.landingRecovery=p.landingRecovery;
         state.energy.dischargePositionAmount = p.dischargeAmount;
@@ -462,6 +492,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.meleeVisual.airLungeLandingPending=(p.actionFlags&16)!=0;
         peer.meleeVisual.locomotionLunge=(p.actionFlags&32)!=0;peer.meleeVisual.visualHit=(p.actionFlags&64)!=0;
         peer.meleeVisual.variant=p.meleeVariant;peer.meleeVisual.comboIndex=p.meleeComboIndex;
+        peer.meleeVisual.actionSequence=p.actionSequence;
         peer.meleeVisual.direction=p.meleeDirection;peer.meleeVisual.airLungeRotation=p.airLungeRotation;
         peer.meleeVisual.landingRecovery=p.landingRecovery;
         peer.energy.dischargePositionAmount = p.dischargeAmount;

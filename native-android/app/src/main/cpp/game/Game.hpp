@@ -448,6 +448,7 @@ struct PhoneTransformState {
 };
 
 struct MeleeVisualState {
+    unsigned short actionSequence = 0;
     float visualTimer = 0.0f;
     float visualDuration = 0.20f;
     float dashTimer = 0.0f;
