@@ -112,7 +112,10 @@ target_include_directories(
 )
 
 target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
-target_compile_definitions(DigitalBreakdown PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(DigitalBreakdown PRIVATE
+    GLFW_INCLUDE_NONE
+    DB_BUILD_CONFIGURATION="$<CONFIG>"
+)
 
 target_link_libraries(
     DigitalBreakdown

@@ -12,6 +12,7 @@ struct BuildIdentity {
     int saveFormatVersion = 0;
     std::string platform;
     std::string architecture;
+    std::string buildConfiguration;
     std::string buildTime;
     std::string channel;
 };

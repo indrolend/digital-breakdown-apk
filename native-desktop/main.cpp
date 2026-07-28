@@ -674,10 +674,28 @@ void printUsage() {
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
     std::printf("  --controller-test    Print connected controller state once and exit.\n");
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
+    std::printf("  --build-identity-json    Print machine-readable build identity and exit.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --net-latency-ms N --net-jitter-ms N  Enable explicit deterministic network impairment.\n");
     std::printf("  --net-drop-snapshot-every N --net-drop-input-every N --net-seed N\n");
+}
+
+void printBuildIdentityJson() {
+    const BuildIdentity& identity = desktopBuildIdentity();
+    std::printf(
+        "{\"commit\":\"%s\",\"commit_short\":\"%s\",\"protocol\":%u,"
+        "\"gameplay\":%u,\"save_format\":%d,\"platform\":\"%s\","
+        "\"architecture\":\"%s\",\"configuration\":\"%s\"}\n",
+        identity.commit.c_str(),
+        identity.commitShort.c_str(),
+        static_cast<unsigned int>(identity.protocolVersion),
+        static_cast<unsigned int>(identity.gameplayVersion),
+        identity.saveFormatVersion,
+        identity.platform.c_str(),
+        identity.architecture.c_str(),
+        identity.buildConfiguration.c_str()
+    );
 }
 
 bool near(float a, float b, float eps = 0.025f) {
@@ -854,6 +872,10 @@ int runControllerLiveTest(){
 }
 
 int main(int argc, char** argv) {
+    if (hasArg(argc, argv, "--build-identity-json")) {
+        printBuildIdentityJson();
+        return 0;
+    }
     if (hasArg(argc, argv, "--help") || hasArg(argc, argv, "-h")) {
         printUsage();
         return 0;

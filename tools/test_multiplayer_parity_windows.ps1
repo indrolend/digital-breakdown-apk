@@ -14,6 +14,8 @@ param(
     [int]$RepeatCount = 1,
     [ValidateRange(0, 86400)]
     [int]$MaximumDurationSeconds = 0,
+    [ValidateSet("Host", "Guest")]
+    [string]$TerminationRole = "Host",
     [switch]$KeepLogs
 )
 
@@ -33,7 +35,7 @@ if ($RepeatCount -gt 1) {
             "-Exe", $Exe, "-ServiceUrl", $ServiceUrl, "-TimeoutSeconds", $TimeoutSeconds,
             "-NetLatencyMs", $NetLatencyMs, "-NetJitterMs", $NetJitterMs,
             "-DropSnapshotEvery", $DropSnapshotEvery, "-DropInputEvery", $DropInputEvery,
-            "-NetSeed", $iterationSeed
+            "-NetSeed", $iterationSeed, "-TerminationRole", $TerminationRole
         )
         if ($KeepLogs) { $arguments += "-KeepLogs" }
         $sessionOutput = & powershell.exe @arguments 2>&1
@@ -216,14 +218,25 @@ try {
         -not (Log-Contains $guestLog 'MULTIPLAYER_MOUSE_CAPTURE_RESTORED')) { Fail-Parity "independent pause/resume diagnostics missing" }
     if ($hostProcess.HasExited -or $guestProcess.HasExited) { Fail-Parity "process exited before host-departure stage" }
 
-    $stage = "host-departure"
-    & "$env:SystemRoot\System32\taskkill.exe" /PID $hostProcess.Id /T /F 2>$null | Out-Null
-    $hostProcess = $null
-    $deadline = (Get-Date).AddSeconds(8)
-    while ((Get-Date) -lt $deadline -and -not (Log-Contains $guestLog 'MULTIPLAYER_HOST_LEFT')) {
-        Start-Sleep -Milliseconds 100
+    if ($TerminationRole -eq "Host") {
+        $stage = "host-departure"
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $hostProcess.Id /T /F 2>$null | Out-Null
+        $hostProcess = $null
+        $deadline = (Get-Date).AddSeconds(8)
+        while ((Get-Date) -lt $deadline -and -not (Log-Contains $guestLog 'MULTIPLAYER_HOST_LEFT')) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not (Log-Contains $guestLog 'MULTIPLAYER_HOST_LEFT')) { Fail-Parity "guest did not reach stable host-left state" }
+    } else {
+        $stage = "guest-departure"
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $guestProcess.Id /T /F 2>$null | Out-Null
+        $guestProcess = $null
+        $deadline = (Get-Date).AddSeconds(8)
+        while ((Get-Date) -lt $deadline -and -not (Log-Contains $hostLog 'MULTIPLAYER_PLAYER_LEFT player=1')) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not (Log-Contains $hostLog 'MULTIPLAYER_PLAYER_LEFT player=1')) { Fail-Parity "host did not deactivate departing guest" }
     }
-    if (-not (Log-Contains $guestLog 'MULTIPLAYER_HOST_LEFT')) { Fail-Parity "guest did not reach stable host-left state" }
 
     Write-Host "MULTIPLAYER_PARITY_OK room=$room"
     Write-Host "MULTIPLAYER_SCENARIO_RESULT name=melee transport=ok presentation=$combatPresentation durable=ok convergence=ok"
@@ -232,6 +245,7 @@ try {
     Write-Host "MULTIPLAYER_COMBAT_PARITY_OK room=$room action=confirmed enemy=0"
     Write-Host "MULTIPLAYER_VACUUM_PARITY_OK room=$room target=1"
     Write-Host "MULTIPLAYER_DISCHARGE_PARITY_OK room=$room projectile=0"
+    Write-Host "MULTIPLAYER_DISCONNECT_OK role=$($TerminationRole.ToLowerInvariant()) room=$room"
     $maximumGap = 0
     foreach ($match in (Select-String -Path $guestLog -Pattern 'MULTIPLAYER_SNAPSHOT_GAP duration_ms=(\d+)')) {
         $maximumGap = [Math]::Max($maximumGap, [int]$match.Matches[0].Groups[1].Value)
