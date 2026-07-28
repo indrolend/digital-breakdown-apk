@@ -15,6 +15,13 @@
 
 class DesktopMultiplayer {
 public:
+    struct MultiplayerMetrics {
+        std::uint64_t snapshotsReceived=0,staleSnapshotsRejected=0;
+        std::uint64_t eventsReceived=0,duplicateEventsRejected=0,staleEventsRejected=0;
+        std::uint64_t predictedActions=0,confirmedActions=0,correctedActions=0,cancelledActions=0;
+        std::uint64_t hashMatches=0,hashMismatches=0;
+        float maximumPositionCorrection=0,maximumActionPhaseCorrection=0;
+    };
     enum class Role { Offline, Host, Guest };
     DesktopMultiplayer() = default;
     ~DesktopMultiplayer();
@@ -26,6 +33,7 @@ public:
     void applyPresentation(GameState& renderState) const;
     void configureImpairment(int latencyMs,int jitterMs,int dropSnapshotEvery,
                              int dropInputEvery,std::uint32_t seed);
+    void printMetrics() const;
     Role role() const { return role_.load(); }
     bool connected() const { return connected_.load(); }
     dbmultiplayer::Phase phase() const { return phase_.load(); }
@@ -71,6 +79,8 @@ private:
     std::uint32_t nextEventId_=0;
     int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
     std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
+    MultiplayerMetrics metrics_{};
+    std::uint16_t lastPredictedButtons_=0;
     bool acceptWorldContext(const dbnet::NetworkWorldContext& packet,
                             const dbnet::PacketHeader& header,
                             bool allowNewerRoom);

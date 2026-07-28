@@ -1005,6 +1005,7 @@ int main(int argc, char** argv) {
     int captureFrames=0;
     bool multiplayerAutoStartIssued=false;
     int multiplayerParityFrame=0;
+    bool multiplayerMetricsPrinted=false;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
@@ -1081,6 +1082,10 @@ int main(int argc, char** argv) {
                           remote.player.pos.z,remote.player.yaw,remote.phonePose.actionState);
                         std::fflush(stdout);
                     }
+                }
+                if(!multiplayerMetricsPrinted&&multiplayerParityFrame>=150){
+                    host.multiplayer.printMetrics();
+                    multiplayerMetricsPrinted=true;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

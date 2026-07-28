@@ -128,6 +128,11 @@ try {
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_ACTION_CONFIRMED')) { Fail-Parity "guest action remained unconfirmed" }
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_HIT_CONFIRMED')) { Fail-Parity "guest missed authoritative hit event" }
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_SHELL_BROKEN')) { Fail-Parity "guest missed shell-break event" }
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline -and -not (Log-Contains $guestLog 'MULTIPLAYER_METRICS')) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_METRICS .*hash_matches=[1-9]')) { Fail-Parity "structured metrics summary missing converged hashes" }
 
     $stage = "pause-resume"
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
