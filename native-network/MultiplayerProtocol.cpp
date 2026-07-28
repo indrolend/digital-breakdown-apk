@@ -123,7 +123,7 @@ bool decodeEvent(const std::uint8_t* data,std::size_t size,PacketHeader& h,Gamep
   Reader r(data+HEADER_BYTES,h.payloadBytes);std::uint8_t type=0;
   event.eventId=h.sequence;event.authoritativeTick=h.tick;
   return readWorldContext(r,event.world)&&r.u8(type)&&
-    type<=static_cast<std::uint8_t>(GameplayEventType::SoulEmergenceStarted)&&
+    type<=static_cast<std::uint8_t>(GameplayEventType::ProjectileDespawned)&&
     ((event.type=static_cast<GameplayEventType>(type)),true)&&
     r.u16(event.sourceEntityId)&&r.u16(event.targetEntityId)&&
     r.vec(event.position)&&r.vec(event.direction)&&r.u16(event.flags)&&r.done();

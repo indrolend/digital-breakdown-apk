@@ -134,6 +134,39 @@ try {
     }
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_METRICS .*hash_matches=[1-9]')) { Fail-Parity "structured metrics summary missing converged hashes" }
 
+    $stage = "vacuum-capture"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline -and
+           (-not (Log-Contains $guestLog 'MULTIPLAYER_VACUUM_PREDICTED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_VACUUM_CONFIRMED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_ATTRACTED .*target=1') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_LATCHED .*target=1') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_INGESTING .*target=1') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_STORED .*target=1'))) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_VACUUM_PREDICTED')) { Fail-Parity "guest vacuum startup was not predicted" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_VACUUM_CONFIRMED')) { Fail-Parity "host never confirmed guest vacuum" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_ATTRACTED .*target=1')) { Fail-Parity "attraction transition missing" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_LATCHED .*target=1')) { Fail-Parity "latch transition missing" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_INGESTING .*target=1')) { Fail-Parity "ingestion transition missing" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_SOUL_STORED .*target=1')) { Fail-Parity "stored-soul completion missing" }
+
+    $stage = "discharge-projectile"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline -and
+           (-not (Log-Contains $guestLog 'MULTIPLAYER_DISCHARGE_PREDICTED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_DISCHARGE_CONFIRMED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_PROJECTILE_SPAWNED') -or
+            -not (Log-Contains $guestLog 'MULTIPLAYER_PROJECTILE_(IMPACTED|DESPAWNED)'))) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_DISCHARGE_PREDICTED')) { Fail-Parity "guest discharge startup was not predicted" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_DISCHARGE_CONFIRMED')) { Fail-Parity "host never confirmed guest discharge" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_PROJECTILE_SPAWNED')) { Fail-Parity "authoritative projectile spawn missing" }
+    if (-not (Log-Contains $guestLog 'MULTIPLAYER_PROJECTILE_(IMPACTED|DESPAWNED)')) { Fail-Parity "authoritative projectile completion missing" }
+    if ((Common-HashCount) -lt 6) { Fail-Parity "authoritative hashes did not reconverge after discharge" }
+
     $stage = "pause-resume"
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline -and
@@ -159,6 +192,8 @@ try {
 
     Write-Host "MULTIPLAYER_PARITY_OK room=$room"
     Write-Host "MULTIPLAYER_COMBAT_PARITY_OK room=$room action=confirmed enemy=0"
+    Write-Host "MULTIPLAYER_VACUUM_PARITY_OK room=$room target=1"
+    Write-Host "MULTIPLAYER_DISCHARGE_PARITY_OK room=$room projectile=0"
     Write-Host "Host log: $hostLog"
     Write-Host "Guest log: $guestLog"
 }

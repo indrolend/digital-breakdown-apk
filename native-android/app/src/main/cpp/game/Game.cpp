@@ -1273,8 +1273,21 @@ void Game::updateNetworkGuest(float dt){
         (state_.vacuum.active?2.4f:-3.2f)*dt,0,1);
     state_.vacuum.pose+=((state_.vacuum.active?1.0f:0.0f)-state_.vacuum.pose)*
         std::min(1.0f,dt*10.0f);
+    state_.vacuum.fieldStrength+=((state_.vacuum.active?1.0f:0.0f)-
+        state_.vacuum.fieldStrength)*std::min(1.0f,dt*5.0f);
+    if(shoot&&state_.player.souls>0&&!state_.vacuum.active)
+        state_.energy.dischargeTimer=std::max(state_.energy.dischargeTimer,0.34f);
+    else
+        state_.energy.dischargeTimer=std::max(0.0f,state_.energy.dischargeTimer-dt);
+    state_.energy.dischargePositionAmount+=
+        ((state_.energy.dischargeTimer>0.0f?1.0f:0.0f)-
+         state_.energy.dischargePositionAmount)*std::min(1.0f,dt*12.0f);
     state_.phoneVisual=makePhoneVisualState(state_.vacuum.pose,state_.vacuum.power,
         0,state_.time,state_.camera.firstPerson);
+    const float phoneActionAmount=std::max(state_.vacuum.pose,
+        state_.energy.dischargePositionAmount);
+    state_.phoneVisual.actionLift=phoneActionAmount*0.65f;
+    state_.phoneVisual.actionForward=phoneActionAmount*0.25f;
     updatePhoneTransform();
     // Prediction may show contact, but only the host mutates enemy outcomes.
     updateCamera(dt);updateSoulLattices();updateCrosshair(dt);

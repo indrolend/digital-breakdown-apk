@@ -26,6 +26,26 @@ bool crack(const std::string& value,UrlParts& out){const std::wstring w=wide(val
 #endif
 const char* roleName(DesktopMultiplayer::Role role){return role==DesktopMultiplayer::Role::Host?"host":role==DesktopMultiplayer::Role::Guest?"guest":"offline";}
 std::int64_t steadyMilliseconds(){return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
+const char* eventMarker(dbnet::GameplayEventType type){
+  using Type=dbnet::GameplayEventType;
+  switch(type){
+    case Type::PlayerActionStarted:return "MULTIPLAYER_ACTION_STARTED";
+    case Type::PlayerActionContact:return "MULTIPLAYER_ACTION_CONTACT";
+    case Type::EnemyHitConfirmed:return "MULTIPLAYER_HIT_CONFIRMED";
+    case Type::EnemyShellBroken:return "MULTIPLAYER_SHELL_BROKEN";
+    case Type::SoulEmergenceStarted:return "MULTIPLAYER_SOUL_EMERGED";
+    case Type::VacuumStarted:return "MULTIPLAYER_VACUUM_CONFIRMED";
+    case Type::SoulAttractionStarted:return "MULTIPLAYER_SOUL_ATTRACTED";
+    case Type::SoulLatched:return "MULTIPLAYER_SOUL_LATCHED";
+    case Type::SoulIngestionStarted:return "MULTIPLAYER_SOUL_INGESTING";
+    case Type::SoulCaptureCompleted:return "MULTIPLAYER_SOUL_STORED";
+    case Type::DischargeStarted:return "MULTIPLAYER_DISCHARGE_CONFIRMED";
+    case Type::ProjectileSpawned:return "MULTIPLAYER_PROJECTILE_SPAWNED";
+    case Type::ProjectileImpacted:return "MULTIPLAYER_PROJECTILE_IMPACTED";
+    case Type::ProjectileDespawned:return "MULTIPLAYER_PROJECTILE_DESPAWNED";
+  }
+  return "MULTIPLAYER_EVENT";
+}
 #ifdef _WIN32
 std::string readResponse(HINTERNET request){std::string response;DWORD available=0;while(WinHttpQueryDataAvailable(request,&available)&&available){const std::size_t old=response.size();response.resize(old+available);DWORD read=0;if(!WinHttpReadData(request,response.data()+old,available,&read)){response.resize(old);break;}response.resize(old+read);}return response;}
 #endif
@@ -68,6 +88,8 @@ void DesktopMultiplayer::begin(Role role,const std::string& service,const std::s
 void DesktopMultiplayer::setWorldContext(const dbnet::NetworkWorldContext& world,const char* reason){
   worldContext_=world;lastSnapshotSequence_=0;lastInputSequence_.fill(0);snapshotInterpolator_.reset();
   eventTracker_.reset(world);hasPreviousEventWorld_=false;nextEventId_=0;
+  projectileSources_.fill(0);
+  lastDischargeSource_=0;
   std::printf("MULTIPLAYER_WORLD_CONTEXT_CHANGED reason=%s session=%u run=%u room_generation=%u room=%u\n",reason,world.sessionId,world.runGeneration,world.roomGeneration,world.roomIndex);
   std::printf("MULTIPLAYER_ROOM_GENERATION_RESET generation=%u room=%u\n",world.roomGeneration,world.roomIndex);std::fflush(stdout);
 }
@@ -84,16 +106,17 @@ bool DesktopMultiplayer::acceptWorldContext(const dbnet::NetworkWorldContext& pa
 
 void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
   if(!hasPreviousEventWorld_){previousEventWorld_=world;hasPreviousEventWorld_=true;return;}
-  auto emit=[&](dbnet::GameplayEventType type,std::uint16_t source,std::uint16_t target,const Vec3& position,const Vec3& direction){
+  auto emit=[&](dbnet::GameplayEventType type,std::uint16_t source,
+                std::uint16_t target,const Vec3& position,
+                const Vec3& direction,std::uint16_t flags=0){
     dbnet::GameplayEvent event;event.world=world.world;event.authoritativeTick=world.tick;
     event.eventId=++nextEventId_;event.type=type;event.sourceEntityId=source;
     event.targetEntityId=target;event.position=position;event.direction=direction;
+    event.flags=flags;
     sendBinary(dbnet::encodeEvent(0,event));
-    const char* marker=type==dbnet::GameplayEventType::PlayerActionStarted?"MULTIPLAYER_ACTION_STARTED":
-      type==dbnet::GameplayEventType::PlayerActionContact?"MULTIPLAYER_ACTION_CONTACT":
-      type==dbnet::GameplayEventType::EnemyHitConfirmed?"MULTIPLAYER_HIT_CONFIRMED":
-      type==dbnet::GameplayEventType::EnemyShellBroken?"MULTIPLAYER_SHELL_BROKEN":"MULTIPLAYER_SOUL_EMERGED";
-    std::printf("%s event=%u source=%u target=%u tick=%u\n",marker,event.eventId,source,target,event.authoritativeTick);std::fflush(stdout);
+    std::printf("%s event=%u source=%u target=%u tick=%u flags=%u\n",
+      eventMarker(type),event.eventId,source,target,event.authoritativeTick,flags);
+    std::fflush(stdout);
   };
   for(std::size_t i=0;i<world.players.size();++i){
     const auto& before=previousEventWorld_.players[i];const auto& now=world.players[i];
@@ -101,12 +124,72 @@ void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
       emit(dbnet::GameplayEventType::PlayerActionStarted,static_cast<std::uint16_t>(i),now.actionTargetId,now.pos,now.meleeDirection);
     if(now.active&&now.actionPhase==dbnet::NetActionPhase::Contact&&before.actionPhase!=dbnet::NetActionPhase::Contact)
       emit(dbnet::GameplayEventType::PlayerActionContact,static_cast<std::uint16_t>(i),now.actionTargetId,now.pos,now.meleeDirection);
+    if(now.active&&now.action==dbnet::NetActionState::Vacuum&&
+       before.action!=dbnet::NetActionState::Vacuum)
+      emit(dbnet::GameplayEventType::VacuumStarted,static_cast<std::uint16_t>(i),
+           now.actionTargetId,now.pos,now.meleeDirection);
+    if(now.active&&now.action==dbnet::NetActionState::Discharge&&
+       before.action!=dbnet::NetActionState::Discharge){
+      lastDischargeSource_=static_cast<std::uint16_t>(i);
+      emit(dbnet::GameplayEventType::DischargeStarted,static_cast<std::uint16_t>(i),
+           0xffffu,now.pos,now.meleeDirection);
+    }
+    if(now.active&&now.souls<before.souls)
+      lastDischargeSource_=static_cast<std::uint16_t>(i);
   }
   for(std::size_t i=0;i<world.targets.size();++i){
     const auto& before=previousEventWorld_.targets[i];const auto& now=world.targets[i];
     if(now.armor<before.armor)emit(dbnet::GameplayEventType::EnemyHitConfirmed,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
     if((before.flags&2u)==0&&(now.flags&2u)!=0)emit(dbnet::GameplayEventType::EnemyShellBroken,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
     if(before.soulMorph<=0.0f&&now.soulMorph>0.0f)emit(dbnet::GameplayEventType::SoulEmergenceStarted,0,static_cast<std::uint16_t>(i),now.pos,now.vel);
+    const bool wasCaptureCandidate=(before.flags&(2u|8u|16u))!=0||
+      before.ingest>0.0f;
+    const bool captureCompleted=wasCaptureCandidate&&(before.flags&1u)!=0&&
+      (now.flags&1u)==0;
+    const bool attractionStarted=before.soulState==SoulState::Free&&
+      (now.soulState==SoulState::Attracted||
+       now.soulState==SoulState::Latched||
+       now.soulState==SoulState::Ingesting||captureCompleted);
+    const bool latchStarted=before.soulState!=SoulState::Latched&&
+      before.soulState!=SoulState::Ingesting&&
+      (now.soulState==SoulState::Latched||
+       now.soulState==SoulState::Ingesting||captureCompleted);
+    const bool ingestionStarted=before.soulState!=SoulState::Ingesting&&
+      (now.soulState==SoulState::Ingesting||captureCompleted);
+    const auto source=static_cast<std::uint16_t>(std::max(0,
+      static_cast<int>(captureCompleted?before.ownerPlayerId:
+                       now.ownerPlayerId)));
+    if(attractionStarted)
+      emit(dbnet::GameplayEventType::SoulAttractionStarted,
+           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(latchStarted)
+      emit(dbnet::GameplayEventType::SoulLatched,
+           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(ingestionStarted)
+      emit(dbnet::GameplayEventType::SoulIngestionStarted,
+           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(captureCompleted)
+      emit(dbnet::GameplayEventType::SoulCaptureCompleted,
+           source,static_cast<std::uint16_t>(i),before.pos,before.vel);
+  }
+  bool durableProjectileOutcome=false;
+  for(std::size_t i=0;i<world.captures.size();++i)
+    durableProjectileOutcome|=!previousEventWorld_.captures[i]&&world.captures[i];
+  for(std::size_t i=0;i<world.targets.size();++i)
+    durableProjectileOutcome|=world.targets[i].armor<previousEventWorld_.targets[i].armor;
+  for(std::size_t i=0;i<world.bullets.size();++i){
+    const auto& before=previousEventWorld_.bullets[i];const auto& now=world.bullets[i];
+    if(!before.active&&now.active){
+      projectileSources_[i]=lastDischargeSource_;
+      emit(dbnet::GameplayEventType::ProjectileSpawned,lastDischargeSource_,
+           static_cast<std::uint16_t>(i),now.pos,normalized(now.vel),
+           now.brute?1u:0u);
+    }
+    if(before.active&&!now.active)
+      emit(durableProjectileOutcome?dbnet::GameplayEventType::ProjectileImpacted:
+           dbnet::GameplayEventType::ProjectileDespawned,projectileSources_[i],
+           static_cast<std::uint16_t>(i),before.pos,normalized(before.vel),
+           before.brute?1u:0u);
   }
   previousEventWorld_=world;
 }
@@ -532,11 +615,12 @@ void DesktopMultiplayer::update(Game& game){
           ++metrics_.duplicateEventsRejected;
           std::printf("MULTIPLAYER_EVENT_REJECTED event=%u reason=duplicate_or_out_of_order\n",event.eventId);std::fflush(stdout);continue;
         }
-        const char* marker=event.type==dbnet::GameplayEventType::PlayerActionStarted?"MULTIPLAYER_ACTION_CONFIRMED":
-          event.type==dbnet::GameplayEventType::PlayerActionContact?"MULTIPLAYER_ACTION_CONTACT":
-          event.type==dbnet::GameplayEventType::EnemyHitConfirmed?"MULTIPLAYER_HIT_CONFIRMED":
-          event.type==dbnet::GameplayEventType::EnemyShellBroken?"MULTIPLAYER_SHELL_BROKEN":"MULTIPLAYER_SOUL_EMERGED";
-        if(event.type==dbnet::GameplayEventType::PlayerActionStarted)++metrics_.confirmedActions;
+        const char* marker=event.type==dbnet::GameplayEventType::PlayerActionStarted
+          ?"MULTIPLAYER_ACTION_CONFIRMED":eventMarker(event.type);
+        if(event.type==dbnet::GameplayEventType::PlayerActionStarted||
+           event.type==dbnet::GameplayEventType::VacuumStarted||
+           event.type==dbnet::GameplayEventType::DischargeStarted)
+          ++metrics_.confirmedActions;
         std::printf("%s event=%u source=%u target=%u tick=%u\n",marker,event.eventId,event.sourceEntityId,event.targetEntityId,event.authoritativeTick);std::fflush(stdout);
       }
     }else if(role_==Role::Guest&&header.type==dbnet::MessageType::Snapshot){
@@ -557,7 +641,11 @@ void DesktopMultiplayer::update(Game& game){
   if(role_==Role::Guest&&(lastInputSendMs_==0||sendNow-lastInputSendMs_>=16||state.input.commSignalPressed!=0)){
     lastInputSendMs_=sendNow;
     const PlayerCommand input=game.capturePlayerCommand(++outgoingSequence_,++localInputTick_);
-    if((input.buttons&CommandMelee)!=0&&(lastPredictedButtons_&CommandMelee)==0)++metrics_.predictedActions;
+    constexpr std::uint16_t predictedActionButtons=
+      CommandVacuum|CommandMelee|CommandShoot;
+    if((input.buttons&predictedActionButtons)!=0&&
+       (lastPredictedButtons_&predictedActionButtons)==0)
+      ++metrics_.predictedActions;
     lastPredictedButtons_=input.buttons;
     sendBinary(dbnet::encodeInput(static_cast<std::uint8_t>(playerId_.load()),worldContext_,input));
   }

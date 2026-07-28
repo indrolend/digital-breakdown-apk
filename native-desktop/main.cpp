@@ -1006,12 +1006,31 @@ int main(int argc, char** argv) {
     bool multiplayerAutoStartIssued=false;
     int multiplayerParityFrame=0;
     bool multiplayerMetricsPrinted=false;
+    bool multiplayerVacuumPredicted=false;
+    bool multiplayerDischargeIssued=false;
+    int multiplayerSoulStoredFrame=-1;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
-               host.multiplayer.role()==DesktopMultiplayer::Role::Guest&&
-               multiplayerParityFrame>=129&&multiplayerParityFrame<189){
-                host.game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
+               host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
+                const bool melee=multiplayerParityFrame>=129&&multiplayerParityFrame<189;
+                const bool vacuum=multiplayerParityFrame>=199&&
+                    host.game.state().player.souls==0;
+                if(host.game.state().player.souls>0&&multiplayerSoulStoredFrame<0)
+                    multiplayerSoulStoredFrame=multiplayerParityFrame;
+                const int dischargeAge=multiplayerSoulStoredFrame<0?0:
+                    multiplayerParityFrame-multiplayerSoulStoredFrame;
+                const bool shoot=multiplayerSoulStoredFrame>=0&&
+                    host.game.state().player.souls>0&&dischargeAge>=10&&
+                    dischargeAge%20==10;
+                host.game.setTouchControls(0,0,0,0,vacuum,false,false,melee,
+                                           shoot,false);
+                if(shoot&&!multiplayerDischargeIssued){
+                    multiplayerDischargeIssued=true;
+                    std::printf("MULTIPLAYER_DISCHARGE_PREDICTED frame=%d\n",
+                                multiplayerParityFrame);
+                    std::fflush(stdout);
+                }
             }
             host.multiplayer.update(host.game);
             if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
@@ -1024,6 +1043,8 @@ int main(int argc, char** argv) {
                 const bool move=guest&&multiplayerParityFrame<80;
                 const bool jump=guest&&(multiplayerParityFrame==30||multiplayerParityFrame==75);
                 const bool melee=guest&&multiplayerParityFrame>=130&&multiplayerParityFrame<190;
+                const bool vacuum=guest&&multiplayerParityFrame>=200&&
+                    host.game.state().player.souls==0;
                 if(!guest&&multiplayerParityFrame==100){
                     GameState& fixture=host.game.networkMutableState();
                     fixture.player.pos={8,0.08f,8};
@@ -1037,16 +1058,45 @@ int main(int argc, char** argv) {
                     std::printf("MULTIPLAYER_COMBAT_FIXTURE enemy=0 armor=%.2f\n",enemy.armor);
                     std::fflush(stdout);
                 }
-                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<240){
+                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<500){
                     GameState& fixture=host.game.networkMutableState();
                     fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
                     fixture.multiplayer.peers[1].player.vel={};
                     auto& enemy=fixture.targets[0];
                     if(enemy.alive&&!enemy.slurpable){enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.attackCooldown=10.0f;}
                 }
-                host.game.setTouchControls(0.0f,move?1.0f:0.0f,0.0f,0.0f,false,
-                                           move,jump,melee,false,false);
+                if(!guest&&multiplayerParityFrame==170){
+                    GameState& fixture=host.game.networkMutableState();
+                    auto& soul=fixture.targets[1];
+                    for(std::size_t i=0;i<fixture.targets.size();++i)
+                        if(i!=1)fixture.targets[i].alive=false;
+                    soul=TargetState{};soul.alive=true;soul.slurpable=true;
+                    soul.soulMorph=1.0f;soul.health=1.0f;
+                    soul.pos={0,0.57f,-2.0f};soul.walkTarget=soul.pos;
+                    std::printf("MULTIPLAYER_VACUUM_FIXTURE target=1\n");
+                    std::fflush(stdout);
+                }
+                if(!guest&&multiplayerParityFrame>=170&&multiplayerParityFrame<500){
+                    GameState& fixture=host.game.networkMutableState();
+                    auto& soul=fixture.targets[1];
+                    if(soul.alive&&soul.soulState==SoulState::Free)
+                        soul.pos={0,0.57f,-2.0f};
+                    if(soul.soulState==SoulState::Latched||
+                       soul.soulState==SoulState::Ingesting)
+                        soul.ingestProgress=std::max(soul.ingestProgress,0.82f);
+                    for(auto& projectile:fixture.bullets)
+                        if(projectile.alive)
+                            projectile.life=std::min(projectile.life,0.12f);
+                }
+                host.game.setTouchControls(0.0f,move?1.0f:0.0f,0.0f,0.0f,
+                                           vacuum,move,jump,melee,false,false);
                 if(multiplayerParityFrame==130&&guest){std::printf("MULTIPLAYER_TEST_GUEST_MELEE frame=%d\n",multiplayerParityFrame);std::fflush(stdout);}
+                if(vacuum&&!multiplayerVacuumPredicted){
+                    multiplayerVacuumPredicted=true;
+                    std::printf("MULTIPLAYER_VACUUM_PREDICTED frame=%d\n",
+                                multiplayerParityFrame);
+                    std::fflush(stdout);
+                }
                 if(jump){
                     std::printf("MULTIPLAYER_TEST_GUEST_JUMP frame=%d kind=%s\n",
                                 multiplayerParityFrame,

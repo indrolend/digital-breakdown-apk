@@ -45,6 +45,26 @@ int main() {
   ok &= eventTracker.accept(decodedEvent) && !eventTracker.accept(decodedEvent);
   auto staleEvent=decodedEvent;staleEvent.world.roomGeneration=3;staleEvent.eventId=6;
   ok &= !eventTracker.accept(staleEvent);
+  auto wrongSessionEvent=decodedEvent;
+  wrongSessionEvent.world.sessionId++;
+  wrongSessionEvent.eventId=6;
+  auto wrongRunEvent=decodedEvent;
+  wrongRunEvent.world.runGeneration++;
+  wrongRunEvent.eventId=6;
+  ok &= !eventTracker.accept(wrongSessionEvent) &&
+        !eventTracker.accept(wrongRunEvent);
+  GameplayEvent vacuumEvent=decodedEvent;
+  vacuumEvent.eventId=6;
+  vacuumEvent.type=GameplayEventType::SoulLatched;
+  vacuumEvent.targetEntityId=1;
+  const auto vacuumEventBytes=encodeEvent(0,vacuumEvent);
+  GameplayEvent decodedVacuumEvent;
+  ok &= decodeEvent(vacuumEventBytes.data(),vacuumEventBytes.size(),h,
+                    decodedVacuumEvent) &&
+        decodedVacuumEvent.type==GameplayEventType::SoulLatched &&
+        decodedVacuumEvent.targetEntityId==1 &&
+        eventTracker.accept(decodedVacuumEvent) &&
+        !eventTracker.accept(decodedVacuumEvent);
   Game commandGame;
   commandGame.reset();
   commandGame.setTouchControls(0.25f, 1.0f, 0.0f, 0.0f, true, true,
@@ -110,6 +130,12 @@ int main() {
   worldState.targets[0].vacuumPullAmount = 0.55f;
   worldState.targets[0].captureCollapseAmount = 0.35f;
   worldState.targets[0].visibility = 0.8f;
+  worldState.targets[1].alive=true;
+  worldState.targets[1].slurpable=true;
+  worldState.targets[1].soulState=SoulState::Ingesting;
+  worldState.targets[1].latchedToScreen=true;
+  worldState.targets[1].ingestProgress=0.63f;
+  worldState.targets[1].networkOwnerPlayerId=1;
   worldState.topology.currentTileIndex = -2;
   worldState.topology.previousTileIndex = -1;
   worldState.topology.advancing = true;
@@ -157,6 +183,10 @@ int main() {
         roundtrip.targets[0].attackVariant == 3 &&
         std::abs(roundtrip.targets[0].attackDirection.x - 0.6f) < 0.0001f &&
         std::abs(roundtrip.targets[0].vacuumPullAmount - 0.55f) < 0.0001f &&
+        roundtrip.targets[1].soulState==SoulState::Ingesting &&
+        (roundtrip.targets[1].visualFlags&2u)!=0 &&
+        std::abs(roundtrip.targets[1].ingest-0.63f)<0.0001f &&
+        roundtrip.targets[1].ownerPlayerId==1 &&
         roundtrip.topology.currentTileIndex == -2 &&
         roundtrip.doorTransition.active &&
         roundtrip.roomColliderCount == 1 &&
@@ -228,6 +258,81 @@ int main() {
   guestCombatState.meleeVisual.hitRadius=2.0f;
   guestCombat.update(1.0f/60.0f);
   ok &= std::abs(guestCombat.state().targets[0].armor-2.0f)<0.0001f;
+  Game guestVacuum;
+  guestVacuum.reset();
+  guestVacuum.configureNetworkGuest(1);
+  GameState& guestVacuumState=guestVacuum.networkMutableState();
+  guestVacuumState.targets[1]=TargetState{};
+  guestVacuumState.targets[1].alive=true;
+  guestVacuumState.targets[1].slurpable=true;
+  guestVacuumState.targets[1].captureQueued=true;
+  guestVacuum.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+  guestVacuum.update(1.0f/60.0f);
+  ok &= guestVacuum.state().vacuum.active &&
+        guestVacuum.state().vacuum.pose>0.0f &&
+        guestVacuum.state().vacuum.fieldStrength>0.0f &&
+        guestVacuum.state().targets[1].captureQueued &&
+        guestVacuum.state().targets[1].alive &&
+        guestVacuum.state().player.souls==0;
+  Game hostCapture;
+  hostCapture.reset();
+  hostCapture.configureNetworkHost();
+  GameState& hostCaptureState=hostCapture.networkMutableState();
+  hostCaptureState.targets[1]=TargetState{};
+  hostCaptureState.targets[1].alive=true;
+  hostCaptureState.targets[1].slurpable=true;
+  hostCaptureState.targets[1].captureQueued=true;
+  hostCaptureState.targets[1].ingestProgress=0.95f;
+  hostCapture.update(1.0f/60.0f);
+  ok &= !hostCapture.state().targets[1].alive &&
+        hostCapture.state().player.souls==1;
+  auto capturedWorld=captureWorld(hostCapture.state(),
+                                  capturePlayers(hostCapture.state()),401);
+  capturedWorld.world={17,2,5,4};
+  applyWorld(guestVacuum.networkMutableState(),capturedWorld,1);
+  ok &= !guestVacuum.state().targets[1].alive &&
+        guestVacuum.state().targets[1].soulState==SoulState::Free;
+  Game guestDischarge;
+  guestDischarge.reset();
+  guestDischarge.configureNetworkGuest(1);
+  guestDischarge.networkMutableState().player.souls=1;
+  guestDischarge.setTouchControls(0,0,0,0,false,false,false,false,true,false);
+  guestDischarge.update(1.0f/60.0f);
+  ok &= guestDischarge.state().player.souls==1 &&
+        guestDischarge.state().energy.dischargeTimer>0.0f &&
+        guestDischarge.state().energy.dischargePositionAmount>0.0f;
+  Game hostDischarge;
+  hostDischarge.reset();
+  hostDischarge.configureNetworkHost();
+  hostDischarge.networkMutableState().player.souls=1;
+  hostDischarge.setTouchControls(0,0,0,0,false,false,false,false,true,false);
+  for(int i=0;i<12;++i)hostDischarge.update(1.0f/60.0f);
+  bool projectileSpawned=false;
+  for(const auto& bullet:hostDischarge.state().bullets)
+    projectileSpawned|=bullet.alive;
+  ok &= hostDischarge.state().player.souls==0&&projectileSpawned;
+  auto projectileWorld=captureWorld(hostDischarge.state(),
+      capturePlayers(hostDischarge.state()),450);
+  auto projectileBytes=encodeSnapshot(0,projectileWorld,12);
+  WorldSnapshot projectileRoundtrip;
+  ok &= decodeSnapshot(projectileBytes.data(),projectileBytes.size(),h,
+                        projectileRoundtrip) &&
+        projectileRoundtrip.bullets[0].active;
+  projectileRoundtrip.world={17,2,6,5};
+  for(auto& bullet:projectileRoundtrip.bullets)bullet=BulletSnapshot{};
+  for(auto& target:projectileRoundtrip.targets){
+    target.soulState=SoulState::Free;
+    target.flags&=static_cast<std::uint8_t>(~(8u|16u));
+  }
+  projectileRoundtrip.players[1].actionFlags&=
+      static_cast<std::uint8_t>(~2u);
+  projectileRoundtrip.players[1].vacuumTarget=-1;
+  applyWorld(guestDischarge.networkMutableState(),projectileRoundtrip,1);
+  bool projectileRecovered=false;
+  for(const auto& bullet:guestDischarge.state().bullets)
+    projectileRecovered|=bullet.alive;
+  ok &= !projectileRecovered&&!guestDischarge.state().vacuum.active &&
+        guestDischarge.state().vacuum.target==-1;
   Game hostProgression;
   hostProgression.setPersistentProgression(0, 4, 3, 2);
   hostProgression.reset();
@@ -314,6 +419,18 @@ int main() {
         !decodeSnapshot(snapshotBytes.data(), snapshotBytes.size(), h, invalid);
     std::vector<std::uint8_t> oversized(MAX_PACKET_BYTES+1,0);
     ok &= !decodeSnapshot(oversized.data(),oversized.size(),h,invalid);
+  }
+  if(!vacuumEventBytes.empty()){
+    auto unknownEvent=vacuumEventBytes;
+    constexpr std::size_t eventTypeOffset=HEADER_BYTES+14;
+    unknownEvent[eventTypeOffset]=0xff;
+    GameplayEvent invalidEvent;
+    ok &= !decodeEvent(unknownEvent.data(),unknownEvent.size(),h,invalidEvent);
+    for(std::size_t cut=0;cut<vacuumEventBytes.size();++cut){
+      std::vector<std::uint8_t> truncated(vacuumEventBytes.begin(),
+                                         vacuumEventBytes.begin()+cut);
+      ok &= !decodeEvent(truncated.data(),truncated.size(),h,invalidEvent);
+    }
   }
   const auto decodedHash=authoritativeStateHash(roundtrip);
   ok &= decodedHash==authoritativeStateHash(roundtrip) &&

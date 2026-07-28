@@ -77,6 +77,8 @@ private:
     dbnet::WorldSnapshot previousEventWorld_{};
     bool hasPreviousEventWorld_=false;
     std::uint32_t nextEventId_=0;
+    std::array<std::uint16_t, BULLET_COUNT> projectileSources_{};
+    std::uint16_t lastDischargeSource_=0;
     int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
     std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
     MultiplayerMetrics metrics_{};

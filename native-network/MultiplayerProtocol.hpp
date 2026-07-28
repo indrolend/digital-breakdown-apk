@@ -219,7 +219,16 @@ enum class GameplayEventType : std::uint8_t {
     PlayerActionContact,
     EnemyHitConfirmed,
     EnemyShellBroken,
-    SoulEmergenceStarted
+    SoulEmergenceStarted,
+    VacuumStarted,
+    SoulAttractionStarted,
+    SoulLatched,
+    SoulIngestionStarted,
+    SoulCaptureCompleted,
+    DischargeStarted,
+    ProjectileSpawned,
+    ProjectileImpacted,
+    ProjectileDespawned
 };
 
 struct GameplayEvent {
