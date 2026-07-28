@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "MultiplayerConnectionState.hpp"
 #include "MultiplayerProtocol.hpp"
 
 #include <algorithm>
@@ -1352,6 +1353,183 @@ bool verifyLifecycle(const NetworkProfile& profile){
   return true;
 }
 
+struct SessionRunResult {
+  DeliverySummary delivery;
+  std::uint32_t guestDisconnectTick=0;
+  std::uint32_t hostDisconnectTick=0;
+  std::uint32_t timeoutTick=0;
+  std::uint32_t rejectedDisconnectedInputs=0;
+  std::uint32_t rejectedStaleSnapshots=0;
+  std::uint32_t rejectedStaleEvents=0;
+  bool guestInactive=false;
+  bool hostContinued=false;
+  bool guestTerminal=false;
+  bool timeoutTerminal=false;
+  dbnet::DurableSectionHashes hostFinal;
+  bool operator==(const SessionRunResult& other) const {
+    return delivery==other.delivery&&
+      guestDisconnectTick==other.guestDisconnectTick&&
+      hostDisconnectTick==other.hostDisconnectTick&&
+      timeoutTick==other.timeoutTick&&
+      rejectedDisconnectedInputs==other.rejectedDisconnectedInputs&&
+      rejectedStaleSnapshots==other.rejectedStaleSnapshots&&
+      rejectedStaleEvents==other.rejectedStaleEvents&&
+      guestInactive==other.guestInactive&&hostContinued==other.hostContinued&&
+      guestTerminal==other.guestTerminal&&timeoutTerminal==other.timeoutTerminal&&
+      hostFinal==other.hostFinal;
+  }
+};
+
+SessionRunResult runSessionContinuity(const NetworkProfile& profile){
+  constexpr std::uint32_t guestDisconnectTick=90;
+  constexpr std::uint32_t hostDisconnectTick=180;
+  constexpr std::uint32_t timeoutTick=240;
+  constexpr std::uint32_t endTick=260;
+  const std::uint32_t seed=EXPLICIT_SEED+6;
+  Game host;Game guest;host.reset();guest.reset();
+  host.configureNetworkHost();host.setNetworkPeerActive(1,true);
+  guest.configureNetworkGuest(1);
+  dbnet::NetworkWorldContext world{seed,1,1,1};
+  dbnet::NetworkWorldContext staleWorld{seed-1,1,1,1};
+  DeterministicPacketQueue queue(profile,seed);
+  SessionRunResult result;
+  dbmultiplayer::Phase guestPhase=dbmultiplayer::Phase::Playing;
+  dbmultiplayer::Phase timeoutPhase=dbmultiplayer::Phase::Connecting;
+  bool guestConnected=true,hostConnected=true;
+  std::uint32_t inputSequence=0,snapshotSequence=0,lastInputSequence=0;
+  std::vector<std::uint8_t> retainedInput;
+
+  auto receive=[&](const Packet& packet){
+    dbnet::PacketHeader header;
+    if(packet.direction==Direction::GuestToHost){
+      dbnet::NetworkWorldContext packetWorld;dbnet::InputCommand input;
+      if(!dbnet::decodeInput(packet.bytes.data(),packet.bytes.size(),header,
+                             packetWorld,input))return;
+      if(!guestConnected||packetWorld!=world||header.sequence<=lastInputSequence){
+        ++result.rejectedDisconnectedInputs;return;
+      }
+      lastInputSequence=header.sequence;
+      host.setNetworkPeerCommand(header.playerId,input);
+      queue.summary().lastInput=header.sequence;return;
+    }
+    if(!hostConnected){
+      if(packet.type==dbnet::MessageType::Snapshot)
+        ++result.rejectedStaleSnapshots;
+      else if(packet.type==dbnet::MessageType::Event)
+        ++result.rejectedStaleEvents;
+      return;
+    }
+    if(packet.type==dbnet::MessageType::Snapshot){
+      dbnet::WorldSnapshot snapshot;
+      if(!dbnet::decodeSnapshot(packet.bytes.data(),packet.bytes.size(),header,
+                                snapshot)||snapshot.world!=world){
+        ++result.rejectedStaleSnapshots;return;
+      }
+      dbnet::applyWorld(guest.networkMutableState(),snapshot,1);
+      queue.summary().lastSnapshot=header.sequence;
+    }
+  };
+
+  for(std::uint32_t tick=1;tick<=endTick;++tick){
+    queue.deliver(tick,receive);
+    if(tick<guestDisconnectTick){
+      guest.setTouchControls(0,0.7f,0,0,false,false,false,false,false,false);
+      auto input=dbnet::encodeInput(1,world,
+        guest.capturePlayerCommand(++inputSequence,tick));
+      if(tick==30)retainedInput=input;
+      queue.send(Direction::GuestToHost,dbnet::MessageType::Input,tick,
+                 std::move(input));
+      guest.update(FIXED_DT);
+    }
+    if(tick==guestDisconnectTick){
+      guestConnected=false;host.setNetworkPeerActive(1,false);
+      result.guestDisconnectTick=tick;
+    }
+    if(tick==guestDisconnectTick+10&&!retainedInput.empty())
+      receive({Direction::GuestToHost,dbnet::MessageType::Input,tick,0,
+               retainedInput});
+    if(hostConnected)host.update(FIXED_DT);
+    if(hostConnected&&tick%SNAPSHOT_INTERVAL==0){
+      auto snapshot=dbnet::captureWorld(
+        host.state(),dbnet::capturePlayers(host.state()),tick);
+      snapshot.world=world;
+      queue.send(Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,
+        dbnet::encodeSnapshot(0,snapshot,++snapshotSequence));
+    }
+    if(tick==hostDisconnectTick){
+      hostConnected=false;
+      guestPhase=dbmultiplayer::transition(
+        guestPhase,dbmultiplayer::Event::HostDisconnected);
+      guest.prepareStartScreen();
+      result.hostDisconnectTick=tick;
+      auto stale=dbnet::captureWorld(
+        host.state(),dbnet::capturePlayers(host.state()),tick);
+      stale.world=staleWorld;
+      receive({Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,0,
+        dbnet::encodeSnapshot(0,stale,++snapshotSequence)});
+      dbnet::GameplayEvent oldEvent;
+      oldEvent.world=staleWorld;oldEvent.eventId=1;
+      oldEvent.authoritativeTick=tick;
+      oldEvent.type=dbnet::GameplayEventType::PlayerActionStarted;
+      receive({Direction::HostToGuest,dbnet::MessageType::Event,tick,1,
+        dbnet::encodeEvent(0,oldEvent)});
+    }
+    if(tick==timeoutTick){
+      timeoutPhase=dbmultiplayer::transition(
+        timeoutPhase,dbmultiplayer::Event::Failure);
+      result.timeoutTick=tick;
+    }
+  }
+  result.guestInactive=!host.state().multiplayer.peers[1].active;
+  result.hostContinued=host.state().frame>=static_cast<int>(
+    hostDisconnectTick-1);
+  result.guestTerminal=guestPhase==dbmultiplayer::Phase::HostLeft&&
+    !guest.state().started&&!guest.state().multiplayer.enabled;
+  result.timeoutTerminal=timeoutPhase==dbmultiplayer::Phase::Failed;
+  auto final=dbnet::captureWorld(
+    host.state(),dbnet::capturePlayers(host.state()),hostDisconnectTick);
+  final.world=world;
+  result.hostFinal=dbnet::durableSectionHashes(final);
+  result.delivery=queue.summary();
+  return result;
+}
+
+bool verifySessionContinuity(const NetworkProfile& profile){
+  const auto first=runSessionContinuity(profile);
+  const auto second=runSessionContinuity(profile);
+  if(!(first==second&&first.guestDisconnectTick==90&&
+       first.hostDisconnectTick==180&&first.timeoutTick==240&&
+       first.rejectedDisconnectedInputs>0&&
+       first.rejectedStaleSnapshots>0&&first.rejectedStaleEvents>0&&
+       first.guestInactive&&
+       first.hostContinued&&first.guestTerminal&&first.timeoutTerminal)){
+    std::fprintf(stderr,"SESSION_FAILURE profile=%s guest=%u host=%u timeout=%u "
+      "input_reject=%u stale_reject=%u inactive=%d continued=%d terminal=%d/%d\n",
+      profile.name,first.guestDisconnectTick,first.hostDisconnectTick,
+      first.timeoutTick,first.rejectedDisconnectedInputs,
+      first.rejectedStaleSnapshots+first.rejectedStaleEvents,
+      first.guestInactive?1:0,
+      first.hostContinued?1:0,first.guestTerminal?1:0,
+      first.timeoutTerminal?1:0);
+    return false;
+  }
+  std::printf("MULTIPLAYER_SESSION_END role=guest reason=host_disconnected "
+    "profile=%s tick=%u\n",profile.name,first.hostDisconnectTick);
+  std::printf("MULTIPLAYER_SESSION_CONTINUITY_OK profile=%s "
+    "guest_disconnect_tick=%u timeout_tick=%u input_reject=%u "
+    "stale_snapshot_reject=%u stale_event_reject=%u "
+    "input=%u/%u snapshot=%u/%u event=%u/%u "
+    "final_players_hash=%llu\n",profile.name,
+    first.guestDisconnectTick,first.timeoutTick,
+    first.rejectedDisconnectedInputs,first.rejectedStaleSnapshots,
+    first.rejectedStaleEvents,
+    first.delivery.delivered[0],first.delivery.dropped[0],
+    first.delivery.delivered[1],first.delivery.dropped[1],
+    first.delivery.delivered[2],first.delivery.dropped[2],
+    static_cast<unsigned long long>(first.hostFinal.players));
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -1370,5 +1548,8 @@ int main() {
          verifyRoomRollover(poorRecoverable) &&
          verifyLifecycle(baseline) &&
          verifyLifecycle(moderate) &&
-         verifyLifecycle(poorRecoverable) ? 0 : 1;
+         verifyLifecycle(poorRecoverable) &&
+         verifySessionContinuity(baseline) &&
+         verifySessionContinuity(moderate) &&
+         verifySessionContinuity(poorRecoverable) ? 0 : 1;
 }

@@ -83,6 +83,7 @@ private:
     std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
     MultiplayerMetrics metrics_{};
     std::uint16_t lastPredictedButtons_=0;
+    bool sessionEndReported_=false;
     bool acceptWorldContext(const dbnet::NetworkWorldContext& packet,
                             const dbnet::PacketHeader& header,
                             bool allowNewerRoom);
@@ -101,6 +102,7 @@ private:
     void publishHandles(void* session,void* connection,void* request,void* socket);
     bool releaseHandles(void* session,void* connection,void* request,void* socket);
     void setStatus(const std::string& value);
+    void endGameplaySession(Game& game,const char* reason,const char* status);
     static std::string jsonString(const std::string& json,const char* key);
     static int jsonInt(const std::string& json,const char* key,int fallback=-1);
 };

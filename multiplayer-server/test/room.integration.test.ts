@@ -118,11 +118,83 @@ describe("room relay integration", () => {
       headers: { Upgrade: "websocket" },
     }));
     expect(lateJoin.status).toBe(409);
-    expect(await lateJoin.json()).toMatchObject({ error: "match_started" });
+    expect(await lateJoin.json()).toMatchObject({ error: "late_join_unsupported" });
 
     const leftAtHost = nextMessage(host);
     guest.close(1000, "leaving");
     expect(JSON.parse(String((await leftAtHost).data))).toMatchObject({ type: "player_left", playerId: 1 });
     host.close(1000, "leaving");
+  });
+
+  it("rejects duplicates, invalid joins, and reconnect after start", async () => {
+    const missing = await exports.default.fetch(new Request("http://local.test/v1/rooms/ABC234/connect?role=guest&build=test&gameplay=5", {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: "room_not_found" });
+
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+
+    const duplicateHost = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await duplicateHost.json()).toMatchObject({ error: "host_already_connected" });
+
+    const incompatible = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=4`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await incompatible.json()).toMatchObject({ error: "incompatible_build" });
+
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+    const duplicateGuest = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await duplicateGuest.json()).toMatchObject({ error: "room_full" });
+
+    host.send(JSON.stringify({ type: "start_match", startId: 9, gameplayVersion: 5 }));
+    await nextJsonType(host, "start_match");
+    await nextJsonType(guest, "start_match");
+    guest.close(1000, "leaving");
+    await nextJsonType(host, "player_left");
+    const reconnect = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await reconnect.json()).toMatchObject({ error: "late_join_unsupported" });
+    host.close(1000, "leaving");
+  });
+
+  it("invalidates the room when the host departs", async () => {
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+    const matchClosed = nextJsonType(guest, "match_closed");
+    host.close(1000, "leaving");
+    expect(await matchClosed).toMatchObject({ reason: "host_left" });
+    const stale = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(stale.status).toBe(404);
+    expect(await stale.json()).toMatchObject({ error: "room_not_found" });
   });
 });

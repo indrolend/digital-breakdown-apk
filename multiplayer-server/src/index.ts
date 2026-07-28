@@ -131,9 +131,12 @@ export class MatchRoom extends DurableObject<Env> {
     }
   }
 
-  private closeMatch(reason: string): void {
+  private async closeMatch(reason: string): Promise<void> {
+    if (!this.metadata()) return;
     this.broadcast({ type: "match_closed", reason });
     for (const { socket } of this.sockets()) socket.close(4001, reason);
+    this.ctx.storage.sql.exec("DELETE FROM room_metadata WHERE singleton = 1");
+    await this.ctx.storage.delete("match_lifecycle");
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -154,7 +157,7 @@ export class MatchRoom extends DurableObject<Env> {
       const key = url.searchParams.get("key") ?? "";
       if ((await sha256(key)) !== metadata.hostKeyHash) return jsonResponse({ error: "invalid_host_key" }, 403);
     } else if (lifecycle.started || connected.length >= MATCH_CAPACITY || !connected.some(({ attachment }) => attachment.role === "host")) {
-      return jsonResponse({ error: lifecycle.started ? "match_started" : connected.length >= MATCH_CAPACITY ? "room_full" : "host_offline" }, 409);
+      return jsonResponse({ error: lifecycle.started ? "late_join_unsupported" : connected.length >= MATCH_CAPACITY ? "room_full" : "host_offline" }, 409);
     }
 
     const used = new Set(connected.map(({ attachment }) => attachment.playerId));
@@ -278,8 +281,7 @@ export class MatchRoom extends DurableObject<Env> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
     if (!attachment) return;
     if (attachment.role === "host") {
-      if (code === 1000 && reason === "leaving") this.closeMatch("host_left");
-      else this.broadcast({ type: "host_disconnected", reason: reason || "connection_lost" }, attachment.playerId);
+      await this.closeMatch(code === 1000 && reason === "leaving" ? "host_left" : "host_disconnected");
     }
     else {
       this.broadcast({ type: "player_left", playerId: attachment.playerId, code, reason }, attachment.playerId);
@@ -289,12 +291,11 @@ export class MatchRoom extends DurableObject<Env> {
 
   override async webSocketError(socket: WebSocket): Promise<void> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null;
-    if (attachment?.role === "host") this.broadcast({ type: "host_disconnected", reason: "connection_error" }, attachment.playerId);
+    if (attachment?.role === "host") await this.closeMatch("host_disconnected");
   }
 
   override async alarm(): Promise<void> {
-    this.closeMatch("room_expired");
-    await this.ctx.storage.deleteAll();
+    await this.closeMatch("room_expired");
   }
 }
 

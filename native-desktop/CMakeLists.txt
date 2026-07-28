@@ -154,7 +154,7 @@ add_executable(
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
-target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
+target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(MultiplayerDeterminismTest PRIVATE cxx_std_17)
 
 add_executable(
