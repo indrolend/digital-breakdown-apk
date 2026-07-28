@@ -65,12 +65,17 @@ private:
     bool configuredGame_=false;
     bool loggedInput_=false,loggedSnapshot_=false;
     dbnet::SnapshotInterpolator snapshotInterpolator_;
+    dbnet::GameplayEventTracker eventTracker_;
+    dbnet::WorldSnapshot previousEventWorld_{};
+    bool hasPreviousEventWorld_=false;
+    std::uint32_t nextEventId_=0;
     int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
     std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
     bool acceptWorldContext(const dbnet::NetworkWorldContext& packet,
                             const dbnet::PacketHeader& header,
                             bool allowNewerRoom);
     void setWorldContext(const dbnet::NetworkWorldContext& world,const char* reason);
+    void emitCombatEvents(const dbnet::WorldSnapshot& world);
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
     bool createRoom();

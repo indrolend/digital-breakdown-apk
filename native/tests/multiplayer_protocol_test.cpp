@@ -29,6 +29,22 @@ int main() {
         compareWorldContext({17,2,5,4},inputWorld)==WorldContextCompatibility::NewerRoom &&
         compareWorldContext({18,2,4,3},inputWorld)==WorldContextCompatibility::Incompatible &&
         compareWorldContext(inputWorld,inputWorld)==WorldContextCompatibility::Compatible;
+  GameplayEvent event;
+  event.world=inputWorld;event.authoritativeTick=91;event.eventId=5;
+  event.type=GameplayEventType::EnemyShellBroken;
+  event.sourceEntityId=1;event.targetEntityId=3;
+  event.position={1,2,3};event.direction={0,0,-1};event.flags=7;
+  const auto eventBytes=encodeEvent(0,event);
+  GameplayEvent decodedEvent;
+  ok &= decodeEvent(eventBytes.data(),eventBytes.size(),h,decodedEvent) &&
+        decodedEvent.world==inputWorld && decodedEvent.eventId==5 &&
+        decodedEvent.authoritativeTick==91 &&
+        decodedEvent.type==GameplayEventType::EnemyShellBroken &&
+        decodedEvent.targetEntityId==3 && decodedEvent.flags==7;
+  GameplayEventTracker eventTracker;eventTracker.reset(inputWorld);
+  ok &= eventTracker.accept(decodedEvent) && !eventTracker.accept(decodedEvent);
+  auto staleEvent=decodedEvent;staleEvent.world.roomGeneration=3;staleEvent.eventId=6;
+  ok &= !eventTracker.accept(staleEvent);
   Game commandGame;
   commandGame.reset();
   commandGame.setTouchControls(0.25f, 1.0f, 0.0f, 0.0f, true, true,

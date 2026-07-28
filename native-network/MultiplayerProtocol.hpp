@@ -51,6 +51,7 @@ struct NetworkWorldContext {
                roomGeneration == other.roomGeneration &&
                roomIndex == other.roomIndex;
     }
+    bool operator!=(const NetworkWorldContext& other) const { return !(*this == other); }
 };
 
 enum class WorldContextCompatibility : std::uint8_t {
@@ -213,6 +214,36 @@ struct WorldSnapshot {
     std::array<FlowerSnapshot, FLOWER_POWERUP_COUNT> flowers{};
 };
 
+enum class GameplayEventType : std::uint8_t {
+    PlayerActionStarted,
+    PlayerActionContact,
+    EnemyHitConfirmed,
+    EnemyShellBroken,
+    SoulEmergenceStarted
+};
+
+struct GameplayEvent {
+    NetworkWorldContext world;
+    std::uint32_t authoritativeTick = 0;
+    std::uint32_t eventId = 0;
+    GameplayEventType type = GameplayEventType::PlayerActionStarted;
+    std::uint16_t sourceEntityId = 0;
+    std::uint16_t targetEntityId = 0xffffu;
+    Vec3 position;
+    Vec3 direction;
+    std::uint16_t flags = 0;
+};
+
+class GameplayEventTracker {
+public:
+    void reset(const NetworkWorldContext& world);
+    bool accept(const GameplayEvent& event);
+    std::uint32_t lastEventId() const { return lastEventId_; }
+private:
+    NetworkWorldContext world_{};
+    std::uint32_t lastEventId_ = 0;
+};
+
 bool decodeHeader(const std::uint8_t* data, std::size_t size, PacketHeader& header);
 WorldContextCompatibility compareWorldContext(const NetworkWorldContext& packet, const NetworkWorldContext& current);
 std::vector<std::uint8_t> encodeInput(std::uint8_t playerId, const NetworkWorldContext& world, const InputCommand& input);
@@ -221,6 +252,8 @@ std::vector<std::uint8_t> encodeInput(std::uint8_t playerId, const InputCommand&
 bool decodeInput(const std::uint8_t* data, std::size_t size, PacketHeader& header, InputCommand& input);
 std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId, const WorldSnapshot& snapshot, std::uint32_t sequence);
 bool decodeSnapshot(const std::uint8_t* data, std::size_t size, PacketHeader& header, WorldSnapshot& snapshot);
+std::vector<std::uint8_t> encodeEvent(std::uint8_t playerId, const GameplayEvent& event);
+bool decodeEvent(const std::uint8_t* data, std::size_t size, PacketHeader& header, GameplayEvent& event);
 
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);

@@ -110,6 +110,31 @@ bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,Netwo
 std::vector<std::uint8_t> encodeInput(std::uint8_t playerId,const InputCommand& input){return encodeInput(playerId,{},input);}
 bool decodeInput(const std::uint8_t* data,std::size_t size,PacketHeader& h,InputCommand& input){NetworkWorldContext ignored;return decodeInput(data,size,h,ignored,input);}
 
+std::vector<std::uint8_t> encodeEvent(std::uint8_t playerId,const GameplayEvent& event){
+  Writer payload;writeWorldContext(payload,event.world);
+  payload.u8(static_cast<std::uint8_t>(event.type));
+  payload.u16(event.sourceEntityId);payload.u16(event.targetEntityId);
+  payload.vec(event.position);payload.vec(event.direction);payload.u16(event.flags);
+  Writer packet;header(packet,MessageType::Event,playerId,event.eventId,event.authoritativeTick,static_cast<std::uint32_t>(payload.data.size()));
+  packet.data.insert(packet.data.end(),payload.data.begin(),payload.data.end());return packet.data;
+}
+bool decodeEvent(const std::uint8_t* data,std::size_t size,PacketHeader& h,GameplayEvent& event){
+  if(!decodeHeader(data,size,h)||h.type!=MessageType::Event)return false;
+  Reader r(data+HEADER_BYTES,h.payloadBytes);std::uint8_t type=0;
+  event.eventId=h.sequence;event.authoritativeTick=h.tick;
+  return readWorldContext(r,event.world)&&r.u8(type)&&
+    type<=static_cast<std::uint8_t>(GameplayEventType::SoulEmergenceStarted)&&
+    ((event.type=static_cast<GameplayEventType>(type)),true)&&
+    r.u16(event.sourceEntityId)&&r.u16(event.targetEntityId)&&
+    r.vec(event.position)&&r.vec(event.direction)&&r.u16(event.flags)&&r.done();
+}
+
+void GameplayEventTracker::reset(const NetworkWorldContext& world){world_=world;lastEventId_=0;}
+bool GameplayEventTracker::accept(const GameplayEvent& event){
+  if(event.world!=world_||event.eventId==0||event.eventId<=lastEventId_)return false;
+  lastEventId_=event.eventId;return true;
+}
+
 std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
                                          const WorldSnapshot &s,
                                          std::uint32_t sequence) {
