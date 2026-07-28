@@ -266,6 +266,14 @@ bool decodeEvent(const std::uint8_t* data, std::size_t size, PacketHeader& heade
 std::vector<GameplayEvent> deriveMeleeEvents(
     const WorldSnapshot& previous, const WorldSnapshot& current,
     std::uint32_t& nextEventId);
+struct GameplayEventDerivationState {
+    std::uint32_t nextEventId = 0;
+    std::uint16_t lastDischargeSource = 0;
+    std::array<std::uint16_t, BULLET_COUNT> projectileSources{};
+};
+std::vector<GameplayEvent> deriveGameplayEvents(
+    const WorldSnapshot& previous, const WorldSnapshot& current,
+    GameplayEventDerivationState& state);
 
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);

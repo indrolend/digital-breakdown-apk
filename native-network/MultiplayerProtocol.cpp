@@ -173,6 +173,78 @@ std::vector<GameplayEvent> deriveMeleeEvents(
   return events;
 }
 
+std::vector<GameplayEvent> deriveGameplayEvents(
+    const WorldSnapshot& previous,const WorldSnapshot& current,
+    GameplayEventDerivationState& state){
+  auto events=deriveMeleeEvents(previous,current,state.nextEventId);
+  auto append=[&](GameplayEventType type,std::uint16_t source,
+                  std::uint16_t target,const Vec3& position,
+                  const Vec3& direction,std::uint16_t flags=0){
+    GameplayEvent event;event.world=current.world;
+    event.authoritativeTick=current.tick;event.eventId=++state.nextEventId;
+    event.type=type;event.sourceEntityId=source;event.targetEntityId=target;
+    event.position=position;event.direction=direction;event.flags=flags;
+    events.push_back(event);
+  };
+  for(std::size_t i=0;i<current.players.size();++i){
+    const auto& before=previous.players[i];const auto& now=current.players[i];
+    if(now.active&&now.action==NetActionState::Vacuum&&
+       before.action!=NetActionState::Vacuum)
+      append(GameplayEventType::VacuumStarted,static_cast<std::uint16_t>(i),
+             now.actionTargetId,now.pos,now.meleeDirection);
+    if(now.active&&now.action==NetActionState::Discharge&&
+       before.action!=NetActionState::Discharge){
+      state.lastDischargeSource=static_cast<std::uint16_t>(i);
+      append(GameplayEventType::DischargeStarted,
+             static_cast<std::uint16_t>(i),0xffffu,now.pos,now.meleeDirection);
+    }
+    if(now.active&&now.souls<before.souls)
+      state.lastDischargeSource=static_cast<std::uint16_t>(i);
+  }
+  for(std::size_t i=0;i<current.targets.size();++i){
+    const auto& before=previous.targets[i];const auto& now=current.targets[i];
+    const bool candidate=(before.flags&(2u|8u|16u))!=0||before.ingest>0.0f;
+    const bool completed=candidate&&(before.flags&1u)!=0&&(now.flags&1u)==0;
+    const bool attracted=before.soulState==SoulState::Free&&
+      (now.soulState!=SoulState::Free||completed);
+    const bool latched=before.soulState!=SoulState::Latched&&
+      before.soulState!=SoulState::Ingesting&&
+      (now.soulState==SoulState::Latched||
+       now.soulState==SoulState::Ingesting||completed);
+    const bool ingesting=before.soulState!=SoulState::Ingesting&&
+      (now.soulState==SoulState::Ingesting||completed);
+    const auto source=static_cast<std::uint16_t>(std::max(
+      0,static_cast<int>(completed?before.ownerPlayerId:now.ownerPlayerId)));
+    if(attracted)append(GameplayEventType::SoulAttractionStarted,source,
+      static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(latched)append(GameplayEventType::SoulLatched,source,
+      static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(ingesting)append(GameplayEventType::SoulIngestionStarted,source,
+      static_cast<std::uint16_t>(i),now.pos,now.vel);
+    if(completed)append(GameplayEventType::SoulCaptureCompleted,source,
+      static_cast<std::uint16_t>(i),before.pos,before.vel);
+  }
+  bool impact=false;
+  for(std::size_t i=0;i<current.captures.size();++i)
+    impact|=!previous.captures[i]&&current.captures[i];
+  for(std::size_t i=0;i<current.targets.size();++i)
+    impact|=current.targets[i].armor<previous.targets[i].armor;
+  for(std::size_t i=0;i<current.bullets.size();++i){
+    const auto& before=previous.bullets[i];const auto& now=current.bullets[i];
+    if(!before.active&&now.active){
+      state.projectileSources[i]=state.lastDischargeSource;
+      append(GameplayEventType::ProjectileSpawned,state.lastDischargeSource,
+        static_cast<std::uint16_t>(i),now.pos,normalized(now.vel),now.brute?1u:0u);
+    }
+    if(before.active&&!now.active)
+      append(impact?GameplayEventType::ProjectileImpacted:
+        GameplayEventType::ProjectileDespawned,state.projectileSources[i],
+        static_cast<std::uint16_t>(i),before.pos,normalized(before.vel),
+        before.brute?1u:0u);
+  }
+  return events;
+}
+
 void GameplayEventTracker::reset(const NetworkWorldContext& world){world_=world;lastEventId_=0;}
 bool GameplayEventTracker::accept(const GameplayEvent& event){
   if(event.world!=world_||event.eventId==0||event.eventId<=lastEventId_)return false;

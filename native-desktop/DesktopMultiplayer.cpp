@@ -106,92 +106,21 @@ bool DesktopMultiplayer::acceptWorldContext(const dbnet::NetworkWorldContext& pa
 
 void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
   if(!hasPreviousEventWorld_){previousEventWorld_=world;hasPreviousEventWorld_=true;return;}
-  auto emit=[&](dbnet::GameplayEventType type,std::uint16_t source,
-                std::uint16_t target,const Vec3& position,
-                const Vec3& direction,std::uint16_t flags=0){
-    dbnet::GameplayEvent event;event.world=world.world;event.authoritativeTick=world.tick;
-    event.eventId=++nextEventId_;event.type=type;event.sourceEntityId=source;
-    event.targetEntityId=target;event.position=position;event.direction=direction;
-    event.flags=flags;
-    sendBinary(dbnet::encodeEvent(0,event));
-    std::printf("%s event=%u source=%u target=%u tick=%u flags=%u\n",
-      eventMarker(type),event.eventId,source,target,event.authoritativeTick,flags);
-    std::fflush(stdout);
-  };
-  for(const auto& event:dbnet::deriveMeleeEvents(
-          previousEventWorld_,world,nextEventId_)){
+  dbnet::GameplayEventDerivationState derivation;
+  derivation.nextEventId=nextEventId_;
+  derivation.lastDischargeSource=lastDischargeSource_;
+  derivation.projectileSources=projectileSources_;
+  for(const auto& event:dbnet::deriveGameplayEvents(
+          previousEventWorld_,world,derivation)){
     sendBinary(dbnet::encodeEvent(0,event));
     std::printf("%s event=%u source=%u target=%u tick=%u flags=%u\n",
       eventMarker(event.type),event.eventId,event.sourceEntityId,
       event.targetEntityId,event.authoritativeTick,event.flags);
     std::fflush(stdout);
   }
-  for(std::size_t i=0;i<world.players.size();++i){
-    const auto& before=previousEventWorld_.players[i];const auto& now=world.players[i];
-    if(now.active&&now.action==dbnet::NetActionState::Vacuum&&
-       before.action!=dbnet::NetActionState::Vacuum)
-      emit(dbnet::GameplayEventType::VacuumStarted,static_cast<std::uint16_t>(i),
-           now.actionTargetId,now.pos,now.meleeDirection);
-    if(now.active&&now.action==dbnet::NetActionState::Discharge&&
-       before.action!=dbnet::NetActionState::Discharge){
-      lastDischargeSource_=static_cast<std::uint16_t>(i);
-      emit(dbnet::GameplayEventType::DischargeStarted,static_cast<std::uint16_t>(i),
-           0xffffu,now.pos,now.meleeDirection);
-    }
-    if(now.active&&now.souls<before.souls)
-      lastDischargeSource_=static_cast<std::uint16_t>(i);
-  }
-  for(std::size_t i=0;i<world.targets.size();++i){
-    const auto& before=previousEventWorld_.targets[i];const auto& now=world.targets[i];
-    const bool wasCaptureCandidate=(before.flags&(2u|8u|16u))!=0||
-      before.ingest>0.0f;
-    const bool captureCompleted=wasCaptureCandidate&&(before.flags&1u)!=0&&
-      (now.flags&1u)==0;
-    const bool attractionStarted=before.soulState==SoulState::Free&&
-      (now.soulState==SoulState::Attracted||
-       now.soulState==SoulState::Latched||
-       now.soulState==SoulState::Ingesting||captureCompleted);
-    const bool latchStarted=before.soulState!=SoulState::Latched&&
-      before.soulState!=SoulState::Ingesting&&
-      (now.soulState==SoulState::Latched||
-       now.soulState==SoulState::Ingesting||captureCompleted);
-    const bool ingestionStarted=before.soulState!=SoulState::Ingesting&&
-      (now.soulState==SoulState::Ingesting||captureCompleted);
-    const auto source=static_cast<std::uint16_t>(std::max(0,
-      static_cast<int>(captureCompleted?before.ownerPlayerId:
-                       now.ownerPlayerId)));
-    if(attractionStarted)
-      emit(dbnet::GameplayEventType::SoulAttractionStarted,
-           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
-    if(latchStarted)
-      emit(dbnet::GameplayEventType::SoulLatched,
-           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
-    if(ingestionStarted)
-      emit(dbnet::GameplayEventType::SoulIngestionStarted,
-           source,static_cast<std::uint16_t>(i),now.pos,now.vel);
-    if(captureCompleted)
-      emit(dbnet::GameplayEventType::SoulCaptureCompleted,
-           source,static_cast<std::uint16_t>(i),before.pos,before.vel);
-  }
-  bool durableProjectileOutcome=false;
-  for(std::size_t i=0;i<world.captures.size();++i)
-    durableProjectileOutcome|=!previousEventWorld_.captures[i]&&world.captures[i];
-  for(std::size_t i=0;i<world.targets.size();++i)
-    durableProjectileOutcome|=world.targets[i].armor<previousEventWorld_.targets[i].armor;
-  for(std::size_t i=0;i<world.bullets.size();++i){
-    const auto& before=previousEventWorld_.bullets[i];const auto& now=world.bullets[i];
-    if(!before.active&&now.active){
-      projectileSources_[i]=lastDischargeSource_;
-      emit(dbnet::GameplayEventType::ProjectileSpawned,lastDischargeSource_,
-           static_cast<std::uint16_t>(i),now.pos,normalized(now.vel),
-           now.brute?1u:0u);
-    }
-    if(before.active&&!now.active)
-      emit(durableProjectileOutcome?dbnet::GameplayEventType::ProjectileImpacted:
-           dbnet::GameplayEventType::ProjectileDespawned,projectileSources_[i],
-           static_cast<std::uint16_t>(i),before.pos,normalized(before.vel),
-           before.brute?1u:0u);
-  }
+  nextEventId_=derivation.nextEventId;
+  lastDischargeSource_=derivation.lastDischargeSource;
+  projectileSources_=derivation.projectileSources;
   previousEventWorld_=world;
 }
 void DesktopMultiplayer::disconnect(){stop_=true;void* session=nullptr;void* connection=nullptr;void* request=nullptr;void* socket=nullptr;{std::lock_guard<std::mutex> sendLock(sendMutex_);std::lock_guard<std::mutex> handleLock(handleMutex_);session=session_;connection=connection_;request=request_;socket=webSocket_;session_=connection_=request_=webSocket_=nullptr;}
