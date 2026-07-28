@@ -773,6 +773,263 @@ bool verifyVacuumDischarge(const NetworkProfile& profile){
   return true;
 }
 
+struct RoomRunResult {
+  DeliverySummary delivery;
+  std::vector<std::pair<std::uint32_t,dbnet::DurableSectionHashes>> checkpoints;
+  dbnet::DurableSectionHashes hostFinal;
+  dbnet::DurableSectionHashes guestFinal;
+  std::uint64_t finalHash=0;
+  std::uint64_t initialWorldHash=0;
+  std::uint64_t nextWorldHash=0;
+  std::uint32_t transitionTick=0;
+  dbnet::NetworkWorldContext oldWorld;
+  dbnet::NetworkWorldContext newWorld;
+  int nextRoomSeed=0;
+  std::uint32_t staleSnapshots=0;
+  std::uint32_t staleEvents=0;
+  std::uint32_t staleInputs=0;
+  std::uint32_t acceptedNewEvents=0;
+  bool initialConverged=false;
+  bool hostOnlyCompletion=false;
+  bool doorObserved=false;
+  bool resetInvariants=false;
+  bool operator==(const RoomRunResult& other) const {
+    return delivery==other.delivery&&checkpoints==other.checkpoints&&
+      hostFinal==other.hostFinal&&guestFinal==other.guestFinal&&
+      finalHash==other.finalHash&&initialWorldHash==other.initialWorldHash&&
+      nextWorldHash==other.nextWorldHash&&transitionTick==other.transitionTick&&
+      oldWorld==other.oldWorld&&newWorld==other.newWorld&&
+      nextRoomSeed==other.nextRoomSeed&&
+      staleSnapshots==other.staleSnapshots&&staleEvents==other.staleEvents&&
+      staleInputs==other.staleInputs&&acceptedNewEvents==other.acceptedNewEvents&&
+      initialConverged==other.initialConverged&&
+      hostOnlyCompletion==other.hostOnlyCompletion&&
+      doorObserved==other.doorObserved&&resetInvariants==other.resetInvariants;
+  }
+};
+
+RoomRunResult runRoomRollover(const NetworkProfile& profile,std::uint32_t seed){
+  constexpr std::uint32_t goalTick=20;
+  constexpr std::uint32_t totalTicks=240;
+  Game host;Game guest;host.reset();guest.reset();
+  host.configureNetworkHost();host.setNetworkPeerActive(1,true);
+  guest.configureNetworkGuest(1);
+  auto& hostState=host.networkMutableState();
+  hostState.roomIndex=1;hostState.roomSeed=static_cast<int>(seed);
+  hostState.requiredSouls=1;hostState.depositedSouls=0;hostState.roomClear=false;
+  for(auto& capture:hostState.captures)capture=CapturePointState{};
+  hostState.captures[0].pos={0,3.05f,-19.43f};
+  hostState.player.pos={0,0.08f,-19.8f};hostState.player.grounded=true;
+  hostState.multiplayer.peers[1].player.pos={0.8f,0.08f,-18.5f};
+  hostState.targets[TARGET_COUNT-1].pos={7.25f,0.08f,6.5f};
+  hostState.targets[TARGET_COUNT-1].alive=true;
+  hostState.bullets[BULLET_COUNT-1].alive=true;
+  hostState.bullets[BULLET_COUNT-1].pos={8,10,8};
+  hostState.bullets[BULLET_COUNT-1].life=100;
+  hostState.flowers[0].active=true;hostState.flowers[0].pos={6,0.38f,6};
+  dbnet::NetworkWorldContext hostWorld{seed,1,1,1};
+  dbnet::NetworkWorldContext guestWorld=hostWorld;
+  auto initial=dbnet::captureWorld(host.state(),dbnet::capturePlayers(host.state()),0);
+  initial.world=hostWorld;
+  dbnet::applyWorld(guest.networkMutableState(),initial,1);
+  guest.networkMutableState().multiplayer.localPredictionCorrection={4,0,4};
+
+  RoomRunResult result;result.oldWorld=hostWorld;
+  result.initialWorldHash=dbnet::durableSectionHashes(initial).world;
+  auto initialGuest=dbnet::captureWorld(
+    guest.state(),dbnet::capturePlayers(guest.state()),0);
+  initialGuest.world=guestWorld;
+  result.initialConverged=
+    dbnet::durableSectionHashes(initial)==dbnet::durableSectionHashes(initialGuest);
+
+  DeterministicPacketQueue queue(profile,seed);
+  dbnet::GameplayEventTracker tracker;tracker.reset(guestWorld);
+  dbnet::SnapshotInterpolator interpolator;
+  std::uint32_t inputSequence=0,snapshotSequence=0;
+  std::vector<std::uint8_t> retainedSnapshot;
+  std::vector<std::uint8_t> retainedInput;
+  std::vector<std::uint8_t> retainedEvent;
+  bool injected=false;
+
+  auto receive=[&](const Packet& packet){
+    dbnet::PacketHeader header;
+    if(packet.direction==Direction::GuestToHost){
+      dbnet::NetworkWorldContext packetWorld;dbnet::InputCommand input;
+      if(!dbnet::decodeInput(packet.bytes.data(),packet.bytes.size(),header,
+                             packetWorld,input))return;
+      if(dbnet::compareWorldContext(packetWorld,hostWorld)!=
+         dbnet::WorldContextCompatibility::Compatible){
+        ++result.staleInputs;return;
+      }
+      host.setNetworkPeerCommand(header.playerId,input);
+      queue.summary().lastInput=header.sequence;return;
+    }
+    if(packet.type==dbnet::MessageType::Snapshot){
+      dbnet::WorldSnapshot snapshot;
+      if(!dbnet::decodeSnapshot(packet.bytes.data(),packet.bytes.size(),header,
+                                snapshot))return;
+      const auto compatibility=dbnet::compareWorldContext(snapshot.world,guestWorld);
+      if(compatibility==dbnet::WorldContextCompatibility::Older){
+        ++result.staleSnapshots;return;
+      }
+      if(compatibility==dbnet::WorldContextCompatibility::NewerRoom){
+        guestWorld=snapshot.world;tracker.reset(guestWorld);interpolator.reset();
+      }else if(compatibility!=dbnet::WorldContextCompatibility::Compatible){
+        ++result.staleSnapshots;return;
+      }
+      interpolator.push(snapshot,static_cast<std::int64_t>(snapshot.tick)*17);
+      dbnet::applyWorld(guest.networkMutableState(),snapshot,1);
+      queue.summary().lastSnapshot=header.sequence;return;
+    }
+    dbnet::GameplayEvent event;
+    if(!dbnet::decodeEvent(packet.bytes.data(),packet.bytes.size(),header,event))return;
+    if(event.world!=guestWorld){++result.staleEvents;return;}
+    if(tracker.accept(event)){
+      ++result.acceptedNewEvents;queue.summary().lastEvent=event.eventId;
+    }else ++result.staleEvents;
+  };
+
+  for(std::uint32_t tick=1;tick<=totalTicks;++tick){
+    queue.deliver(tick,receive);
+    guest.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    const auto command=guest.capturePlayerCommand(++inputSequence,tick);
+    auto inputBytes=dbnet::encodeInput(1,guestWorld,command);
+    if(tick==3)retainedInput=inputBytes;
+    queue.send(Direction::GuestToHost,dbnet::MessageType::Input,tick,
+               std::move(inputBytes));
+    guest.update(FIXED_DT);
+
+    if(tick==goalTick){
+      hostState.captures[0].filled=true;
+      result.hostOnlyCompletion=!guest.state().captures[0].filled&&
+        guest.state().depositedSouls==0;
+    }
+    const bool crossing=result.transitionTick==0&&tick>goalTick+1;
+    host.setTouchControls(0,crossing?1.0f:0.0f,0,0,
+                          false,false,false,false,false,false);
+    host.update(FIXED_DT);
+    result.doorObserved|=host.state().roomClear;
+    if(result.transitionTick==0&&host.state().roomIndex!=hostWorld.roomIndex){
+      result.transitionTick=tick;
+      ++hostWorld.roomGeneration;
+      hostWorld.roomIndex=static_cast<std::uint16_t>(host.state().roomIndex);
+      result.newWorld=hostWorld;result.nextRoomSeed=host.state().roomSeed;
+    }
+
+    auto snapshot=dbnet::captureWorld(
+      host.state(),dbnet::capturePlayers(host.state()),tick);
+    snapshot.world=hostWorld;
+    if(tick==3){
+      retainedSnapshot=dbnet::encodeSnapshot(0,snapshot,9001);
+      dbnet::GameplayEvent oldEvent;oldEvent.world=result.oldWorld;
+      oldEvent.authoritativeTick=tick;oldEvent.eventId=1;
+      oldEvent.type=dbnet::GameplayEventType::PlayerActionStarted;
+      retainedEvent=dbnet::encodeEvent(0,oldEvent);
+    }
+    if(tick%SNAPSHOT_INTERVAL==0)
+      queue.send(Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,
+        dbnet::encodeSnapshot(0,snapshot,++snapshotSequence));
+    if(result.transitionTick!=0&&tick%CHECKPOINT_INTERVAL==0)
+      result.checkpoints.push_back(
+        {tick,dbnet::durableSectionHashes(snapshot)});
+
+    if(!injected&&guestWorld==hostWorld&&hostWorld!=result.oldWorld){
+      injected=true;
+      receive({Direction::HostToGuest,dbnet::MessageType::Snapshot,tick,0,
+               retainedSnapshot});
+      receive({Direction::HostToGuest,dbnet::MessageType::Event,tick,1,
+               retainedEvent});
+      receive({Direction::HostToGuest,dbnet::MessageType::Event,tick,2,
+               retainedEvent});
+      receive({Direction::GuestToHost,dbnet::MessageType::Input,tick,3,
+               retainedInput});
+      dbnet::GameplayEvent valid;valid.world=hostWorld;valid.authoritativeTick=tick;
+      valid.eventId=1;valid.type=dbnet::GameplayEventType::PlayerActionStarted;
+      for(int repeat=0;repeat<3;++repeat)
+        queue.send(Direction::HostToGuest,dbnet::MessageType::Event,tick,
+                   dbnet::encodeEvent(0,valid));
+      ++valid.eventId;
+      for(int repeat=0;repeat<3;++repeat)
+        queue.send(Direction::HostToGuest,dbnet::MessageType::Event,tick,
+                   dbnet::encodeEvent(0,valid));
+      auto wrongRun=valid;++wrongRun.eventId;++wrongRun.world.runGeneration;
+      for(int repeat=0;repeat<3;++repeat)
+        queue.send(Direction::HostToGuest,dbnet::MessageType::Event,tick,
+                   dbnet::encodeEvent(0,wrongRun));
+    }
+  }
+  auto finalSnapshot=dbnet::captureWorld(
+    host.state(),dbnet::capturePlayers(host.state()),totalTicks);
+  finalSnapshot.world=hostWorld;
+  for(int repeat=0;repeat<5;++repeat)
+    queue.send(Direction::HostToGuest,dbnet::MessageType::Snapshot,totalTicks,
+      dbnet::encodeSnapshot(0,finalSnapshot,++snapshotSequence));
+  for(std::uint32_t tick=totalTicks+1;
+      !queue.empty()&&tick<=totalTicks+profile.latencyTicks+2;++tick)
+    queue.deliver(tick,receive);
+  auto guestFinal=dbnet::captureWorld(
+    guest.state(),dbnet::capturePlayers(guest.state()),totalTicks);
+  guestFinal.world=guestWorld;
+  const auto& guestState=guest.state();
+  const Vec3 oldTarget={7.25f,0.08f,6.5f};
+  result.resetInvariants=result.transitionTick!=0&&
+    guestWorld==hostWorld&&!guestState.flowers[0].active&&
+    !guestState.bullets[BULLET_COUNT-1].alive&&
+    length(guestState.targets[TARGET_COUNT-1].pos-oldTarget)>0.01f&&
+    guestState.vacuum.target==-1&&!guestState.vacuum.active&&
+    guestState.meleeVisual.visualTimer==0.0f&&
+    guestState.energy.dischargeTimer==0.0f&&
+    length(guestState.multiplayer.localPredictionCorrection)<0.0001f;
+  result.delivery=queue.summary();
+  result.hostFinal=dbnet::durableSectionHashes(finalSnapshot);
+  result.guestFinal=dbnet::durableSectionHashes(guestFinal);
+  result.finalHash=dbnet::authoritativeStateHash(finalSnapshot);
+  result.nextWorldHash=result.hostFinal.world;
+  return result;
+}
+
+bool verifyRoomRollover(const NetworkProfile& profile){
+  const auto first=runRoomRollover(profile,EXPLICIT_SEED+3);
+  const auto second=runRoomRollover(profile,EXPLICIT_SEED+3);
+  bool seedChangesWorld=true;
+  if(std::string(profile.name)=="baseline"){
+    const auto alternate=runRoomRollover(profile,EXPLICIT_SEED+4);
+    seedChangesWorld=alternate.nextWorldHash!=first.nextWorldHash&&
+      alternate.hostFinal==alternate.guestFinal;
+  }
+  const bool stale=first.staleSnapshots>=1&&first.staleEvents>=3&&
+    first.staleInputs>=1&&first.acceptedNewEvents==2;
+  const bool converged=first.hostFinal==first.guestFinal;
+  if(!(first==second&&first.initialConverged&&first.hostOnlyCompletion&&
+       first.doorObserved&&first.resetInvariants&&stale&&converged&&
+       seedChangesWorld)){
+    std::fprintf(stderr,"ROOM_ROLLOVER_FAILURE profile=%s transition=%u "
+      "authority=%d reset=%d stale=%d convergence=%d accepted=%u "
+      "snapshot_reject=%u event_reject=%u input_reject=%u\n",
+      profile.name,first.transitionTick,first.hostOnlyCompletion?1:0,
+      first.resetInvariants?1:0,stale?1:0,converged?1:0,
+      first.acceptedNewEvents,first.staleSnapshots,first.staleEvents,
+      first.staleInputs);
+    printHashes("host",first.hostFinal);printHashes("guest",first.guestFinal);
+    return false;
+  }
+  std::printf("MULTIPLAYER_DETERMINISTIC_ROOM_OK profile=%s old_room=%u "
+    "new_room=%u transition_tick=%u seed=%d world_hash=%llu final_hash=%llu "
+    "input=%u/%u snapshot=%u/%u event=%u/%u\n",
+    profile.name,first.oldWorld.roomIndex,first.newWorld.roomIndex,
+    first.transitionTick,first.nextRoomSeed,
+    static_cast<unsigned long long>(first.nextWorldHash),
+    static_cast<unsigned long long>(first.finalHash),
+    first.delivery.delivered[0],first.delivery.dropped[0],
+    first.delivery.delivered[1],first.delivery.dropped[1],
+    first.delivery.delivered[2],first.delivery.dropped[2]);
+  std::printf("MULTIPLAYER_STALE_WORLD_REJECT_OK profile=%s snapshots=%u "
+    "events=%u inputs=%u\n",profile.name,first.staleSnapshots,
+    first.staleEvents,first.staleInputs);
+  printHashes("room_sections",first.hostFinal);
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -785,5 +1042,8 @@ int main() {
          verifyMeleeProfile(poorRecoverable) &&
          verifyVacuumDischarge(baseline) &&
          verifyVacuumDischarge(moderate) &&
-         verifyVacuumDischarge(poorRecoverable) ? 0 : 1;
+         verifyVacuumDischarge(poorRecoverable) &&
+         verifyRoomRollover(baseline) &&
+         verifyRoomRollover(moderate) &&
+         verifyRoomRollover(poorRecoverable) ? 0 : 1;
 }

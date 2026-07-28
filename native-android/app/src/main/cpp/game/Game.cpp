@@ -1489,10 +1489,16 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.progression.run.roomHeat=0.0f;
         state_.progression.run.roomElapsed=0.0f;
         state_.progression.run.roomCaptures=0;
+        state_.vacuum=VacuumState{};
+        state_.meleeVisual=MeleeVisualState{};
+        state_.meleeComboWindow=0.0f;
+        state_.energy.dischargeTimer=0.0f;
+        state_.energy.dischargePositionAmount=0.0f;
         const float startX=-((static_cast<float>(state_.requiredSouls)-1.0f)*0.82f)*0.5f;
         for(int i=0;i<CAPTURE_COUNT;++i){state_.captures[i]=CapturePointState{}; state_.captures[i].pos={startX+static_cast<float>(i)*0.82f,3.05f,ROOM_GRID_Z};}
         for(auto& bullet:state_.bullets) bullet=BulletState{};
         for(auto& pending:state_.pendingShots) pending=PendingShotState{};
+        for(auto& flower:state_.flowers) flower=FlowerPowerupState{};
         buildRoomColliders();
         for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};
         for(int i=0;i<TARGET_COUNT;++i){if(i<activeHumanTarget()) respawnTarget(i); else state_.targets[i]=TargetState{};}

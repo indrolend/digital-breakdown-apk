@@ -529,6 +529,18 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   // Authoritative and local clocks are deliberately separate. The snapshot
   // tick is ordered by DesktopMultiplayer and must never replace simulation
   // or presentation time on the receiving client.
+  const bool roomChanged=state.multiplayer.hasWorldSnapshot&&
+    state.roomIndex!=s.roomIndex;
+  if(roomChanged){
+    state.multiplayer.localPredictionCorrection={};
+    state.multiplayer.hasWorldSnapshot=false;
+    state.vacuum=VacuumState{};
+    state.meleeVisual=MeleeVisualState{};
+    state.meleeComboWindow=0.0f;
+    state.energy.dischargeTimer=0.0f;
+    state.energy.dischargePositionAmount=0.0f;
+    for(auto& pending:state.pendingShots)pending=PendingShotState{};
+  }
   state.roomIndex = s.roomIndex;
   state.roomSeed = s.roomSeed;
   state.requiredSouls = s.requiredSouls;
