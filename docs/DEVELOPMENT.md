@@ -57,15 +57,19 @@ macOS. CMake fetches GLFW 3.4, miniaudio 0.11.25, and IXWebSocket 11.4.6. TLS us
 the Apple-supported IXWebSocket configuration.
 
 ```bash
-cmake -S native-desktop -B build/macos-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build/macos-release --config Release --parallel
-ctest --test-dir build/macos-release -C Release --output-on-failure
+bash scripts/verify-macos-baseline.sh
 open build/macos-release/bin/DigitalBreakdown.app
 ```
 
 The app bundle identifier is `com.indrolend.digitalbreakdown.native`. Architecture
 comes from the selected CMake/Xcode toolchain; universal packaging belongs in the
 release workflow rather than local default builds.
+
+The verifier treats commit `b4e3ecb` as the last manually verified Mac Release
+baseline. It rejects unrelated or older source, starts from an empty build directory,
+runs the full CTest suite and smoke test, checks the embedded Release identity,
+verifies packaged assets, and confirms every requested binary architecture. Set
+`DB_MAC_ARCHITECTURES='x86_64;arm64'` to reproduce the universal CI package.
 
 ## Android native
 

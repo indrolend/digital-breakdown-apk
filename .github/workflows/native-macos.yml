@@ -14,19 +14,14 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Configure universal release
-        run: >-
-          cmake -S native-desktop -B build/macos-release
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
-
-      - name: Build and test
-        run: |
-          cmake --build build/macos-release --config Release --parallel
-          build/macos-release/Pass7ParityTest
-          build/macos-release/MultiplayerProtocolTest
+      - name: Verify against known-good Mac baseline
+        env:
+          DB_MAC_BASELINE: b4e3ecb
+          DB_MAC_ARCHITECTURES: x86_64;arm64
+        run: bash scripts/verify-macos-baseline.sh
 
       - name: Package application bundle
         run: |
