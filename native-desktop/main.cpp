@@ -101,8 +101,27 @@ void rumblePulse(const LocalSettingsState& settings,float low,float high,int mil
 void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
 
-std::filesystem::path progressionSavePath(){const char* local=std::getenv("LOCALAPPDATA");const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();return root/"DigitalBreakdown"/"progression.v1";}
-void loadProgression(Game& game,const std::filesystem::path& path){std::ifstream input(path);std::string magic;int version=0,shot=0,lunge=0,attack=0;long long tokens=0;if(!(input>>magic>>version>>tokens>>shot>>lunge>>attack)||magic!="DBPROG")return;game.setPersistentProgression(tokens,shot,lunge,attack);if(version>=2){auto& settings=game.networkMutableState().localSettings;input>>settings.musicVolume>>settings.sfxVolume>>settings.musicMuted>>settings.sfxMuted>>settings.graphicsPreset>>settings.shadows>>settings.portalWindow>>settings.particles>>settings.fpsCounter>>settings.mouseLookSensitivity>>settings.touchLookSensitivity>>settings.controllerLookSensitivity;if(version>=3)input>>settings.controllerTriggerSensitivity;if(version>=4)input>>settings.controllerVibration;settings.musicVolume=clampf(settings.musicVolume,0,1);settings.sfxVolume=clampf(settings.sfxVolume,0,1);settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity,0.5f,1.75f);settings.touchLookSensitivity=clampf(settings.touchLookSensitivity,0.5f,1.75f);settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity,0.5f,1.75f);settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity));settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration));for(int& key:settings.keyboardBindings)if(!(input>>key))break;settings.menuPage=LocalMenuPage::Main;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;}}
+std::filesystem::path progressionSavePath(){
+    const char* overridePath=std::getenv("DB_SAVE_PATH");
+    if(overridePath&&*overridePath)return std::filesystem::path(overridePath);
+#ifdef _WIN32
+    const char* local=std::getenv("LOCALAPPDATA");
+    const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();
+    return root/"DigitalBreakdown"/"progression.v1";
+#elif defined(__APPLE__)
+    const char* home=std::getenv("HOME");
+    const std::filesystem::path root=home&&*home?std::filesystem::path(home):std::filesystem::temp_directory_path();
+    return root/"Library"/"Application Support"/"DigitalBreakdown"/"progression.v1";
+#else
+    const char* data=std::getenv("XDG_DATA_HOME");
+    if(data&&*data)return std::filesystem::path(data)/"DigitalBreakdown"/"progression.v1";
+    const char* home=std::getenv("HOME");
+    const std::filesystem::path root=home&&*home?std::filesystem::path(home)/".local"/"share":std::filesystem::temp_directory_path();
+    return root/"DigitalBreakdown"/"progression.v1";
+#endif
+}
+std::filesystem::path legacyTemporaryProgressionSavePath(){return std::filesystem::temp_directory_path()/"DigitalBreakdown"/"progression.v1";}
+bool loadProgression(Game& game,const std::filesystem::path& path){std::ifstream input(path);std::string magic;int version=0,shot=0,lunge=0,attack=0;long long tokens=0;if(!(input>>magic>>version>>tokens>>shot>>lunge>>attack)||magic!="DBPROG")return false;game.setPersistentProgression(tokens,shot,lunge,attack);if(version>=2){auto& settings=game.networkMutableState().localSettings;input>>settings.musicVolume>>settings.sfxVolume>>settings.musicMuted>>settings.sfxMuted>>settings.graphicsPreset>>settings.shadows>>settings.portalWindow>>settings.particles>>settings.fpsCounter>>settings.mouseLookSensitivity>>settings.touchLookSensitivity>>settings.controllerLookSensitivity;if(version>=3)input>>settings.controllerTriggerSensitivity;if(version>=4)input>>settings.controllerVibration;settings.musicVolume=clampf(settings.musicVolume,0,1);settings.sfxVolume=clampf(settings.sfxVolume,0,1);settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity,0.5f,1.75f);settings.touchLookSensitivity=clampf(settings.touchLookSensitivity,0.5f,1.75f);settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity,0.5f,1.75f);settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity));settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration));for(int& key:settings.keyboardBindings)if(!(input>>key))break;settings.menuPage=LocalMenuPage::Main;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;}return true;}
 bool saveProgression(const PermanentProgressionState& progression,const LocalSettingsState& settings,const std::filesystem::path& path){
     std::error_code error;std::filesystem::create_directories(path.parent_path(),error);
     const std::filesystem::path temporary=path.wstring()+L".tmp";
@@ -113,6 +132,35 @@ bool saveProgression(const PermanentProgressionState& progression,const LocalSet
     std::filesystem::rename(temporary,path,error);if(error){std::filesystem::remove(temporary,error);return false;}
 #endif
     return true;}
+
+int runSaveRoundtripTest(){
+    const auto nonce=std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path root=std::filesystem::temp_directory_path()/("DigitalBreakdownSaveTest-"+std::to_string(nonce));
+    const std::filesystem::path path=root/"progression.v1";
+    Game source;
+    source.setPersistentProgression(37,2,4,5);
+    auto& settings=source.networkMutableState().localSettings;
+    settings.musicVolume=0.31f;settings.sfxVolume=0.82f;settings.musicMuted=true;settings.sfxMuted=false;
+    settings.graphicsPreset=2;settings.shadows=true;settings.portalWindow=false;settings.particles=true;settings.fpsCounter=true;
+    settings.mouseLookSensitivity=1.30f;settings.touchLookSensitivity=0.80f;settings.controllerLookSensitivity=1.45f;
+    settings.controllerTriggerSensitivity=2;settings.controllerVibration=2;
+    settings.keyboardBindings[0]=73;settings.keyboardBindings[9]=88;
+    if(!saveProgression(source.state().progression.permanent,settings,path)){std::printf("SAVE_ROUNDTRIP_FAILED write\n");return 1;}
+    Game restored;
+    const bool loaded=loadProgression(restored,path);
+    const auto& progression=restored.state().progression.permanent;
+    const auto& loadedSettings=restored.state().localSettings;
+    const bool matches=loaded&&progression.tokens==37&&progression.levels[0]==2&&progression.levels[1]==4&&progression.levels[2]==5&&
+        std::abs(loadedSettings.musicVolume-0.31f)<0.001f&&std::abs(loadedSettings.sfxVolume-0.82f)<0.001f&&
+        loadedSettings.musicMuted&&!loadedSettings.sfxMuted&&loadedSettings.graphicsPreset==2&&loadedSettings.shadows&&
+        !loadedSettings.portalWindow&&loadedSettings.particles&&loadedSettings.fpsCounter&&
+        std::abs(loadedSettings.mouseLookSensitivity-1.30f)<0.001f&&std::abs(loadedSettings.touchLookSensitivity-0.80f)<0.001f&&
+        std::abs(loadedSettings.controllerLookSensitivity-1.45f)<0.001f&&loadedSettings.controllerTriggerSensitivity==2&&
+        loadedSettings.controllerVibration==2&&loadedSettings.keyboardBindings[0]==73&&loadedSettings.keyboardBindings[9]==88;
+    std::error_code cleanupError;std::filesystem::remove(path,cleanupError);std::filesystem::remove(root,cleanupError);
+    std::printf("SAVE_ROUNDTRIP_%s format=4\n",matches?"OK":"FAILED");
+    return matches?0:1;
+}
 
 int androidKeyForGlfw(const LocalSettingsState& settings,int key) {
     const int semantic[10]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_C_ANDROID,KEY_Q_ANDROID,KEY_V_ANDROID,KEY_F_ANDROID};
@@ -692,6 +740,7 @@ void printUsage() {
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
+    std::printf("  --save-roundtrip-test  Verify persistent save write and reload.\n");
     std::printf("  --check-updates      Check the latest native manifest and exit.\n");
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
     std::printf("  --controller-test    Print connected controller state once and exit.\n");
@@ -919,6 +968,9 @@ int main(int argc, char** argv) {
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
     }
+    if (hasArg(argc, argv, "--save-roundtrip-test")) {
+        return runSaveRoundtripTest();
+    }
     if (hasArg(argc, argv, "--parity-proximity-test")) {
         return runParityProximityTest();
     }
@@ -971,7 +1023,17 @@ int main(int argc, char** argv) {
 
     HostState host;
     host.progressionPath=progressionSavePath();
-    loadProgression(host.game,host.progressionPath);
+    bool loadedPersistentSave=loadProgression(host.game,host.progressionPath);
+#ifdef __APPLE__
+    if(!loadedPersistentSave){
+        const std::filesystem::path legacyPath=legacyTemporaryProgressionSavePath();
+        if(legacyPath!=host.progressionPath&&loadProgression(host.game,legacyPath)){
+            loadedPersistentSave=saveProgression(host.game.state().progression.permanent,host.game.state().localSettings,host.progressionPath);
+            std::printf("Migrated legacy macOS save to %s\n",host.progressionPath.string().c_str());
+        }
+    }
+#endif
+    std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),loadedPersistentSave?" (loaded)":"");
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     if(!capturePath||captureStart)host.game.prepareStartScreen();
@@ -1353,6 +1415,8 @@ int main(int argc, char** argv) {
         glfwSwapBuffers(window);
     }
 
+    const bool finalSaveOk=saveProgression(host.game.state().progression.permanent,host.game.state().localSettings,host.progressionPath);
+    std::printf("Persistent save %s: %s\n",finalSaveOk?"written":"FAILED",host.progressionPath.string().c_str());
     glfwDestroyWindow(window);
     host.audio.stopAll();
     host.multiplayer.disconnect();
