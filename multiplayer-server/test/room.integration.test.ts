@@ -121,12 +121,26 @@ describe("room relay integration", () => {
 
     const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
     const hostWelcome = await nextJsonType(host, "welcome");
-    expect(hostWelcome).toMatchObject({ type: "welcome", playerId: 0, role: "host", room: room.code });
+    expect(hostWelcome).toMatchObject({
+      type: "welcome",
+      playerId: 0,
+      role: "host",
+      room: room.code,
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
+    });
     expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 1, capacity: 2, started: false });
 
     const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
     const guestWelcome = await nextJsonType(guest, "welcome");
-    expect(guestWelcome).toMatchObject({ type: "welcome", playerId: 1, role: "guest", room: room.code });
+    expect(guestWelcome).toMatchObject({
+      type: "welcome",
+      playerId: 1,
+      role: "guest",
+      room: room.code,
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
+    });
     expect(await nextJsonType(host, "player_joined")).toMatchObject({ playerId: 1 });
     expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 2 });
     expect(await nextJsonType(guest, "lobby_state")).toMatchObject({ playerCount: 2 });

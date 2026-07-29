@@ -2,6 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { MAX_MESSAGE_BYTES, MAX_PLAYERS, PROTOCOL_VERSION, isRoomCode, jsonResponse, makeRoomCode, parseBinaryHeader, parseEnvelope } from "./protocol";
 
 const SERVICE_NAME = "digital-breakdown-multiplayer";
+const SOURCE_URL = "https://github.com/indrolend/digital-breakdown";
+const SOURCE_LICENSE = "AGPL-3.0";
 
 function deploymentIdentity(env: Env): Record<string, unknown> {
   const environment = typeof env.ENVIRONMENT === "string" && env.ENVIRONMENT.length > 0 ? env.ENVIRONMENT : "local";
@@ -18,6 +20,8 @@ function deploymentIdentity(env: Env): Record<string, unknown> {
     commit,
     workerVersion: metadata?.id ?? "local",
     deployedAt,
+    source: SOURCE_URL,
+    license: SOURCE_LICENSE,
   };
 }
 
@@ -200,7 +204,17 @@ export class MatchRoom extends DurableObject<Env> {
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ playerId, role, build, lastActivityAt: Date.now() } satisfies SocketAttachment);
-    this.send(server, { type: "welcome", protocol: PROTOCOL_VERSION, gameplayVersion, room: metadata.code, playerId, role, players: [...used, playerId].sort() });
+    this.send(server, {
+      type: "welcome",
+      protocol: PROTOCOL_VERSION,
+      gameplayVersion,
+      room: metadata.code,
+      playerId,
+      role,
+      players: [...used, playerId].sort(),
+      source: SOURCE_URL,
+      license: SOURCE_LICENSE,
+    });
     this.broadcast({ type: role === "host" ? "host_reconnected" : "player_joined", playerId, build }, playerId);
     await this.broadcastLobby();
     await this.scheduleExpiration();
@@ -387,6 +401,9 @@ export default {
     const url = new URL(request.url);
     try {
       if (request.method === "GET" && url.pathname === "/health") return jsonResponse(deploymentIdentity(env));
+      if (request.method === "GET" && url.pathname === "/source") {
+        return jsonResponse({ source: SOURCE_URL, license: SOURCE_LICENSE });
+      }
       if (request.method === "POST" && url.pathname === "/v1/rooms") return await createRoom(env, request);
       const match = url.pathname.match(/^\/v1\/rooms\/([A-Z2-9]{6})\/connect$/);
       if (request.method === "GET" && match) {

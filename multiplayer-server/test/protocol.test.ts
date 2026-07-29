@@ -52,6 +52,17 @@ describe("deployment identity", () => {
       service: "digital-breakdown-multiplayer",
       protocolVersion: PROTOCOL_VERSION,
       protocol: PROTOCOL_VERSION,
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
+    });
+  });
+
+  it("offers the corresponding source directly", async () => {
+    const response = await exports.default.fetch(new Request("http://local.test/source"), {});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
     });
   });
 });
