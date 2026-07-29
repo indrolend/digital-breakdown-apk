@@ -789,6 +789,7 @@ void printUsage() {
     std::printf("  --build-identity-json    Print machine-readable build identity and exit.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
+    std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
     std::printf("  --net-latency-ms N --net-jitter-ms N  Enable explicit deterministic network impairment.\n");
     std::printf("  --net-drop-snapshot-every N --net-drop-input-every N --net-seed N\n");
 }
@@ -999,6 +1000,8 @@ int main(int argc, char** argv) {
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
+    const char* captureDemoDir=argValue(argc,argv,"--capture-cpu-demo");
+    const bool captureDemo=captureDemoDir!=nullptr;
     const char* captureMenuPage=argValue(argc,argv,"--menu-page");
     const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
@@ -1077,7 +1080,7 @@ int main(int argc, char** argv) {
     std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),loadedPersistentSave?" (loaded)":"");
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
-    if(!capturePath||captureStart)host.game.prepareStartScreen();
+    if((!capturePath&&!captureDemo)||captureStart)host.game.prepareStartScreen();
     if(captureMenu){
         const char* page=captureMenuPage;
         GameState& fixture=host.game.networkMutableState();
@@ -1111,6 +1114,24 @@ int main(int argc, char** argv) {
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(capturePaused)host.game.setUiPaused(true);
     if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;}
+    if(captureDemo){
+        std::filesystem::create_directories(captureDemoDir);
+        host.game.restart();
+        GameState& fixture=host.game.networkMutableState();
+        fixture.camera.firstPerson=false;
+        for(auto& target:fixture.targets)target.alive=false;
+        auto& target=fixture.targets[0];
+        target=TargetState{};
+        target.alive=true;
+        target.pos=fixture.player.pos+Vec3{0.45f,0.0f,-2.85f};
+        target.walkTarget=target.pos;
+        target.visualYaw=0.0f;
+        target.scale=1.08f;
+        target.attackCooldown=999.0f;
+        target.armor=2.0f;
+        fixture.localSettings.particles=true;
+        fixture.localSettings.fpsCounter=false;
+    }
     host.audio.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"audio");
 
     glfwSetWindowUserPointer(window, &host);
@@ -1132,6 +1153,7 @@ int main(int argc, char** argv) {
     int framebufferHeight = 1;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
+    if(captureDemo)host.renderer.setHudVisible(false);
     if(!tvRoomTest&&!tvRoomEnter){
         host.multiplayer.configureImpairment(
             argInt(argc,argv,"--net-latency-ms"),
@@ -1337,7 +1359,7 @@ int main(int argc, char** argv) {
         const auto now = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(now - previous).count();
         previous = now;
-        if (!capturePath) simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
+        if (!capturePath&&!captureDemo) simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
 
         const DesktopGamepadInput gamepad=pollGamepad(window,host);
         const bool leftMouseDown=glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
@@ -1358,6 +1380,26 @@ int main(int argc, char** argv) {
             gamepad.shootPressed,
             gamepad.cameraPressed
         );
+        if(captureDemo){
+            const int f=captureFrames;
+            const bool approach=f<82;
+            const bool circle=f>=82&&f<236;
+            const bool retreat=f>=236&&f<286;
+            const bool melee=f==96||f==158||f==220;
+            const bool jump=f==246;
+            host.game.setTouchControls(
+                circle?0.52f:(retreat?-0.28f:0.0f),
+                approach?0.66f:(circle?0.14f:(retreat?-0.42f:0.0f)),
+                circle?0.26f:(retreat?-0.10f:0.0f),
+                0.0f,
+                false,
+                false,
+                jump,
+                melee,
+                false,
+                false
+            );
+        }
         host.lookX = 0.0;
         host.lookY = 0.0;
 
@@ -1378,7 +1420,7 @@ int main(int argc, char** argv) {
         }
 
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
-        if (capturePath) {
+        if (capturePath||captureDemo) {
             previousCamera = host.game.state().camera;
             previousPhoneTransform = host.game.state().phoneTransform;
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
@@ -1456,6 +1498,23 @@ int main(int argc, char** argv) {
             }
         }
         host.renderer.draw(renderState);
+        if(captureDemo){
+            glfwSwapBuffers(window);
+            if((captureFrames%2)==0){
+                glReadBuffer(GL_FRONT);
+                char frameName[32];
+                std::snprintf(frameName,sizeof(frameName),"frame-%04d.ppm",captureFrames/2);
+                const auto framePath=std::filesystem::path(captureDemoDir)/frameName;
+                const bool captured=captureFramebuffer(framePath,framebufferWidth,framebufferHeight);
+                glReadBuffer(GL_BACK);
+                if(!captured)std::printf("CAPTURE_CPU_DEMO_FAILED %s\n",framePath.string().c_str());
+            }
+            if(++captureFrames>=300){
+                std::printf("CAPTURE_CPU_DEMO_OK %s\n",captureDemoDir);
+                glfwSetWindowShouldClose(window,GLFW_TRUE);
+            }
+            continue;
+        }
         if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
         glfwSwapBuffers(window);
     }

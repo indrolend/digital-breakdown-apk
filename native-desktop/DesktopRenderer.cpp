@@ -233,6 +233,10 @@ void DesktopRenderer::resize(int width, int height) {
     width_ = std::max(1, width); height_ = std::max(1, height); glViewport(0, 0, width_, height_);
 }
 
+void DesktopRenderer::setHudVisible(bool visible) {
+    hudVisible_ = visible;
+}
+
 void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float yaw, float roll, float r, float g, float b, float a) {
     glPushMatrix();
     glTranslatef(p.x, p.y, p.z);
@@ -1035,6 +1039,6 @@ void DesktopRenderer::draw(const GameState& state) const {
         else drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
     }
     drawDoorDataMosh(state);
-    drawHud(state);
+    if(hudVisible_)drawHud(state);
     glFlush();
 }

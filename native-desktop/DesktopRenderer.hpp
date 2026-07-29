@@ -14,6 +14,7 @@ public:
     static void drawBox(const Vec3& position, const Vec3& scale, const Quat& orientation, float r, float g, float b);
     void setAssetRoot(const std::filesystem::path& root);
     void resize(int width, int height);
+    void setHudVisible(bool visible);
     void draw(const GameState& state) const;
 
 private:
@@ -34,6 +35,7 @@ private:
     mutable bool phoneDisplayCacheValid_ = false;
     mutable bool phoneDisplayTextureAllocated_ = false;
     mutable bool datamoshFrameReady_ = false;
+    bool hudVisible_ = true;
 
     static void drawRoomTile(const GameState& state, int tileIndex);
     static void applyCamera(const GameState& state, float aspect);
