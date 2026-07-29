@@ -233,7 +233,7 @@ bool popMenuPage(HostState& host){GameState& state=host.game.networkMutableState
 PhoneMenuElement selectedPhoneElement(const GameState& state){const PhoneMenuPageViewModel page=makePhoneMenuPageModel(state);const PhoneMenuElement* element=phoneMenuElementForSelection(page,state.hud.menuSelection);return element?*element:PhoneMenuElement{};}
 PhoneMenuAction selectedPhoneAction(const GameState& state){return selectedPhoneElement(state).action;}
 
-bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneElement(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustTriggers){settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity+direction));state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustVibration){settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration+direction));state.cinematic.textInteraction=0.65f;rumblePulse(settings,0.35f,0.55f,70);return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
+bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneElement(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustTriggers){settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity+direction));state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustVibration){settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration+direction));state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){settings.graphicsPreset=(settings.graphicsPreset+direction+3)%3;if(settings.graphicsPreset==0){settings.shadows=false;settings.portalWindow=false;settings.particles=false;}else if(settings.graphicsPreset==1){settings.shadows=true;settings.portalWindow=true;settings.particles=true;}else{settings.shadows=true;settings.portalWindow=true;settings.particles=true;}state.cinematic.textInteraction=0.65f;return true;}return false;}
 bool toggleMenuSetting(HostState& host){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;switch(selectedPhoneAction(state)){case PhoneMenuAction::MusicMute:settings.musicMuted=!settings.musicMuted;break;case PhoneMenuAction::SfxMute:settings.sfxMuted=!settings.sfxMuted;break;case PhoneMenuAction::ToggleShadows:settings.shadows=!settings.shadows;break;case PhoneMenuAction::ToggleParticles:settings.particles=!settings.particles;break;case PhoneMenuAction::ToggleFps:settings.fpsCounter=!settings.fpsCounter;break;default:return false;}state.cinematic.textInteraction=0.65f;return true;}
 
 void setMenuSelection(HostState& host,int selection) {
@@ -469,20 +469,20 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
                 ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
                 :current+(menuDown?1:-1);
             setMenuSelection(host,next);
-            rumblePulse(host.game.state().localSettings,0.08f,0.14f,35);
+            rumblePulse(host.game.state().localSettings,0.06f,0.32f,22);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
             const int direction=menuRight?1:-1;
             if(host.game.state().upgradeMenu.active)
                 setMenuSelection(host,dbmenu::moveUpgradeGridSelection(host.game.state().hud.menuSelection,direction,0));
             else if(!adjustMenuSetting(host,direction)&&menuRight)
                 toggleMenuSetting(host);
-            rumblePulse(host.game.state().localSettings,0.08f,0.14f,35);
+            rumblePulse(host.game.state().localSettings,0.12f,0.42f,30);
         }
-        if(pressed(GLFW_GAMEPAD_BUTTON_A))activateMenuSelection(window,host);
-        if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
-        if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused)controllerMenuBack(window,host);
+        if(pressed(GLFW_GAMEPAD_BUTTON_A)){rumblePulse(host.game.state().localSettings,0.42f,0.62f,48);activateMenuSelection(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
     }else if(host.enteringJoinCode){
-        if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);
+        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
     }else{
         input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*13.5f;input.lookY=rightY*10.5f;
         input.vacuumHeld=rightTriggerDown||currentButtons[GLFW_GAMEPAD_BUTTON_B]==GLFW_PRESS;
@@ -497,10 +497,10 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         else if(pressed(GLFW_GAMEPAD_BUTTON_DPAD_LEFT))host.game.setCommSignal(4);
         if(pressed(GLFW_GAMEPAD_BUTTON_START))setMouseCaptured(window,host,!host.mouseCaptured);
         if(host.game.state().player.grabbedByTarget>=0&&std::abs(leftX)>0.35f)host.game.setWiggle(leftX*12.0f);
-        if(input.meleePressed)rumblePulse(host.game.state().localSettings,0.70f,0.38f,95);
-        else if(input.shootPressed)rumblePulse(host.game.state().localSettings,0.24f,0.65f,65);
-        else if(rightTriggerPressed)rumblePulse(host.game.state().localSettings,0.18f,0.30f,45);
-        else if(input.jumpPressed)rumblePulse(host.game.state().localSettings,0.22f,0.12f,45);
+        if(input.meleePressed)rumblePulse(host.game.state().localSettings,0.78f,0.28f,82);
+        else if(input.shootPressed)rumblePulse(host.game.state().localSettings,0.18f,0.78f,52);
+        else if(rightTriggerPressed)rumblePulse(host.game.state().localSettings,0.10f,0.46f,28);
+        else if(input.jumpPressed)rumblePulse(host.game.state().localSettings,0.34f,0.16f,36);
     }
     host.previousGamepadMenuLeft=menuLeft;host.previousGamepadMenuRight=menuRight;host.previousGamepadMenuUp=menuUp;host.previousGamepadMenuDown=menuDown;
     host.previousGamepadLeftTrigger=leftTriggerDown;
