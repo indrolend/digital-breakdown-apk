@@ -1,5 +1,6 @@
 #include "ControllerRumble.hpp"
 
+#import <AppKit/AppKit.h>
 #import <CoreHaptics/CoreHaptics.h>
 #import <GameController/GameController.h>
 
@@ -28,11 +29,17 @@ void controllerRumblePulse(float lowFrequency, float highFrequency, int duration
                 [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticIntensity value:intensity],
                 [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticSharpness value:sharpness]
             ];
-            CHHapticEvent* event = [[CHHapticEvent alloc]
-                initWithEventType:CHHapticEventTypeHapticContinuous
-                parameters:parameters
-                relativeTime:0.0
-                duration:(durationMilliseconds > 10 ? durationMilliseconds / 1000.0 : 0.01)];
+            const bool transient = durationMilliseconds <= 40;
+            CHHapticEvent* event = transient
+                ? [[CHHapticEvent alloc]
+                    initWithEventType:CHHapticEventTypeHapticTransient
+                    parameters:parameters
+                    relativeTime:0.0]
+                : [[CHHapticEvent alloc]
+                    initWithEventType:CHHapticEventTypeHapticContinuous
+                    parameters:parameters
+                    relativeTime:0.0
+                    duration:durationMilliseconds / 1000.0];
             CHHapticPattern* pattern = [[CHHapticPattern alloc] initWithEvents:@[event] parameters:@[] error:&error];
             activePlayer = pattern ? [activeEngine createPlayerWithPattern:pattern error:&error] : nil;
             [activePlayer startAtTime:CHHapticTimeImmediate error:&error];
@@ -49,5 +56,18 @@ void controllerRumbleStop() {
             activePlayer = nil;
             activeEngine = nil;
         }
+    }
+}
+
+void touchpadHapticPulse(TouchpadHapticEffect effect, int vibrationSetting) {
+    if (vibrationSetting <= 0) return;
+    @autoreleasepool {
+        const NSHapticFeedbackPattern pattern =
+            effect == TouchpadHapticNavigate
+                ? NSHapticFeedbackPatternAlignment
+                : NSHapticFeedbackPatternLevelChange;
+        [[NSHapticFeedbackManager defaultPerformer]
+            performFeedbackPattern:pattern
+            performanceTime:NSHapticFeedbackPerformanceTimeNow];
     }
 }

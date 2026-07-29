@@ -130,7 +130,7 @@ target_link_libraries(
     OpenGL::GL
 )
 if(APPLE)
-    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework GameController" "-framework CoreHaptics")
+    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework AppKit" "-framework GameController" "-framework CoreHaptics")
     set_target_properties(DigitalBreakdown PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"

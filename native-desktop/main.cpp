@@ -101,7 +101,11 @@ struct DesktopGamepadInput {
 float gamepadAxis(float value,float deadzone=0.18f){const float magnitude=std::abs(value);if(magnitude<=deadzone)return 0.0f;return std::copysign((magnitude-deadzone)/(1.0f-deadzone),value);}
 float gamepadLookAxis(float value){const float axis=gamepadAxis(value,0.16f);return std::copysign(std::pow(std::abs(axis),1.35f),axis);}
 bool triggerHeld(float value,float threshold=0.20f){return value>threshold;}
-void rumblePulse(const LocalSettingsState& settings,float low,float high,int milliseconds){if(settings.controllerVibration<=0)return;const float scale=settings.controllerVibration==1?0.45f:1.0f;controllerRumblePulse(low*scale,high*scale,milliseconds);}
+void rumblePulse(const LocalSettingsState& settings,float low,float high,int milliseconds){
+    if(settings.controllerVibration<=0)return;
+    const float scale=settings.controllerVibration==1?1.0f:1.30f;
+    controllerRumblePulse(clampf(low*scale,0.0f,1.0f),clampf(high*scale,0.0f,1.0f),milliseconds);
+}
 void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
 
@@ -117,23 +121,23 @@ void updateOutcomeRumble(HostState& host){
         const AudioEventState& event=state.audio.events[(serial-1u)%AUDIO_EVENT_COUNT];
         if(event.serial!=serial)continue;
         switch(event.cue){
-            case AudioCue::PaymentSuccess: offer(6,0.78f,0.88f,135);break;
+            case AudioCue::PaymentSuccess: offer(6,0.38f,0.45f,85);break;
             case AudioCue::Capture1:case AudioCue::Capture2:case AudioCue::Capture3:case AudioCue::Capture4:case AudioCue::Capture5:
-                offer(4,0.42f,0.74f,78);break;
-            case AudioCue::HeadshotCritical:offer(5,0.64f,0.95f,88);break;
-            case AudioCue::Headshot:offer(3,0.28f,0.82f,52);break;
-            case AudioCue::NegativeAck:offer(5,0.82f,0.16f,105);break;
+                offer(4,0.20f,0.32f,55);break;
+            case AudioCue::HeadshotCritical:offer(5,0.28f,0.52f,65);break;
+            case AudioCue::Headshot:offer(3,0.12f,0.36f,40);break;
+            case AudioCue::NegativeAck:offer(5,0.38f,0.08f,75);break;
             default:break;
         }
     }
     host.lastHapticAudioSerial=newest;
     if(state.meleeVisual.hitMask!=host.previousMeleeHitMask&&(state.meleeVisual.hitMask&~host.previousMeleeHitMask)!=0)
-        offer(3,0.72f,0.34f,60);
+        offer(3,0.32f,0.12f,45);
     host.previousMeleeHitMask=state.meleeVisual.hitMask;
     for(int track=0;track<3;++track)if(state.progression.permanent.levels[track]>host.previousPermanentLevels[track])
-        offer(5,0.46f,0.82f,92);
+        offer(5,0.22f,0.36f,65);
     host.previousPermanentLevels=state.progression.permanent.levels;
-    if(host.previousPlayerAlive&&!state.player.alive)offer(7,0.92f,0.24f,175);
+    if(host.previousPlayerAlive&&!state.player.alive)offer(7,0.55f,0.10f,140);
     host.previousPlayerAlive=state.player.alive;
     if(priority>0)rumblePulse(state.localSettings,low,high,duration);
 }
@@ -554,20 +558,20 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
                 ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
                 :current+(menuDown?1:-1);
             setMenuSelection(host,next);
-            rumblePulse(host.game.state().localSettings,0.06f,0.32f,22);
+            rumblePulse(host.game.state().localSettings,0.03f,0.14f,18);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
             const int direction=menuRight?1:-1;
             if(host.game.state().upgradeMenu.active)
                 setMenuSelection(host,dbmenu::moveUpgradeGridSelection(host.game.state().hud.menuSelection,direction,0));
             else if(!adjustMenuSetting(host,direction)&&menuRight)
                 toggleMenuSetting(host);
-            rumblePulse(host.game.state().localSettings,0.12f,0.42f,30);
+            rumblePulse(host.game.state().localSettings,0.05f,0.20f,22);
         }
-        if(pressed(GLFW_GAMEPAD_BUTTON_A)){rumblePulse(host.game.state().localSettings,0.42f,0.62f,48);activateMenuSelection(window,host);}
-        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
-        if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_A)){rumblePulse(host.game.state().localSettings,0.10f,0.24f,32);activateMenuSelection(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else if(host.enteringJoinCode){
-        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.28f,0.10f,32);controllerMenuBack(window,host);}
+        if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else{
         input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*13.5f;input.lookY=rightY*10.5f;
         input.vacuumHeld=rightTriggerDown||currentButtons[GLFW_GAMEPAD_BUTTON_B]==GLFW_PRESS;
@@ -582,10 +586,9 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         else if(pressed(GLFW_GAMEPAD_BUTTON_DPAD_LEFT))host.game.setCommSignal(4);
         if(pressed(GLFW_GAMEPAD_BUTTON_START))setMouseCaptured(window,host,!host.mouseCaptured);
         if(host.game.state().player.grabbedByTarget>=0&&std::abs(leftX)>0.35f)host.game.setWiggle(leftX*12.0f);
-        if(input.meleePressed)rumblePulse(host.game.state().localSettings,0.78f,0.28f,82);
-        else if(input.shootPressed)rumblePulse(host.game.state().localSettings,0.18f,0.78f,52);
-        else if(rightTriggerPressed)rumblePulse(host.game.state().localSettings,0.10f,0.46f,28);
-        else if(input.jumpPressed)rumblePulse(host.game.state().localSettings,0.34f,0.16f,36);
+        if(input.shootPressed)rumblePulse(host.game.state().localSettings,0.08f,0.32f,36);
+        else if(rightTriggerPressed)rumblePulse(host.game.state().localSettings,0.04f,0.16f,20);
+        else if(input.jumpPressed)rumblePulse(host.game.state().localSettings,0.16f,0.04f,28);
     }
     host.previousGamepadMenuLeft=menuLeft;host.previousGamepadMenuRight=menuRight;host.previousGamepadMenuUp=menuUp;host.previousGamepadMenuDown=menuDown;
     host.previousGamepadLeftTrigger=leftTriggerDown;
@@ -687,7 +690,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
 void cursorCallback(GLFWwindow* window, double x, double y) {
     HostState* host = stateFor(window);
     if (!host) return;
-    if(!host->mouseCaptured){const int hovered=menuItemAt(window,*host,x,y);if(hovered>=0)setMenuSelection(*host,hovered);return;}
+    if(!host->mouseCaptured){const int hovered=menuItemAt(window,*host,x,y);if(hovered>=0){const int before=host->game.state().hud.menuSelection;setMenuSelection(*host,hovered);if(before!=host->game.state().hud.menuSelection)touchpadHapticPulse(TouchpadHapticNavigate,host->game.state().localSettings.controllerVibration);}return;}
 
     if (!host->haveMouse) {
         host->lastMouseX = x;
@@ -716,6 +719,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
         double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
         if((button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)&&hovered>=0){
+            touchpadHapticPulse(TouchpadHapticConfirm,host->game.state().localSettings.controllerVibration);
             activateMenuSelection(window,*host);
             if(button==GLFW_MOUSE_BUTTON_LEFT&&host->mouseCaptured)host->suppressLeftMouseUntilRelease=true;
         }

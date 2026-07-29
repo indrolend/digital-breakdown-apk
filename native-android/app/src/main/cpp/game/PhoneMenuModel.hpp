@@ -82,7 +82,7 @@ inline const char* phoneMenuTriggerSensitivityName(int value) {
 }
 
 inline const char* phoneMenuVibrationName(int value) {
-    static constexpr const char* Names[] = {"Off", "Subtle", "Strong"};
+    static constexpr const char* Names[] = {"Off", "Standard", "Strong"};
     return Names[std::max(0, std::min(2, value))];
 }
 

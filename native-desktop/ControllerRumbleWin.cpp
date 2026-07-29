@@ -44,3 +44,6 @@ void controllerRumbleStop() {
     }
     activeController = -1;
 }
+
+// Windows does not expose a general-purpose Precision Touchpad haptics API.
+void touchpadHapticPulse(TouchpadHapticEffect, int) {}
