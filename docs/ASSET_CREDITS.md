@@ -2,6 +2,10 @@
 
 This project uses a mix of original/generated assets and third-party free assets. Third-party assets must keep their creator, source URL, and license recorded here before any public release package is published.
 
+The public source distribution excludes any asset marked as pending, candidate,
+or requiring review below. The AGPL-3.0 license applies to project-owned source
+code; it does not relicense third-party media.
+
 ## Third-Party Source Assets
 
 These local source assets were provided during development. Their source pages and license metadata were verified through Sketchfab's public model API on 2026-07-24.
