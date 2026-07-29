@@ -13,7 +13,7 @@ enable_testing()
 include(FetchContent)
 
 set(DB_CHANNEL "experimental" CACHE STRING "Digital Breakdown release channel")
-set(DB_SAVE_FORMAT_VERSION "2" CACHE STRING "Digital Breakdown persistent save format version")
+set(DB_SAVE_FORMAT_VERSION "4" CACHE STRING "Digital Breakdown persistent save format version")
 string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
 string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 if(NOT DEFINED DB_HUMAN_VERSION)
@@ -99,6 +99,12 @@ add_executable(
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
+if(WIN32)
+    target_sources(DigitalBreakdown PRIVATE ControllerRumbleWin.cpp)
+elseif(APPLE)
+    target_sources(DigitalBreakdown PRIVATE ControllerRumbleMac.m)
+    set_source_files_properties(ControllerRumbleMac.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+endif()
 
 target_include_directories(
     DigitalBreakdown
@@ -124,7 +130,7 @@ target_link_libraries(
     OpenGL::GL
 )
 if(APPLE)
-    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket)
+    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework GameController" "-framework CoreHaptics")
     set_target_properties(DigitalBreakdown PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
@@ -132,6 +138,9 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
     )
+endif()
+if(WIN32)
+    target_link_libraries(DigitalBreakdown PRIVATE xinput9_1_0)
 endif()
 
 add_executable(

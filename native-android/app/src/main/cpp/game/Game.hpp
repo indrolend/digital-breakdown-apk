@@ -414,6 +414,7 @@ struct LocalSettingsState {
     float touchLookSensitivity = 1.0f;
     float controllerLookSensitivity = 1.15f;
     int controllerTriggerSensitivity = 1; // 0 deep, 1 balanced, 2 hair
+    int controllerVibration = 1; // 0 off, 1 subtle, 2 strong
     bool mobileFraming = false;
     float menuScroll = 0.0f;
     std::array<LocalMenuHistoryEntry, MenuHistoryCapacity> menuHistory{};
