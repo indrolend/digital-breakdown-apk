@@ -448,6 +448,24 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
             cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, selected ? 1.0f : 0.70f, selected ? 1.0f : 0.88f, 1.0f, alpha, selected, state.dead && row.action == PhoneMenuAction::Restart);
         }
     }
+    if (layout.maxScroll > 0.0f) {
+        const float trackX = layout.safe.x + layout.safe.w - 8.0f;
+        const float trackY = layout.content.y + 8.0f;
+        const float trackH = layout.content.h - 16.0f;
+        const float thumbH = trackH * phoneDisplayScrollThumbFraction(layout);
+        const float thumbY = trackY + (trackH - thumbH) * phoneDisplayScrollProgress(layout);
+        cpuRect(canvas, trackX, trackY, 4.0f, trackH, 0.22f, 0.48f, 0.54f, 0.30f);
+        cpuRect(canvas, trackX - 1.0f, thumbY, 6.0f, thumbH,
+                Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g,
+                Pass7Visual::ElectricCyan.b, 0.90f);
+        if (phoneDisplayHasMoreAbove(layout))
+            cpuText(canvas, "^", trackX - 8.0f, layout.content.y + 5.0f,
+                    24.0f, 0.72f, 1.0f, 1.0f, 0.82f, true);
+        if (phoneDisplayHasMoreBelow(layout))
+            cpuText(canvas, "v", trackX - 8.0f,
+                    layout.content.y + layout.content.h - 2.0f,
+                    24.0f, 0.72f, 1.0f, 1.0f, 0.82f, true);
+    }
 }
 
 std::uint64_t phoneDisplayRenderKey(const GameState& state) {
@@ -845,7 +863,8 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         const float cellW=(pw-24.0f)/3.0f;const std::string labels[3]={"SHOT","LUNGE","ATTACK"};const auto choice=[&](int item,float top,float height){const bool selected=state.hud.menuSelection==item;const float pulse=selected?clampf(state.cinematic.textInteraction,0,1):0,cx=px+12+(item%3)*cellW+(cellW-4)*0.5f,cy=py+top+height*0.5f-pulse*1.5f,tilt=selected?std::sin(state.time*2.5f+item*1.7f)*0.025f:0,scale=2.15f+pulse*0.08f;rotatedQuad(cx,cy,cellW-6,height,tilt,selected?0.16f:0.02f,selected?0.86f:0.08f,selected?1.0f:0.11f,selected?0.20f:0.09f);rotatedQuad(cx,cy+height*0.5f-1,cellW-20,1,tilt,0.66f,0.97f,1.0f,selected?0.76f:0.26f);const std::string& label=labels[item%3];text(label,cx-label.size()*6*scale*0.5f,cy-3.5f*scale,scale,selected?1.0f:0.82f,selected?1.0f:0.94f,1.0f);};
         for(int i=0;i<3;++i)choice(i,66,76);text("PERMANENT  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+158,1.2f,0.82f,1.0f,0.91f);for(int i=3;i<6;++i)choice(i,184,66);
         for(int i=0;i<3;++i){const std::string level=std::to_string(state.progression.permanent.levels[i])+"/5";text(level,px+12+i*cellW+cellW-level.size()*6*0.9f-12,py+256,0.9f,0.66f,0.90f,1.0f);}
-        text("COST 1 TOKEN",px+18,py+278,1.05f,0.72f,0.90f,1.0f);text("ESC EXIT",px+pw-82,py+278,1.05f,0.82f,0.94f,1.0f);
+        text("COST 1 TOKEN",px+18,py+278,1.05f,0.72f,0.90f,1.0f);
+        text("STICK / D-PAD MOVE   A SELECT",px+pw-252,py+278,0.88f,0.82f,0.94f,1.0f);
     } else if(state.uiPaused&&state.multiplayer.enabled){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float pw=360.0f,ph=116.0f,px=menuCanvasW-pw-12.0f,py=48.0f;
