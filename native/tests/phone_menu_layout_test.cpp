@@ -106,6 +106,10 @@ int main() {
     assert(controlsTop.selectableCount == 14);
     assert(controlsTop.rowCount == 17);
     assert(controlsTop.maxScroll > 0.0f);
+    assert(!phoneDisplayHasMoreAbove(controlsTop));
+    assert(phoneDisplayHasMoreBelow(controlsTop));
+    assert(phoneDisplayScrollThumbFraction(controlsTop) < 1.0f);
+    assert(phoneDisplayScrollProgress(controlsTop) == 0.0f);
     assert(controlsTop.rows[0].kind == PhoneMenuRowKind::Section);
     assert(controlsTop.rows[7].kind == PhoneMenuRowKind::Section);
     assert(controlsTop.rows[12].kind == PhoneMenuRowKind::Section);
@@ -116,6 +120,9 @@ int main() {
     state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 13);
     PhoneDisplayMenuLayout controlsBottom = makePhoneDisplayMenuLayout(state);
     assert(controlsBottom.scrollOffset > 0.0f);
+    assert(phoneDisplayHasMoreAbove(controlsBottom));
+    assert(!phoneDisplayHasMoreBelow(controlsBottom));
+    assert(phoneDisplayScrollProgress(controlsBottom) > 0.99f);
     assert(selectionRow(controlsBottom, 13).action == PhoneMenuAction::Back);
     expectVisibleRowsInsideSafe(controlsBottom);
 
@@ -127,6 +134,10 @@ int main() {
     assert(selectionElement(audioModel, 2).horizontal == PhoneMenuHorizontal::Toggle);
     PhoneDisplayMenuLayout audio = makePhoneDisplayMenuLayout(state);
     assert(audio.selectableCount == 5);
+    assert(audio.maxScroll == 0.0f);
+    assert(!phoneDisplayHasMoreAbove(audio));
+    assert(!phoneDisplayHasMoreBelow(audio));
+    assert(phoneDisplayScrollThumbFraction(audio) == 1.0f);
     expectVisibleRowsInsideSafe(audio);
 
     state.localSettings.menuPage = LocalMenuPage::Graphics;

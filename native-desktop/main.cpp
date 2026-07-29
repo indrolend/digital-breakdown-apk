@@ -3,6 +3,7 @@
 #include "DesktopMultiplayer.hpp"
 #include "DesktopUpdateService.hpp"
 #include "BuildIdentity.hpp"
+#include "MenuNavigation.hpp"
 #include "Game.hpp"
 #include "PhoneDisplayLayout.hpp"
 
@@ -457,9 +458,17 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     if(menuActive&&!host.enteringJoinCode){
         if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
-            const int delta=host.game.state().upgradeMenu.active?(menuDown?3:-3):(menuDown?1:-1);setMenuSelection(host,host.game.state().hud.menuSelection+delta);
+            const int current=host.game.state().hud.menuSelection;
+            const int next=host.game.state().upgradeMenu.active
+                ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
+                :current+(menuDown?1:-1);
+            setMenuSelection(host,next);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
-            const int direction=menuRight?1:-1;if(!adjustMenuSetting(host,direction)&&menuRight)toggleMenuSetting(host);
+            const int direction=menuRight?1:-1;
+            if(host.game.state().upgradeMenu.active)
+                setMenuSelection(host,dbmenu::moveUpgradeGridSelection(host.game.state().hud.menuSelection,direction,0));
+            else if(!adjustMenuSetting(host,direction)&&menuRight)
+                toggleMenuSetting(host);
         }
         if(pressed(GLFW_GAMEPAD_BUTTON_A))activateMenuSelection(window,host);
         if(pressed(GLFW_GAMEPAD_BUTTON_B))controllerMenuBack(window,host);

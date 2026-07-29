@@ -26,6 +26,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   GameplayStateContractsTest \
   PhoneBodyContractTest \
   PhoneMenuLayoutTest \
+  MenuNavigationTest \
   PhoneDisplayStateTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \

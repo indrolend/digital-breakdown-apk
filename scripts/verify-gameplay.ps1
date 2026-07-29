@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 cmake -S native-desktop -B $BuildDir -DCMAKE_BUILD_TYPE=Release
-cmake --build $BuildDir --config Release --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest PhoneDisplayStateTest Pass7ParityTest MultiplayerProtocolTest MultiplayerConnectionStateTest --parallel
+cmake --build $BuildDir --config Release --target GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest MenuNavigationTest PhoneDisplayStateTest Pass7ParityTest MultiplayerProtocolTest MultiplayerDeterminismTest MultiplayerConnectionStateTest --parallel
 ctest --test-dir $BuildDir -C Release --output-on-failure
 
 & (Join-Path $BuildDir "Release/Pass7ParityTest.exe")
@@ -16,3 +16,4 @@ if ($LASTEXITCODE -ne 0) { throw "MultiplayerProtocolTest failed with exit code 
 
 git diff --check
 if ($LASTEXITCODE -ne 0) { throw "git diff --check failed with exit code $LASTEXITCODE" }
+

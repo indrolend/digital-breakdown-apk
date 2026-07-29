@@ -198,6 +198,13 @@ target_include_directories(PhoneMenuLayoutTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(PhoneMenuLayoutTest PRIVATE cxx_std_17)
 
 add_executable(
+    MenuNavigationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/menu_navigation_test.cpp"
+)
+target_include_directories(MenuNavigationTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MenuNavigationTest PRIVATE cxx_std_17)
+
+add_executable(
     PhoneDisplayStateTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_display_state_test.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
@@ -213,6 +220,7 @@ add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
 add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
 add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
 add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
+add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 
 if(WIN32)
