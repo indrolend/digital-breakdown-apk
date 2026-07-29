@@ -77,6 +77,10 @@ struct HostState {
     bool previousGamepadMenuRight = false;
     bool previousGamepadMenuUp = false;
     bool previousGamepadMenuDown = false;
+    unsigned int lastHapticAudioSerial = 0;
+    unsigned int previousMeleeHitMask = 0;
+    std::array<int,3> previousPermanentLevels{};
+    bool previousPlayerAlive = true;
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
 };
@@ -100,6 +104,39 @@ bool triggerHeld(float value,float threshold=0.20f){return value>threshold;}
 void rumblePulse(const LocalSettingsState& settings,float low,float high,int milliseconds){if(settings.controllerVibration<=0)return;const float scale=settings.controllerVibration==1?0.45f:1.0f;controllerRumblePulse(low*scale,high*scale,milliseconds);}
 void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
+
+void updateOutcomeRumble(HostState& host){
+    const GameState& state=host.game.state();
+    int priority=0,duration=0;float low=0.0f,high=0.0f;
+    const auto offer=[&](int candidatePriority,float candidateLow,float candidateHigh,int candidateDuration){
+        if(candidatePriority<=priority)return;priority=candidatePriority;low=candidateLow;high=candidateHigh;duration=candidateDuration;
+    };
+    const unsigned int newest=state.audio.nextSerial>0?state.audio.nextSerial-1:0;
+    const unsigned int first=std::max(host.lastHapticAudioSerial+1,newest>=AUDIO_EVENT_COUNT?newest-AUDIO_EVENT_COUNT+1:1u);
+    for(unsigned int serial=first;serial<=newest;++serial){
+        const AudioEventState& event=state.audio.events[(serial-1u)%AUDIO_EVENT_COUNT];
+        if(event.serial!=serial)continue;
+        switch(event.cue){
+            case AudioCue::PaymentSuccess: offer(6,0.78f,0.88f,135);break;
+            case AudioCue::Capture1:case AudioCue::Capture2:case AudioCue::Capture3:case AudioCue::Capture4:case AudioCue::Capture5:
+                offer(4,0.42f,0.74f,78);break;
+            case AudioCue::HeadshotCritical:offer(5,0.64f,0.95f,88);break;
+            case AudioCue::Headshot:offer(3,0.28f,0.82f,52);break;
+            case AudioCue::NegativeAck:offer(5,0.82f,0.16f,105);break;
+            default:break;
+        }
+    }
+    host.lastHapticAudioSerial=newest;
+    if(state.meleeVisual.hitMask!=host.previousMeleeHitMask&&(state.meleeVisual.hitMask&~host.previousMeleeHitMask)!=0)
+        offer(3,0.72f,0.34f,60);
+    host.previousMeleeHitMask=state.meleeVisual.hitMask;
+    for(int track=0;track<3;++track)if(state.progression.permanent.levels[track]>host.previousPermanentLevels[track])
+        offer(5,0.46f,0.82f,92);
+    host.previousPermanentLevels=state.progression.permanent.levels;
+    if(host.previousPlayerAlive&&!state.player.alive)offer(7,0.92f,0.24f,175);
+    host.previousPlayerAlive=state.player.alive;
+    if(priority>0)rumblePulse(state.localSettings,low,high,duration);
+}
 
 std::filesystem::path progressionSavePath(){
     const char* overridePath=std::getenv("DB_SAVE_PATH");
@@ -1063,6 +1100,9 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
+    host.previousPermanentLevels=host.game.state().progression.permanent.levels;
+    host.previousPlayerAlive=host.game.state().player.alive;
+    host.lastHapticAudioSerial=host.game.state().audio.nextSerial>0?host.game.state().audio.nextSerial-1:0;
     if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(capturePaused)host.game.setUiPaused(true);
@@ -1351,6 +1391,7 @@ int main(int argc, char** argv) {
                 simulationAccumulator = std::fmod(simulationAccumulator, SIMULATION_STEP_SECONDS);
         }
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
+        updateOutcomeRumble(host);
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
