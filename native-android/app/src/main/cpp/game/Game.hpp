@@ -413,6 +413,7 @@ struct LocalSettingsState {
     float mouseLookSensitivity = 1.0f;
     float touchLookSensitivity = 1.0f;
     float controllerLookSensitivity = 1.15f;
+    int controllerTriggerSensitivity = 1; // 0 deep, 1 balanced, 2 hair
     bool mobileFraming = false;
     float menuScroll = 0.0f;
     std::array<LocalMenuHistoryEntry, MenuHistoryCapacity> menuHistory{};

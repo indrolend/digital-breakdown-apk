@@ -26,6 +26,7 @@ enum class PhoneMenuAction : unsigned char {
     Rebind,
     AdjustMouse,
     AdjustController,
+    AdjustTriggers,
     Defaults,
     MusicVolume,
     SfxVolume,
@@ -72,6 +73,11 @@ inline std::string phoneMenuKeyName(int key) {
 
 inline int phoneMenuPercent(float value) {
     return static_cast<int>(std::round(value * 100.0f));
+}
+
+inline const char* phoneMenuTriggerSensitivityName(int value) {
+    static constexpr const char* Names[] = {"Deep", "Balanced", "Hair"};
+    return Names[std::max(0, std::min(2, value))];
 }
 
 inline void addPhoneMenuElement(PhoneMenuPageViewModel& page, PhoneMenuElement element) {
@@ -194,6 +200,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuSection(page, "Look");
         addPhoneMenuValue(page, "Mouse", std::to_string(phoneMenuPercent(state.localSettings.mouseLookSensitivity)) + "%", PhoneMenuAction::AdjustMouse);
         addPhoneMenuValue(page, "Controller", std::to_string(phoneMenuPercent(state.localSettings.controllerLookSensitivity)) + "%", PhoneMenuAction::AdjustController);
+        addPhoneMenuValue(page, "Triggers", phoneMenuTriggerSensitivityName(state.localSettings.controllerTriggerSensitivity), PhoneMenuAction::AdjustTriggers);
         addPhoneMenuItem(page, "Defaults", PhoneMenuAction::Defaults);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Audio) {

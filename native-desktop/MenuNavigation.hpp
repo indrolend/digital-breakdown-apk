@@ -4,6 +4,20 @@
 
 namespace dbmenu {
 
+struct TriggerThresholds {
+    float left;
+    float right;
+};
+
+inline TriggerThresholds controllerTriggerThresholds(int sensitivity) {
+    static constexpr TriggerThresholds Thresholds[] = {
+        {0.55f, 0.40f},
+        {0.35f, 0.20f},
+        {0.16f, 0.08f},
+    };
+    return Thresholds[std::max(0, std::min(2, sensitivity))];
+}
+
 inline int moveUpgradeGridSelection(int current, int horizontal, int vertical) {
     current = std::max(0, std::min(5, current));
     int row = current / 3;

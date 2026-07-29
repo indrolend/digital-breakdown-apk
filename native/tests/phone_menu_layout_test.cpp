@@ -88,8 +88,8 @@ int main() {
     state.localSettings.menuScroll = 0.0f;
     PhoneMenuPageViewModel controlsModel = makePhoneMenuPageModel(state);
     assert(controlsModel.tablePage);
-    assert(controlsModel.selectableCount == 14);
-    assert(controlsModel.elementCount == 17);
+    assert(controlsModel.selectableCount == 15);
+    assert(controlsModel.elementCount == 18);
     assert(controlsModel.elements[0].kind == PhoneMenuRowKind::Section);
     assert(!controlsModel.elements[0].selectable);
     assert(selectionElement(controlsModel, 0).bindingAction == 0);
@@ -98,13 +98,15 @@ int main() {
     assert(selectionElement(controlsModel, 9).bindingAction == 9);
     assert(selectionElement(controlsModel, 10).action == PhoneMenuAction::AdjustMouse);
     assert(selectionElement(controlsModel, 11).action == PhoneMenuAction::AdjustController);
-    assert(selectionElement(controlsModel, 12).action == PhoneMenuAction::Defaults);
-    assert(selectionElement(controlsModel, 13).action == PhoneMenuAction::Back);
+    assert(selectionElement(controlsModel, 12).action == PhoneMenuAction::AdjustTriggers);
+    assert(selectionElement(controlsModel, 12).value == "Balanced");
+    assert(selectionElement(controlsModel, 13).action == PhoneMenuAction::Defaults);
+    assert(selectionElement(controlsModel, 14).action == PhoneMenuAction::Back);
 
     PhoneDisplayMenuLayout controlsTop = makePhoneDisplayMenuLayout(state);
     assert(controlsTop.title == "Controls");
-    assert(controlsTop.selectableCount == 14);
-    assert(controlsTop.rowCount == 17);
+    assert(controlsTop.selectableCount == 15);
+    assert(controlsTop.rowCount == 18);
     assert(controlsTop.maxScroll > 0.0f);
     assert(!phoneDisplayHasMoreAbove(controlsTop));
     assert(phoneDisplayHasMoreBelow(controlsTop));
@@ -116,14 +118,14 @@ int main() {
     assert(selectionRow(controlsTop, 0).action == PhoneMenuAction::Rebind);
     expectVisibleRowsInsideSafe(controlsTop);
 
-    state.hud.menuSelection = 13;
-    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 13);
+    state.hud.menuSelection = 14;
+    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 14);
     PhoneDisplayMenuLayout controlsBottom = makePhoneDisplayMenuLayout(state);
     assert(controlsBottom.scrollOffset > 0.0f);
     assert(phoneDisplayHasMoreAbove(controlsBottom));
     assert(!phoneDisplayHasMoreBelow(controlsBottom));
     assert(phoneDisplayScrollProgress(controlsBottom) > 0.99f);
-    assert(selectionRow(controlsBottom, 13).action == PhoneMenuAction::Back);
+    assert(selectionRow(controlsBottom, 14).action == PhoneMenuAction::Back);
     expectVisibleRowsInsideSafe(controlsBottom);
 
     state.localSettings.menuPage = LocalMenuPage::Audio;

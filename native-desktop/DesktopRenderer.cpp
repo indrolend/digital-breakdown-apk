@@ -499,6 +499,7 @@ std::uint64_t phoneDisplayRenderKey(const GameState& state) {
     hashPhoneDisplayFloat(hash, state.localSettings.sfxVolume, 100.0f);
     hashPhoneDisplayFloat(hash, state.localSettings.mouseLookSensitivity, 100.0f);
     hashPhoneDisplayFloat(hash, state.localSettings.controllerLookSensitivity, 100.0f);
+    hashPhoneDisplayValue(hash, state.localSettings.controllerTriggerSensitivity);
     hashPhoneDisplayFloat(hash, state.vacuum.power, 240.0f);
     hashPhoneDisplayFloat(hash, state.hud.criticalHitPulse, 120.0f);
     hashPhoneDisplayValue(hash, state.hud.lowBattery ? 1u : 0u);
