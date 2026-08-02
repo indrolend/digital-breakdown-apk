@@ -733,6 +733,7 @@ private:
     void spawnFlowerPowerup(float x, float y, float z);
     void registerMeleeBatteryHit(int hitCount);
     void updateBattery(float dt);
+    void updateRunProgressionTimers(float dt);
     void triggerRunDeath();
     void clearPlayerLifecycleActions();
     void emitAudio(AudioCue cue, float volume);

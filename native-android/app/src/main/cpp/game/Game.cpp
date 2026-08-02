@@ -693,6 +693,7 @@ void Game::emitAudio(AudioCue cue,float volume) {
 }
 
 void Game::updateBatteryAudio(float beforeValue) {
+    if(simulationPlayerId_!=0) return;
     if(state_.dead) return;
     AudioState& audio=state_.audio;
     const float before=clampf(beforeValue/100.0f,0.0f,1.0f),now=clampf(state_.player.battery/100.0f,0.0f,1.0f);
@@ -738,14 +739,7 @@ void Game::registerMeleeBatteryHit(int hitCount) {
 void Game::updateBattery(float dt) {
     if (!state_.player.alive) return;
     if(state_.player.downed){state_.player.bleedoutTimer=std::max(0.0f,state_.player.bleedoutTimer-dt);if(state_.player.bleedoutTimer<=0.0f){state_.player.downed=false;if(simulationPlayerId_!=0)state_.player.alive=false;else {bool teammate=false;for(const auto& peer:state_.multiplayer.peers)if(peer.active&&peer.player.alive&&!peer.player.downed){teammate=true;break;}if(teammate)state_.player.alive=false;else triggerRunDeath();}}return;}
-    state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
-    state_.progression.run.headshotRegenTax = std::max(0.0f, state_.progression.run.headshotRegenTax - dt * 0.11f);
-    state_.progression.run.relayPrimerTimer=std::max(0.0f,state_.progression.run.relayPrimerTimer-dt);
-    if(state_.progression.run.relayPrimerTimer<=0.0f)state_.progression.run.relayPrimerStacks=0;
-    state_.progression.run.impactGuardTimer=std::max(0.0f,state_.progression.run.impactGuardTimer-dt);
-    state_.progression.run.lastStandCooldown=std::max(0.0f,state_.progression.run.lastStandCooldown-dt);
-    state_.progression.run.lungeReboundTimer=std::max(0.0f,state_.progression.run.lungeReboundTimer-dt);
-    state_.progression.run.headshotRechargeBoost=std::max(0.0f,state_.progression.run.headshotRechargeBoost-dt);
+    if(simulationPlayerId_==0) updateRunProgressionTimers(dt);
     EnergyState& energy = state_.energy;
     if (energy.comboHits > 0 && state_.time - energy.lastComboHitTime > BATTERY_COMBO_TIMEOUT) {
         energy.comboHits = 0;
@@ -772,6 +766,17 @@ void Game::updateBattery(float dt) {
         const float tvSignal=1.0f+std::min(0.45f,0.06f*std::sqrt(static_cast<float>(std::max(0,state_.secretTv.signal))));
         gainBattery(BATTERY_IDLE_REGEN * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
     }
+}
+
+void Game::updateRunProgressionTimers(float dt) {
+    state_.progression.run.batteryRegenLock = std::max(0.0f, state_.progression.run.batteryRegenLock - dt);
+    state_.progression.run.headshotRegenTax = std::max(0.0f, state_.progression.run.headshotRegenTax - dt * 0.11f);
+    state_.progression.run.relayPrimerTimer=std::max(0.0f,state_.progression.run.relayPrimerTimer-dt);
+    if(state_.progression.run.relayPrimerTimer<=0.0f)state_.progression.run.relayPrimerStacks=0;
+    state_.progression.run.impactGuardTimer=std::max(0.0f,state_.progression.run.impactGuardTimer-dt);
+    state_.progression.run.lastStandCooldown=std::max(0.0f,state_.progression.run.lastStandCooldown-dt);
+    state_.progression.run.lungeReboundTimer=std::max(0.0f,state_.progression.run.lungeReboundTimer-dt);
+    state_.progression.run.headshotRechargeBoost=std::max(0.0f,state_.progression.run.headshotRechargeBoost-dt);
 }
 
 void Game::triggerRunDeath() {
