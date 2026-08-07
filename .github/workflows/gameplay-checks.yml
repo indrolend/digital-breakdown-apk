@@ -10,8 +10,10 @@ on:
       - ".github/workflows/gameplay-checks.yml"
   push:
     branches:
+      - main
       - agent/gameplay-architecture-distillation
       - agent/loose-soul-normalization
+      - agent/experimental-release-coherence
     paths:
       - "native-android/app/src/main/cpp/game/**"
       - "native/tests/**"

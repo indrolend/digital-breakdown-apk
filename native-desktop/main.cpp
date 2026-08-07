@@ -1,6 +1,8 @@
 #include "DesktopRenderer.hpp"
 #include "DesktopAudio.hpp"
 #include "DesktopMultiplayer.hpp"
+#include "DesktopUpdateService.hpp"
+#include "BuildIdentity.hpp"
 #include "Game.hpp"
 #include "PhoneDisplayLayout.hpp"
 
@@ -51,6 +53,7 @@ struct HostState {
     DesktopRenderer renderer;
     DesktopAudio audio;
     DesktopMultiplayer multiplayer;
+    DesktopUpdateService updater;
     std::string multiplayerService="https://digital-breakdown-multiplayer.indrolend.workers.dev";
     std::string joinCode;
     bool enteringJoinCode=false;
@@ -119,6 +122,7 @@ HostState* stateFor(GLFWwindow* window) {
 
 void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured);
 bool soloPauseMenu(const GameState& state){return state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;}
+bool multiplayerPauseMenu(const GameState& state){return state.started&&state.uiPaused&&state.multiplayer.enabled&&!state.upgradeMenu.active;}
 int menuItemCount(const GameState& state);
 
 Vec3 cross3(const Vec3& a,const Vec3& b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
@@ -315,6 +319,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
+        else if(row.action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }
@@ -332,6 +337,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Controls)pushMenuPage(host,LocalMenuPage::Controls);
         else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
+        else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;}
@@ -489,10 +495,20 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
     host.lookY = 0.0;
     glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     host.game.setUiPaused(!captured);
+    if(host.game.state().multiplayer.enabled&&wasPaused==captured){
+        std::printf("MULTIPLAYER_MENU_%s player=%d\n",captured?"CLOSED":"OPENED",host.game.state().multiplayer.localPlayerId);
+        std::fflush(stdout);
+    }
     if(!captured&&host.game.state().started&&!host.game.state().multiplayer.enabled&&!wasPaused)openMenuRoot(host,LocalMenuPage::Main);
     if (captured) {
         glfwGetCursorPos(window, &host.lastMouseX, &host.lastMouseY);
         host.haveMouse = true;
+        if(host.game.state().multiplayer.enabled){
+            std::printf("MULTIPLAYER_MOUSE_CAPTURE_RESTORED player=%d\n",host.game.state().multiplayer.localPlayerId);
+            std::fflush(stdout);
+        }
+    } else if(host.game.state().multiplayer.enabled) {
+        host.game.clearInputState();
     }
 }
 
@@ -506,7 +522,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
-        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
         const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
         const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
         if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
@@ -537,7 +553,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (host->mouseCaptured) {
             setMouseCaptured(window, *host, false);
-        } else if (soloPauseMenu(host->game.state())) {
+        } else if (soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())) {
             controllerMenuBack(window, *host);
         } else {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -650,14 +666,36 @@ bool hasArg(int argc, char** argv, const char* expected) {
 
 void printUsage() {
     std::printf("Data native desktop host\n");
+    std::printf("  build: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
+    std::printf("  --check-updates      Check the latest native manifest and exit.\n");
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
     std::printf("  --controller-test    Print connected controller state once and exit.\n");
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
+    std::printf("  --build-identity-json    Print machine-readable build identity and exit.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
+    std::printf("  --net-latency-ms N --net-jitter-ms N  Enable explicit deterministic network impairment.\n");
+    std::printf("  --net-drop-snapshot-every N --net-drop-input-every N --net-seed N\n");
+}
+
+void printBuildIdentityJson() {
+    const BuildIdentity& identity = desktopBuildIdentity();
+    std::printf(
+        "{\"commit\":\"%s\",\"commit_short\":\"%s\",\"protocol\":%u,"
+        "\"gameplay\":%u,\"save_format\":%d,\"platform\":\"%s\","
+        "\"architecture\":\"%s\",\"configuration\":\"%s\"}\n",
+        identity.commit.c_str(),
+        identity.commitShort.c_str(),
+        static_cast<unsigned int>(identity.protocolVersion),
+        static_cast<unsigned int>(identity.gameplayVersion),
+        identity.saveFormatVersion,
+        identity.platform.c_str(),
+        identity.architecture.c_str(),
+        identity.buildConfiguration.c_str()
+    );
 }
 
 bool near(float a, float b, float eps = 0.025f) {
@@ -754,6 +792,7 @@ int runSmokeTest() {
     return 0;
 }
 const char* argValue(int argc,char** argv,const char* expected){for(int i=1;i+1<argc;++i)if(std::strcmp(argv[i],expected)==0)return argv[i+1];return nullptr;}
+int argInt(int argc,char** argv,const char* expected,int fallback=0){const char* value=argValue(argc,argv,expected);if(!value)return fallback;try{return std::stoi(value);}catch(...){return fallback;}}
 bool captureFramebuffer(const std::filesystem::path& path,int width,int height){std::vector<unsigned char> pixels(static_cast<std::size_t>(width)*height*3u);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());std::ofstream out(path,std::ios::binary);if(!out)return false;out<<"P6\n"<<width<<" "<<height<<"\n255\n";for(int y=height-1;y>=0;--y)out.write(reinterpret_cast<const char*>(pixels.data()+static_cast<std::size_t>(y)*width*3u),static_cast<std::streamsize>(width*3));return static_cast<bool>(out);}
 
 int runModelTest(const std::filesystem::path& root) {
@@ -833,6 +872,10 @@ int runControllerLiveTest(){
 }
 
 int main(int argc, char** argv) {
+    if (hasArg(argc, argv, "--build-identity-json")) {
+        printBuildIdentityJson();
+        return 0;
+    }
     if (hasArg(argc, argv, "--help") || hasArg(argc, argv, "-h")) {
         printUsage();
         return 0;
@@ -848,7 +891,8 @@ int main(int argc, char** argv) {
     const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
-    const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test");
+    const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
+    const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -858,6 +902,13 @@ int main(int argc, char** argv) {
     }
     if (hasArg(argc, argv, "--model-test")) {
         return runModelTest(std::filesystem::absolute(argv[0]).parent_path());
+    }
+    if (hasArg(argc, argv, "--check-updates")) {
+        DesktopUpdateService updater;
+        updater.checkForUpdates(desktopBuildIdentity());
+        updater.disconnect();
+        const DesktopUpdateService::State result = updater.state();
+        return result == DesktopUpdateService::State::Failed ? 1 : 0;
     }
 
     glfwSetErrorCallback(errorCallback);
@@ -954,12 +1005,19 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(!tvRoomTest&&!tvRoomEnter){
+        host.multiplayer.configureImpairment(
+            argInt(argc,argv,"--net-latency-ms"),
+            argInt(argc,argv,"--net-jitter-ms"),
+            argInt(argc,argv,"--net-drop-snapshot-every"),
+            argInt(argc,argv,"--net-drop-input-every"),
+            static_cast<std::uint32_t>(std::max(1,argInt(argc,argv,"--net-seed",1))));
         if(const char* service=argValue(argc,argv,"--service-url"))host.multiplayerService=service;
         if(hasArg(argc,argv,"--host-room"))host.multiplayer.host(host.multiplayerService);
         if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
     }
 
     std::printf("Digital Breakdown native desktop host running.\n");
+    std::printf("Build identity: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
     auto previous = std::chrono::steady_clock::now();
@@ -968,15 +1026,182 @@ int main(int argc, char** argv) {
     auto previousPhoneTransform = host.game.state().phoneTransform;
     int captureFrames=0;
     bool multiplayerAutoStartIssued=false;
+    int multiplayerParityFrame=0;
+    bool multiplayerMetricsPrinted=false;
+    bool multiplayerVacuumPredicted=false;
+    bool multiplayerDischargeIssued=false;
+    bool multiplayerMeleeDurable=false;
+    bool multiplayerSoulDurable=false;
+    bool multiplayerProjectileDurable=false;
+    bool multiplayerProjectileTerminal=false;
+    int multiplayerSoulStoredFrame=-1;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
+               host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
+                const bool melee=multiplayerParityFrame>=129&&multiplayerParityFrame<499&&
+                    ((multiplayerParityFrame-129)%60)<30;
+                const bool vacuum=multiplayerParityFrame>=619&&
+                    host.game.state().player.souls==0;
+                if(host.game.state().player.souls>0&&multiplayerSoulStoredFrame<0)
+                    multiplayerSoulStoredFrame=multiplayerParityFrame;
+                const int dischargeAge=multiplayerSoulStoredFrame<0?0:
+                    multiplayerParityFrame-multiplayerSoulStoredFrame;
+                const bool shoot=multiplayerSoulStoredFrame>=0&&
+                    host.game.state().player.souls>0&&dischargeAge>=10&&
+                    dischargeAge%20==10;
+                host.game.setTouchControls(0,0,0,0,vacuum,false,false,melee,
+                                           shoot,false);
+                if(shoot&&!multiplayerDischargeIssued){
+                    multiplayerDischargeIssued=true;
+                    std::printf("MULTIPLAYER_DISCHARGE_PREDICTED frame=%d\n",
+                                multiplayerParityFrame);
+                    std::fflush(stdout);
+                }
+            }
             host.multiplayer.update(host.game);
             if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
                host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
                host.multiplayer.phase()==dbmultiplayer::Phase::Lobby&&host.multiplayer.playerCount()==2)
                 multiplayerAutoStartIssued=host.multiplayer.startMatch();
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
+                ++multiplayerParityFrame;
+                const bool guest=host.multiplayer.role()==DesktopMultiplayer::Role::Guest;
+                const bool move=guest&&multiplayerParityFrame<80;
+                const bool jump=guest&&(multiplayerParityFrame==30||multiplayerParityFrame==75);
+                const bool melee=guest&&multiplayerParityFrame>=130&&multiplayerParityFrame<500&&
+                    ((multiplayerParityFrame-130)%60)<30;
+                const bool vacuum=guest&&multiplayerParityFrame>=620&&
+                    host.game.state().player.souls==0;
+                if(!guest&&multiplayerParityFrame==100){
+                    GameState& fixture=host.game.networkMutableState();
+                    fixture.player.pos={8,0.08f,8};
+                    fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
+                    fixture.multiplayer.peers[1].player.vel={};
+                    fixture.multiplayer.peers[1].player.grounded=true;
+                    fixture.multiplayer.peers[1].player.battery=100;
+                    for(auto& target:fixture.targets)target.alive=false;
+                    auto& enemy=fixture.targets[0];enemy=TargetState{};enemy.alive=true;
+                    enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.armor=0.45f;
+                    std::printf("MULTIPLAYER_COMBAT_FIXTURE enemy=0 armor=%.2f\n",enemy.armor);
+                    std::fflush(stdout);
+                }
+                if(!guest&&multiplayerParityFrame>=100&&multiplayerParityFrame<2500){
+                    GameState& fixture=host.game.networkMutableState();
+                    fixture.multiplayer.peers[1].player.pos={0,0.08f,0};
+                    fixture.multiplayer.peers[1].player.vel={};
+                    auto& enemy=fixture.targets[0];
+                    if(enemy.alive&&!enemy.slurpable){enemy.pos={0,0.08f,-0.7f};enemy.walkTarget=enemy.pos;enemy.attackCooldown=10.0f;}
+                }
+                if(!guest&&multiplayerParityFrame==600){
+                    GameState& fixture=host.game.networkMutableState();
+                    auto& soul=fixture.targets[1];
+                    for(std::size_t i=0;i<fixture.targets.size();++i)
+                        if(i!=1)fixture.targets[i].alive=false;
+                    soul=TargetState{};soul.alive=true;soul.slurpable=true;
+                    soul.soulMorph=1.0f;soul.health=1.0f;
+                    soul.pos={0,0.57f,-2.0f};soul.walkTarget=soul.pos;
+                    std::printf("MULTIPLAYER_VACUUM_FIXTURE target=1\n");
+                    std::fflush(stdout);
+                }
+                if(!guest&&multiplayerParityFrame>=600&&multiplayerParityFrame<2500){
+                    GameState& fixture=host.game.networkMutableState();
+                    auto& soul=fixture.targets[1];
+                    if(soul.alive&&soul.soulState==SoulState::Free)
+                        soul.pos={0,0.57f,-2.0f};
+                    if(soul.soulState==SoulState::Latched||
+                       soul.soulState==SoulState::Ingesting)
+                        soul.ingestProgress=std::max(soul.ingestProgress,0.82f);
+                    for(auto& projectile:fixture.bullets)
+                        if(projectile.alive)
+                            projectile.life=std::min(projectile.life,0.12f);
+                }
+                host.game.setTouchControls(0.0f,move?1.0f:0.0f,0.0f,0.0f,
+                                           vacuum,move,jump,melee,false,false);
+                if(multiplayerParityFrame==130&&guest){std::printf("MULTIPLAYER_TEST_GUEST_MELEE frame=%d\n",multiplayerParityFrame);std::fflush(stdout);}
+                if(vacuum&&!multiplayerVacuumPredicted){
+                    multiplayerVacuumPredicted=true;
+                    std::printf("MULTIPLAYER_VACUUM_PREDICTED frame=%d\n",
+                                multiplayerParityFrame);
+                    std::fflush(stdout);
+                }
+                if(jump){
+                    std::printf("MULTIPLAYER_TEST_GUEST_JUMP frame=%d kind=%s\n",
+                                multiplayerParityFrame,
+                                multiplayerParityFrame==30?"jump":"double_jump");
+                    std::fflush(stdout);
+                }
+                if(multiplayerParityFrame==100)setMouseCaptured(window,host,false);
+                if(multiplayerParityFrame==130)setMouseCaptured(window,host,true);
+            }
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing){
+                if(host.multiplayer.role()==DesktopMultiplayer::Role::Host&&!multiplayerMeleeDurable&&
+                   multiplayerParityFrame>=100){
+                    const auto& enemy=host.game.state().targets[0];
+                    if(enemy.alive&&(enemy.slurpable||enemy.armor<0.44f)){
+                        multiplayerMeleeDurable=true;
+                        std::printf("MULTIPLAYER_DURABLE_MELEE enemy=0 armor=%.3f shell_broken=%d\n",
+                                    enemy.armor,enemy.slurpable?1:0);
+                        std::fflush(stdout);
+                    }
+                }
+                const bool parityHost=host.multiplayer.role()==DesktopMultiplayer::Role::Host;
+                const int durableGuestSouls=parityHost
+                    ?host.game.state().multiplayer.peers[1].player.souls
+                    :host.game.state().player.souls;
+                if(!multiplayerSoulDurable&&durableGuestSouls>0){
+                    multiplayerSoulDurable=true;
+                    std::printf("MULTIPLAYER_DURABLE_SOUL role=%s inventory=%d\n",
+                                parityHost?"host":"guest",durableGuestSouls);
+                    std::fflush(stdout);
+                }
+                const bool activeProjectile=std::any_of(
+                    host.game.state().bullets.begin(),host.game.state().bullets.end(),
+                    [](const BulletState& bullet){return bullet.alive;});
+                if(!multiplayerProjectileDurable&&activeProjectile){
+                    multiplayerProjectileDurable=true;
+                    std::printf("MULTIPLAYER_DURABLE_PROJECTILE role=%s state=active\n",
+                                host.multiplayer.role()==DesktopMultiplayer::Role::Host?"host":"guest");
+                    std::fflush(stdout);
+                }else if(multiplayerProjectileDurable&&!multiplayerProjectileTerminal&&
+                         !activeProjectile&&durableGuestSouls==0){
+                    multiplayerProjectileTerminal=true;
+                    std::printf("MULTIPLAYER_DURABLE_PROJECTILE role=%s state=terminal\n",
+                                host.multiplayer.role()==DesktopMultiplayer::Role::Host?"host":"guest");
+                    std::fflush(stdout);
+                }
+                if(host.multiplayer.role()==DesktopMultiplayer::Role::Guest&&
+                   (multiplayerParityFrame==30||multiplayerParityFrame==75)){
+                    std::printf("MULTIPLAYER_TEST_GUEST_JUMP_PREDICTED frame=%d jump_vel=%.3f y=%.3f\n",
+                                multiplayerParityFrame,host.game.state().player.jumpVel,
+                                host.game.state().player.pos.y);
+                    std::fflush(stdout);
+                }
+                if(multiplayerParityFrame==60&&host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
+                    std::printf("MULTIPLAYER_TEST_GUEST_MOVEMENT x=%.3f y=%.3f z=%.3f\n",
+                                host.game.state().player.pos.x,host.game.state().player.pos.y,
+                                host.game.state().player.pos.z);
+                    std::fflush(stdout);
+                }
+                if((multiplayerParityFrame%30)==0){
+                    GameState parityRender=host.game.state();
+                    host.multiplayer.applyPresentation(parityRender);
+                    const int remoteId=host.multiplayer.role()==DesktopMultiplayer::Role::Guest?0:1;
+                    const auto& remote=parityRender.multiplayer.peers[remoteId];
+                    if(remote.active){
+                        std::printf("MULTIPLAYER_VISUAL_STATE entity=player id=%d tick=%d x=%.3f y=%.3f z=%.3f yaw=%.3f action=%d\n",
+                          remoteId,parityRender.frame,remote.player.pos.x,remote.player.pos.y,
+                          remote.player.pos.z,remote.player.yaw,remote.phonePose.actionState);
+                        std::fflush(stdout);
+                    }
+                }
+                if(!multiplayerMetricsPrinted&&multiplayerParityFrame>=150){
+                    host.multiplayer.printMetrics();
+                    multiplayerMetricsPrinted=true;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(multiplayerParityTest?4:1));
             continue;
         }
         glfwPollEvents();
@@ -1045,6 +1270,7 @@ int main(int argc, char** argv) {
         host.audio.update(host.game.state());
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
+        host.multiplayer.applyPresentation(renderState);
         if(captureMenuPause){
             renderState.started=true;
             renderState.uiPaused=true;
@@ -1108,6 +1334,7 @@ int main(int argc, char** argv) {
     glfwDestroyWindow(window);
     host.audio.stopAll();
     host.multiplayer.disconnect();
+    host.updater.disconnect();
     glfwTerminate();
     return 0;
 }

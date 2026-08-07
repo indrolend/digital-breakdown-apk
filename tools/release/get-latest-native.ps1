@@ -27,7 +27,43 @@ function Get-Manifest {
     $uri = "$ManifestUrl?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
     $manifest = Invoke-RestMethod -UseBasicParsing -Uri $uri -TimeoutSec 20
     if (-not $manifest.commit -or -not $manifest.shortCommit) { throw 'Release manifest is missing commit identity.' }
+    if ($manifest.schemaVersion -and [int]$manifest.schemaVersion -gt 3) { throw "Unsupported release manifest schema $($manifest.schemaVersion)." }
     return $manifest
+}
+
+function Get-Artifact {
+    param(
+        [Parameter(Mandatory)] [object]$Manifest,
+        [Parameter(Mandatory)] [string]$Platform
+    )
+
+    if ($Manifest.artifacts) {
+        $match = @($Manifest.artifacts | Where-Object { $_.platform -eq $Platform } | Select-Object -First 1)
+        if ($match.Count -gt 0) { return $match[0] }
+    }
+
+    if ($Platform -eq 'windows' -and $Manifest.windows -and $Manifest.windows.available) {
+        return [pscustomobject]@{
+            platform = 'windows'
+            filename = 'DigitalBreakdown-Windows.zip'
+            url = [string]$Manifest.windows.url
+            sha256 = [string]$Manifest.windows.sha256
+            package = 'zip'
+            architecture = [string]$Manifest.windows.architecture
+        }
+    }
+    if ($Platform -eq 'android' -and $Manifest.android -and $Manifest.android.available) {
+        return [pscustomobject]@{
+            platform = 'android'
+            filename = 'DigitalBreakdown-Android.apk'
+            url = [string]$Manifest.android.url
+            sha256 = [string]$Manifest.android.sha256
+            package = 'apk'
+            architecture = [string]$Manifest.android.architecture
+            applicationId = [string]$Manifest.android.applicationId
+        }
+    }
+    return $null
 }
 
 function Get-VerifiedFile {
@@ -85,10 +121,11 @@ Write-ProgressEvent 14 "Release $($manifest.shortCommit) found"
 $installed = @{}
 
 if ($Platform -in @('Windows','All')) {
-    if (-not $manifest.windows.available) { throw 'Windows release is not available.' }
+    $windowsArtifact = Get-Artifact -Manifest $manifest -Platform 'windows'
+    if (-not $windowsArtifact) { throw 'Windows release is not available.' }
 
     $zip = Join-Path $DownloadRoot "DigitalBreakdown-Windows-$($manifest.shortCommit).zip"
-    Get-VerifiedFile -Url ([string]$manifest.windows.url) -ExpectedSha256 ([string]$manifest.windows.sha256) -Destination $zip -StartPercent 20 -EndPercent 58 -Label 'Windows release' | Out-Null
+    Get-VerifiedFile -Url ([string]$windowsArtifact.url) -ExpectedSha256 ([string]$windowsArtifact.sha256) -Destination $zip -StartPercent 20 -EndPercent 58 -Label 'Windows release' | Out-Null
 
     Write-ProgressEvent 65 'Preparing Windows release files'
     $target = Join-Path $ReleaseRoot "$($manifest.shortCommit)\windows"
@@ -112,7 +149,8 @@ if ($Platform -in @('Windows','All')) {
 
     $installed.windows = [pscustomobject]@{
         path = $exe
-        sha256 = [string]$manifest.windows.sha256
+        sha256 = [string]$windowsArtifact.sha256
+        architecture = [string]$windowsArtifact.architecture
     }
 
     if ($Launch) {
@@ -122,17 +160,19 @@ if ($Platform -in @('Windows','All')) {
 }
 
 if ($Platform -in @('Android','All')) {
-    if (-not $manifest.android.available) { throw 'Android release is not available.' }
+    $androidArtifact = Get-Artifact -Manifest $manifest -Platform 'android'
+    if (-not $androidArtifact) { throw 'Android release is not available.' }
 
     $apk = Join-Path $DownloadRoot "DigitalBreakdown-Android-$($manifest.shortCommit).apk"
     $start = if ($Platform -eq 'All') { 60 } else { 20 }
     $end = if ($Platform -eq 'All') { 88 } else { 86 }
-    Get-VerifiedFile -Url ([string]$manifest.android.url) -ExpectedSha256 ([string]$manifest.android.sha256) -Destination $apk -StartPercent $start -EndPercent $end -Label 'Android release' | Out-Null
+    Get-VerifiedFile -Url ([string]$androidArtifact.url) -ExpectedSha256 ([string]$androidArtifact.sha256) -Destination $apk -StartPercent $start -EndPercent $end -Label 'Android release' | Out-Null
 
     $installed.android = [pscustomobject]@{
         path = $apk
-        sha256 = [string]$manifest.android.sha256
-        applicationId = [string]$manifest.android.applicationId
+        sha256 = [string]$androidArtifact.sha256
+        applicationId = if ($androidArtifact.applicationId) { [string]$androidArtifact.applicationId } else { [string]$manifest.android.applicationId }
+        architecture = [string]$androidArtifact.architecture
     }
 }
 

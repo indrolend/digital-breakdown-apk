@@ -15,6 +15,13 @@
 
 class DesktopMultiplayer {
 public:
+    struct MultiplayerMetrics {
+        std::uint64_t snapshotsReceived=0,staleSnapshotsRejected=0;
+        std::uint64_t eventsReceived=0,duplicateEventsRejected=0,staleEventsRejected=0;
+        std::uint64_t predictedActions=0,confirmedActions=0,correctedActions=0,cancelledActions=0;
+        std::uint64_t hashMatches=0,hashMismatches=0;
+        float maximumPositionCorrection=0,maximumActionPhaseCorrection=0;
+    };
     enum class Role { Offline, Host, Guest };
     DesktopMultiplayer() = default;
     ~DesktopMultiplayer();
@@ -23,6 +30,10 @@ public:
     void disconnect();
     bool startMatch();
     void update(Game& game);
+    void applyPresentation(GameState& renderState) const;
+    void configureImpairment(int latencyMs,int jitterMs,int dropSnapshotEvery,
+                             int dropInputEvery,std::uint32_t seed);
+    void printMetrics() const;
     Role role() const { return role_.load(); }
     bool connected() const { return connected_.load(); }
     dbmultiplayer::Phase phase() const { return phase_.load(); }
@@ -55,13 +66,33 @@ private:
     std::uint32_t localInputTick_=0;
     std::int64_t lastInputSendMs_=0;
     std::uint32_t lastSnapshotSequence_=0;
+    std::int64_t lastSnapshotReceiveMs_=0;
     std::uint32_t startId_=0;
+    dbnet::NetworkWorldContext worldContext_{};
     std::array<std::uint32_t, NETWORK_PLAYER_COUNT> lastInputSequence_{};
     bool configuredGame_=false;
     bool loggedInput_=false,loggedSnapshot_=false;
+    dbnet::SnapshotInterpolator snapshotInterpolator_;
+    dbnet::GameplayEventTracker eventTracker_;
+    dbnet::WorldSnapshot previousEventWorld_{};
+    bool hasPreviousEventWorld_=false;
+    std::uint32_t nextEventId_=0;
+    std::array<std::uint16_t, BULLET_COUNT> projectileSources_{};
+    std::uint16_t lastDischargeSource_=0;
+    int netLatencyMs_=0,netJitterMs_=0,dropSnapshotEvery_=0,dropInputEvery_=0;
+    std::uint32_t impairmentSeed_=1,snapshotSendCount_=0,inputSendCount_=0;
+    MultiplayerMetrics metrics_{};
+    std::uint16_t lastPredictedButtons_=0;
+    bool sessionEndReported_=false;
+    bool acceptWorldContext(const dbnet::NetworkWorldContext& packet,
+                            const dbnet::PacketHeader& header,
+                            bool allowNewerRoom);
+    void setWorldContext(const dbnet::NetworkWorldContext& world,const char* reason);
+    void emitCombatEvents(const dbnet::WorldSnapshot& world);
     void begin(Role role,const std::string& service,const std::string& code);
     void workerMain();
     bool createRoom();
+    bool checkServiceCompatibility();
     bool connectWebSocket();
     void receiveLoop();
     bool sendBinary(const std::vector<std::uint8_t>& packet);
@@ -71,6 +102,7 @@ private:
     void publishHandles(void* session,void* connection,void* request,void* socket);
     bool releaseHandles(void* session,void* connection,void* request,void* socket);
     void setStatus(const std::string& value);
+    void endGameplaySession(Game& game,const char* reason,const char* status);
     static std::string jsonString(const std::string& json,const char* key);
     static int jsonInt(const std::string& json,const char* key,int fallback=-1);
 };

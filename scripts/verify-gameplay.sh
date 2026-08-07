@@ -29,8 +29,11 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   PhoneDisplayStateTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
+  MultiplayerDeterminismTest \
+  MultiplayerConnectionStateTest \
   --parallel
 run_logged ctest ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
 run_logged parity "$BUILD_DIR/Pass7ParityTest"
 run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
+run_logged multiplayer-determinism "$BUILD_DIR/MultiplayerDeterminismTest"
 run_logged diff-check git diff --check

@@ -12,6 +12,45 @@ enable_testing()
 
 include(FetchContent)
 
+set(DB_CHANNEL "experimental" CACHE STRING "Digital Breakdown release channel")
+set(DB_SAVE_FORMAT_VERSION "2" CACHE STRING "Digital Breakdown persistent save format version")
+string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
+string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
+if(NOT DEFINED DB_HUMAN_VERSION)
+    set(DB_HUMAN_VERSION "experimental-${DB_BUILD_DATE}")
+endif()
+if(NOT DEFINED DB_COMMIT_SHA)
+    execute_process(
+        COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}/.." rev-parse HEAD
+        OUTPUT_VARIABLE DB_COMMIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(NOT DB_COMMIT_SHA)
+    set(DB_COMMIT_SHA "unknown")
+endif()
+string(SUBSTRING "${DB_COMMIT_SHA}" 0 7 DB_COMMIT_SHORT)
+if(WIN32)
+    set(DB_PLATFORM "windows")
+elseif(APPLE)
+    set(DB_PLATFORM "macos")
+else()
+    set(DB_PLATFORM "desktop")
+endif()
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" DB_ARCHITECTURE)
+if(DB_ARCHITECTURE MATCHES "^(amd64|x86_64)$")
+    set(DB_ARCHITECTURE "x64")
+elseif(DB_ARCHITECTURE MATCHES "^(aarch64|arm64)$")
+    set(DB_ARCHITECTURE "arm64")
+endif()
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/BuildIdentity.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
+    @ONLY
+)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -54,6 +93,8 @@ add_executable(
     DesktopRenderer.cpp
     DesktopAudio.cpp
     DesktopMultiplayer.cpp
+    DesktopUpdateService.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
     "${miniaudio_SOURCE_DIR}/miniaudio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
@@ -66,11 +107,15 @@ target_include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${miniaudio_SOURCE_DIR}"
 )
 
 target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
-target_compile_definitions(DigitalBreakdown PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(DigitalBreakdown PRIVATE
+    GLFW_INCLUDE_NONE
+    DB_BUILD_CONFIGURATION="$<CONFIG>"
+)
 
 target_link_libraries(
     DigitalBreakdown
@@ -105,6 +150,15 @@ add_executable(
 )
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+
+add_executable(
+    MultiplayerDeterminismTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_determinism_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MultiplayerDeterminismTest PRIVATE cxx_std_17)
 
 add_executable(
     MultiplayerConnectionStateTest
@@ -165,6 +219,7 @@ target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
 
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
+add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
 add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)

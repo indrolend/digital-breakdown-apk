@@ -448,6 +448,7 @@ struct PhoneTransformState {
 };
 
 struct MeleeVisualState {
+    unsigned short actionSequence = 0;
     float visualTimer = 0.0f;
     float visualDuration = 0.20f;
     float dashTimer = 0.0f;
@@ -531,6 +532,7 @@ struct HudState {
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
+constexpr float NETWORK_LOCAL_CORRECTION_SMOOTHING_RATE = 10.0f;
 struct NetworkPeerState {
     bool active = false;
     int playerId = -1;
@@ -561,6 +563,7 @@ struct MultiplayerRuntimeState {
     std::array<char, 64> status{};
     std::array<NetworkPeerState, NETWORK_PLAYER_COUNT> peers{};
     bool hasWorldSnapshot = false;
+    Vec3 localPredictionCorrection;
 };
 
 struct GameState {
@@ -729,6 +732,7 @@ private:
     void registerMeleeBatteryHit(int hitCount);
     void updateBattery(float dt);
     void triggerRunDeath();
+    void clearPlayerLifecycleActions();
     void emitAudio(AudioCue cue, float volume);
     void updateSlurpAudio();
     void updateBatteryAudio(float beforeValue);
@@ -736,7 +740,7 @@ private:
     void tryJump();
     void startGroundJump();
     void startAirJump();
-    void triggerMelee();
+    void triggerMelee(bool authoritativeDamage = true);
     void shootStoredSoul();
     void releaseSoul(int index);
     void captureSoul(int index);
