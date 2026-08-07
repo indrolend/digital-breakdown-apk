@@ -241,10 +241,10 @@ jobs:
           APP="build/macos-release/bin/DigitalBreakdown.app"
           test -d "$APP"
           test -x "$APP/Contents/MacOS/DigitalBreakdown"
-          file "$APP/Contents/MacOS/DigitalBreakdown" | tee macos-binary.txt
-          grep -q 'x86_64' macos-binary.txt
-          grep -q 'arm64' macos-binary.txt
           mkdir -p dist
+          file "$APP/Contents/MacOS/DigitalBreakdown" | tee dist/macos-binary.txt
+          grep -q 'x86_64' dist/macos-binary.txt
+          grep -q 'arm64' dist/macos-binary.txt
           ditto -c -k --sequesterRsrc --keepParent "$APP" dist/DigitalBreakdown-macOS-Universal.zip
           shasum -a 256 dist/DigitalBreakdown-macOS-Universal.zip > dist/DigitalBreakdown-macOS-Universal.zip.sha256
 
@@ -255,7 +255,7 @@ jobs:
           path: |
             dist/DigitalBreakdown-macOS-Universal.zip
             dist/DigitalBreakdown-macOS-Universal.zip.sha256
-            macos-binary.txt
+            dist/macos-binary.txt
           if-no-files-found: error
           retention-days: 30
 
