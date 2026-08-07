@@ -8,6 +8,17 @@ on:
         required: false
         type: boolean
         default: false
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native-desktop/**'
+      - 'native-android/**'
+      - 'native-network/**'
+      - 'multiplayer-server/**'
+      - 'tools/desktop/**'
+      - 'tools/release/**'
+      - 'tools/dbdev.ps1'
+      - '.github/workflows/native-release.yml'
   push:
     branches: [main]
     paths:
