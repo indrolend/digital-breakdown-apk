@@ -75,6 +75,11 @@ struct HostState {
     bool previousGamepadMenuRight = false;
     bool previousGamepadMenuUp = false;
     bool previousGamepadMenuDown = false;
+    double menuRepeatStartedAt = 0.0;
+    double menuRepeatLastAt = 0.0;
+    int menuRepeatDirection = 0;
+    bool draggingMenuScrollbar = false;
+    float menuScrollbarDragOffset = 0.0f;
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
 };
@@ -167,11 +172,10 @@ PhoneTransformState interpolatePhoneTransform(
     return result;
 }
 
-int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
-    if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
-    if(state.started&&!soloPauseMenu(state))return -1;
+bool phoneMenuLogicalPoint(const GameState& state,float cursorX,float cursorY,int fw,int fh,float& logicalX,float& logicalY){
+    if(state.upgradeMenu.active||state.camera.firstPerson)return false;
+    if(state.started&&!soloPauseMenu(state))return false;
     const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);
-    if(layout.selectableCount<=0)return -1;
     const PhoneTransformState& phone=state.phoneTransform;
     const Vec3 forward=normalized(state.camera.lookTarget-state.camera.pos);
     Vec3 right=normalized(cross3(forward,{0.0f,1.0f,0.0f}));
@@ -183,17 +187,27 @@ int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,in
     const float ny=1.0f-cursorY/static_cast<float>(std::max(1,fh))*2.0f;
     const Vec3 ray=normalized(forward+right*(nx*tanHalf*aspect)+up*(ny*tanHalf));
     const float denom=dot3(ray,phone.screenNormal);
-    if(std::abs(denom)<0.00001f)return -1;
+    if(std::abs(denom)<0.00001f)return false;
     const float t=dot3(phone.screenCenter-state.camera.pos,phone.screenNormal)/denom;
-    if(t<=0.0f)return -1;
+    if(t<=0.0f)return false;
     const Vec3 hit=state.camera.pos+ray*t;
     const Vec3 local=hit-phone.screenCenter;
     const float screenW=PHONE_SCREEN_WIDTH*std::max(0.65f,state.phoneVisual.screenScale.x);
     const float screenH=PHONE_SCREEN_HEIGHT*std::max(0.65f,state.phoneVisual.screenScale.y);
     const float u=dot3(local,phone.screenRight)/screenW+0.5f;
     const float v=0.5f-dot3(local,phone.screenUp)/screenH;
-    if(u<0.0f||u>1.0f||v<0.0f||v>1.0f)return -1;
-    return phoneDisplayItemAt(layout,u*static_cast<float>(layout.logicalW),v*static_cast<float>(layout.logicalH));
+    if(u<0.0f||u>1.0f||v<0.0f||v>1.0f)return false;
+    logicalX=u*static_cast<float>(layout.logicalW);
+    logicalY=v*static_cast<float>(layout.logicalH);
+    return true;
+}
+
+int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
+    const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);
+    if(layout.selectableCount<=0)return -1;
+    float x=0.0f,y=0.0f;
+    if(!phoneMenuLogicalPoint(state,cursorX,cursorY,fw,fh,x,y))return -1;
+    return phoneDisplayItemAt(layout,x,y);
 }
 
 int menuItemCount(const GameState& state) {
@@ -457,11 +471,33 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     const bool rightTriggerDown=triggerHeld(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]);
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     if(menuActive&&!host.enteringJoinCode){
-        if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
+        const double menuNow=glfwGetTime();
+        const int verticalDirection=menuDown?1:(menuUp?-1:0);
+        bool verticalMove=false;
+        if(verticalDirection!=0){
+            const bool newlyPressed=
+                (menuUp&&!host.previousGamepadMenuUp)||
+                (menuDown&&!host.previousGamepadMenuDown);
+            if(newlyPressed||host.menuRepeatDirection!=verticalDirection){
+                host.menuRepeatDirection=verticalDirection;
+                host.menuRepeatStartedAt=menuNow;
+                host.menuRepeatLastAt=menuNow;
+                verticalMove=true;
+            }else if(menuNow-host.menuRepeatStartedAt>=0.35&&menuNow-host.menuRepeatLastAt>=0.09){
+                host.menuRepeatLastAt=menuNow;
+                verticalMove=true;
+            }
+        }else{
+            host.menuRepeatDirection=0;
+            host.menuRepeatStartedAt=0.0;
+            host.menuRepeatLastAt=0.0;
+        }
+
+        if(verticalMove){
             const int current=host.game.state().hud.menuSelection;
             const int next=host.game.state().upgradeMenu.active
-                ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
-                :current+(menuDown?1:-1);
+                ?dbmenu::moveUpgradeGridSelection(current,0,verticalDirection)
+                :current+verticalDirection;
             setMenuSelection(host,next);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
             const int direction=menuRight?1:-1;
@@ -589,7 +625,29 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
 void cursorCallback(GLFWwindow* window, double x, double y) {
     HostState* host = stateFor(window);
     if (!host) return;
-    if(!host->mouseCaptured){const int hovered=menuItemAt(window,*host,x,y);if(hovered>=0)setMenuSelection(*host,hovered);return;}
+    if(!host->mouseCaptured){
+        if(host->draggingMenuScrollbar){
+            int ww=1,wh=1,fw=1,fh=1;
+            glfwGetWindowSize(window,&ww,&wh);glfwGetFramebufferSize(window,&fw,&fh);
+            const float fx=static_cast<float>(x)*fw/std::max(1,ww);
+            const float fy=static_cast<float>(y)*fh/std::max(1,wh);
+            float lx=0.0f,ly=0.0f;
+            GameState& state=host->game.networkMutableState();
+            const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);
+            if(layout.maxScroll>0.0f&&phoneMenuLogicalPoint(state,fx,fy,fw,fh,lx,ly)){
+                const float trackY=layout.content.y+8.0f;
+                const float trackH=layout.content.h-16.0f;
+                const float thumbH=trackH*phoneDisplayScrollThumbFraction(layout);
+                const float travel=std::max(1.0f,trackH-thumbH);
+                const float thumbY=clampf(ly-host->menuScrollbarDragOffset,trackY,trackY+travel);
+                state.localSettings.menuScroll=layout.maxScroll*((thumbY-trackY)/travel);
+            }
+            return;
+        }
+        const int hovered=menuItemAt(window,*host,x,y);
+        if(hovered>=0)setMenuSelection(*host,hovered);
+        return;
+    }
 
     if (!host->haveMouse) {
         host->lastMouseX = x;
@@ -606,6 +664,42 @@ void cursorCallback(GLFWwindow* window, double x, double y) {
     host->lastMouseY = y;
 }
 
+void scrollCallback(GLFWwindow* window,double,double yoffset){
+    HostState* host=stateFor(window);
+    if(!host||host->mouseCaptured||yoffset==0.0)return;
+
+    const GameState& state=host->game.state();
+    const int count=menuItemCount(state);
+    if(count<=0||host->enteringJoinCode)return;
+
+    const int direction=yoffset<0.0?1:-1;
+    const int current=state.hud.menuSelection;
+
+    if(state.upgradeMenu.active){
+        setMenuSelection(
+            *host,
+            dbmenu::moveUpgradeGridSelection(current,0,direction)
+        );
+        return;
+    }
+
+    GameState& mutableState=host->game.networkMutableState();
+    const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(mutableState);
+
+    if(layout.maxScroll>0.0f){
+        const float step=std::max(32.0f,layout.rowHeight*1.15f);
+        mutableState.localSettings.menuScroll=clampf(
+            mutableState.localSettings.menuScroll+
+                static_cast<float>(direction)*step,
+            0.0f,
+            layout.maxScroll
+        );
+        return;
+    }
+
+    setMenuSelection(*host,current+direction);
+}
+
 void framebufferCallback(GLFWwindow* window, int width, int height) {
     HostState* host = stateFor(window);
     if (host) host->renderer.resize(width, height);
@@ -613,9 +707,48 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     HostState* host = stateFor(window);
-    if (!host || action != GLFW_PRESS) return;
+    if (!host) return;
+
+    if(button==GLFW_MOUSE_BUTTON_LEFT && action==GLFW_RELEASE){
+        host->draggingMenuScrollbar=false;
+        return;
+    }
+    if(action!=GLFW_PRESS)return;
+
     if(menuItemCount(host->game.state())>0){
-        double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
+        double x=0,y=0;glfwGetCursorPos(window,&x,&y);
+
+        if(button==GLFW_MOUSE_BUTTON_LEFT&&!host->mouseCaptured){
+            int ww=1,wh=1,fw=1,fh=1;
+            glfwGetWindowSize(window,&ww,&wh);glfwGetFramebufferSize(window,&fw,&fh);
+            const float fx=static_cast<float>(x)*fw/std::max(1,ww);
+            const float fy=static_cast<float>(y)*fh/std::max(1,wh);
+            float lx=0.0f,ly=0.0f;
+            GameState& state=host->game.networkMutableState();
+            const PhoneDisplayMenuLayout layout=makePhoneDisplayMenuLayout(state);
+            if(layout.maxScroll>0.0f&&phoneMenuLogicalPoint(state,fx,fy,fw,fh,lx,ly)){
+                const float trackX=layout.safe.x+layout.safe.w-8.0f;
+                const float trackY=layout.content.y+8.0f;
+                const float trackH=layout.content.h-16.0f;
+                const float thumbH=trackH*phoneDisplayScrollThumbFraction(layout);
+                const float travel=std::max(1.0f,trackH-thumbH);
+                const float thumbY=trackY+travel*phoneDisplayScrollProgress(layout);
+
+                if(lx>=trackX-8.0f&&lx<=trackX+12.0f&&ly>=trackY&&ly<=trackY+trackH){
+                    if(ly>=thumbY&&ly<=thumbY+thumbH){
+                        host->menuScrollbarDragOffset=ly-thumbY;
+                    }else{
+                        const float nextThumb=clampf(ly-thumbH*0.5f,trackY,trackY+travel);
+                        state.localSettings.menuScroll=layout.maxScroll*((nextThumb-trackY)/travel);
+                        host->menuScrollbarDragOffset=thumbH*0.5f;
+                    }
+                    host->draggingMenuScrollbar=true;
+                    return;
+                }
+            }
+        }
+
+        const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
         if((button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)&&hovered>=0){
             activateMenuSelection(window,*host);
@@ -623,6 +756,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
         }
         return;
     }
+
     if(button==GLFW_MOUSE_BUTTON_RIGHT && !host->game.state().dead) {
         host->game.setTouchControls(0,0,0,0,false,false,false,true,false,false);
         return;
@@ -634,9 +768,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
         setMouseCaptured(window, *host, true);
         return;
     }
-    if (!host->mouseCaptured) {
-        setMouseCaptured(window, *host, true);
-    }
+    if (!host->mouseCaptured) setMouseCaptured(window, *host, true);
 }
 
 void windowFocusCallback(GLFWwindow* window, int focused) {
@@ -976,6 +1108,7 @@ int main(int argc, char** argv) {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetScrollCallback(window, scrollCallback);
     glfwSetWindowFocusCallback(window, windowFocusCallback);
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 

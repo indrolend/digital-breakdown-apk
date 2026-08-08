@@ -458,13 +458,6 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
         cpuRect(canvas, trackX - 1.0f, thumbY, 6.0f, thumbH,
                 Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g,
                 Pass7Visual::ElectricCyan.b, 0.90f);
-        if (phoneDisplayHasMoreAbove(layout))
-            cpuText(canvas, "^", trackX - 8.0f, layout.content.y + 5.0f,
-                    24.0f, 0.72f, 1.0f, 1.0f, 0.82f, true);
-        if (phoneDisplayHasMoreBelow(layout))
-            cpuText(canvas, "v", trackX - 8.0f,
-                    layout.content.y + layout.content.h - 2.0f,
-                    24.0f, 0.72f, 1.0f, 1.0f, 0.82f, true);
     }
 }
 
