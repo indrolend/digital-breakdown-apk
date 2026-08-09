@@ -920,6 +920,7 @@ void printUsage() {
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
     std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
+    std::printf("  --capture-soul-lifecycle DIR  Capture two annotated soul lifecycle cycles.\n");
     std::printf("  --save-roundtrip-test  Verify persistent save write and reload.\n");
     std::printf("  --check-updates      Check the latest native manifest and exit.\n");
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
@@ -1048,6 +1049,38 @@ const char* argValue(int argc,char** argv,const char* expected){for(int i=1;i+1<
 int argInt(int argc,char** argv,const char* expected,int fallback=0){const char* value=argValue(argc,argv,expected);if(!value)return fallback;try{return std::stoi(value);}catch(...){return fallback;}}
 bool captureFramebuffer(const std::filesystem::path& path,int width,int height){std::vector<unsigned char> pixels(static_cast<std::size_t>(width)*height*3u);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());std::ofstream out(path,std::ios::binary);if(!out)return false;out<<"P6\n"<<width<<" "<<height<<"\n255\n";for(int y=height-1;y>=0;--y)out.write(reinterpret_cast<const char*>(pixels.data()+static_cast<std::size_t>(y)*width*3u),static_cast<std::streamsize>(width*3));return static_cast<bool>(out);}
 
+int runSoulLifecycleCapture(GLFWwindow* window,HostState& host,const std::filesystem::path& outputDirectory,int width,int height){
+    std::error_code error;std::filesystem::create_directories(outputDirectory,error);
+    if(error){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL create_directory=%s\n",error.message().c_str());return 1;}
+    std::ofstream manifest(outputDirectory/"manifest.csv",std::ios::trunc);
+    if(!manifest){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL manifest\n");return 1;}
+    manifest<<"cycle,label,game_frame,souls,target_alive,soul_state,ingest,morph,cube,visibility,target_scale,visual_x,visual_y,visual_z,rotation_y,target_x,target_y,target_z,camera_x,camera_y,camera_z,particles,file\n";
+    host.game.reset();GameState& initial=host.game.networkMutableState();
+    for(auto& target:initial.targets)target=TargetState{};
+    for(auto& request:initial.respawnQueue)request=HumanRespawnRequest{};
+    initial.cinematic=CinematicState{};initial.localSettings.shadows=true;initial.localSettings.particles=true;
+    const auto prepare=[&](int targetIndex){GameState& state=host.game.networkMutableState();state.player.pos={0,0.08f,0};state.player.battery=100;state.player.vel={};state.player.jumpVel=0;state.player.grounded=true;state.camera.yaw=0;state.camera.pitch=0;state.camera.forward={0,0,-1};TargetState& target=state.targets[targetIndex];target=TargetState{};target.alive=true;target.armor=0.10f;target.health=1;target.attackCooldown=999;target.pos=state.player.pos+Vec3{0,0,-0.75f};target.walkTarget=target.pos;};
+    prepare(0);
+    const auto step=[&](bool vacuum,bool melee){host.game.setTouchControls(0,0,0,0,vacuum,false,false,melee,false,false);host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));};
+    const auto capture=[&](int cycle,const char* label,int targetIndex){const GameState& state=host.game.state();const TargetState& target=state.targets[targetIndex];const Vec3 visualScale=target.soulVisual.scale;const bool visualFinite=std::isfinite(visualScale.x)&&std::isfinite(visualScale.y)&&std::isfinite(visualScale.z)&&std::isfinite(target.soulVisual.rotationY);const bool visualUniform=std::abs(visualScale.x-visualScale.y)<0.0001f&&std::abs(visualScale.x-visualScale.z)<0.0001f;if(!visualFinite||!visualUniform){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=%s visual=(%.6f,%.6f,%.6f) rotation=%.6f\n",cycle,label,visualScale.x,visualScale.y,visualScale.z,target.soulVisual.rotationY);return false;}int particles=0;for(const auto& particle:state.particles)if(particle.life>0)++particles;char filename[96]{};std::snprintf(filename,sizeof(filename),"cycle%d_%s.ppm",cycle,label);host.renderer.draw(state);glFinish();const bool saved=captureFramebuffer(outputDirectory/filename,width,height);glfwSwapBuffers(window);glfwPollEvents();manifest<<cycle<<','<<label<<','<<state.frame<<','<<state.player.souls<<','<<(target.alive?1:0)<<','<<static_cast<int>(target.soulState)<<','<<target.ingestProgress<<','<<target.soulMorph<<','<<target.soulCubeAmount<<','<<target.visibility<<','<<target.scale<<','<<visualScale.x<<','<<visualScale.y<<','<<visualScale.z<<','<<target.soulVisual.rotationY<<','<<target.pos.x<<','<<target.pos.y<<','<<target.pos.z<<','<<state.camera.pos.x<<','<<state.camera.pos.y<<','<<state.camera.pos.z<<','<<particles<<','<<filename<<'\n';manifest.flush();std::printf("SOUL_LIFECYCLE_FRAME cycle=%d label=%s frame=%d alive=%d state=%d ingest=%.3f morph=%.3f cube=%.3f rotation=%.3f file=%s\n",cycle,label,state.frame,target.alive?1:0,static_cast<int>(target.soulState),target.ingestProgress,target.soulMorph,target.soulCubeAmount,target.soulVisual.rotationY,filename);return saved;};
+    for(int cycle=1;cycle<=2;++cycle){
+        int targetIndex=-1;for(int i=0;i<TARGET_COUNT;++i)if(gameplay::isActiveHuman(host.game.state().targets[i])){targetIndex=i;break;}
+        if(targetIndex<0){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=population\n",cycle);return 1;}
+        prepare(targetIndex);if(!capture(cycle,"00_living",targetIndex))return 1;
+        step(false,true);step(false,false);if(!host.game.state().targets[targetIndex].slurpable){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=exposure\n",cycle);return 1;}if(!capture(cycle,"01_exposed",targetIndex))return 1;
+        int frames=0;while(host.game.state().targets[targetIndex].soulMorph<0.50f&&frames++<180)step(false,false);if(!capture(cycle,"02_morph_mid",targetIndex))return 1;
+        while(host.game.state().targets[targetIndex].soulMorph<0.995f&&frames++<240)step(false,false);if(host.game.state().targets[targetIndex].soulMorph<0.995f){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=morph\n",cycle);return 1;}if(!capture(cycle,"03_free",targetIndex))return 1;
+        {GameState& state=host.game.networkMutableState();TargetState& target=state.targets[targetIndex];target.pos=state.player.pos+Vec3{0,0.50f,-3.0f};target.walkTarget=target.pos;target.vel={};state.camera.yaw=0;state.camera.pitch=0;state.camera.forward={0,0,-1};}
+        frames=0;while(host.game.state().targets[targetIndex].soulState!=SoulState::Attracted&&frames++<180)step(true,false);if(host.game.state().targets[targetIndex].soulState==SoulState::Attracted&&!capture(cycle,"04_attracted",targetIndex))return 1;
+        while(host.game.state().targets[targetIndex].soulState!=SoulState::Latched&&host.game.state().targets[targetIndex].soulState!=SoulState::Ingesting&&frames++<300)step(true,false);if(frames>=300){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=latch\n",cycle);return 1;}if(!capture(cycle,"05_latched",targetIndex))return 1;
+        while(host.game.state().targets[targetIndex].alive&&host.game.state().targets[targetIndex].ingestProgress<0.25f&&frames++<420)step(true,false);if(!capture(cycle,"06_ingest_25",targetIndex))return 1;
+        while(host.game.state().targets[targetIndex].alive&&host.game.state().targets[targetIndex].ingestProgress<0.75f&&frames++<540)step(true,false);if(!capture(cycle,"07_ingest_75",targetIndex))return 1;
+        const int soulsBefore=host.game.state().player.souls;while(host.game.state().targets[targetIndex].alive&&frames++<720)step(true,false);if(host.game.state().player.souls!=soulsBefore+1){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=capture\n",cycle);return 1;}if(!capture(cycle,"08_captured",targetIndex))return 1;
+        step(false,false);frames=0;while(activeHumanCount(host.game.state())==0&&frames++<300)step(false,false);int respawned=-1;for(int i=0;i<TARGET_COUNT;++i)if(gameplay::isActiveHuman(host.game.state().targets[i])){respawned=i;break;}if(respawned<0){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL cycle=%d phase=respawn\n",cycle);return 1;}if(!capture(cycle,"09_respawned",respawned))return 1;
+    }
+    std::printf("SOUL_LIFECYCLE_CAPTURE_OK directory=%s\n",outputDirectory.string().c_str());return 0;
+}
+
 int runModelTest(const std::filesystem::path& root) {
     HumanModelData human;StaticModelData phone,flower;
     if(!human.load((root/"models"/"human.dbhuman").string())||!phone.load((root/"models"/"phone.dbmesh").string())||!flower.load((root/"models"/"flower.dbmesh").string())){std::fprintf(stderr,"MODEL_TEST_FAILED load\n");return 1;}
@@ -1150,6 +1183,7 @@ int main(int argc, char** argv) {
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
+    const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -1192,7 +1226,7 @@ int main(int argc, char** argv) {
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
     glfwWindowHint(GLFW_SAMPLES, 4);
-    if(capturePath||multiplayerTest||combatRenderStress)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
+    if(capturePath||multiplayerTest||combatRenderStress||soulLifecycleDirectory)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(
         1280,
@@ -1287,7 +1321,7 @@ int main(int argc, char** argv) {
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval((multiplayerTest||combatRenderStress)?0:1);
+    glfwSwapInterval((multiplayerTest||combatRenderStress||soulLifecycleDirectory)?0:1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -1296,6 +1330,7 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
+    if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(captureDemo)host.renderer.setHudVisible(false);
     if(!tvRoomTest&&!tvRoomEnter){
         host.multiplayer.configureImpairment(
