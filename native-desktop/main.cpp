@@ -820,12 +820,90 @@ struct RuntimePerfTrace {
     }
 };
 
+int activeHumanCount(const GameState& state){int count=0;for(const auto& target:state.targets)if(gameplay::isActiveHuman(target))++count;return count;}
+
+int runCombatRenderStress(GLFWwindow* window,HostState& host){
+    constexpr int cycles=10;
+    constexpr int captureFrameLimit=360;
+    constexpr int respawnFrameLimit=300;
+    constexpr int settledRespawnFrames=60;
+    host.game.reset();
+    GameState& initial=host.game.networkMutableState();
+    for(auto& target:initial.targets)target=TargetState{};
+    for(auto& request:initial.respawnQueue)request=HumanRespawnRequest{};
+    initial.cinematic=CinematicState{};
+    initial.localSettings.particles=true;
+    initial.localSettings.shadows=true;
+    initial.camera.yaw=0.0f;initial.camera.pitch=0.0f;initial.camera.forward={0,0,-1};
+    std::array<double,cycles> captureAverage{},respawnAverage{};
+    int peakParticles=0,peakFragments=0,peakSouls=0;
+
+    const auto step=[&](bool vacuum,bool melee,std::vector<double>& samples){
+        host.game.setTouchControls(0,0,0,0,vacuum,false,false,melee,false,false);
+        host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+        const auto begin=std::chrono::steady_clock::now();
+        host.renderer.draw(host.game.state());glFinish();
+        const auto end=std::chrono::steady_clock::now();
+        samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());
+        glfwSwapBuffers(window);glfwPollEvents();
+        int particles=0,fragments=0,souls=0;
+        for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
+        peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
+    };
+
+    for(int cycle=0;cycle<cycles;++cycle){
+        GameState& state=host.game.networkMutableState();
+        TargetState& target=state.targets[0];
+        target=TargetState{};target.alive=true;target.armor=0.10f;target.health=1.0f;target.attackCooldown=999.0f;
+        target.pos=state.player.pos+Vec3{0,0,-0.75f};target.walkTarget=target.pos;
+        state.player.battery=100.0f;state.player.vel={};state.player.jumpVel=0;state.player.grounded=true;state.player.grabbedByTarget=-1;
+        const int soulsBefore=state.player.souls;
+        std::vector<double> captureSamples,respawnSamples;
+        step(false,true,captureSamples);step(false,false,captureSamples);
+        if(!host.game.state().targets[0].slurpable){std::fprintf(stderr,"COMBAT_RENDER_STRESS_FAIL cycle=%d phase=melee\n",cycle+1);return 1;}
+        int captureFrames=0;
+        while(host.game.state().player.souls==soulsBefore&&captureFrames++<captureFrameLimit)step(true,false,captureSamples);
+        if(host.game.state().player.souls!=soulsBefore+1){std::fprintf(stderr,"COMBAT_RENDER_STRESS_FAIL cycle=%d phase=capture frames=%d\n",cycle+1,captureFrames);return 1;}
+        std::vector<double> respawnWaitSamples;
+        int respawnWaitFrames=0;
+        while(activeHumanCount(host.game.state())==0&&respawnWaitFrames++<respawnFrameLimit)step(false,false,respawnWaitSamples);
+        if(activeHumanCount(host.game.state())!=1){std::fprintf(stderr,"COMBAT_RENDER_STRESS_FAIL cycle=%d phase=respawn frames=%d\n",cycle+1,respawnWaitFrames);return 1;}
+        for(auto& respawned:host.game.networkMutableState().targets)if(gameplay::isActiveHuman(respawned)){
+            respawned=TargetState{};respawned.alive=true;respawned.attackCooldown=999.0f;
+            respawned.pos=host.game.state().player.pos+Vec3{0,0,-1.5f};respawned.walkTarget=respawned.pos;
+        }
+        for(int frame=0;frame<settledRespawnFrames;++frame)step(false,false,respawnSamples);
+        captureAverage[cycle]=RuntimePerfTrace::stats(captureSamples).average;
+        respawnAverage[cycle]=RuntimePerfTrace::stats(respawnSamples).average;
+        std::printf("COMBAT_RENDER_CYCLE cycle=%d capture_frames=%zu capture_avg=%.3f respawn_wait=%d settled_frames=%zu settled_avg=%.3f stored_souls=%d\n",cycle+1,captureSamples.size(),captureAverage[cycle],respawnWaitFrames,respawnSamples.size(),respawnAverage[cycle],host.game.state().player.souls);
+    }
+    const double captureEarly=std::accumulate(captureAverage.begin(),captureAverage.begin()+3,0.0)/3.0;
+    const double captureLate=std::accumulate(captureAverage.end()-3,captureAverage.end(),0.0)/3.0;
+    const double respawnEarly=std::accumulate(respawnAverage.begin(),respawnAverage.begin()+3,0.0)/3.0;
+    const double respawnLate=std::accumulate(respawnAverage.end()-3,respawnAverage.end(),0.0)/3.0;
+    std::printf("COMBAT_RENDER_STRESS_OK cycles=%d capture_early=%.3f capture_late=%.3f capture_ratio=%.3f settled_early=%.3f settled_late=%.3f settled_ratio=%.3f peak_particles=%d peak_fragments=%d peak_souls=%d\n",cycles,captureEarly,captureLate,captureEarly>0?captureLate/captureEarly:0,respawnEarly,respawnLate,respawnEarly>0?respawnLate/respawnEarly:0,peakParticles,peakFragments,peakSouls);
+    constexpr std::array<int,3> displayedSoulCounts{{0,5,10}};
+    std::array<std::vector<double>,displayedSoulCounts.size()> inventorySamples;
+    const GameState stableState=host.game.state();
+    for(int frame=0;frame<150;++frame)for(std::size_t order=0;order<displayedSoulCounts.size();++order){
+        const std::size_t index=(static_cast<std::size_t>(frame)+order)%displayedSoulCounts.size();
+        GameState renderState=stableState;renderState.player.souls=displayedSoulCounts[index];renderState.hud.storedSouls=displayedSoulCounts[index];
+        const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();
+        if(frame>=30)inventorySamples[index].push_back(std::chrono::duration<double,std::milli>(end-begin).count());
+        glfwSwapBuffers(window);glfwPollEvents();
+    }
+    for(std::size_t index=0;index<displayedSoulCounts.size();++index){const auto stats=RuntimePerfTrace::stats(inventorySamples[index]);std::printf("COMBAT_RENDER_INVENTORY souls=%d render_avg=%.3f render_p95=%.3f render_max=%.3f\n",displayedSoulCounts[index],stats.average,stats.p95,stats.maximum);}
+    return 0;
+}
+
 void printUsage() {
     std::printf("Data native desktop host\n");
     std::printf("  build: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
+    std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
     std::printf("  --save-roundtrip-test  Verify persistent save write and reload.\n");
     std::printf("  --check-updates      Check the latest native manifest and exit.\n");
     std::printf("  --parity-proximity-test  Run the camera/player wall parity test and exit.\n");
@@ -1055,6 +1133,7 @@ int main(int argc, char** argv) {
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
+    const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
         return runSmokeTest();
@@ -1097,7 +1176,7 @@ int main(int argc, char** argv) {
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
     glfwWindowHint(GLFW_SAMPLES, 4);
-    if(capturePath||multiplayerTest)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
+    if(capturePath||multiplayerTest||combatRenderStress)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(
         1280,
@@ -1192,7 +1271,7 @@ int main(int argc, char** argv) {
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval(multiplayerTest?0:1);
+    glfwSwapInterval((multiplayerTest||combatRenderStress)?0:1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -1200,6 +1279,7 @@ int main(int argc, char** argv) {
     int framebufferHeight = 1;
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
+    if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(captureDemo)host.renderer.setHudVisible(false);
     if(!tvRoomTest&&!tvRoomEnter){
         host.multiplayer.configureImpairment(
