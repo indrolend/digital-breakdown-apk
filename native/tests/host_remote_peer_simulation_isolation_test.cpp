@@ -8,9 +8,17 @@
 #include "Math.hpp"
 #include "PhoneDisplay.hpp"
 
-#define private public
 #include "Game.hpp"
-#undef private
+
+struct HostRemotePeerSimulationIsolationAccess {
+  static void updateNetworkPeers(Game& game, float dt) {
+    game.updateNetworkPeers(dt);
+  }
+
+  static void savePlayerContext(const Game& game, NetworkPeerState& context) {
+    game.savePlayerContext(context);
+  }
+};
 
 namespace {
 
@@ -161,7 +169,7 @@ bool remoteActionsDoNotEmitHostAudio() {
   peer.input.touchPrimaryHeld = true;
   peer.vacuum.power = 1.0f;
 
-  game.updateNetworkPeers(kDt);
+  HostRemotePeerSimulationIsolationAccess::updateNetworkPeers(game, kDt);
 
   const AudioState& audio = game.state().audio;
   const bool lowPowerEmitted = hasCueAfter(audio, AudioCue::LowPower, beforeSerial - 1u);
@@ -243,10 +251,10 @@ bool localContextRestoresExactly() {
   peer.vacuum.power = 1.0f;
 
   NetworkPeerState before;
-  game.savePlayerContext(before);
-  game.updateNetworkPeers(kDt);
+  HostRemotePeerSimulationIsolationAccess::savePlayerContext(game, before);
+  HostRemotePeerSimulationIsolationAccess::updateNetworkPeers(game, kDt);
   NetworkPeerState after;
-  game.savePlayerContext(after);
+  HostRemotePeerSimulationIsolationAccess::savePlayerContext(game, after);
 
   const bool restored =
       before.input.forward == after.input.forward &&
