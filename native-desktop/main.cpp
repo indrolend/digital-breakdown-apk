@@ -31,6 +31,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <numeric>
 #include <vector>
 #include <string>
@@ -836,6 +837,7 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
     initial.localSettings.shadows=true;
     initial.camera.yaw=0.0f;initial.camera.pitch=0.0f;initial.camera.forward={0,0,-1};
     std::array<double,cycles> captureAverage{},respawnAverage{};
+    std::unique_ptr<GameState> earlySettledState;
     int peakParticles=0,peakFragments=0,peakSouls=0;
 
     const auto step=[&](bool vacuum,bool melee,std::vector<double>& samples){
@@ -874,6 +876,7 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
             respawned.pos=host.game.state().player.pos+Vec3{0,0,-1.5f};respawned.walkTarget=respawned.pos;
         }
         for(int frame=0;frame<settledRespawnFrames;++frame)step(false,false,respawnSamples);
+        if(cycle==0)earlySettledState=std::make_unique<GameState>(host.game.state());
         captureAverage[cycle]=RuntimePerfTrace::stats(captureSamples).average;
         respawnAverage[cycle]=RuntimePerfTrace::stats(respawnSamples).average;
         std::printf("COMBAT_RENDER_CYCLE cycle=%d capture_frames=%zu capture_avg=%.3f respawn_wait=%d settled_frames=%zu settled_avg=%.3f stored_souls=%d\n",cycle+1,captureSamples.size(),captureAverage[cycle],respawnWaitFrames,respawnSamples.size(),respawnAverage[cycle],host.game.state().player.souls);
@@ -894,6 +897,19 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
         glfwSwapBuffers(window);glfwPollEvents();
     }
     for(std::size_t index=0;index<displayedSoulCounts.size();++index){const auto stats=RuntimePerfTrace::stats(inventorySamples[index]);std::printf("COMBAT_RENDER_INVENTORY souls=%d render_avg=%.3f render_p95=%.3f render_max=%.3f\n",displayedSoulCounts[index],stats.average,stats.p95,stats.maximum);}
+    GameState lateSettledState=host.game.state();
+    earlySettledState->player.souls=lateSettledState.player.souls=0;
+    earlySettledState->hud.storedSouls=lateSettledState.hud.storedSouls=0;
+    std::array<std::vector<double>,2> settledSnapshotSamples;
+    for(int frame=0;frame<180;++frame)for(int order=0;order<2;++order){
+        const int index=(frame+order)%2;const GameState& renderState=index==0?*earlySettledState:lateSettledState;
+        const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();
+        if(frame>=30)settledSnapshotSamples[index].push_back(std::chrono::duration<double,std::milli>(end-begin).count());
+        glfwSwapBuffers(window);glfwPollEvents();
+    }
+    const auto earlySnapshotStats=RuntimePerfTrace::stats(settledSnapshotSamples[0]);
+    const auto lateSnapshotStats=RuntimePerfTrace::stats(settledSnapshotSamples[1]);
+    std::printf("COMBAT_RENDER_SNAPSHOT_COMPARE early_avg=%.3f late_avg=%.3f late_ratio=%.3f\n",earlySnapshotStats.average,lateSnapshotStats.average,earlySnapshotStats.average>0?lateSnapshotStats.average/earlySnapshotStats.average:0);
     return 0;
 }
 
