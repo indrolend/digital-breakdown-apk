@@ -16,6 +16,11 @@ inline PointerAction pointerAction(int button, int primaryButton, int secondaryB
     return PointerAction::None;
 }
 
+inline int wheelSelection(int current, int count, int direction) {
+    if (count <= 0 || direction == 0) return current;
+    return std::max(0, std::min(count - 1, current + (direction > 0 ? 1 : -1)));
+}
+
 struct TriggerThresholds {
     float left;
     float right;

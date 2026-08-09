@@ -711,6 +711,15 @@ void cursorCallback(GLFWwindow* window, double x, double y) {
     host->lastMouseY = y;
 }
 
+void scrollCallback(GLFWwindow* window,double,double yOffset){
+    HostState* host=stateFor(window);
+    if(!host||host->mouseCaptured||host->enteringJoinCode||yOffset==0.0)return;
+    const int count=menuItemCount(host->game.state());
+    if(count<=0)return;
+    const int direction=yOffset<0.0?1:-1;
+    setMenuSelection(*host,dbmenu::wheelSelection(host->game.state().hud.menuSelection,count,direction));
+}
+
 void framebufferCallback(GLFWwindow* window, int width, int height) {
     HostState* host = stateFor(window);
     if (host) host->renderer.resize(width, height);
@@ -1319,6 +1328,7 @@ int main(int argc, char** argv) {
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
+    glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetWindowFocusCallback(window, windowFocusCallback);
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
