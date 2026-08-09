@@ -6,6 +6,7 @@
 #include "MenuNavigation.hpp"
 #include "ControllerRumble.hpp"
 #include "Game.hpp"
+#include "gameplay/TargetRoles.hpp"
 #include "PhoneDisplayLayout.hpp"
 
 #ifdef _WIN32
@@ -29,6 +30,8 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <numeric>
 #include <vector>
 #include <string>
 #include <cstdlib>
@@ -775,6 +778,48 @@ bool hasArg(int argc, char** argv, const char* expected) {
     return false;
 }
 
+struct RuntimePerfTrace {
+    struct Stats { double average=0.0,p95=0.0,maximum=0.0; };
+    std::ofstream output;
+    std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point windowStarted=started;
+    std::vector<double> totalMs,updateMs,renderMs,swapMs;
+    int maximumSimulationSteps=0;
+    int droppedAccumulatorFrames=0;
+
+    explicit RuntimePerfTrace(const char* path) {
+        if(!path||!*path)return;
+        output.open(path,std::ios::trunc);
+        if(output)output<<"seconds,game_frame,room,samples,total_avg,total_p95,total_max,update_avg,update_p95,update_max,render_avg,render_p95,render_max,swap_avg,swap_p95,swap_max,sim_steps_max,dropped_accumulator_frames,active_humans,exposed_souls,active_particles,active_fragments,pending_respawns,stored_souls\n";
+    }
+    bool active() const{return output.is_open();}
+    static Stats stats(std::vector<double> values){
+        Stats result;if(values.empty())return result;
+        result.average=std::accumulate(values.begin(),values.end(),0.0)/static_cast<double>(values.size());
+        std::sort(values.begin(),values.end());
+        result.p95=values[static_cast<std::size_t>(std::round(0.95*static_cast<double>(values.size()-1)))];
+        result.maximum=values.back();return result;
+    }
+    void sample(const GameState& state,double total,double update,double render,double swap,int simulationSteps,bool dropped){
+        if(!active())return;
+        totalMs.push_back(total);updateMs.push_back(update);renderMs.push_back(render);swapMs.push_back(swap);
+        maximumSimulationSteps=std::max(maximumSimulationSteps,simulationSteps);
+        if(dropped)++droppedAccumulatorFrames;
+        const auto now=std::chrono::steady_clock::now();
+        if(std::chrono::duration<double>(now-windowStarted).count()<1.0)return;
+        int humans=0,souls=0,particles=0,fragments=0,respawns=0;
+        for(const auto& target:state.targets){if(gameplay::isActiveHuman(target))++humans;if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;}
+        for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& request:state.respawnQueue)if(request.active)++respawns;
+        const Stats totalStats=stats(totalMs),updateStats=stats(updateMs),renderStats=stats(renderMs),swapStats=stats(swapMs);
+        output<<std::fixed<<std::setprecision(3)<<std::chrono::duration<double>(now-started).count()<<','<<state.frame<<','<<state.roomIndex<<','<<totalMs.size()<<','
+            <<totalStats.average<<','<<totalStats.p95<<','<<totalStats.maximum<<','<<updateStats.average<<','<<updateStats.p95<<','<<updateStats.maximum<<','
+            <<renderStats.average<<','<<renderStats.p95<<','<<renderStats.maximum<<','<<swapStats.average<<','<<swapStats.p95<<','<<swapStats.maximum<<','
+            <<maximumSimulationSteps<<','<<droppedAccumulatorFrames<<','<<humans<<','<<souls<<','<<particles<<','<<fragments<<','<<respawns<<','<<state.player.souls<<'\n';
+        output.flush();totalMs.clear();updateMs.clear();renderMs.clear();swapMs.clear();maximumSimulationSteps=0;droppedAccumulatorFrames=0;windowStarted=now;
+    }
+};
+
 void printUsage() {
     std::printf("Data native desktop host\n");
     std::printf("  build: %s\n", desktopBuildIdentityLine().c_str());
@@ -790,6 +835,7 @@ void printUsage() {
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
+    std::printf("  --perf-trace FILE   Record one-second runtime performance summaries as CSV.\n");
     std::printf("  --net-latency-ms N --net-jitter-ms N  Enable explicit deterministic network impairment.\n");
     std::printf("  --net-drop-snapshot-every N --net-drop-input-every N --net-seed N\n");
 }
@@ -1002,6 +1048,7 @@ int main(int argc, char** argv) {
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
     const char* captureDemoDir=argValue(argc,argv,"--capture-cpu-demo");
     const bool captureDemo=captureDemoDir!=nullptr;
+    const char* perfTracePath=argValue(argc,argv,"--perf-trace");
     const char* captureMenuPage=argValue(argc,argv,"--menu-page");
     const bool captureMenuPause=captureMenu&&captureMenuPage&&std::strcmp(captureMenuPage,"pause")==0;
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
@@ -1123,12 +1170,12 @@ int main(int argc, char** argv) {
         auto& target=fixture.targets[0];
         target=TargetState{};
         target.alive=true;
-        target.pos=fixture.player.pos+Vec3{0.45f,0.0f,-2.85f};
+        target.pos=fixture.player.pos+Vec3{0.15f,0.0f,-1.60f};
         target.walkTarget=target.pos;
         target.visualYaw=0.0f;
         target.scale=1.08f;
         target.attackCooldown=999.0f;
-        target.armor=2.0f;
+        target.armor=0.0f;
         fixture.localSettings.particles=true;
         fixture.localSettings.fpsCounter=false;
     }
@@ -1175,6 +1222,7 @@ int main(int argc, char** argv) {
     auto previousCamera = host.game.state().camera;
     auto previousPhoneTransform = host.game.state().phoneTransform;
     int captureFrames=0;
+    bool captureDemoSucceeded=false;
     bool multiplayerAutoStartIssued=false;
     int multiplayerParityFrame=0;
     bool multiplayerMetricsPrinted=false;
@@ -1185,7 +1233,11 @@ int main(int argc, char** argv) {
     bool multiplayerProjectileDurable=false;
     bool multiplayerProjectileTerminal=false;
     int multiplayerSoulStoredFrame=-1;
+    RuntimePerfTrace perfTrace(perfTracePath);
+    if(perfTracePath&&!perfTrace.active()){std::fprintf(stderr,"PERF_TRACE_FAILED path=%s\n",perfTracePath);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return 1;}
+    if(perfTrace.active())std::printf("PERF_TRACE_ACTIVE path=%s\n",perfTracePath);
     while (!glfwWindowShouldClose(window)) {
+        const auto frameBegin=std::chrono::steady_clock::now();
         if(multiplayerTest){
             if(multiplayerParityTest&&host.multiplayer.phase()==dbmultiplayer::Phase::Playing&&
                host.multiplayer.role()==DesktopMultiplayer::Role::Guest){
@@ -1382,17 +1434,19 @@ int main(int argc, char** argv) {
         );
         if(captureDemo){
             const int f=captureFrames;
-            const bool approach=f<82;
-            const bool circle=f>=82&&f<236;
-            const bool retreat=f>=236&&f<286;
-            const bool melee=f==96||f==158||f==220;
-            const bool jump=f==246;
+            bool exposedSoul=false;
+            for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable){exposedSoul=true;break;}
+            const bool approach=!exposedSoul&&f<35;
+            const bool circle=false;
+            const bool retreat=!exposedSoul&&f>=230&&f<270;
+            const bool melee=!exposedSoul&&(f==50||f==110||f==170);
+            const bool jump=!exposedSoul&&f==210;
             host.game.setTouchControls(
                 circle?0.52f:(retreat?-0.28f:0.0f),
                 approach?0.66f:(circle?0.14f:(retreat?-0.42f:0.0f)),
                 circle?0.26f:(retreat?-0.10f:0.0f),
                 0.0f,
-                false,
+                exposedSoul,
                 false,
                 jump,
                 melee,
@@ -1403,6 +1457,7 @@ int main(int argc, char** argv) {
         host.lookX = 0.0;
         host.lookY = 0.0;
 
+        const auto updateBegin=std::chrono::steady_clock::now();
         host.multiplayer.update(host.game);
         if(!multiplayerAutoStartIssued&&hasArg(argc,argv,"--auto-start-multiplayer")&&
            host.multiplayer.role()==DesktopMultiplayer::Role::Host&&
@@ -1420,12 +1475,14 @@ int main(int argc, char** argv) {
         }
 
         if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
+        int simulationSteps=0;
+        bool droppedAccumulator=false;
         if (capturePath||captureDemo) {
             previousCamera = host.game.state().camera;
             previousPhoneTransform = host.game.state().phoneTransform;
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+            simulationSteps=1;
         } else {
-            int simulationSteps = 0;
             while (simulationAccumulator >= SIMULATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
                 previousCamera = host.game.state().camera;
                 previousPhoneTransform = host.game.state().phoneTransform;
@@ -1433,9 +1490,12 @@ int main(int argc, char** argv) {
                 simulationAccumulator -= SIMULATION_STEP_SECONDS;
                 ++simulationSteps;
             }
-            if (simulationSteps == MAX_SIMULATION_STEPS_PER_FRAME && simulationAccumulator >= SIMULATION_STEP_SECONDS)
+            if (simulationSteps == MAX_SIMULATION_STEPS_PER_FRAME && simulationAccumulator >= SIMULATION_STEP_SECONDS){
+                droppedAccumulator=true;
                 simulationAccumulator = std::fmod(simulationAccumulator, SIMULATION_STEP_SECONDS);
+            }
         }
+        const auto updateEnd=std::chrono::steady_clock::now();
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         updateOutcomeRumble(host);
         host.audio.update(host.game.state());
@@ -1497,9 +1557,14 @@ int main(int argc, char** argv) {
                     );
             }
         }
+        const auto renderBegin=std::chrono::steady_clock::now();
         host.renderer.draw(renderState);
+        const auto renderEnd=std::chrono::steady_clock::now();
         if(captureDemo){
+            const auto swapBegin=std::chrono::steady_clock::now();
             glfwSwapBuffers(window);
+            const auto frameEnd=std::chrono::steady_clock::now();
+            perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
             if((captureFrames%2)==0){
                 glReadBuffer(GL_FRONT);
                 char frameName[32];
@@ -1510,13 +1575,17 @@ int main(int argc, char** argv) {
                 if(!captured)std::printf("CAPTURE_CPU_DEMO_FAILED %s\n",framePath.string().c_str());
             }
             if(++captureFrames>=300){
-                std::printf("CAPTURE_CPU_DEMO_OK %s\n",captureDemoDir);
+                captureDemoSucceeded=host.game.state().player.souls>0;
+                std::printf("CAPTURE_CPU_DEMO_%s %s stored_souls=%d\n",captureDemoSucceeded?"OK":"FAILED",captureDemoDir,host.game.state().player.souls);
                 glfwSetWindowShouldClose(window,GLFW_TRUE);
             }
             continue;
         }
         if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        const auto swapBegin=std::chrono::steady_clock::now();
         glfwSwapBuffers(window);
+        const auto frameEnd=std::chrono::steady_clock::now();
+        perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
     }
 
     const bool finalSaveOk=saveProgression(host.game.state().progression.permanent,host.game.state().localSettings,host.progressionPath);
@@ -1526,5 +1595,5 @@ int main(int argc, char** argv) {
     host.multiplayer.disconnect();
     host.updater.disconnect();
     glfwTerminate();
-    return 0;
+    return captureDemo&&!captureDemoSucceeded?1:0;
 }
