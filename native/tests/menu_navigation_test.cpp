@@ -4,6 +4,9 @@
 
 int main() {
     using dbmenu::moveUpgradeGridSelection;
+    assert(dbmenu::pointerAction(0, 0, 1) == dbmenu::PointerAction::Activate);
+    assert(dbmenu::pointerAction(1, 0, 1) == dbmenu::PointerAction::Back);
+    assert(dbmenu::pointerAction(2, 0, 1) == dbmenu::PointerAction::None);
     const auto deep = dbmenu::controllerTriggerThresholds(0);
     const auto balanced = dbmenu::controllerTriggerThresholds(1);
     const auto hair = dbmenu::controllerTriggerThresholds(2);

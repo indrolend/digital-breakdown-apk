@@ -720,9 +720,15 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     HostState* host = stateFor(window);
     if (!host || action != GLFW_PRESS) return;
     if(menuItemCount(host->game.state())>0){
+        const dbmenu::PointerAction pointerAction=dbmenu::pointerAction(button,GLFW_MOUSE_BUTTON_LEFT,GLFW_MOUSE_BUTTON_RIGHT);
+        if(pointerAction==dbmenu::PointerAction::Back){
+            touchpadHapticPulse(TouchpadHapticNavigate,host->game.state().localSettings.controllerVibration);
+            controllerMenuBack(window,*host);
+            return;
+        }
         double x=0,y=0;glfwGetCursorPos(window,&x,&y);const int hovered=menuItemAt(window,*host,x,y);
         if(hovered>=0)setMenuSelection(*host,hovered);
-        if((button==GLFW_MOUSE_BUTTON_LEFT||button==GLFW_MOUSE_BUTTON_RIGHT)&&hovered>=0){
+        if(pointerAction==dbmenu::PointerAction::Activate&&hovered>=0){
             touchpadHapticPulse(TouchpadHapticConfirm,host->game.state().localSettings.controllerVibration);
             activateMenuSelection(window,*host);
             if(button==GLFW_MOUSE_BUTTON_LEFT&&host->mouseCaptured)host->suppressLeftMouseUntilRelease=true;

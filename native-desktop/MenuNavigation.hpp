@@ -4,6 +4,18 @@
 
 namespace dbmenu {
 
+enum class PointerAction {
+    None,
+    Activate,
+    Back,
+};
+
+inline PointerAction pointerAction(int button, int primaryButton, int secondaryButton) {
+    if (button == primaryButton) return PointerAction::Activate;
+    if (button == secondaryButton) return PointerAction::Back;
+    return PointerAction::None;
+}
+
 struct TriggerThresholds {
     float left;
     float right;
