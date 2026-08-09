@@ -1,6 +1,8 @@
 #include "MultiplayerProtocol.hpp"
+#include "BoundedEventQueue.hpp"
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <memory>
 
 int main() {
@@ -500,6 +502,10 @@ int main() {
   *visualState=interpolationGame->state();
   interpolator->apply(*visualState,1,1500);
   ok &= std::abs(visualState->multiplayer.peers[0].player.pos.x-2.0f)<0.001f;
+  std::deque<int> bounded;
+  bool dropped=false;
+  for(std::size_t i=0;i<dbnet::MAX_INCOMING_EVENTS+7;++i)dropped=dbnet::pushBoundedIncoming(bounded,static_cast<int>(i))||dropped;
+  ok &= dropped&&bounded.size()==dbnet::MAX_INCOMING_EVENTS&&bounded.front()==7&&bounded.back()==static_cast<int>(dbnet::MAX_INCOMING_EVENTS+6);
   std::printf("MULTIPLAYER_PROTOCOL_%s input=%zu snapshot=%zu peerBattery=%.2f "
               "hostBattery=%.2f attackHit=%d owner=%d\n",
               ok ? "OK" : "FAILED", bytes.size(),

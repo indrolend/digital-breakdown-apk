@@ -11,6 +11,7 @@
 #include "game/Game.hpp"
 #include "render/Renderer.hpp"
 #include "MultiplayerProtocol.hpp"
+#include "BoundedEventQueue.hpp"
 
 #ifndef DIGITAL_BREAKDOWN_SOURCE_COMMIT
 #define DIGITAL_BREAKDOWN_SOURCE_COMMIT "unknown"
@@ -35,6 +36,7 @@ std::uint64_t gLastProgressionRevision = 0;
 struct NetworkEvent { enum Kind { Solo, Configure, Control, Binary } kind; bool host=false; int playerId=0; std::string room,status,text; std::vector<std::uint8_t> bytes; };
 std::mutex gNetworkMutex;
 std::deque<NetworkEvent> gNetworkEvents;
+void enqueueNetworkEvent(NetworkEvent&& event){std::lock_guard<std::mutex> lock(gNetworkMutex);if(dbnet::pushBoundedIncoming(gNetworkEvents,std::move(event)))__android_log_print(ANDROID_LOG_WARN,"DBNATIVE","network queue drop limit=%zu",dbnet::MAX_INCOMING_EVENTS);}
 bool gNetworkHost=false;
 bool gNetworkConfigured=false;
 int gNetworkPlayerId=0;
@@ -241,6 +243,6 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_isStarted(JNIEnv*, jclass) {
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_startSolo(JNIEnv*,jclass){NetworkEvent event;event.kind=NetworkEvent::Solo;std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.clear();gNetworkEvents.push_back(std::move(event));}
-extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_configureNetwork(JNIEnv* env,jclass,jboolean host,jint playerId,jstring room,jstring status){const char* r=env->GetStringUTFChars(room,nullptr);const char* s=env->GetStringUTFChars(status,nullptr);NetworkEvent event;event.kind=NetworkEvent::Configure;event.host=host==JNI_TRUE;event.playerId=playerId;event.room=r?r:"";event.status=s?s:"";if(r)env->ReleaseStringUTFChars(room,r);if(s)env->ReleaseStringUTFChars(status,s);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
-extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkControl(JNIEnv* env,jclass,jstring value){const char* chars=env->GetStringUTFChars(value,nullptr);NetworkEvent event;event.kind=NetworkEvent::Control;event.text=chars?chars:"";if(chars)env->ReleaseStringUTFChars(value,chars);std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
-extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkPacket(JNIEnv* env,jclass,jbyteArray value){NetworkEvent event;event.kind=NetworkEvent::Binary;const jsize size=env->GetArrayLength(value);event.bytes.resize(static_cast<std::size_t>(size));env->GetByteArrayRegion(value,0,size,reinterpret_cast<jbyte*>(event.bytes.data()));std::lock_guard<std::mutex> lock(gNetworkMutex);gNetworkEvents.push_back(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_configureNetwork(JNIEnv* env,jclass,jboolean host,jint playerId,jstring room,jstring status){const char* r=env->GetStringUTFChars(room,nullptr);const char* s=env->GetStringUTFChars(status,nullptr);NetworkEvent event;event.kind=NetworkEvent::Configure;event.host=host==JNI_TRUE;event.playerId=playerId;event.room=r?r:"";event.status=s?s:"";if(r)env->ReleaseStringUTFChars(room,r);if(s)env->ReleaseStringUTFChars(status,s);enqueueNetworkEvent(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkControl(JNIEnv* env,jclass,jstring value){const char* chars=env->GetStringUTFChars(value,nullptr);NetworkEvent event;event.kind=NetworkEvent::Control;event.text=chars?chars:"";if(chars)env->ReleaseStringUTFChars(value,chars);if(event.text.size()>dbnet::MAX_INCOMING_MESSAGE_BYTES){__android_log_print(ANDROID_LOG_WARN,"DBNATIVE","network control rejected bytes=%zu",event.text.size());return;}enqueueNetworkEvent(std::move(event));}
+extern "C" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_onNetworkPacket(JNIEnv* env,jclass,jbyteArray value){const jsize size=env->GetArrayLength(value);if(size<0||static_cast<std::size_t>(size)>dbnet::MAX_INCOMING_MESSAGE_BYTES){__android_log_print(ANDROID_LOG_WARN,"DBNATIVE","network packet rejected bytes=%d",static_cast<int>(size));return;}NetworkEvent event;event.kind=NetworkEvent::Binary;event.bytes.resize(static_cast<std::size_t>(size));env->GetByteArrayRegion(value,0,size,reinterpret_cast<jbyte*>(event.bytes.data()));enqueueNetworkEvent(std::move(event));}

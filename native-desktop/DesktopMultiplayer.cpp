@@ -1,4 +1,5 @@
 #include "DesktopMultiplayer.hpp"
+#include "BoundedEventQueue.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -55,6 +56,7 @@ std::string readResponse(HINTERNET request){std::string response;DWORD available
 }
 
 DesktopMultiplayer::~DesktopMultiplayer(){disconnect();}
+void DesktopMultiplayer::enqueueIncoming(Incoming&& item){std::lock_guard<std::mutex> lock(queueMutex_);if(dbnet::pushBoundedIncoming(incoming_,std::move(item))){std::printf("MULTIPLAYER_QUEUE_DROP limit=%zu\n",dbnet::MAX_INCOMING_EVENTS);std::fflush(stdout);}}
 void DesktopMultiplayer::applyPresentation(GameState& renderState) const{
   if(role_.load()==Role::Guest&&snapshotInterpolator_.ready())
     snapshotInterpolator_.apply(renderState,static_cast<std::uint8_t>(playerId_.load()),steadyMilliseconds());
@@ -140,7 +142,7 @@ if(socket)WinHttpCloseHandle(static_cast<HINTERNET>(socket));if(request)WinHttpC
 #elif defined(__APPLE__)
 if(socket)static_cast<ix::WebSocket*>(socket)->stop();
 #endif
-if(worker_.joinable()&&worker_.get_id()!=std::this_thread::get_id())worker_.join();connected_=false;role_=Role::Offline;phase_=dbmultiplayer::Phase::Offline;configuredGame_=false;snapshotInterpolator_.reset();}
+if(worker_.joinable()&&worker_.get_id()!=std::this_thread::get_id())worker_.join();{std::lock_guard<std::mutex> lock(queueMutex_);incoming_.clear();}connected_=false;role_=Role::Offline;phase_=dbmultiplayer::Phase::Offline;configuredGame_=false;snapshotInterpolator_.reset();}
 
 void DesktopMultiplayer::fail(const std::string& visibleStatus,const char* stage,unsigned long error){connected_=false;phase_=dbmultiplayer::transition(phase_.load(),dbmultiplayer::Event::Failure);setStatus(visibleStatus);std::printf("MULTIPLAYER_FAILED stage=%s status=%s error=%lu\n",stage,visibleStatus.c_str(),error);std::fflush(stdout);}
 void DesktopMultiplayer::endGameplaySession(Game& game,const char* reason,const char* visibleStatus){
@@ -422,6 +424,7 @@ bool DesktopMultiplayer::connectWebSocket() {
     if(message->type==ix::WebSocketMessageType::Close){std::printf("MULTIPLAYER_SOCKET_CLOSE code=%d reason=%s\n",message->closeInfo.code,message->closeInfo.reason.c_str());std::fflush(stdout);connected_=false;return;}
     if(message->type==ix::WebSocketMessageType::Error){std::printf("MULTIPLAYER_SOCKET_ERROR retries=%u wait=%.2f reason=%s\n",message->errorInfo.retries,message->errorInfo.wait_time,message->errorInfo.reason.c_str());std::fflush(stdout);connected_=false;return;}
     if(message->type!=ix::WebSocketMessageType::Message)return;
+    if(message->str.size()>dbnet::MAX_INCOMING_MESSAGE_BYTES){std::printf("MULTIPLAYER_PACKET_REJECT reason=size bytes=%zu\n",message->str.size());std::fflush(stdout);return;}
     Incoming item;
     item.binary=message->binary;
     if(item.binary)item.bytes.assign(message->str.begin(),message->str.end());
@@ -429,7 +432,7 @@ bool DesktopMultiplayer::connectWebSocket() {
       item.text=message->str;
       if(jsonString(item.text,"type")=="welcome")acceptWelcome(item.text);
     }
-    std::lock_guard<std::mutex> lock(queueMutex_);incoming_.push_back(std::move(item));
+    enqueueIncoming(std::move(item));
   });
   {std::lock_guard<std::mutex> lock(sendMutex_);webSocket_=&socket;}
   const auto connectResult=socket.connect(5);
@@ -472,7 +475,7 @@ void DesktopMultiplayer::workerMain(){
 }
 void DesktopMultiplayer::receiveLoop(){
 #ifdef _WIN32
-std::vector<std::uint8_t> assembled;while(!stop_){HINTERNET socket=nullptr;{std::lock_guard<std::mutex> lock(handleMutex_);socket=static_cast<HINTERNET>(webSocket_);}if(!socket)break;std::uint8_t buffer[8192];DWORD read=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE type=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;DWORD result=WinHttpWebSocketReceive(socket,buffer,sizeof(buffer),&read,&type);if(result!=NO_ERROR){if(!stop_)std::printf("MULTIPLAYER_SOCKET_RECEIVE_FAILED error=%lu\n",static_cast<unsigned long>(result));std::fflush(stdout);break;}if(type==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE){USHORT closeCode=0;DWORD reasonBytes=0;WinHttpWebSocketQueryCloseStatus(socket,&closeCode,nullptr,0,&reasonBytes);std::printf("MULTIPLAYER_SOCKET_CLOSE code=%u reason_bytes=%lu\n",static_cast<unsigned>(closeCode),static_cast<unsigned long>(reasonBytes));std::fflush(stdout);break;}assembled.insert(assembled.end(),buffer,buffer+read);const bool complete=type==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE||type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;if(!complete)continue;Incoming item;if(type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE){item.text.assign(reinterpret_cast<const char*>(assembled.data()),assembled.size());const std::string kind=jsonString(item.text,"type");if(kind=="welcome")acceptWelcome(item.text);else if(kind.empty()){std::printf("MULTIPLAYER_PACKET_REJECT type=text reason=malformed\n");std::fflush(stdout);}}else{item.binary=true;item.bytes=assembled;} {std::lock_guard<std::mutex> lock(queueMutex_);incoming_.push_back(std::move(item));}assembled.clear();if(stop_)break;}
+std::vector<std::uint8_t> assembled;while(!stop_){HINTERNET socket=nullptr;{std::lock_guard<std::mutex> lock(handleMutex_);socket=static_cast<HINTERNET>(webSocket_);}if(!socket)break;std::uint8_t buffer[8192];DWORD read=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE type=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;DWORD result=WinHttpWebSocketReceive(socket,buffer,sizeof(buffer),&read,&type);if(result!=NO_ERROR){if(!stop_)std::printf("MULTIPLAYER_SOCKET_RECEIVE_FAILED error=%lu\n",static_cast<unsigned long>(result));std::fflush(stdout);break;}if(type==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE){USHORT closeCode=0;DWORD reasonBytes=0;WinHttpWebSocketQueryCloseStatus(socket,&closeCode,nullptr,0,&reasonBytes);std::printf("MULTIPLAYER_SOCKET_CLOSE code=%u reason_bytes=%lu\n",static_cast<unsigned>(closeCode),static_cast<unsigned long>(reasonBytes));std::fflush(stdout);break;}if(assembled.size()+read>dbnet::MAX_INCOMING_MESSAGE_BYTES){std::printf("MULTIPLAYER_PACKET_REJECT type=fragmented reason=size bytes=%zu\n",assembled.size()+read);std::fflush(stdout);break;}assembled.insert(assembled.end(),buffer,buffer+read);const bool complete=type==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE||type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;if(!complete)continue;Incoming item;if(type==WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE){item.text.assign(reinterpret_cast<const char*>(assembled.data()),assembled.size());const std::string kind=jsonString(item.text,"type");if(kind=="welcome")acceptWelcome(item.text);else if(kind.empty()){std::printf("MULTIPLAYER_PACKET_REJECT type=text reason=malformed\n");std::fflush(stdout);}}else{item.binary=true;item.bytes=assembled;}enqueueIncoming(std::move(item));assembled.clear();if(stop_)break;}
 #endif
 }
 bool DesktopMultiplayer::sendBinary(const std::vector<std::uint8_t>& packet){

@@ -95,6 +95,7 @@ private:
     bool checkServiceCompatibility();
     bool connectWebSocket();
     void receiveLoop();
+    void enqueueIncoming(Incoming&& item);
     bool sendBinary(const std::vector<std::uint8_t>& packet);
     bool sendText(const std::string& message);
     bool acceptWelcome(const std::string& message);
