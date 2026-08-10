@@ -149,6 +149,12 @@ int main() {
     assert(graphicsModel.tablePage);
     assert(selectionElement(graphicsModel, 0).action == PhoneMenuAction::GraphicsPreset);
     assert(selectionElement(graphicsModel, 1).horizontal == PhoneMenuHorizontal::Toggle);
+    applyPhoneGraphicsPreset(state.localSettings, 0);
+    assert(state.localSettings.graphicsPreset == 0 && !state.localSettings.shadows && !state.localSettings.portalWindow && !state.localSettings.particles);
+    applyPhoneGraphicsPreset(state.localSettings, 1);
+    assert(state.localSettings.graphicsPreset == 1 && !state.localSettings.shadows && state.localSettings.portalWindow && state.localSettings.particles);
+    applyPhoneGraphicsPreset(state.localSettings, 2);
+    assert(state.localSettings.graphicsPreset == 2 && state.localSettings.shadows && state.localSettings.portalWindow && state.localSettings.particles);
     PhoneDisplayMenuLayout graphics = makePhoneDisplayMenuLayout(state);
     assert(graphics.selectableCount == 5);
     expectVisibleRowsInsideSafe(graphics);

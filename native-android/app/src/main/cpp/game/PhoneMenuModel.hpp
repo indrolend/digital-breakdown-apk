@@ -43,6 +43,13 @@ enum class PhoneMenuAction : unsigned char {
 
 enum class PhoneMenuHorizontal : unsigned char { None, Adjust, Toggle };
 
+inline void applyPhoneGraphicsPreset(LocalSettingsState& settings, int preset) {
+    settings.graphicsPreset = std::max(0, std::min(2, preset));
+    settings.shadows = settings.graphicsPreset >= 2;
+    settings.portalWindow = settings.graphicsPreset >= 1;
+    settings.particles = settings.graphicsPreset >= 1;
+}
+
 struct PhoneMenuElement {
     PhoneMenuRowKind kind = PhoneMenuRowKind::Item;
     PhoneMenuAction action = PhoneMenuAction::None;
