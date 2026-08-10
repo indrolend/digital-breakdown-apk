@@ -928,6 +928,44 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
     return 0;
 }
 
+int runCombatCrowdStress(GLFWwindow* window,HostState& host){
+    constexpr int waves=5,crowd=6;
+    host.game.reset();GameState& initial=host.game.networkMutableState();
+    for(auto& target:initial.targets)target=TargetState{};
+    for(auto& request:initial.respawnQueue)request=HumanRespawnRequest{};
+    initial.cinematic=CinematicState{};initial.localSettings.particles=true;initial.localSettings.shadows=true;initial.runRules.crowdedRoomStacks=1;
+    initial.player.pos={0,0.08f,0};initial.camera.yaw=0;initial.camera.pitch=0;initial.camera.forward={0,0,-1};
+    std::array<double,waves> waveAverage{};std::unique_ptr<GameState> earlyState;
+    int peakParticles=0,peakFragments=0,peakSouls=0;
+    const auto step=[&](bool vacuum,bool melee,float look,std::vector<double>& samples){
+        host.game.setTouchControls(0,0,look,0,vacuum,false,false,melee,false,false);
+        host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+        const auto begin=std::chrono::steady_clock::now();host.renderer.draw(host.game.state());glFinish();const auto end=std::chrono::steady_clock::now();
+        samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();
+        int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
+        peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
+    };
+    for(int wave=0;wave<waves;++wave){
+        GameState& state=host.game.networkMutableState();state.player.battery=100;state.player.pos={0,0.08f,0};state.player.vel={};state.player.jumpVel=0;state.player.grounded=true;state.player.grabbedByTarget=-1;state.camera.yaw=0;state.camera.pitch=0;
+        int prepared=0;for(auto& target:state.targets)if(gameplay::isActiveHuman(target)&&prepared<crowd){target.health=1;target.armor=0.10f;target.attackCooldown=999;target.pos={-0.65f+0.26f*prepared,0.08f,-0.78f-0.06f*(prepared%2)};target.walkTarget=target.pos;target.vel={};++prepared;}
+        for(int i=prepared;i<crowd;++i){TargetState& target=state.targets[i];target=TargetState{};target.alive=true;target.health=1;target.armor=0.10f;target.attackCooldown=999;target.pos={-0.65f+0.26f*i,0.08f,-0.78f-0.06f*(i%2)};target.walkTarget=target.pos;}prepared=crowd;
+        const int soulsBefore=state.player.souls;std::vector<double> samples;
+        int attackFrames=0;while(activeHumanCount(host.game.state())>0&&attackFrames<240){const bool attack=attackFrames%32==0;step(false,attack,0,samples);++attackFrames;GameState& mutableState=host.game.networkMutableState();int index=0;for(auto& target:mutableState.targets)if(gameplay::isActiveHuman(target)){target.pos={-0.65f+0.26f*(index%crowd),0.08f,-0.78f-0.06f*(index%2)};target.walkTarget=target.pos;target.attackCooldown=999;++index;}}
+        if(activeHumanCount(host.game.state())>0){std::fprintf(stderr,"COMBAT_CROWD_STRESS_FAIL wave=%d phase=exposure humans=%d\n",wave+1,activeHumanCount(host.game.state()));return 1;}
+        int captureFrames=0;while(host.game.state().player.souls<soulsBefore+crowd&&captureFrames++<900)step(true,false,0,samples);
+        if(host.game.state().player.souls!=soulsBefore+crowd){std::fprintf(stderr,"COMBAT_CROWD_STRESS_FAIL wave=%d phase=capture gained=%d frames=%d\n",wave+1,host.game.state().player.souls-soulsBefore,captureFrames);return 1;}
+        int respawnFrames=0;while(activeHumanCount(host.game.state())<crowd&&respawnFrames++<900)step(false,false,0.55f,samples);
+        if(activeHumanCount(host.game.state())<crowd){std::fprintf(stderr,"COMBAT_CROWD_STRESS_FAIL wave=%d phase=respawn humans=%d frames=%d\n",wave+1,activeHumanCount(host.game.state()),respawnFrames);return 1;}
+        for(int frame=0;frame<90;++frame)step(false,false,0.55f,samples);
+        if(wave==0)earlyState=std::make_unique<GameState>(host.game.state());waveAverage[wave]=RuntimePerfTrace::stats(samples).average;
+        std::printf("COMBAT_CROWD_WAVE wave=%d enemies=%d attack_frames=%d capture_frames=%d respawn_frames=%d render_avg=%.3f stored_souls=%d\n",wave+1,crowd,attackFrames,captureFrames,respawnFrames,waveAverage[wave],host.game.state().player.souls);
+    }
+    GameState lateState=host.game.state();earlyState->player.souls=lateState.player.souls=0;earlyState->hud.storedSouls=lateState.hud.storedSouls=0;std::array<std::vector<double>,2> snapshots;
+    for(int frame=0;frame<180;++frame)for(int order=0;order<2;++order){const int index=(frame+order)%2;const GameState& renderState=index?lateState:*earlyState;const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();if(frame>=30)snapshots[index].push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();}
+    const auto early=RuntimePerfTrace::stats(snapshots[0]),late=RuntimePerfTrace::stats(snapshots[1]);const double waveEarly=(waveAverage[0]+waveAverage[1])/2,waveLate=(waveAverage[waves-2]+waveAverage[waves-1])/2;
+    std::printf("COMBAT_CROWD_STRESS_OK waves=%d enemies=%d wave_early=%.3f wave_late=%.3f wave_ratio=%.3f snapshot_early=%.3f snapshot_late=%.3f snapshot_ratio=%.3f peak_particles=%d peak_fragments=%d peak_souls=%d\n",waves,crowd,waveEarly,waveLate,waveEarly>0?waveLate/waveEarly:0,early.average,late.average,early.average>0?late.average/early.average:0,peakParticles,peakFragments,peakSouls);return 0;
+}
+
 void printUsage() {
     std::printf("Data native desktop host\n");
     std::printf("  build: %s\n", desktopBuildIdentityLine().c_str());
@@ -935,6 +973,7 @@ void printUsage() {
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
     std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
+    std::printf("  --combat-crowd-stress   Measure repeated six-enemy overlapping combat waves.\n");
     std::printf("  --capture-soul-lifecycle DIR  Capture two annotated soul lifecycle cycles.\n");
     std::printf("  --save-roundtrip-test  Verify persistent save write and reload.\n");
     std::printf("  --check-updates      Check the latest native manifest and exit.\n");
@@ -1198,6 +1237,7 @@ int main(int argc, char** argv) {
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
+    const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
     const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
     if (hasArg(argc, argv, "--smoke-test")) {
@@ -1241,7 +1281,7 @@ int main(int argc, char** argv) {
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
     glfwWindowHint(GLFW_SAMPLES, 4);
-    if(capturePath||multiplayerTest||combatRenderStress||soulLifecycleDirectory)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
+    if(capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(
         1280,
@@ -1337,7 +1377,7 @@ int main(int argc, char** argv) {
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval((multiplayerTest||combatRenderStress||soulLifecycleDirectory)?0:1);
+    glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -1346,6 +1386,7 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
+    if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(captureDemo)host.renderer.setHudVisible(false);
     if(!tvRoomTest&&!tvRoomEnter){
