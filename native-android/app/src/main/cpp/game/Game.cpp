@@ -1354,8 +1354,7 @@ void Game::updateInputActions(float dt) {
         Vec3 move=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
         if(lengthSq(move)>0.0001f)move=normalized(move);
         releaseLedgeHang(dotXZ(move,state_.player.ledgeNormal*-1.0f)>0.25f);
-    }else if(input.jumpPressed&&action.wallGripTimer>0.0f){
-        spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
+    }else if(input.jumpPressed&&action.wallGripTimer>0.0f&&spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump)){
         state_.player.vel+=action.wallNormal*6.0f;
         state_.player.jumpVel=AIR_JUMP_SPEED;
         state_.player.grounded=false;
@@ -2287,14 +2286,14 @@ void Game::tryJump() {
 }
 void Game::startGroundJump() {
     PlayerState& p = state_.player;
-    spendBattery(BATTERY_JUMP_COST,BatteryReason::Jump);
+    if(!spendBattery(BATTERY_JUMP_COST,BatteryReason::Jump)) return;
     p.jumpVel = JUMP_SPEED; p.grounded = false; p.coyoteTimer = 0; p.jumpBufferTimer = 0; p.airJumpsRemaining = 1;
     state_.meleeVisual.landingRecovery=0.0f;
     state_.phonePose.doubleJumpVacuumPause=std::max(state_.phonePose.doubleJumpVacuumPause,0.12f);
 }
 void Game::startAirJump() {
     PlayerState& p = state_.player;
-    spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump);
+    if(!spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump)) return;
     p.jumpVel = AIR_JUMP_SPEED; p.jumpBufferTimer = 0; p.airJumpsRemaining -= 1;
     PhonePoseState& pose = state_.phonePose;
     pose.doubleJumpTimer = std::max(pose.doubleJumpTimer, 0.30f);

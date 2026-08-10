@@ -656,6 +656,24 @@ int main() {
     ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recovery to full emits connect-power once after crossing the browser 14-percent arming threshold");
 
     game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=true;setup.player.jumpVel=0.0f;}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f,
+        "a ground jump that exhausts battery enters death without applying airborne movement");
+
+    game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=false;setup.player.pos.y=1.0f;setup.player.jumpVel=0.0f;setup.player.airJumpsRemaining=1;}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f&&game.state().player.airJumpsRemaining==1,
+        "a double jump that exhausts battery cannot consume or apply its air impulse after death");
+
+    game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=false;setup.player.pos.y=1.0f;setup.player.jumpVel=0.0f;setup.meleeVisual.wallGripTimer=0.2f;setup.meleeVisual.wallNormal={1,0,0};}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f&&horizontalSpeed(game.state().player.vel)==0.0f,
+        "a wall jump that exhausts battery cannot apply its launch after death");
+
+    game.reset();
     step(game);
     {
         GameState& setup=const_cast<GameState&>(game.state());
