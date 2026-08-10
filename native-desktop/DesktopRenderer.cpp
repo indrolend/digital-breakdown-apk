@@ -870,7 +870,6 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         for(int i=0;i<3;++i)choice(i,66,76);text("PERMANENT  TOKENS "+std::to_string(state.progression.permanent.tokens),px+18,py+158,1.2f,0.82f,1.0f,0.91f);for(int i=3;i<6;++i)choice(i,184,66);
         for(int i=0;i<3;++i){const std::string level=std::to_string(state.progression.permanent.levels[i])+"/5";text(level,px+12+i*cellW+cellW-level.size()*6*0.9f-12,py+256,0.9f,0.66f,0.90f,1.0f);}
         text("COST 1 TOKEN",px+18,py+278,1.05f,0.72f,0.90f,1.0f);
-        text("STICK / D-PAD MOVE   A SELECT",px+pw-252,py+278,0.88f,0.82f,0.94f,1.0f);
     } else if(state.uiPaused&&state.multiplayer.enabled){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float pw=360.0f,ph=116.0f,px=menuCanvasW-pw-12.0f,py=48.0f;
