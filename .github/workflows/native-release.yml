@@ -78,6 +78,37 @@ jobs:
           if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
 
           Copy-Item $exe "$stage/DigitalBreakdown.exe"
+          $runtimeRoot = Split-Path -Parent $exe
+          foreach ($directory in @('audio', 'fonts', 'models', 'tv-gifs')) {
+            $source = Join-Path $runtimeRoot $directory
+            if (-not (Test-Path $source -PathType Container)) {
+              throw "Required runtime asset directory was not produced: $source"
+            }
+            Copy-Item $source (Join-Path $stage $directory) -Recurse -Force
+          }
+
+          $requiredAssets = @(
+            'audio/game_music.mp3',
+            'audio/menu_music.mp3',
+            'fonts/SourceSans3-Regular.ttf',
+            'fonts/SourceSans3-Semibold.ttf',
+            'models/human.dbhuman',
+            'models/phone.dbmesh',
+            'models/flower.dbmesh',
+            'tv-gifs/tv01.dbgif'
+          )
+          foreach ($relativePath in $requiredAssets) {
+            if (-not (Test-Path (Join-Path $stage $relativePath) -PathType Leaf)) {
+              throw "Required staged runtime asset is missing: $relativePath"
+            }
+          }
+
+          $modelOutput = & "$stage/DigitalBreakdown.exe" --model-test 2>&1
+          $modelOutput | Write-Host
+          if ($LASTEXITCODE -ne 0 -or ($modelOutput -join "`n") -notmatch 'MODEL_TEST_OK') {
+            throw 'Staged Windows model verification failed.'
+          }
+
           @{
             commit = '${{ github.sha }}'
             shortCommit = '${{ github.sha }}'.Substring(0, 7)
