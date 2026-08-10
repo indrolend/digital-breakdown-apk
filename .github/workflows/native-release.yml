@@ -56,6 +56,22 @@ jobs:
           $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
 
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere -PathType Leaf)) {
+            throw 'Visual Studio locator was not found; cannot audit Windows runtime dependencies.'
+          }
+          $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem (Join-Path $vsInstall 'VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe') |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe was not found; cannot audit Windows runtime dependencies.' }
+          $dependencies = & $dumpbin.FullName /DEPENDENTS $exe 2>&1
+          $dependencies | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "Windows dependency audit exited with $LASTEXITCODE." }
+          if (($dependencies -join "`n") -match '(?i)MSVCP\d*\.dll|VCRUNTIME\d*(?:_\d+)?\.dll|api-ms-win-crt-') {
+            throw 'Windows executable requires a Visual C++ redistributable instead of using the configured static runtime.'
+          }
+
           $output = & $exe --smoke-test 2>&1
           $output | Write-Host
           if ($LASTEXITCODE -ne 0) { throw "Desktop smoke test exited with $LASTEXITCODE." }
@@ -109,6 +125,12 @@ jobs:
             throw 'Staged Windows model verification failed.'
           }
 
+          $smokeOutput = & "$stage/DigitalBreakdown.exe" --smoke-test 2>&1
+          $smokeOutput | Write-Host
+          if ($LASTEXITCODE -ne 0 -or ($smokeOutput -join "`n") -notmatch 'SMOKE_TEST_OK') {
+            throw 'Staged Windows smoke verification failed.'
+          }
+
           @{
             commit = '${{ github.sha }}'
             shortCommit = '${{ github.sha }}'.Substring(0, 7)
@@ -121,6 +143,19 @@ jobs:
           } | ConvertTo-Json | Set-Content "$stage/build-info.json" -Encoding UTF8
 
           Compress-Archive -Path "$stage/*" -DestinationPath 'dist/DigitalBreakdown-Windows.zip' -Force
+
+          $extract = 'dist/windows/extracted'
+          Expand-Archive -LiteralPath 'dist/DigitalBreakdown-Windows.zip' -DestinationPath $extract -Force
+          $extractedModelOutput = & "$extract/DigitalBreakdown.exe" --model-test 2>&1
+          $extractedModelOutput | Write-Host
+          if ($LASTEXITCODE -ne 0 -or ($extractedModelOutput -join "`n") -notmatch 'MODEL_TEST_OK') {
+            throw 'Extracted Windows model verification failed.'
+          }
+          $extractedSmokeOutput = & "$extract/DigitalBreakdown.exe" --smoke-test 2>&1
+          $extractedSmokeOutput | Write-Host
+          if ($LASTEXITCODE -ne 0 -or ($extractedSmokeOutput -join "`n") -notmatch 'SMOKE_TEST_OK') {
+            throw 'Extracted Windows smoke verification failed.'
+          }
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
