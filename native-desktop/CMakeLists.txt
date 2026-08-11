@@ -250,6 +250,14 @@ add_executable(
 target_include_directories(GameplayFlowProbe PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(GameplayFlowProbe PRIVATE cxx_std_17)
 
+add_executable(
+    RoomProgressionProbe
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/room_progression_probe.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(RoomProgressionProbe PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(RoomProgressionProbe PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
@@ -264,6 +272,7 @@ add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
+add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
