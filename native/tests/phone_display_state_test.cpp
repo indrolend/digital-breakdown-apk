@@ -73,6 +73,7 @@ int main() {
     assert(game.state().attractMode);
     assert(game.state().started);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Gameplay);
+    const unsigned int attractAudioSerial = game.state().audio.nextSerial;
     float previousAttractYaw = game.state().camera.yaw;
     for (int tick = 0; tick < 180; ++tick) {
         step(game);
@@ -84,6 +85,13 @@ int main() {
     }
     assert(game.state().attractMode);
     assert(game.state().frame > 0);
+    assert(game.state().audio.nextSerial == attractAudioSerial);
+    GameState& exhaustedAttract = const_cast<GameState&>(game.state());
+    exhaustedAttract.dead = true;
+    step(game);
+    assert(game.state().attractMode);
+    assert(game.state().started);
+    assert(!game.state().dead);
     game.dismissAttractMode();
     assert(!game.state().attractMode);
     assert(!game.state().started);

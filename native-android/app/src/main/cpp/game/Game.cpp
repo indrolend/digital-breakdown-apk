@@ -704,6 +704,10 @@ void Game::gainBattery(float amount,BatteryReason reason) {
 }
 
 void Game::emitAudio(AudioCue cue,float volume) {
+    // The title demonstration is visual ambience, not a second audible match.
+    // Keeping its event stream empty also prevents queued combat cues from
+    // spilling into the menu when the player dismisses the title.
+    if(state_.attractMode)return;
     AudioState& audio=state_.audio;
     const unsigned int serial=audio.nextSerial++;
     AudioEventState& event=audio.events[(serial-1u)%AUDIO_EVENT_COUNT];
@@ -2203,8 +2207,6 @@ void Game::updateCamera(float dt) {
             const float distance=horizontalLength(candidate.pos-player.pos);
             if(distance<best){best=distance;target=&candidate;}
         }
-        const Vec3 forward{-std::sin(camera.yaw),0.0f,-std::cos(camera.yaw)};
-        const Vec3 right{std::cos(camera.yaw),0.0f,-std::sin(camera.yaw)};
         const float action=state_.meleeVisual.visualTimer>0.0f||state_.vacuum.active?1.0f:0.0f;
         Vec3 subject=player.pos;
         if(target){
@@ -2212,13 +2214,16 @@ void Game::updateCamera(float dt) {
             const float distance=horizontalLength(toTarget);
             if(distance>0.001f)subject+=toTarget*(std::min(distance*0.18f,0.48f)/distance);
         }
-        Vec3 desired=subject-forward*(2.75f-action*0.35f)+right*(1.15f+action*0.20f)+Vec3{0,1.35f,0};
+        // A stable world-space three-quarter composition lets the autonomous
+        // player aim freely without dragging the audience around with it.
+        // Action tightens the framing slightly, but never swaps shoulders.
+        Vec3 desired=subject+Vec3{1.78f-action*0.12f,0.94f,1.30f-action*0.08f};
         constrainThirdPersonCamera(desired,subject);
         const Vec3 desiredTarget=subject+Vec3{0,0.52f,0};
-        const float response=dt>0.0f?1.0f-std::exp(-4.2f*dt):1.0f;
+        const float response=dt>0.0f?1.0f-std::exp(-2.45f*dt):1.0f;
         camera.pos+=(desired-camera.pos)*response;
         camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
-        const float desiredFov=52.0f+action*3.5f;
+        const float desiredFov=44.0f+action*1.0f;
         camera.verticalFovDegrees+=(desiredFov-camera.verticalFovDegrees)*response;
         camera.forward=normalized(camera.lookTarget-camera.pos);
         camera.firstPerson=false;

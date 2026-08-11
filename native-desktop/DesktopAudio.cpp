@@ -114,11 +114,11 @@ void DesktopAudio::update(const GameState& state) {
     sfxLevel_=state.localSettings.sfxMuted?0.0f:clampf(state.localSettings.sfxVolume,0.0f,1.0f);
     const float musicLevel=state.localSettings.musicMuted?0.0f:clampf(state.localSettings.musicVolume,0.0f,1.0f);
     if(impl_&&impl_->initialized&&!root_.empty()){
-        const bool shouldPlayMenuMusic=!state.started&&!state.dead;
+        const bool shouldPlayMenuMusic=(!state.started||state.attractMode)&&!state.dead;
         if(shouldPlayMenuMusic&&!impl_->menuMusicActive){playLoadedVoice(impl_->menuMusic,0.0f,true);impl_->menuMusicActive=true;}
         else if(!shouldPlayMenuMusic&&impl_->menuMusicActive){pauseVoice(impl_->menuMusic);impl_->menuMusicActive=false;impl_->menuCuePulse=0.0f;impl_->menuCueBend=0.0f;}
         if(impl_->menuMusicActive&&impl_->menuMusic.initialized){impl_->menuCuePulse=std::max(0.0f,impl_->menuCuePulse-0.018f);impl_->menuCueBend*=0.92f;const float pulse=impl_->menuCuePulse,breath=0.5f+0.5f*std::sin(state.time*0.42f);ma_sound_set_volume(&impl_->menuMusic.sound,(0.34f+breath*0.045f+pulse*0.075f)*musicLevel);ma_sound_set_pitch(&impl_->menuMusic.sound,1.0f+std::sin(state.time*0.17f)*0.0025f+impl_->menuCueBend+pulse*0.0035f);}
-        const bool shouldPlayMusic=state.started&&!state.dead;
+        const bool shouldPlayMusic=state.started&&!state.attractMode&&!state.dead;
         if(shouldPlayMusic&&!impl_->musicActive){pauseVoice(impl_->gameOver);playLoadedVoice(impl_->music,0.52f,true);playLoadedVoice(impl_->tvRoomPad,0.0f,true);impl_->musicActive=true;}
         else if(!shouldPlayMusic&&impl_->musicActive){pauseVoice(impl_->music);pauseVoice(impl_->tvRoomPad);pauseVoice(impl_->secretKnock);impl_->musicActive=false;impl_->secretKnockActive=false;impl_->tvRoomMix=0.0f;}
         if(state.dead&&!impl_->deadPrevious){pauseVoice(impl_->music);pauseVoice(impl_->secretKnock);impl_->musicActive=false;impl_->secretKnockActive=false;playLoadedVoice(impl_->gameOver,0.62f*musicLevel,false);}

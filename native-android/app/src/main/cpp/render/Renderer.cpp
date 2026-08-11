@@ -449,13 +449,13 @@ void Renderer::drawHud(const GameState& state) {
     const float panel[4]={0.005f,0.012f,0.016f,0.72f}, cyan[4]={Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.95f};
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedMobileFps)));const float whiteFps[4]={Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b,0.94f};text(fps,width_-fps.size()*7.2f-12,68,1.2f,whiteFps);}
     if(state.attractMode){
-        const float pulse=0.5f+0.5f*std::sin(state.time*2.1f),cx=width_*0.5f;
-        const std::string title="DATA",prompt="TAP TO CONTINUE";
-        const float titleScale=5.2f,promptScale=1.25f,titleW=title.size()*6.0f*titleScale,promptW=prompt.size()*6.0f*promptScale;
-        const float veil[4]={0,0,0,0.10f},titleColor[4]={0.88f,1.0f,0.96f,0.98f},promptColor[4]={0.74f,0.94f,1.0f,0.62f+0.25f*pulse};
+        const float cx=width_*0.5f;
+        const std::string title="DATA";
+        const float titleScale=5.2f,titleW=title.size()*6.0f*titleScale;
+        const float veil[4]={0,0,0,0.10f};
         quad(0,0,static_cast<float>(width_),static_cast<float>(height_),veil);
-        text(title,cx-titleW*0.5f,height_*0.16f,titleScale,titleColor);
-        text(prompt,cx-promptW*0.5f,height_*0.88f,promptScale,promptColor);
+        float pen=cx-titleW*0.5f;
+        for(std::size_t i=0;i<title.size();++i){const Vec3 rgb=rainbow(state.time*0.026f+static_cast<float>(i)*0.115f);const float color[4]={0.55f+rgb.x*0.42f,0.65f+rgb.y*0.34f,0.72f+rgb.z*0.28f,0.96f};text(std::string(1,title[i]),pen,height_*0.16f,titleScale,color);pen+=6.0f*titleScale;}
         glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;
     }
     if(state.cinematic.introActive){const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f,ss=std::max(2.0f,std::min(width_,height_)/240.0f);const float fading[4]={0.92f,0.97f,1,0.94f*alpha};const std::string status="READY",action="START";floatingText(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,fading);const float startScale=ss*0.8f;floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.60f+10,startScale,fading);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;}
