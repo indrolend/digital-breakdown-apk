@@ -361,6 +361,8 @@ void cpuText(CpuCanvas& canvas, const std::string& text, float x, float baseline
 void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY, float px, float time) {
     const MenuFontAtlas& font = cpuMenuFont(true);
     if (!font.cpuReady || text.empty()) return;
+    constexpr float rasterSupersample = 2.0f;
+    constexpr float rasterToScreen = 1.0f / rasterSupersample;
     struct CachedTitleGlyph {
         unsigned char code = 0;
         int bw = 0, bh = 0, xoff = 0, yoff = 0, advance = 0;
@@ -370,6 +372,7 @@ void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY,
     static std::vector<CachedTitleGlyph> cachedGlyphs;
     const float baseline = centerY + px * 0.34f;
     const float scale = stbtt_ScaleForPixelHeight(&font.info, px);
+    const float rasterScale = stbtt_ScaleForPixelHeight(&font.info, px * rasterSupersample);
     if (std::abs(cachedPx - px) > 0.01f || cachedGlyphs.size() != text.size()) {
         cachedPx = px;
         cachedGlyphs.clear();
@@ -379,7 +382,7 @@ void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY,
             glyph.code = c;
             int bearing = 0;
             stbtt_GetCodepointHMetrics(&font.info, c, &glyph.advance, &bearing);
-            unsigned char* bitmap = stbtt_GetCodepointBitmap(&font.info, scale, scale, c, &glyph.bw, &glyph.bh, &glyph.xoff, &glyph.yoff);
+            unsigned char* bitmap = stbtt_GetCodepointBitmap(&font.info, rasterScale, rasterScale, c, &glyph.bw, &glyph.bh, &glyph.xoff, &glyph.yoff);
             if (bitmap && glyph.bw > 0 && glyph.bh > 0)
                 glyph.bitmap.assign(bitmap, bitmap + glyph.bw * glyph.bh);
             stbtt_FreeBitmap(bitmap, nullptr);
@@ -409,10 +412,10 @@ void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY,
         for (int yy = 0; yy < glyph.bh; ++yy) for (int xx = 0; xx < glyph.bw; ++xx) {
             const float alpha = static_cast<float>(glyph.bitmap[yy * glyph.bw + xx]) / 255.0f * 0.96f;
             if (alpha <= 0.01f) continue;
-            const float x = pen + static_cast<float>(glyph.xoff + xx);
-            const float y = baseline + static_cast<float>(glyph.yoff + yy);
+            const float x = pen + static_cast<float>(glyph.xoff + xx) * rasterToScreen;
+            const float y = baseline + static_cast<float>(glyph.yoff + yy) * rasterToScreen;
             glColor4f(r, g, b, alpha);
-            glVertex2f(x, y); glVertex2f(x + 1.0f, y); glVertex2f(x + 1.0f, y + 1.0f); glVertex2f(x, y + 1.0f);
+            glVertex2f(x, y); glVertex2f(x + rasterToScreen, y); glVertex2f(x + rasterToScreen, y + rasterToScreen); glVertex2f(x, y + rasterToScreen);
         }
         pen += static_cast<float>(glyph.advance) * scale;
         previous = c;
