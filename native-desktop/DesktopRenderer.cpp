@@ -452,14 +452,11 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
             cpuText(canvas, row.value, valueLeft, row.baselineY, row.fontPx, selected ? Pass7Visual::AcidChartreuse.r : Pass7Visual::MetallicTeal.r, selected ? Pass7Visual::AcidChartreuse.g : Pass7Visual::MetallicTeal.g, selected ? Pass7Visual::AcidChartreuse.b : Pass7Visual::MetallicTeal.b, selected ? 0.98f : 0.78f, selected);
             if(selected&&row.horizontal==PhoneMenuHorizontal::Adjust){
                 const int palettePhase=static_cast<int>(std::floor(state.time*8.0f));
-                for(int cueIndex=0;cueIndex<3;++cueIndex){
-                    const VisualColor leftColor=Pass7Visual::DataMosaicPalette[(palettePhase+cueIndex)%25];
-                    const VisualColor rightColor=Pass7Visual::DataMosaicPalette[(palettePhase+5-cueIndex)%25];
-                    constexpr float size=7.0f;
-                    constexpr float stride=10.0f;
-                    cpuRect(canvas,valueLeft-38.0f+static_cast<float>(cueIndex)*stride,row.baselineY-size*0.78f,size,size,leftColor.r,leftColor.g,leftColor.b,0.92f);
-                    cpuRect(canvas,row.valueRightX+10.0f+static_cast<float>(2-cueIndex)*stride,row.baselineY-size*0.78f,size,size,rightColor.r,rightColor.g,rightColor.b,0.92f);
-                }
+                const VisualColor leftColor=Pass7Visual::DataMosaicPalette[palettePhase%25];
+                const VisualColor rightColor=Pass7Visual::DataMosaicPalette[(palettePhase+5)%25];
+                constexpr float size=7.0f;
+                cpuRect(canvas,valueLeft-17.0f,row.baselineY-size*0.78f,size,size,leftColor.r,leftColor.g,leftColor.b,0.92f);
+                cpuRect(canvas,row.valueRightX+10.0f,row.baselineY-size*0.78f,size,size,rightColor.r,rightColor.g,rightColor.b,0.92f);
             }
         } else {
             cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, selected ? 1.0f : 0.70f, selected ? 1.0f : 0.88f, 1.0f, alpha, selected, state.dead && row.action == PhoneMenuAction::Restart);
