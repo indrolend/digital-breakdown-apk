@@ -176,6 +176,8 @@ struct CinematicState {
     float deathElapsed = 0.0f;
     float textInteraction = 0.0f;
     float baseYaw = 0.0f;
+    float attractCameraYaw = 0.0f;
+    bool attractCameraYawValid = false;
     bool menuExitActive = false;
     float menuExitElapsed = 0.0f;
     Vec3 startCameraPos;

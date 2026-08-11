@@ -2200,30 +2200,32 @@ void Game::updateCamera(float dt) {
         return;
     }
     if(state_.attractMode){
-        const TargetState* target=nullptr;
-        float best=9999.0f;
-        for(const auto& candidate:state_.targets){
-            if(!candidate.alive)continue;
-            const float distance=horizontalLength(candidate.pos-player.pos);
-            if(distance<best){best=distance;target=&candidate;}
-        }
         const float action=state_.meleeVisual.visualTimer>0.0f||state_.vacuum.active?1.0f:0.0f;
-        Vec3 subject=player.pos;
-        if(target){
-            Vec3 toTarget=target->pos-player.pos;toTarget.y=0.0f;
-            const float distance=horizontalLength(toTarget);
-            if(distance>0.001f)subject+=toTarget*(std::min(distance*0.18f,0.48f)/distance);
+        const float travelSpeed=horizontalLength(player.vel);
+        CinematicState& cinematic=state_.cinematic;
+        if(!cinematic.attractCameraYawValid){
+            cinematic.attractCameraYaw=camera.yaw;
+            cinematic.attractCameraYawValid=true;
         }
-        // A stable world-space three-quarter composition lets the autonomous
-        // player aim freely without dragging the audience around with it.
-        // Action tightens the framing slightly, but never swaps shoulders.
-        Vec3 desired=subject+Vec3{1.78f-action*0.12f,0.94f,1.30f-action*0.08f};
+        if(travelSpeed>0.65f){
+            const float travelYaw=std::atan2(-player.vel.x,-player.vel.z);
+            const float directionResponse=dt>0.0f?1.0f-std::exp(-1.35f*dt):1.0f;
+            cinematic.attractCameraYaw=approachAngle(cinematic.attractCameraYaw,travelYaw,directionResponse);
+        }
+        const Vec3 travelForward{-std::sin(cinematic.attractCameraYaw),0.0f,-std::cos(cinematic.attractCameraYaw)};
+        const Vec3 travelRight{std::cos(cinematic.attractCameraYaw),0.0f,-std::sin(cinematic.attractCameraYaw)};
+        const Vec3 motionLead=travelSpeed>0.05f?normalized(Vec3{player.vel.x,0.0f,player.vel.z})*std::min(0.34f,travelSpeed*0.045f):Vec3{};
+        const Vec3 subject=player.pos+motionLead;
+        // Follow sustained travel rather than frame-perfect combat aim. This
+        // keeps the phone composed through the room while target changes are
+        // free to happen without whipping the audience between shoulders.
+        Vec3 desired=subject-travelForward*(2.20f-action*0.10f)+travelRight*0.72f+Vec3{0,1.08f,0};
         constrainThirdPersonCamera(desired,subject);
-        const Vec3 desiredTarget=subject+Vec3{0,0.52f,0};
-        const float response=dt>0.0f?1.0f-std::exp(-2.45f*dt):1.0f;
+        const Vec3 desiredTarget=subject+travelForward*0.18f+Vec3{0,0.48f,0};
+        const float response=dt>0.0f?1.0f-std::exp(-3.10f*dt):1.0f;
         camera.pos+=(desired-camera.pos)*response;
         camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
-        const float desiredFov=44.0f+action*1.0f;
+        const float desiredFov=47.0f+action*1.0f;
         camera.verticalFovDegrees+=(desiredFov-camera.verticalFovDegrees)*response;
         camera.forward=normalized(camera.lookTarget-camera.pos);
         camera.firstPerson=false;
