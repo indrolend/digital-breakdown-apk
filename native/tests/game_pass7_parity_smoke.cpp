@@ -93,6 +93,21 @@ int main() {
     const float caughtTop=ledgeHangGame->state().player.pos.y+PHONE_MODEL_HEIGHT*0.5f;
     ok &= expect(ledgeHangGame->state().player.ledgeHanging&&near(caughtTop,ledgeHangGame->state().roomColliders[0].topY+0.008f,0.002f),
         "descending phone catches the obstacle lip with its visible top edge instead of its collision capsule");
+    auto lungeLedgeGame=std::make_unique<Game>();lungeLedgeGame->reset();
+    {
+        GameState& ledge=const_cast<GameState&>(lungeLedgeGame->state());const RoomCollider& platform=ledge.roomColliders[0];
+        ledge.player.pos={platform.maxX+0.34f,platform.topY-PHONE_MODEL_HEIGHT*0.5f,platform.center.z};
+        ledge.player.vel={0,0,5.0f};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;
+        ledge.meleeVisual.airLungeLandingPending=true;ledge.meleeVisual.locomotionLunge=true;
+        ledge.meleeVisual.airLungeTimer=0.12f;ledge.meleeVisual.airLungeAngularVelocity=8.0f;
+    }
+    step(*lungeLedgeGame);
+    ok &= expect(lungeLedgeGame->state().player.ledgeHanging&&
+                 !lungeLedgeGame->state().meleeVisual.airLungeLandingPending&&
+                 !lungeLedgeGame->state().meleeVisual.locomotionLunge&&
+                 lungeLedgeGame->state().meleeVisual.landingRecovery<=0.0f&&
+                 lungeLedgeGame->state().player.ledgeShimmySpeed>1.0f,
+        "a descending locomotion lunge cancels into ledge grab and carries tangent speed into shimmy");
     const float shimmyStart=ledgeHangGame->state().player.pos.z;
     {GameState& ledge=const_cast<GameState&>(ledgeHangGame->state());ledge.camera.yaw=3.14159265f;}
     ledgeHangGame->setTouchControls(0,1,0,0,false,false,false,false,false,false);step(*ledgeHangGame,18);

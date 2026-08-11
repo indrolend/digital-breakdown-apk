@@ -1632,7 +1632,6 @@ void Game::updateDoorTransition() {
 bool Game::tryBeginLedgeHang() {
     PlayerState& p=state_.player;
     if(p.ledgeHanging||p.grounded||p.ledgeGrabCooldown>0.0f||p.jumpVel>0.35f||!p.alive)return false;
-    if(state_.meleeVisual.airLungeLandingPending)return false;
     const float phoneTop=p.pos.y+PHONE_BODY_HEIGHT*0.5f;
     const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
     const float localZ=p.pos.z-tileOriginZ;
@@ -1661,6 +1660,23 @@ bool Game::tryBeginLedgeHang() {
     p.pos.y=c.topY-PHONE_BODY_HEIGHT*0.5f+0.008f;
     p.vel={0,0,0}; p.jumpVel=0.0f; p.grounded=false;
     p.yaw=p.targetYaw=std::atan2(bestNormal.x,bestNormal.z);
+    // A valid descending lunge may route directly into the existing ledge
+    // verbs. The catch cancels lunge ownership without manufacturing a ground
+    // impact or its recovery, while the incoming tangent speed is already
+    // preserved above as shimmy momentum.
+    if(state_.meleeVisual.airLungeLandingPending){
+        MeleeVisualState& lunge=state_.meleeVisual;
+        lunge.airLungePending=false;
+        lunge.airLungeLandingPending=false;
+        lunge.locomotionLunge=false;
+        lunge.airLungeTimer=0.0f;
+        lunge.visualTimer=0.0f;
+        lunge.airLungeAngularVelocity=0.0f;
+        lunge.wallGripTimer=0.0f;
+        lunge.contactPositionValid=false;
+        lunge.landingRecovery=0.0f;
+        lunge.landingRecoveryDuration=0.0f;
+    }
     state_.vacuum.active=false;
     return true;
 }
