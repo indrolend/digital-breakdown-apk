@@ -70,6 +70,15 @@ Get-ChildItem -LiteralPath $vignetteRoot -Filter '*.ppm' | ForEach-Object {
         $png = [System.IO.Path]::ChangeExtension($_.FullName, '.png')
         & $ffmpeg.Source -loglevel error -y -i $_.FullName $png
         if ($LASTEXITCODE -ne 0) { throw "PNG conversion failed: $($_.Name)" }
+        $storeName = switch ($frameNumber) {
+            30 { '05-approach.png' }
+            60 { '06-impact.png' }
+            90 { '07-ingestion.png' }
+            default { $null }
+        }
+        if ($storeName) {
+            Copy-Item -LiteralPath $png -Destination (Join-Path $screenshotRoot $storeName)
+        }
     }
     Remove-Item -LiteralPath $_.FullName
 }
