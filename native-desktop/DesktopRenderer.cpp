@@ -358,6 +358,68 @@ void cpuText(CpuCanvas& canvas, const std::string& text, float x, float baseline
     }
 }
 
+void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY, float px, float time) {
+    const MenuFontAtlas& font = cpuMenuFont(true);
+    if (!font.cpuReady || text.empty()) return;
+    struct CachedTitleGlyph {
+        unsigned char code = 0;
+        int bw = 0, bh = 0, xoff = 0, yoff = 0, advance = 0;
+        std::vector<unsigned char> bitmap;
+    };
+    static float cachedPx = -1.0f;
+    static std::vector<CachedTitleGlyph> cachedGlyphs;
+    const float baseline = centerY + px * 0.34f;
+    const float scale = stbtt_ScaleForPixelHeight(&font.info, px);
+    if (std::abs(cachedPx - px) > 0.01f || cachedGlyphs.size() != text.size()) {
+        cachedPx = px;
+        cachedGlyphs.clear();
+        cachedGlyphs.reserve(text.size());
+        for (unsigned char c : text) {
+            CachedTitleGlyph glyph;
+            glyph.code = c;
+            int bearing = 0;
+            stbtt_GetCodepointHMetrics(&font.info, c, &glyph.advance, &bearing);
+            unsigned char* bitmap = stbtt_GetCodepointBitmap(&font.info, scale, scale, c, &glyph.bw, &glyph.bh, &glyph.xoff, &glyph.yoff);
+            if (bitmap && glyph.bw > 0 && glyph.bh > 0)
+                glyph.bitmap.assign(bitmap, bitmap + glyph.bw * glyph.bh);
+            stbtt_FreeBitmap(bitmap, nullptr);
+            cachedGlyphs.push_back(std::move(glyph));
+        }
+    }
+    float pen = centerX - cpuTextWidth(text, px, true) * 0.5f;
+    int previous = 0;
+    glBegin(GL_QUADS);
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const CachedTitleGlyph& glyph = cachedGlyphs[i];
+        const unsigned char c = glyph.code;
+        if (previous) pen += static_cast<float>(stbtt_GetCodepointKernAdvance(&font.info, previous, c)) * scale;
+        const float hue = std::fmod(time * 0.026f + static_cast<float>(i) * 0.115f, 1.0f);
+        const float k = hue * 6.0f, f = k - std::floor(k), q = 1.0f - f;
+        Vec3 color{1.0f, f, 0.0f};
+        switch (static_cast<int>(k) % 6) {
+            case 1: color = {q, 1.0f, 0.0f}; break;
+            case 2: color = {0.0f, 1.0f, f}; break;
+            case 3: color = {0.0f, q, 1.0f}; break;
+            case 4: color = {f, 0.0f, 1.0f}; break;
+            case 5: color = {1.0f, 0.0f, q}; break;
+        }
+        const float r = 0.55f + color.x * 0.42f;
+        const float g = 0.65f + color.y * 0.34f;
+        const float b = 0.72f + color.z * 0.28f;
+        for (int yy = 0; yy < glyph.bh; ++yy) for (int xx = 0; xx < glyph.bw; ++xx) {
+            const float alpha = static_cast<float>(glyph.bitmap[yy * glyph.bw + xx]) / 255.0f * 0.96f;
+            if (alpha <= 0.01f) continue;
+            const float x = pen + static_cast<float>(glyph.xoff + xx);
+            const float y = baseline + static_cast<float>(glyph.yoff + yy);
+            glColor4f(r, g, b, alpha);
+            glVertex2f(x, y); glVertex2f(x + 1.0f, y); glVertex2f(x + 1.0f, y + 1.0f); glVertex2f(x, y + 1.0f);
+        }
+        pen += static_cast<float>(glyph.advance) * scale;
+        previous = c;
+    }
+    glEnd();
+}
+
 void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>& pixels) {
     pixels.resize(PhoneDisplayState::LogicalWidth * PhoneDisplayState::LogicalHeight * 4);
     CpuCanvas canvas{PhoneDisplayState::LogicalWidth, PhoneDisplayState::LogicalHeight, pixels};
@@ -769,11 +831,8 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedFps)));text(fps,width_-fps.size()*7.2f-12,68,1.2f,0.72f,1.0f,0.90f);}
     if(state.attractMode){
         const float cx=width_*0.5f;
-        const std::string title="DATA";
-        const float titleScale=5.2f,titleW=title.size()*6.0f*titleScale;
         quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,0.10f);
-        float pen=cx-titleW*0.5f;
-        for(std::size_t i=0;i<title.size();++i){const Vec3 color=rainbow(state.time*0.026f+static_cast<float>(i)*0.115f);text(std::string(1,title[i]),pen,height_*0.16f,titleScale,0.55f+color.x*0.42f,0.65f+color.y*0.34f,0.72f+color.z*0.28f,0.96f);pen+=6.0f*titleScale;}
+        drawPaletteMenuTitle("DATA",cx,height_*0.19f,96.0f*menuUiScale,state.time);
         glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
     }
     const bool pausedSolo=state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;

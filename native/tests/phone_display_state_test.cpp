@@ -105,7 +105,7 @@ int main() {
     GameState& menu = const_cast<GameState&>(game.state());
     PhoneDisplayMenuLayout mainLayout = makePhoneDisplayMenuLayout(menu);
     expectLayoutInside(mainLayout);
-    assert(mainLayout.title == "DATA");
+    assert(mainLayout.title.empty());
     assert(mainLayout.selectableCount == 4);
     expectSelectableHit(mainLayout, 0);
 

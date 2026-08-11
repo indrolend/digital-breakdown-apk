@@ -162,8 +162,6 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
     PhoneMenuPageViewModel page;
     const bool pausedSolo = phoneMenuPausedSolo(state);
     if (state.cinematic.introActive) {
-        page.title = "DATA";
-        page.paletteTitle = true;
         addPhoneMenuItem(page, "Start", PhoneMenuAction::Start);
     } else if (state.dead) {
         page.title = "";
@@ -175,8 +173,6 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
         addPhoneMenuItem(page, "Exit Run", PhoneMenuAction::ExitRun);
     } else if (state.localSettings.menuPage == LocalMenuPage::Main) {
-        page.title = "DATA";
-        page.paletteTitle = true;
         addPhoneMenuItem(page, "Solo", PhoneMenuAction::Solo);
         addPhoneMenuItem(page, "Online", PhoneMenuAction::Online);
         addPhoneMenuItem(page, "Settings", PhoneMenuAction::Settings);
