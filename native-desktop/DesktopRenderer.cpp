@@ -760,6 +760,16 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     const float menuUiScale=clampf(std::min(static_cast<float>(width_)/1280.0f,static_cast<float>(height_)/720.0f),0.55f,1.8f);
     const float menuCanvasW=static_cast<float>(width_)/menuUiScale,menuCanvasH=static_cast<float>(height_)/menuUiScale;
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedFps)));text(fps,width_-fps.size()*7.2f-12,68,1.2f,0.72f,1.0f,0.90f);}
+    if(state.attractMode){
+        const float pulse=0.5f+0.5f*std::sin(state.time*2.1f),cx=width_*0.5f;
+        const std::string title="DATA",prompt="PRESS ANYTHING";
+        const float titleScale=5.2f,promptScale=1.25f,titleW=title.size()*6.0f*titleScale,promptW=prompt.size()*6.0f*promptScale;
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,0.10f);
+        text(title,cx-titleW*0.5f,height_*0.16f,titleScale,0.88f,1.0f,0.96f,0.98f);
+        quad(cx-titleW*0.56f,height_*0.16f+43.0f,titleW*1.12f,2.0f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.58f+0.20f*pulse);
+        text(prompt,cx-promptW*0.5f,height_*0.88f,promptScale,0.74f,0.94f,1.0f,0.62f+0.25f*pulse);
+        glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
+    }
     const bool pausedSolo=state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;
     if(state.dead){
         const float fade=clampf(state.cinematic.overlayFade,0.0f,1.0f);

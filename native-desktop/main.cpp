@@ -700,6 +700,7 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
 void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
+    if(action==GLFW_PRESS&&host->game.state().attractMode){host->game.dismissAttractMode();setMouseCaptured(window,*host,false);return;}
 
     if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;settings.pendingBinding=-1;settings.conflictingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<10;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;host->audio.playMenuCue(true);return;}
 
@@ -799,6 +800,7 @@ void framebufferCallback(GLFWwindow* window, int width, int height) {
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
     HostState* host = stateFor(window);
     if (!host || action != GLFW_PRESS) return;
+    if(host->game.state().attractMode){host->game.dismissAttractMode();setMouseCaptured(window,*host,false);return;}
     if(menuItemCount(host->game.state())>0){
         const dbmenu::PointerAction pointerAction=dbmenu::pointerAction(button,GLFW_MOUSE_BUTTON_LEFT,GLFW_MOUSE_BUTTON_RIGHT);
         if(pointerAction==dbmenu::PointerAction::Back){
@@ -1421,7 +1423,7 @@ int main(int argc, char** argv) {
     std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),recoveredPersistentSave?" (recovered backup)":(loadedPersistentSave?" (loaded)":""));
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
-    if((!capturePath&&!captureDemo)||captureStart)host.game.prepareStartScreen();
+    if((!capturePath&&!captureDemo)||captureStart)host.game.prepareAttractScreen();
     if(captureMenu){
         const char* page=captureMenuPage;
         GameState& fixture=host.game.networkMutableState();
@@ -1507,7 +1509,7 @@ int main(int argc, char** argv) {
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
     glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
-    setMouseCaptured(window, host, host.game.state().started);
+    setMouseCaptured(window, host, host.game.state().started&&!host.game.state().attractMode);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
     int framebufferWidth = 1;
@@ -1731,6 +1733,9 @@ int main(int argc, char** argv) {
         if (!capturePath&&!captureDemo) simulationAccumulator += std::min(elapsed, MAX_FRAME_DELTA_SECONDS);
 
         const DesktopGamepadInput gamepad=pollGamepad(window,host);
+        if(host.game.state().attractMode&&(std::abs(gamepad.moveX)>0.25f||std::abs(gamepad.moveZ)>0.25f||std::abs(gamepad.lookX)>0.25f||std::abs(gamepad.lookY)>0.25f||gamepad.vacuumHeld||gamepad.sprintHeld||gamepad.jumpPressed||gamepad.meleePressed||gamepad.shootPressed||gamepad.cameraPressed)){
+            host.game.dismissAttractMode();setMouseCaptured(window,host,false);
+        }
         const bool leftMouseDown=glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         if(!leftMouseDown)host.suppressLeftMouseUntilRelease=false;
         const bool vacuumHeld = captureSoul || (leftMouseDown&&!host.suppressLeftMouseUntilRelease) || gamepad.vacuumHeld;
@@ -1923,7 +1928,8 @@ int main(int argc, char** argv) {
             }
             continue;
         }
-        if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        const int stillCaptureFrames=captureStart?120:30;
+        if(capturePath&&++captureFrames>=stillCaptureFrames){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
         const auto swapBegin=std::chrono::steady_clock::now();
         glfwSwapBuffers(window);
         const auto frameEnd=std::chrono::steady_clock::now();

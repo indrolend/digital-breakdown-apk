@@ -609,6 +609,7 @@ struct GameState {
     bool started = true;
     bool dead = false;
     bool uiPaused = false;
+    bool attractMode = false;
     CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
@@ -627,6 +628,8 @@ public:
     void reset();
     void restart();
     void prepareStartScreen();
+    void prepareAttractScreen();
+    void dismissAttractMode();
     // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
     void debugStartSecretTvTest(bool enterRoom);
     void setUiPaused(bool paused);
@@ -683,6 +686,7 @@ private:
     void savePlayerContext(NetworkPeerState& context) const;
     void loadPlayerContext(const NetworkPeerState& context);
     void updateCamera(float dt);
+    void updateAttractInput();
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);

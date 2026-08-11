@@ -423,6 +423,22 @@ void Game::prepareStartScreen(){
     updatePhoneDisplay(0.0f);
 }
 
+void Game::prepareAttractScreen(){
+    reset();
+    state_.attractMode=true;
+    state_.started=true;
+    state_.dead=false;
+    state_.uiPaused=false;
+    state_.cinematic=CinematicState{};
+    state_.player.battery=100.0f;
+    clearInputState();
+    updatePhoneDisplay(0.0f);
+}
+
+void Game::dismissAttractMode(){
+    if(state_.attractMode)prepareStartScreen();
+}
+
 void Game::setUiPaused(bool paused){
     if(!state_.started||state_.dead)return;
     if(state_.upgradeMenu.active&&!paused)return;
@@ -990,6 +1006,7 @@ void Game::clearInputState() {
 }
 
 void Game::setTouch(int action, float x, float y, int pointerCount) {
+    if(state_.attractMode&&action==TOUCH_DOWN){dismissAttractMode();return;}
     (void)pointerCount;
     // Android's role-based controller owns gameplay input.  This legacy raw
     // touch channel is retained only for touch diagnostics; allowing it to own
@@ -1026,6 +1043,7 @@ void Game::update(float dt) {
     state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
     state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
     updatePhoneDisplay(dt);
+    if(state_.attractMode&&state_.dead){prepareAttractScreen();return;}
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
@@ -1091,6 +1109,7 @@ void Game::update(float dt) {
         if(runProgression.accuracyDecayTimer<=0.0f){runProgression.accuracyStacks=0;runProgression.accuracyMultiplier=1.0f;}
     }
     if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
+    if(state_.attractMode)updateAttractInput();
     updateSecretTv(dt);
     updateInputActions(dt);
     updatePlayer(dt);
@@ -2176,6 +2195,36 @@ void Game::updateCamera(float dt) {
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
     }
+    if(state_.attractMode){
+        const TargetState* target=nullptr;
+        float best=9999.0f;
+        for(const auto& candidate:state_.targets){
+            if(!candidate.alive)continue;
+            const float distance=horizontalLength(candidate.pos-player.pos);
+            if(distance<best){best=distance;target=&candidate;}
+        }
+        const Vec3 forward{-std::sin(camera.yaw),0.0f,-std::cos(camera.yaw)};
+        const Vec3 right{std::cos(camera.yaw),0.0f,-std::sin(camera.yaw)};
+        const float action=state_.meleeVisual.visualTimer>0.0f||state_.vacuum.active?1.0f:0.0f;
+        Vec3 subject=player.pos;
+        if(target){
+            Vec3 toTarget=target->pos-player.pos;toTarget.y=0.0f;
+            const float distance=horizontalLength(toTarget);
+            if(distance>0.001f)subject+=toTarget*(std::min(distance*0.18f,0.48f)/distance);
+        }
+        Vec3 desired=subject-forward*(2.75f-action*0.35f)+right*(1.15f+action*0.20f)+Vec3{0,1.35f,0};
+        constrainThirdPersonCamera(desired,subject);
+        const Vec3 desiredTarget=subject+Vec3{0,0.52f,0};
+        const float response=dt>0.0f?1.0f-std::exp(-4.2f*dt):1.0f;
+        camera.pos+=(desired-camera.pos)*response;
+        camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
+        const float desiredFov=52.0f+action*3.5f;
+        camera.verticalFovDegrees+=(desiredFov-camera.verticalFovDegrees)*response;
+        camera.forward=normalized(camera.lookTarget-camera.pos);
+        camera.firstPerson=false;
+        camera.spectatedPlayerId=-1;
+        return;
+    }
     if(simulationPlayerId_==0&&state_.multiplayer.enabled&&!player.alive){
         const NetworkPeerState* subject=nullptr;
         for(const auto& peer:state_.multiplayer.peers){
@@ -2263,6 +2312,30 @@ void Game::updateCamera(float dt) {
         if(state_.cinematic.menuExitElapsed>=MENU_EXIT_CAMERA_DURATION)state_.cinematic.menuExitActive=false;
     }
     camera.forward = normalized(camera.lookTarget-camera.pos);
+}
+
+void Game::updateAttractInput(){
+    InputState& input=state_.input;
+    input=InputState{};
+    const TargetState* subject=nullptr;
+    float best=9999.0f;
+    for(const auto& target:state_.targets){
+        if(!target.alive)continue;
+        const float distance=horizontalLength(target.pos-state_.player.pos);
+        if((target.slurpable?0.0f:8.0f)+distance<best){best=(target.slurpable?0.0f:8.0f)+distance;subject=&target;}
+    }
+    if(!subject)return;
+    const Vec3 delta=subject->pos-state_.player.pos;
+    const float distance=horizontalLength(delta);
+    state_.camera.yaw=std::atan2(-delta.x,-delta.z);
+    input.touchMoveZ=distance>(subject->slurpable?1.45f:2.15f)?0.88f:0.12f;
+    if(!subject->slurpable&&distance>2.8f)input.touchMoveX=std::sin(state_.frame*0.045f)*0.46f;
+    input.touchSprint=distance>3.0f;
+    if(subject->slurpable){input.touchPrimaryHeld=true;return;}
+    const int beat=state_.frame%96;
+    if(beat==12&&state_.player.grounded)input.jumpPressed=true;
+    if((beat==23||beat==61)&&distance<6.2f)input.meleePressed=true;
+    if(beat==82&&state_.player.souls>0)input.shootPressed=true;
 }
 
 void Game::updateIntroCamera(float dt) {

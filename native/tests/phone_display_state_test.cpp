@@ -69,6 +69,18 @@ void expectSelectableHit(const PhoneDisplayMenuLayout& layout, int selection) {
 
 int main() {
     Game game;
+    game.prepareAttractScreen();
+    assert(game.state().attractMode);
+    assert(game.state().started);
+    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Gameplay);
+    step(game, 180);
+    assert(game.state().attractMode);
+    assert(game.state().frame > 0);
+    game.dismissAttractMode();
+    assert(!game.state().attractMode);
+    assert(!game.state().started);
+    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::MainMenu);
+
     game.prepareStartScreen();
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::MainMenu);
     assert(game.state().phoneDisplay.interactive);

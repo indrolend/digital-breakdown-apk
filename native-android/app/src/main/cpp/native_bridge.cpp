@@ -97,7 +97,7 @@ Java_com_indrolend_digitalbreakdown_NativeBridge_onSurfaceCreated(JNIEnv* env, j
         "surface created native_source=%s",
         DIGITAL_BREAKDOWN_SOURCE_COMMIT
     );
-    gGame.prepareStartScreen();
+    gGame.prepareAttractScreen();
     gLastAudioSerial=0;
     if(!gBridgeClass) gBridgeClass=static_cast<jclass>(env->NewGlobalRef(bridgeClass));
     if(!gPlayAudioCue) gPlayAudioCue=env->GetStaticMethodID(gBridgeClass,"playAudioCue","(IF)V");
