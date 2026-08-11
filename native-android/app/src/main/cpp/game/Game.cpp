@@ -1109,7 +1109,7 @@ void Game::update(float dt) {
         if(runProgression.accuracyDecayTimer<=0.0f){runProgression.accuracyStacks=0;runProgression.accuracyMultiplier=1.0f;}
     }
     if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
-    if(state_.attractMode)updateAttractInput();
+    if(state_.attractMode)updateAttractInput(dt);
     updateSecretTv(dt);
     updateInputActions(dt);
     updatePlayer(dt);
@@ -2314,7 +2314,7 @@ void Game::updateCamera(float dt) {
     camera.forward = normalized(camera.lookTarget-camera.pos);
 }
 
-void Game::updateAttractInput(){
+void Game::updateAttractInput(float dt){
     InputState& input=state_.input;
     input=InputState{};
     const TargetState* subject=nullptr;
@@ -2327,7 +2327,12 @@ void Game::updateAttractInput(){
     if(!subject)return;
     const Vec3 delta=subject->pos-state_.player.pos;
     const float distance=horizontalLength(delta);
-    state_.camera.yaw=std::atan2(-delta.x,-delta.z);
+    const float desiredYaw=std::atan2(-delta.x,-delta.z);
+    // The title player may exchange targets in a crowded fight.  Follow those
+    // decisions through the shortest arc instead of teleporting the shoulder
+    // camera from one side of the arena to the other on a single tick.
+    const float aimResponse=dt>0.0f?1.0f-std::exp(-5.0f*dt):1.0f;
+    state_.camera.yaw=approachAngle(state_.camera.yaw,desiredYaw,aimResponse);
     input.touchMoveZ=distance>(subject->slurpable?1.45f:2.15f)?0.88f:0.12f;
     if(!subject->slurpable&&distance>2.8f)input.touchMoveX=std::sin(state_.frame*0.045f)*0.46f;
     input.touchSprint=distance>3.0f;

@@ -686,7 +686,7 @@ private:
     void savePlayerContext(NetworkPeerState& context) const;
     void loadPlayerContext(const NetworkPeerState& context);
     void updateCamera(float dt);
-    void updateAttractInput();
+    void updateAttractInput(float dt);
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);

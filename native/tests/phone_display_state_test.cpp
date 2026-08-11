@@ -73,7 +73,15 @@ int main() {
     assert(game.state().attractMode);
     assert(game.state().started);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Gameplay);
-    step(game, 180);
+    float previousAttractYaw = game.state().camera.yaw;
+    for (int tick = 0; tick < 180; ++tick) {
+        step(game);
+        const float yawStep = std::atan2(
+            std::sin(game.state().camera.yaw - previousAttractYaw),
+            std::cos(game.state().camera.yaw - previousAttractYaw));
+        assert(std::abs(yawStep) < 0.30f);
+        previousAttractYaw = game.state().camera.yaw;
+    }
     assert(game.state().attractMode);
     assert(game.state().frame > 0);
     game.dismissAttractMode();
