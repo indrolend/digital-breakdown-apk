@@ -54,6 +54,19 @@ constexpr int KEY_SHIFT_LEFT_ANDROID = 59;
 constexpr int KEY_SHIFT_RIGHT_ANDROID = 60;
 constexpr int KEY_SPACE_ANDROID = 62;
 
+bool samePersistentSettings(const LocalSettingsState& a,const LocalSettingsState& b){
+    return a.musicVolume==b.musicVolume&&a.sfxVolume==b.sfxVolume&&
+        a.musicMuted==b.musicMuted&&a.sfxMuted==b.sfxMuted&&
+        a.graphicsPreset==b.graphicsPreset&&a.shadows==b.shadows&&
+        a.portalWindow==b.portalWindow&&a.particles==b.particles&&
+        a.fpsCounter==b.fpsCounter&&a.mouseLookSensitivity==b.mouseLookSensitivity&&
+        a.touchLookSensitivity==b.touchLookSensitivity&&
+        a.controllerLookSensitivity==b.controllerLookSensitivity&&
+        a.controllerTriggerSensitivity==b.controllerTriggerSensitivity&&
+        a.controllerVibration==b.controllerVibration&&
+        a.keyboardBindings==b.keyboardBindings;
+}
+
 struct HostState {
     Game game;
     DesktopRenderer renderer;
@@ -87,6 +100,7 @@ struct HostState {
     bool previousPlayerAlive = true;
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
+    LocalSettingsState savedSettings;
 };
 
 struct DesktopGamepadInput {
@@ -226,6 +240,10 @@ int runSaveRoundtripTest(){
     settings.mouseLookSensitivity=1.30f;settings.touchLookSensitivity=0.80f;settings.controllerLookSensitivity=1.45f;
     settings.controllerTriggerSensitivity=2;settings.controllerVibration=2;
     settings.keyboardBindings[0]=73;settings.keyboardBindings[9]=88;
+    LocalSettingsState transientSettings=settings;transientSettings.menuPage=LocalMenuPage::Controls;transientSettings.menuScroll=280.0f;transientSettings.menuHistoryDepth=2;transientSettings.rebindingAction=4;
+    LocalSettingsState changedSettings=settings;changedSettings.sfxVolume=0.21f;
+    LocalSettingsState reboundSettings=settings;reboundSettings.keyboardBindings[3]=74;
+    const bool dirtyDetectionOk=samePersistentSettings(settings,transientSettings)&&!samePersistentSettings(settings,changedSettings)&&!samePersistentSettings(settings,reboundSettings);
     if(!saveProgression(source.state().progression.permanent,settings,path)){std::printf("SAVE_ROUNDTRIP_FAILED write\n");return 1;}
     Game restored;
     const bool loaded=loadProgression(restored,path);
@@ -254,9 +272,9 @@ int runSaveRoundtripTest(){
     Game repaired;const bool primaryRepaired=loadProgression(repaired,path)&&repaired.state().progression.permanent.tokens==37;
     {std::ofstream future(path,std::ios::trunc);future<<"DBPROG 99 500 5 5 5\n";}
     Game futureRejected;const bool futureRejectedOk=!loadProgression(futureRejected,path);
-    const bool allValid=matches&&legacyVersionsOk&&corruptRejected&&recoveredOk&&primaryRepaired&&futureRejectedOk;
+    const bool allValid=matches&&dirtyDetectionOk&&legacyVersionsOk&&corruptRejected&&recoveredOk&&primaryRepaired&&futureRejectedOk;
     std::error_code cleanupError;std::filesystem::remove(path,cleanupError);std::filesystem::remove(progressionBackupPath(path),cleanupError);std::filesystem::remove(root,cleanupError);
-    std::printf("SAVE_ROUNDTRIP_%s format=4 legacy_versions=%d corruption_rejected=%d backup_recovered=%d primary_repaired=%d future_rejected=%d\n",allValid?"OK":"FAILED",legacyVersionsOk?1:0,corruptRejected?1:0,recoveredOk?1:0,primaryRepaired?1:0,futureRejectedOk?1:0);
+    std::printf("SAVE_ROUNDTRIP_%s format=4 dirty_detection=%d legacy_versions=%d corruption_rejected=%d backup_recovered=%d primary_repaired=%d future_rejected=%d\n",allValid?"OK":"FAILED",dirtyDetectionOk?1:0,legacyVersionsOk?1:0,corruptRejected?1:0,recoveredOk?1:0,primaryRepaired?1:0,futureRejectedOk?1:0);
     return allValid?0:1;
 }
 
@@ -1419,6 +1437,7 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
+    host.savedSettings=host.game.state().localSettings;
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;
     host.previousPlayerAlive=host.game.state().player.alive;
     host.lastHapticAudioSerial=host.game.state().audio.nextSerial>0?host.game.state().audio.nextSerial-1:0;
@@ -1770,7 +1789,7 @@ int main(int argc, char** argv) {
         const auto audioBegin=std::chrono::steady_clock::now();
         host.audio.update(host.game.state());
         const auto audioEnd=std::chrono::steady_clock::now();
-        const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
+        const auto& permanent=host.game.state().progression.permanent;const auto& settings=host.game.state().localSettings;if(permanent.revision!=host.savedProgressionRevision||!samePersistentSettings(settings,host.savedSettings)){if(saveProgression(permanent,settings,host.progressionPath)){host.savedProgressionRevision=permanent.revision;host.savedSettings=settings;}}
         GameState renderState = host.game.state();
         host.multiplayer.applyPresentation(renderState);
         if(captureMenuPause){
