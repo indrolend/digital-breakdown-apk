@@ -1,6 +1,6 @@
-# Digital Breakdown
+# Data
 
-Digital Breakdown is an experimental cross-platform action game with native
+Data is an experimental cross-platform action game with native
 Windows, macOS, and Android runtimes plus an authoritative multiplayer relay.
 
 The project is community-oriented and operated without a profit objective.

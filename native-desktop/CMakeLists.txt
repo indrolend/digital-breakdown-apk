@@ -134,7 +134,7 @@ if(APPLE)
     target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework AppKit" "-framework GameController" "-framework CoreHaptics")
     set_target_properties(DigitalBreakdown PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
+        MACOSX_BUNDLE_BUNDLE_NAME "Data"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.indrolend.digitalbreakdown.native"
         MACOSX_BUNDLE_BUNDLE_VERSION "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"

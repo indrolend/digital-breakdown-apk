@@ -160,8 +160,8 @@ public final class MainActivity extends Activity {
     private void handleJoinIntent(Intent intent){String code=extractRoomCode(intent==null||intent.getData()==null?null:intent.getData().toString());if(code!=null){menuScroller.setVisibility(View.VISIBLE);showOnline();networkStatus.setText("CONNECTING");multiplayer.join(code);}}
     private static String extractRoomCode(String value){if(value==null)return null;String compact=value.toUpperCase(Locale.US).replaceAll("[^A-Z0-9]","");for(int i=compact.length()-6;i>=0;--i){String code=compact.substring(i,i+6);if(code.matches("[A-Z0-9]{6}"))return code;}return null;}
     private static String roomUrl(String code){return "digitalbreakdown://join/"+code.toUpperCase(Locale.US);}
-    private String roomShareText(String code){return "Digital Breakdown room "+code.toUpperCase(Locale.US)+"\n"+roomUrl(code);}
-    private void copyRoom(String code){ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("Digital Breakdown room",roomShareText(code)));}
+    private String roomShareText(String code){return "Data room "+code.toUpperCase(Locale.US)+"\n"+roomUrl(code);}
+    private void copyRoom(String code){ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("Data room",roomShareText(code)));}
     private void shareRoom(String code){Intent share=new Intent(Intent.ACTION_SEND);share.setType("text/plain");share.putExtra(Intent.EXTRA_TEXT,roomShareText(code));startActivity(Intent.createChooser(share,"Share room"));}
     private void loadQr(ImageView image,String data){new Thread(()->{try{String encoded=URLEncoder.encode(data,"UTF-8");URL url=new URL("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data="+encoded);final android.graphics.Bitmap bitmap=BitmapFactory.decodeStream(url.openStream());if(bitmap!=null)runOnUiThread(()->image.setImageBitmap(bitmap));}catch(Exception ignored){}}).start();}
 

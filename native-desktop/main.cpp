@@ -1360,7 +1360,7 @@ int main(int argc, char** argv) {
 
     glfwSetErrorCallback(errorCallback);
     if (!glfwInit()) {
-        std::fprintf(stderr, "Digital Breakdown: GLFW initialization failed.\n");
+        std::fprintf(stderr, "Data: GLFW initialization failed.\n");
         return 1;
     }
     if (hasArg(argc, argv, "--controller-test")) {
@@ -1384,13 +1384,13 @@ int main(int argc, char** argv) {
     GLFWwindow* window = glfwCreateWindow(
         1280,
         720,
-        "Digital Breakdown - Native Desktop",
+        "Data",
         nullptr,
         nullptr
     );
     if (!window) {
         glfwTerminate();
-        std::fprintf(stderr, "Digital Breakdown: window creation failed.\n");
+        std::fprintf(stderr, "Data: window creation failed.\n");
         return 1;
     }
 
@@ -1502,7 +1502,7 @@ int main(int argc, char** argv) {
         if(const char* room=argValue(argc,argv,"--join-room"))host.multiplayer.join(host.multiplayerService,room);
     }
 
-    std::printf("Digital Breakdown native desktop host running.\n");
+    std::printf("Data native desktop host running.\n");
     std::printf("Build identity: %s\n", desktopBuildIdentityLine().c_str());
     std::printf("WASD move | Shift sprint | Space jump | Mouse look | Left mouse vacuum | F melee | Q shoot | C camera | Tab release mouse | Esc quit\n");
 
