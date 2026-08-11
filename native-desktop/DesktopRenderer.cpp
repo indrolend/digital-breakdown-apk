@@ -946,7 +946,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     // browser sun vector onto the floor. Silhouette, length and motion therefore
     // come from object vertices, height and light direction rather than blobs.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
-    if(state.localSettings.shadows&&menuPresentation&&!state.camera.firstPerson&&!state.dead){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
+    if(state.localSettings.shadows&&menuPresentation&&state.phoneVisual.visible&&!state.dead){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);
     glPopMatrix();glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
@@ -961,7 +961,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox({c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,0,0,0.012f,0.018f,0.022f,0.20f);}
     glPopMatrix();glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
 
-    if (!state.camera.firstPerson) {
+    if (state.phoneVisual.visible) {
         const Vec3 phonePos=state.phoneTransform.position;
         const auto& pv=state.phoneVisual;
         const Quat phoneOrientation=state.phoneTransform.orientation;

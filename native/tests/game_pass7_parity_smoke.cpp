@@ -157,15 +157,21 @@ int main() {
         "direction held through the entrance becomes active on the first gameplay frame");
     ok &= expect(game.state().cinematic.textInteraction<0.01f,
         "floating text interaction expansion settles smoothly instead of remaining stretched");
+    {GameState& pauseFixture=const_cast<GameState&>(game.state());pauseFixture.camera.firstPerson=true;}
     game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
+    ok &= expect(game.state().camera.firstPerson&&game.state().phoneVisual.visible&&length(game.state().camera.pos-game.state().phoneTransform.position)<0.85f,
+        "first-person pause preserves camera preference while framing a readable phone menu");
     Game onlineMenuGame;onlineMenuGame.reset();onlineMenuGame.configureNetworkHost();
     {GameState& online=const_cast<GameState&>(onlineMenuGame.state());online.targets[0].alive=true;online.targets[0].slurpable=false;online.targets[0].attackTimer=0.50f;online.enemyAttackOwner=0;}
     onlineMenuGame.setUiPaused(true);const float onlineAttackBefore=onlineMenuGame.state().targets[0].attackTimer;step(onlineMenuGame);
     ok &= expect(onlineMenuGame.state().uiPaused&&onlineMenuGame.state().targets[0].attackTimer<onlineAttackBefore,
         "connected menu releases local controls without freezing the authoritative match clock");
     game.setUiPaused(false);
+    step(game);
+    ok &= expect(game.state().camera.firstPerson,
+        "resuming from the phone menu restores first-person gameplay without a camera-mode toggle");
     game.reset();
 
     game.setTouchControls(0, 1, 0, 0, false, false, false, false, false, false);

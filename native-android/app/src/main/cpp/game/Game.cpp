@@ -1071,6 +1071,7 @@ void Game::update(float dt) {
     // A local menu owns the solo simulation clock. In a connected match it
     // only owns this player's controls; the authoritative room keeps moving.
     if(state_.uiPaused&&!state_.multiplayer.enabled){
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
         updatePhoneTransform();
         updateCamera(dt);
         updateSoulLattices();
@@ -2172,15 +2173,8 @@ void Game::updateCamera(float dt) {
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
     }
-    if (camera.firstPerson) {
-        camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;
-        camera.lookTarget = camera.pos + aimForward * 10.0f;
-        camera.forward = normalized(camera.lookTarget-camera.pos);
-        return;
-    }
     if (localPhoneMenuPresentation(state_)) {
         const PhoneTransformState& phone = state_.phoneTransform;
-        camera.firstPerson = false;
         const float fovRadians = MENU_CAMERA_VERTICAL_FOV * DB_PI / 180.0f;
         const float menuDistance = PHONE_BODY_HEIGHT / (2.0f * MENU_PHONE_VIEWPORT_HEIGHT * std::tan(fovRadians * 0.5f));
         Vec3 desiredTarget = phone.position;
@@ -2196,6 +2190,12 @@ void Game::updateCamera(float dt) {
             camera.verticalFovDegrees = MENU_CAMERA_VERTICAL_FOV;
         }
         camera.forward = normalized(camera.lookTarget - camera.pos);
+        return;
+    }
+    if (camera.firstPerson) {
+        camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;
+        camera.lookTarget = camera.pos + aimForward * 10.0f;
+        camera.forward = normalized(camera.lookTarget-camera.pos);
         return;
     }
     const float leadAmount=clampf((horizontalSpeed-2.0f)*0.0045f,0.0f,0.038f);
