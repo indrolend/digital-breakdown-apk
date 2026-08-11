@@ -1019,17 +1019,26 @@ int runCombatCrowdStress(GLFWwindow* window,HostState& host){
     enum PeakRenderVariant { Legacy, Normal, Pretty, PrettyNoParticles, PrettyNoActors, PrettyNoCombatFx, PrettyNoCaptures, PeakRenderVariantCount };
     constexpr std::array<const char*,PeakRenderVariantCount> variantNames{{"legacy","normal","pretty","pretty_no_particles","pretty_no_actors","pretty_no_combat_fx","pretty_no_captures"}};
     std::array<std::vector<double>,PeakRenderVariantCount> presetSamples;
-    for(int frame=0;frame<180;++frame)for(int order=0;order<PeakRenderVariantCount;++order){
-        const int variant=(frame+order)%PeakRenderVariantCount;GameState renderState=*peakLoadState;
+    for(int variant=0;variant<PeakRenderVariantCount;++variant){
+        GameState renderState=*peakLoadState;
         applyPhoneGraphicsPreset(renderState.localSettings,variant<=Pretty?variant:Pretty);
         if(variant==PrettyNoParticles)renderState.localSettings.particles=false;
         if(variant==PrettyNoActors)for(auto& target:renderState.targets)target.alive=false;
         if(variant==PrettyNoCombatFx){renderState.localSettings.particles=false;renderState.localSettings.shadows=false;renderState.localSettings.portalWindow=false;for(auto& target:renderState.targets)target.alive=false;for(auto& bullet:renderState.bullets)bullet.alive=false;for(auto& flower:renderState.flowers)flower.active=false;renderState.requiredSouls=0;}
         if(variant==PrettyNoCaptures)renderState.requiredSouls=0;
-        const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();
-        if(frame>=30)presetSamples[variant].push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();
+        for(int frame=0;frame<240;++frame){const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();if(frame>=120)presetSamples[variant].push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();}
     }
     for(int variant=0;variant<PeakRenderVariantCount;++variant){const auto stats=RuntimePerfTrace::stats(presetSamples[variant]);std::printf("COMBAT_CROWD_PRESET preset=%s render_avg=%.3f render_p95=%.3f render_max=%.3f\n",variantNames[variant],stats.average,stats.p95,stats.maximum);}
+    int originalWidth=1,originalHeight=1;glfwGetFramebufferSize(window,&originalWidth,&originalHeight);
+    constexpr std::array<float,3> resolutionScales{{0.50f,0.75f,1.0f}};
+    std::array<std::vector<double>,resolutionScales.size()> resolutionSamples;
+    for(std::size_t scaleIndex=0;scaleIndex<resolutionScales.size();++scaleIndex){
+        const float scale=resolutionScales[scaleIndex];host.renderer.resize(std::max(1,static_cast<int>(originalWidth*scale)),std::max(1,static_cast<int>(originalHeight*scale)));
+        GameState renderState=*peakLoadState;applyPhoneGraphicsPreset(renderState.localSettings,Pretty);
+        for(int frame=0;frame<240;++frame){const auto begin=std::chrono::steady_clock::now();host.renderer.draw(renderState);glFinish();const auto end=std::chrono::steady_clock::now();if(frame>=120)resolutionSamples[scaleIndex].push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();}
+    }
+    host.renderer.resize(originalWidth,originalHeight);
+    for(std::size_t scaleIndex=0;scaleIndex<resolutionScales.size();++scaleIndex){const auto stats=RuntimePerfTrace::stats(resolutionSamples[scaleIndex]);std::printf("COMBAT_CROWD_RESOLUTION scale=%.2f width=%d height=%d render_avg=%.3f render_p95=%.3f render_max=%.3f\n",resolutionScales[scaleIndex],std::max(1,static_cast<int>(originalWidth*resolutionScales[scaleIndex])),std::max(1,static_cast<int>(originalHeight*resolutionScales[scaleIndex])),stats.average,stats.p95,stats.maximum);}
     std::printf("COMBAT_CROWD_STRESS_OK waves=%d enemies=%d wave_early=%.3f wave_late=%.3f wave_ratio=%.3f snapshot_early=%.3f snapshot_late=%.3f snapshot_ratio=%.3f peak_particles=%d peak_fragments=%d peak_souls=%d\n",waves,crowd,waveEarly,waveLate,waveEarly>0?waveLate/waveEarly:0,early.average,late.average,early.average>0?late.average/early.average:0,peakParticles,peakFragments,peakSouls);return 0;
 }
 
