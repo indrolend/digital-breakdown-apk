@@ -254,6 +254,7 @@ add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
 add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
 add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
+add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
