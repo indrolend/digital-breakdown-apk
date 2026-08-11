@@ -1040,7 +1040,7 @@ void DesktopRenderer::draw(const GameState& state) const {
         if(particle.kind==1)drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,0.16f,0.39f,0.42f,0.82f*t);
         else drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
     }
-    drawDoorDataMosh(state);
+    if(state.localSettings.portalWindow)drawDoorDataMosh(state);
     if(hudVisible_)drawHud(state);
     glFlush();
 }
