@@ -679,7 +679,10 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
     host.lookX = 0.0;
     host.lookY = 0.0;
     glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    host.game.setUiPaused(!captured);
+    // Attract mode deliberately leaves the cursor available for the one-click
+    // menu handoff while its autonomous gameplay continues behind the title.
+    // Ordinary solo play still couples cursor release to pause ownership.
+    if(!host.game.state().attractMode)host.game.setUiPaused(!captured);
     if(host.game.state().multiplayer.enabled&&wasPaused==captured){
         std::printf("MULTIPLAYER_MENU_%s player=%d\n",captured?"CLOSED":"OPENED",host.game.state().multiplayer.localPlayerId);
         std::fflush(stdout);
@@ -1929,7 +1932,12 @@ int main(int argc, char** argv) {
             continue;
         }
         const int stillCaptureFrames=captureStart?120:30;
-        if(capturePath&&++captureFrames>=stillCaptureFrames){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
+        if(capturePath&&++captureFrames>=stillCaptureFrames){
+            const bool attractRunning=!captureStart||(host.game.state().attractMode&&!host.game.state().uiPaused);
+            const bool captured=attractRunning&&captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);
+            std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);
+            glfwSetWindowShouldClose(window,GLFW_TRUE);
+        }
         const auto swapBegin=std::chrono::steady_clock::now();
         glfwSwapBuffers(window);
         const auto frameEnd=std::chrono::steady_clock::now();
