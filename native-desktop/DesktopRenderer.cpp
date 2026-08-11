@@ -358,7 +358,7 @@ void cpuText(CpuCanvas& canvas, const std::string& text, float x, float baseline
     }
 }
 
-void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY, float px, float time) {
+void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY, float px, float time, float opacity = 1.0f) {
     const MenuFontAtlas& font = cpuMenuFont(true);
     if (!font.cpuReady || text.empty()) return;
     constexpr float rasterSupersample = 2.0f;
@@ -410,7 +410,7 @@ void drawPaletteMenuTitle(const std::string& text, float centerX, float centerY,
         const float g = 0.65f + color.y * 0.34f;
         const float b = 0.72f + color.z * 0.28f;
         for (int yy = 0; yy < glyph.bh; ++yy) for (int xx = 0; xx < glyph.bw; ++xx) {
-            const float alpha = static_cast<float>(glyph.bitmap[yy * glyph.bw + xx]) / 255.0f * 0.96f;
+            const float alpha = static_cast<float>(glyph.bitmap[yy * glyph.bw + xx]) / 255.0f * 0.96f * opacity;
             if (alpha <= 0.01f) continue;
             const float x = pen + static_cast<float>(glyph.xoff + xx) * rasterToScreen;
             const float y = baseline + static_cast<float>(glyph.yoff + yy) * rasterToScreen;
@@ -834,8 +834,11 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedFps)));text(fps,width_-fps.size()*7.2f-12,68,1.2f,0.72f,1.0f,0.90f);}
     if(state.attractMode){
         const float cx=width_*0.5f;
-        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,0.10f);
-        drawPaletteMenuTitle("DATA",cx,height_*0.19f,96.0f*menuUiScale,state.time);
+        const float exitLinear=state.cinematic.attractExitActive?clampf(state.cinematic.attractExitElapsed/0.62f,0.0f,1.0f):0.0f;
+        const float exitEase=exitLinear*exitLinear*(3.0f-2.0f*exitLinear);
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,0.10f+exitEase*0.90f);
+        const float titleOpacity=1.0f-clampf((exitEase-0.68f)/0.32f,0.0f,1.0f);
+        drawPaletteMenuTitle("DATA",cx,height_*(0.19f+exitEase*0.25f),(96.0f-exitEase*26.0f)*menuUiScale,state.time,titleOpacity);
         glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
     }
     const bool pausedSolo=state.started&&state.uiPaused&&!state.multiplayer.enabled&&!state.upgradeMenu.active;
@@ -864,6 +867,11 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
     }
     if(state.cinematic.introActive||!state.started||pausedSolo){
+        if(state.cinematic.menuEnterActive){
+            const float linear=clampf(state.cinematic.menuEnterElapsed/0.48f,0.0f,1.0f);
+            const float fade=1.0f-linear*linear*(3.0f-2.0f*linear);
+            quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.0f,0.0f,0.0f,fade);
+        }
         glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
     }
 

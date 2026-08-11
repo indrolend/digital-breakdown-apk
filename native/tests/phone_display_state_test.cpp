@@ -93,8 +93,12 @@ int main() {
     assert(game.state().started);
     assert(!game.state().dead);
     game.dismissAttractMode();
+    assert(game.state().attractMode);
+    assert(game.state().cinematic.attractExitActive);
+    for (int tick = 0; tick < 24 && game.state().attractMode; ++tick) step(game);
     assert(!game.state().attractMode);
     assert(!game.state().started);
+    assert(game.state().cinematic.menuEnterActive);
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::MainMenu);
 
     game.prepareStartScreen();

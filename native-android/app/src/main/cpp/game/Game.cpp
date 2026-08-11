@@ -4,6 +4,7 @@
 #include "gameplay/TargetRoles.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -59,6 +60,8 @@ constexpr float LEDGE_MANTLE_DURATION = 0.26f;
 constexpr float CAMERA_COLLISION_RADIUS = gameplay::PHONE_BODY.cameraCollisionRadius;
 constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionBackoff;
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
+constexpr float ATTRACT_EXIT_DURATION = 0.62f;
+constexpr float MENU_ENTER_FADE_DURATION = 0.48f;
 constexpr float DEATH_CAMERA_DURATION = 1.35f;
 constexpr float MENU_EXIT_CAMERA_DURATION = 0.42f;
 constexpr float MENU_CAMERA_VERTICAL_FOV = 42.0f;
@@ -425,18 +428,30 @@ void Game::prepareStartScreen(){
 
 void Game::prepareAttractScreen(){
     reset();
+    const auto clockSeed=static_cast<std::uint32_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    const auto addressSeed=static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(this));
+    const std::uint32_t showcaseSeed=(clockSeed^(clockSeed>>16)^addressSeed)*0x9e3779b9u;
+    state_.roomSeed=static_cast<int>(showcaseSeed&0x7fffffffu);
+    state_.flowerRandomState=showcaseSeed^0xa511e9b3u;
+    resetRoom();
     state_.attractMode=true;
     state_.started=true;
     state_.dead=false;
     state_.uiPaused=false;
     state_.cinematic=CinematicState{};
     state_.player.battery=100.0f;
+    state_.player.pos.x=(seededRoomValue(3101.0f)-0.5f)*5.0f;
+    state_.camera.yaw=(seededRoomValue(3102.0f)-0.5f)*1.2f;
     clearInputState();
     updatePhoneDisplay(0.0f);
 }
 
 void Game::dismissAttractMode(){
-    if(state_.attractMode)prepareStartScreen();
+    if(state_.attractMode&&!state_.cinematic.attractExitActive){
+        state_.cinematic.attractExitActive=true;
+        state_.cinematic.attractExitElapsed=0.0f;
+        clearInputState();
+    }
 }
 
 void Game::setUiPaused(bool paused){
@@ -1046,8 +1061,21 @@ void Game::update(float dt) {
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
     state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
+    if(state_.cinematic.menuEnterActive){
+        state_.cinematic.menuEnterElapsed=std::min(MENU_ENTER_FADE_DURATION,state_.cinematic.menuEnterElapsed+dt);
+        if(state_.cinematic.menuEnterElapsed>=MENU_ENTER_FADE_DURATION)state_.cinematic.menuEnterActive=false;
+    }
     updatePhoneDisplay(dt);
-    if(state_.attractMode&&state_.dead){prepareAttractScreen();return;}
+    if(state_.attractMode&&state_.cinematic.attractExitActive){
+        state_.cinematic.attractExitElapsed=std::min(ATTRACT_EXIT_DURATION,state_.cinematic.attractExitElapsed+dt);
+        if(state_.cinematic.attractExitElapsed>=ATTRACT_EXIT_DURATION){
+            prepareStartScreen();
+            state_.cinematic.menuEnterActive=true;
+            state_.cinematic.menuEnterElapsed=0.0f;
+            return;
+        }
+    }
+    if(state_.attractMode&&state_.dead&&!state_.cinematic.attractExitActive){prepareAttractScreen();return;}
     if(state_.dead) {
         state_.hud.crosshairOpacity+=(0.0f-state_.hud.crosshairOpacity)*std::min(1.0f,dt*14.0f);
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
@@ -2356,11 +2384,12 @@ void Game::updateAttractInput(float dt){
     // camera from one side of the arena to the other on a single tick.
     const float aimResponse=dt>0.0f?1.0f-std::exp(-5.0f*dt):1.0f;
     state_.camera.yaw=approachAngle(state_.camera.yaw,desiredYaw,aimResponse);
+    const float showcasePhase=seededRoomValue(3201.0f)*DB_PI*2.0f;
     input.touchMoveZ=distance>(subject->slurpable?1.45f:2.15f)?0.88f:0.12f;
-    if(!subject->slurpable&&distance>2.8f)input.touchMoveX=std::sin(state_.frame*0.045f)*0.46f;
+    if(!subject->slurpable&&distance>2.8f)input.touchMoveX=std::sin(state_.frame*0.045f+showcasePhase)*0.46f;
     input.touchSprint=distance>3.0f;
     if(subject->slurpable){input.touchPrimaryHeld=true;return;}
-    const int beat=state_.frame%96;
+    const int beat=(state_.frame+static_cast<int>(seededRoomValue(3202.0f)*96.0f))%96;
     if(beat==12&&state_.player.grounded)input.jumpPressed=true;
     if((beat==23||beat==61)&&distance<6.2f)input.meleePressed=true;
     if(beat==82&&state_.player.souls>0)input.shootPressed=true;

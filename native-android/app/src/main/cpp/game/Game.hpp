@@ -178,6 +178,10 @@ struct CinematicState {
     float baseYaw = 0.0f;
     float attractCameraYaw = 0.0f;
     bool attractCameraYawValid = false;
+    bool attractExitActive = false;
+    float attractExitElapsed = 0.0f;
+    bool menuEnterActive = false;
+    float menuEnterElapsed = 0.0f;
     bool menuExitActive = false;
     float menuExitElapsed = 0.0f;
     Vec3 startCameraPos;
