@@ -486,7 +486,30 @@ bool popMenuPage(HostState& host){GameState& state=host.game.networkMutableState
 PhoneMenuElement selectedPhoneElement(const GameState& state){const PhoneMenuPageViewModel page=makePhoneMenuPageModel(state);const PhoneMenuElement* element=phoneMenuElementForSelection(page,state.hud.menuSelection);return element?*element:PhoneMenuElement{};}
 PhoneMenuAction selectedPhoneAction(const GameState& state){return selectedPhoneElement(state).action;}
 
-bool adjustMenuSetting(HostState& host,int direction){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;const PhoneMenuAction action=selectedPhoneElement(state).action;if(action==PhoneMenuAction::AdjustMouse){settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustController){settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity+direction*0.10f,0.5f,1.75f);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustTriggers){settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity+direction));state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::AdjustVibration){settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration+direction));state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::MusicVolume){settings.musicVolume=clampf(settings.musicVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::SfxVolume){settings.sfxVolume=clampf(settings.sfxVolume+direction*0.10f,0,1);state.cinematic.textInteraction=0.65f;return true;}if(action==PhoneMenuAction::GraphicsPreset){applyPhoneGraphicsPreset(settings,(settings.graphicsPreset+direction+3)%3);state.cinematic.textInteraction=0.65f;return true;}return false;}
+bool adjustMenuSetting(HostState& host,int direction){
+    GameState& state=host.game.networkMutableState();
+    auto& settings=state.localSettings;
+    const PhoneMenuAction action=selectedPhoneElement(state).action;
+    switch(action){
+        case PhoneMenuAction::AdjustMouse:
+            settings.mouseLookSensitivity=phoneMenuCycleFloat(settings.mouseLookSensitivity,direction,0.5f,1.75f,0.10f);break;
+        case PhoneMenuAction::AdjustController:
+            settings.controllerLookSensitivity=phoneMenuCycleFloat(settings.controllerLookSensitivity,direction,0.5f,1.75f,0.10f);break;
+        case PhoneMenuAction::AdjustTriggers:
+            settings.controllerTriggerSensitivity=phoneMenuCycleIndex(settings.controllerTriggerSensitivity,direction,3);break;
+        case PhoneMenuAction::AdjustVibration:
+            settings.controllerVibration=phoneMenuCycleIndex(settings.controllerVibration,direction,3);break;
+        case PhoneMenuAction::MusicVolume:
+            settings.musicVolume=phoneMenuCycleFloat(settings.musicVolume,direction,0.0f,1.0f,0.10f);break;
+        case PhoneMenuAction::SfxVolume:
+            settings.sfxVolume=phoneMenuCycleFloat(settings.sfxVolume,direction,0.0f,1.0f,0.10f);break;
+        case PhoneMenuAction::GraphicsPreset:
+            applyPhoneGraphicsPreset(settings,phoneMenuCycleIndex(settings.graphicsPreset,direction,3));break;
+        default:return false;
+    }
+    state.cinematic.textInteraction=0.65f;
+    return true;
+}
 bool toggleMenuSetting(HostState& host){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;switch(selectedPhoneAction(state)){case PhoneMenuAction::MusicMute:settings.musicMuted=!settings.musicMuted;break;case PhoneMenuAction::SfxMute:settings.sfxMuted=!settings.sfxMuted;break;case PhoneMenuAction::ToggleShadows:settings.shadows=!settings.shadows;break;case PhoneMenuAction::ToggleParticles:settings.particles=!settings.particles;break;case PhoneMenuAction::ToggleFps:settings.fpsCounter=!settings.fpsCounter;break;default:return false;}state.cinematic.textInteraction=0.65f;return true;}
 
 void setMenuSelection(HostState& host,int selection) {

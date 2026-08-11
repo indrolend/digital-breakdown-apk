@@ -83,6 +83,20 @@ inline int phoneMenuPercent(float value) {
     return static_cast<int>(std::round(value * 100.0f));
 }
 
+inline int phoneMenuCycleIndex(int value, int direction, int count) {
+    if (count <= 0 || direction == 0) return value;
+    const int normalized = (value % count + count) % count;
+    return (normalized + (direction > 0 ? 1 : count - 1)) % count;
+}
+
+inline float phoneMenuCycleFloat(float value, int direction, float minimum, float maximum, float step) {
+    if (direction == 0 || maximum <= minimum || step <= 0.0f) return clampf(value, minimum, maximum);
+    constexpr float epsilon = 0.0001f;
+    if (direction > 0 && value >= maximum - epsilon) return minimum;
+    if (direction < 0 && value <= minimum + epsilon) return maximum;
+    return clampf(value + (direction > 0 ? step : -step), minimum, maximum);
+}
+
 inline const char* phoneMenuTriggerSensitivityName(int value) {
     static constexpr const char* Names[] = {"Deep", "Balanced", "Hair"};
     return Names[std::max(0, std::min(2, value))];
@@ -124,7 +138,9 @@ inline void addPhoneMenuValue(PhoneMenuPageViewModel& page, const std::string& l
     element.label = label;
     element.value = value;
     element.selectable = true;
-    element.horizontal = PhoneMenuHorizontal::Adjust;
+    element.horizontal = action == PhoneMenuAction::Rebind
+        ? PhoneMenuHorizontal::None
+        : PhoneMenuHorizontal::Adjust;
     addPhoneMenuElement(page, element);
 }
 

@@ -93,6 +93,7 @@ int main() {
     assert(controlsModel.elements[0].kind == PhoneMenuRowKind::Section);
     assert(!controlsModel.elements[0].selectable);
     assert(selectionElement(controlsModel, 0).bindingAction == 0);
+    assert(selectionElement(controlsModel, 0).horizontal == PhoneMenuHorizontal::None);
     assert(selectionElement(controlsModel, 5).bindingAction == 5);
     assert(selectionElement(controlsModel, 6).bindingAction == 6);
     assert(selectionElement(controlsModel, 9).bindingAction == 9);
@@ -101,7 +102,8 @@ int main() {
     assert(selectionElement(controlsModel, 12).action == PhoneMenuAction::AdjustTriggers);
     assert(selectionElement(controlsModel, 12).value == "Balanced");
     assert(selectionElement(controlsModel, 13).action == PhoneMenuAction::AdjustVibration);
-    assert(selectionElement(controlsModel, 13).value == "Subtle");
+    assert(selectionElement(controlsModel, 13).value == "Standard");
+    assert(selectionElement(controlsModel, 13).horizontal == PhoneMenuHorizontal::Adjust);
     assert(selectionElement(controlsModel, 14).action == PhoneMenuAction::Defaults);
     assert(selectionElement(controlsModel, 15).action == PhoneMenuAction::Back);
 
@@ -118,6 +120,7 @@ int main() {
     assert(controlsTop.rows[7].kind == PhoneMenuRowKind::Section);
     assert(controlsTop.rows[12].kind == PhoneMenuRowKind::Section);
     assert(selectionRow(controlsTop, 0).action == PhoneMenuAction::Rebind);
+    assert(selectionRow(controlsTop, 0).horizontal == PhoneMenuHorizontal::None);
     expectVisibleRowsInsideSafe(controlsTop);
 
     state.hud.menuSelection = 15;
@@ -135,6 +138,7 @@ int main() {
     PhoneMenuPageViewModel audioModel = makePhoneMenuPageModel(state);
     assert(audioModel.tablePage);
     assert(selectionElement(audioModel, 0).action == PhoneMenuAction::MusicVolume);
+    assert(selectionElement(audioModel, 0).horizontal == PhoneMenuHorizontal::Adjust);
     assert(selectionElement(audioModel, 2).horizontal == PhoneMenuHorizontal::Toggle);
     PhoneDisplayMenuLayout audio = makePhoneDisplayMenuLayout(state);
     assert(audio.selectableCount == 5);
@@ -158,6 +162,12 @@ int main() {
     PhoneDisplayMenuLayout graphics = makePhoneDisplayMenuLayout(state);
     assert(graphics.selectableCount == 5);
     expectVisibleRowsInsideSafe(graphics);
+
+    assert(phoneMenuCycleIndex(0, 1, 3) == 1);
+    assert(phoneMenuCycleIndex(2, 1, 3) == 0);
+    assert(phoneMenuCycleIndex(0, -1, 3) == 2);
+    assert(phoneMenuCycleFloat(1.0f, 1, 0.0f, 1.0f, 0.1f) == 0.0f);
+    assert(phoneMenuCycleFloat(0.0f, -1, 0.0f, 1.0f, 0.1f) == 1.0f);
 
     state.localSettings.menuPage = LocalMenuPage::JoinCode;
     PhoneMenuPageViewModel joinModel = makePhoneMenuPageModel(state);

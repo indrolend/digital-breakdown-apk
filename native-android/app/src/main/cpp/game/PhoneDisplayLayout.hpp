@@ -19,6 +19,7 @@ struct PhoneDisplayMenuRow {
     PhoneMenuAction action = PhoneMenuAction::None;
     int selectableIndex = -1;
     int bindingAction = -1;
+    PhoneMenuHorizontal horizontal = PhoneMenuHorizontal::None;
     std::string label;
     std::string value;
     PhoneDisplayRect visual;
@@ -90,6 +91,7 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
         row.kind = element.kind;
         row.action = element.action;
         row.bindingAction = element.bindingAction;
+        row.horizontal = element.horizontal;
         row.label = element.label;
         row.value = element.value;
         row.selectable = element.selectable;
