@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <memory>
 
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
@@ -327,7 +328,8 @@ Vec3 mix3(const Vec3& a, const Vec3& b, float t) {
 void Game::reset() {
     const PermanentProgressionState permanent=state_.progression.permanent;
     const LocalSettingsState localSettings=state_.localSettings;
-    state_ = GameState{};
+    auto freshState=std::make_unique<GameState>();
+    state_ = std::move(*freshState);
     state_.progression.permanent=permanent;
     state_.localSettings=localSettings;
     state_.localSettings.menuPage=LocalMenuPage::Main;
