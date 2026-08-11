@@ -1082,6 +1082,7 @@ void printUsage() {
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
+    std::printf("  --capture-cinematic-demo DIR  Record the real lunge/capture sequence from a cinematic spectator camera.\n");
     std::printf("  --capture-width N --capture-height N  Set capture framebuffer dimensions.\n");
     std::printf("  --capture-hide-hud  Hide framebuffer HUD elements in visual captures.\n");
     std::printf("  --perf-trace FILE   Record one-second runtime performance summaries as CSV.\n");
@@ -1328,6 +1329,9 @@ int main(int argc, char** argv) {
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
     const char* captureDemoDir=argValue(argc,argv,"--capture-cpu-demo");
+    const char* captureCinematicDir=argValue(argc,argv,"--capture-cinematic-demo");
+    const bool captureCinematic=captureCinematicDir!=nullptr;
+    if(captureCinematic)captureDemoDir=captureCinematicDir;
     const bool captureDemo=captureDemoDir!=nullptr;
     const bool captureHideHud=hasArg(argc,argv,"--capture-hide-hud");
     const char* perfTracePath=argValue(argc,argv,"--perf-trace");
@@ -1456,16 +1460,18 @@ int main(int argc, char** argv) {
         host.game.restart();
         GameState& fixture=host.game.networkMutableState();
         fixture.camera.firstPerson=false;
+        if(captureCinematic)fixture.cinematic.introActive=false;
         for(auto& target:fixture.targets)target.alive=false;
         auto& target=fixture.targets[0];
         target=TargetState{};
         target.alive=true;
-        target.pos=fixture.player.pos+Vec3{0.15f,0.0f,-1.60f};
+        target.pos=fixture.player.pos+Vec3{0.15f,0.0f,captureCinematic?-2.65f:-1.60f};
         target.walkTarget=target.pos;
         target.visualYaw=0.0f;
-        target.scale=1.08f;
+        target.scale=captureCinematic?1.18f:1.08f;
         target.attackCooldown=999.0f;
         target.armor=0.0f;
+        if(captureCinematic)target.health=0.20f;
         fixture.localSettings.particles=true;
         fixture.localSettings.fpsCounter=false;
     }
@@ -1730,11 +1736,17 @@ int main(int argc, char** argv) {
             const int f=captureFrames;
             bool exposedSoul=false;
             for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable){exposedSoul=true;break;}
-            const bool approach=!exposedSoul&&f<35;
+            if(captureCinematic&&!exposedSoul&&f<=10){
+                GameState& fixture=host.game.networkMutableState();
+                fixture.targets[0].pos=fixture.player.pos+Vec3{0.15f,-fixture.player.pos.y,-2.65f};
+                fixture.targets[0].walkTarget=fixture.targets[0].pos;
+                fixture.targets[0].vel={};
+            }
+            const bool approach=!captureCinematic&&!exposedSoul&&f<35;
             const bool circle=false;
-            const bool retreat=!exposedSoul&&f>=230&&f<270;
-            const bool melee=!exposedSoul&&(f==50||f==110||f==170);
-            const bool jump=!exposedSoul&&f==210;
+            const bool retreat=!captureCinematic&&!exposedSoul&&f>=230&&f<270;
+            const bool melee=!exposedSoul&&(captureCinematic?f==10:(f==50||f==110||f==170));
+            const bool jump=!exposedSoul&&(captureCinematic?f==2:f==210);
             host.game.setTouchControls(
                 circle?0.52f:(retreat?-0.28f:0.0f),
                 approach?0.66f:(circle?0.14f:(retreat?-0.42f:0.0f)),
@@ -1853,6 +1865,22 @@ int main(int argc, char** argv) {
                     );
             }
         }
+        if(captureCinematic){
+            const Vec3 phone=renderState.phoneTransform.position;
+            Vec3 subject=phone;
+            bool exposedSoul=false;
+            for(const auto& target:renderState.targets){
+                if(target.alive){subject=(phone+target.pos)*0.5f;exposedSoul=target.slurpable;break;}
+            }
+            const float action=clampf(static_cast<float>(captureFrames)/95.0f,0.0f,1.0f);
+            renderState.camera.pos=subject+(exposedSoul
+                ?Vec3{3.25f,1.35f,2.05f}
+                :Vec3{3.35f-action*0.20f,1.18f+action*0.20f,1.45f});
+            renderState.camera.lookTarget=subject+Vec3{0.0f,0.52f,exposedSoul?-0.10f:0.0f};
+            renderState.camera.forward=normalized(renderState.camera.lookTarget-renderState.camera.pos);
+            renderState.camera.verticalFovDegrees=44.0f;
+            renderState.camera.firstPerson=false;
+        }
         const auto renderBegin=std::chrono::steady_clock::now();
         host.renderer.draw(renderState);
         const auto renderEnd=std::chrono::steady_clock::now();
@@ -1870,7 +1898,8 @@ int main(int argc, char** argv) {
                 glReadBuffer(GL_BACK);
                 if(!captured)std::printf("CAPTURE_CPU_DEMO_FAILED %s\n",framePath.string().c_str());
             }
-            if(++captureFrames>=300){
+            const int captureLimit=captureCinematic?180:300;
+            if(++captureFrames>=captureLimit){
                 captureDemoSucceeded=host.game.state().player.souls>0;
                 std::printf("CAPTURE_CPU_DEMO_%s %s stored_souls=%d\n",captureDemoSucceeded?"OK":"FAILED",captureDemoDir,host.game.state().player.souls);
                 glfwSetWindowShouldClose(window,GLFW_TRUE);
