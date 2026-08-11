@@ -145,7 +145,11 @@ inline SoulVisualState makeSoulVisualState(int soulState, float vacuumPull, floa
     visual.phase = time * 7.0f + seed;
     visual.verticalOffset = std::sin(time * 2.0f + floatOffset) * 0.18f;
     visual.rotationY = time * spinSpeed;
-    visual.morphScale = visualSmooth01(morph);
+    // Once latched, the soul moves into the phone at close camera range. Contract
+    // the translucent shell with that motion instead of leaving it full-sized
+    // until the final visibility cutoff, where it can obscure the capture itself.
+    const float ingestContraction = 1.0f - visualSmooth01(visual.ingestAmount);
+    visual.morphScale = visualSmooth01(morph) * ingestContraction;
     const float active = std::max(visual.pullAmount, std::max(visual.latchAmount * 0.72f, visual.ingestAmount));
     visual.elasticity = std::max(0.0f, std::min(1.0f, active + visual.hitAmount * 0.18f));
     const float baseBreath = 1.0f + std::sin(time * 3.0f + seed * 1.7f) * 0.035f;

@@ -3,6 +3,7 @@
 
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "VisualIdentity.hpp"
 
 namespace {
 
@@ -105,6 +106,17 @@ void testVacuumOwnedStatesDoNotMove() {
     }
 }
 
+void testIngestingSoulShellContractsContinuously() {
+    const SoulVisualState start = makeSoulVisualState(3, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, true);
+    const SoulVisualState middle = makeSoulVisualState(3, 1.0f, 0.5f, 0.0f, 1.0f, 0.0f, true);
+    const SoulVisualState late = makeSoulVisualState(3, 1.0f, 0.8f, 0.0f, 1.0f, 0.0f, true);
+
+    assert(std::abs(start.morphScale - 1.0f) < 0.0001f);
+    assert(std::abs(middle.morphScale - 0.5f) < 0.0001f);
+    assert(late.morphScale < middle.morphScale);
+    assert(late.morphScale > 0.0f);
+}
+
 } // namespace
 
 int main() {
@@ -113,5 +125,6 @@ int main() {
     testRecoilTimeout();
     testGroundClampAndStop();
     testVacuumOwnedStatesDoNotMove();
+    testIngestingSoulShellContractsContinuously();
     return 0;
 }

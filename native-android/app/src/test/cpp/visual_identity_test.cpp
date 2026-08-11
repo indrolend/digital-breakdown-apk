@@ -33,6 +33,11 @@ int main() {
     assert(latched.latchAmount == 1 && latched.emission > attracted.emission);
     const SoulVisualState ingesting = makeSoulVisualState(3, 1, 0.8f, 0, 1, 0, true);
     assert(ingesting.ingestAmount > 0.79f && ingesting.scale.x > 0);
+    const SoulVisualState ingestStart = makeSoulVisualState(3, 1, 0.0f, 0, 1, 0, true);
+    const SoulVisualState ingestMid = makeSoulVisualState(3, 1, 0.5f, 0, 1, 0, true);
+    assert(near(ingestStart.morphScale, 1.0f));
+    assert(near(ingestMid.morphScale, 0.5f));
+    assert(ingesting.morphScale < ingestMid.morphScale);
     assert(!makeSoulVisualState(3, 1, 0.92f, 0, 1, 0, true).visible);
     for (float dt : {1.0f / 30.0f, 1.0f / 60.0f, 1.0f / 120.0f}) {
         float elapsed = 0;
