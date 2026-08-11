@@ -47,6 +47,7 @@ struct DesktopAudio::Impl {
     std::array<Voice,2> uiVoices{};
     std::array<bool,2> uiBufferInitialized{{false,false}};
     unsigned int uiVariation=0;
+    std::vector<std::string> registeredCueFiles;
 };
 
 namespace {
@@ -63,15 +64,24 @@ DesktopAudio::DesktopAudio():impl_(std::make_unique<Impl>()) {
     impl_->initialized=ma_engine_init(nullptr,&impl_->engine)==MA_SUCCESS;
     if(impl_->initialized){const auto config=ma_lpf_node_config_init(ma_engine_get_channels(&impl_->engine),ma_engine_get_sample_rate(&impl_->engine),impl_->menuCutoff,2);impl_->menuFilterInitialized=ma_lpf_node_init(ma_engine_get_node_graph(&impl_->engine),&config,nullptr,&impl_->menuFilter)==MA_SUCCESS;if(impl_->menuFilterInitialized)ma_node_attach_output_bus(&impl_->menuFilter,0,ma_engine_get_endpoint(&impl_->engine),0);for(int i=0;i<2;++i){impl_->uiSamples[i]=makeMenuPluck(i?293.66f:220.0f);const auto bufferConfig=ma_audio_buffer_config_init(ma_format_f32,1,impl_->uiSamples[i].size(),impl_->uiSamples[i].data(),nullptr);impl_->uiBufferInitialized[i]=ma_audio_buffer_init(&bufferConfig,&impl_->uiBuffers[i])==MA_SUCCESS;if(impl_->uiBufferInitialized[i]&&ma_sound_init_from_data_source(&impl_->engine,&impl_->uiBuffers[i],0,nullptr,&impl_->uiVoices[i].sound)==MA_SUCCESS)impl_->uiVoices[i].initialized=true;}}
 }
-DesktopAudio::~DesktopAudio(){stopAll();if(impl_)for(int i=0;i<2;++i)if(impl_->uiBufferInitialized[i])ma_audio_buffer_uninit(&impl_->uiBuffers[i]);if(impl_&&impl_->menuFilterInitialized)ma_lpf_node_uninit(&impl_->menuFilter,nullptr);if(impl_&&impl_->initialized)ma_engine_uninit(&impl_->engine);}
+DesktopAudio::~DesktopAudio(){stopAll();if(impl_)for(int i=0;i<2;++i)if(impl_->uiBufferInitialized[i])ma_audio_buffer_uninit(&impl_->uiBuffers[i]);if(impl_&&impl_->menuFilterInitialized)ma_lpf_node_uninit(&impl_->menuFilter,nullptr);if(impl_&&impl_->initialized){ma_resource_manager* resources=ma_engine_get_resource_manager(&impl_->engine);for(const auto& path:impl_->registeredCueFiles)ma_resource_manager_unregister_file(resources,path.c_str());ma_engine_uninit(&impl_->engine);}}
+
+void DesktopAudio::setAssetRoot(const std::filesystem::path& root) {
+    root_=root;
+    if(!impl_||!impl_->initialized)return;
+    ma_resource_manager* resources=ma_engine_get_resource_manager(&impl_->engine);
+    for(const auto& path:impl_->registeredCueFiles)ma_resource_manager_unregister_file(resources,path.c_str());
+    impl_->registeredCueFiles.clear();
+    for(int index=0;index<22;++index){const char* filename=cueFile(static_cast<AudioCue>(index));if(!filename)continue;const std::string path=(root_/filename).u8string();if(!std::filesystem::exists(path)||std::find(impl_->registeredCueFiles.begin(),impl_->registeredCueFiles.end(),path)!=impl_->registeredCueFiles.end())continue;if(ma_resource_manager_register_file(resources,path.c_str(),MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE)==MA_SUCCESS)impl_->registeredCueFiles.push_back(path);}
+}
 
 namespace {
 void stopVoice(DesktopAudio::Impl::Voice& voice){if(!voice.initialized)return;ma_sound_stop(&voice.sound);ma_sound_uninit(&voice.sound);voice.initialized=false;}
-bool startVoice(DesktopAudio::Impl& impl,DesktopAudio::Impl::Voice& voice,const std::filesystem::path& path,float volume,bool loop){
+bool startVoice(DesktopAudio::Impl& impl,DesktopAudio::Impl::Voice& voice,const std::filesystem::path& path,float volume,bool loop,ma_uint32 flags=0){
     stopVoice(voice);
     if(!impl.initialized||!std::filesystem::exists(path))return false;
     const std::string utf8=path.u8string();
-    if(ma_sound_init_from_file(&impl.engine,utf8.c_str(),0,nullptr,nullptr,&voice.sound)!=MA_SUCCESS)return false;
+    if(ma_sound_init_from_file(&impl.engine,utf8.c_str(),flags,nullptr,nullptr,&voice.sound)!=MA_SUCCESS)return false;
     voice.initialized=true;ma_sound_set_volume(&voice.sound,volume);ma_sound_set_looping(&voice.sound,loop?MA_TRUE:MA_FALSE);ma_sound_start(&voice.sound);return true;
 }
 }
@@ -81,9 +91,10 @@ void DesktopAudio::play(const AudioEventState& event) {
     if(event.cue==AudioCue::SlurpRingtoneStop){stopVoice(impl_->slurp);slurpPlaying_=false;return;}
     if(event.cue==AudioCue::RewardWoah)impl_->rewardDuck=std::max(impl_->rewardDuck,0.18f);else if(event.cue==AudioCue::RewardNice)impl_->rewardDuck=std::max(impl_->rewardDuck,0.09f);
     const char* filename=cueFile(event.cue);if(!filename||root_.empty())return;
-    if(event.cue==AudioCue::SlurpRingtoneStart){startVoice(*impl_,impl_->slurp,root_/filename,event.volume*sfxLevel_,true);slurpPlaying_=true;return;}
+    constexpr ma_uint32 cueFlags=MA_SOUND_FLAG_DECODE|MA_SOUND_FLAG_NO_SPATIALIZATION;
+    if(event.cue==AudioCue::SlurpRingtoneStart){startVoice(*impl_,impl_->slurp,root_/filename,event.volume*sfxLevel_,true,cueFlags);slurpPlaying_=true;return;}
     auto& voice=impl_->voices[nextVoice_++%impl_->voices.size()];
-    startVoice(*impl_,voice,root_/filename,event.volume*sfxLevel_,false);
+    startVoice(*impl_,voice,root_/filename,event.volume*sfxLevel_,false,cueFlags);
 }
 
 void DesktopAudio::playMenuCue(bool confirm){if(!impl_||!impl_->initialized||sfxLevel_<=0)return;constexpr float ratios[]={0.94f,1.0f,1.035f,0.975f,1.07f,0.92f,1.015f};const unsigned int variation=impl_->uiVariation++;impl_->menuCuePulse=std::max(impl_->menuCuePulse,confirm?0.34f:0.22f);impl_->menuCueBend=confirm?0.010f:-0.006f;for(auto& voice:impl_->uiVoices)if(voice.initialized)ma_sound_stop(&voice.sound);auto& voice=impl_->uiVoices[confirm?1:0];if(!voice.initialized)return;ma_sound_seek_to_pcm_frame(&voice.sound,0);ma_sound_set_pitch(&voice.sound,ratios[(variation+(confirm?2u:0u))%7u]);ma_sound_set_pan(&voice.sound,((static_cast<int>(variation%5u)-2)*0.018f));ma_sound_set_volume(&voice.sound,sfxLevel_*(confirm?0.76f:0.54f)*(0.96f+static_cast<float>(variation%3u)*0.018f));ma_sound_start(&voice.sound);}

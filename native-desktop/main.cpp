@@ -986,13 +986,15 @@ int runCombatCrowdStress(GLFWwindow* window,HostState& host){
     host.game.reset();GameState& initial=host.game.networkMutableState();
     for(auto& target:initial.targets)target=TargetState{};
     for(auto& request:initial.respawnQueue)request=HumanRespawnRequest{};
-    initial.cinematic=CinematicState{};initial.localSettings.particles=true;initial.localSettings.shadows=true;initial.runRules.crowdedRoomStacks=1;
+    initial.cinematic=CinematicState{};initial.localSettings.particles=true;initial.localSettings.shadows=true;initial.localSettings.musicMuted=true;initial.localSettings.sfxMuted=true;initial.runRules.crowdedRoomStacks=1;
     initial.player.pos={0,0.08f,0};initial.camera.yaw=0;initial.camera.pitch=0;initial.camera.forward={0,0,-1};
     std::array<double,waves> waveAverage{};std::unique_ptr<GameState> earlyState,peakLoadState;
-    int peakParticles=0,peakFragments=0,peakSouls=0;
+    int peakParticles=0,peakFragments=0,peakSouls=0;std::vector<double> audioSamples;
+    host.audio.update(host.game.state());
     const auto step=[&](bool vacuum,bool melee,float look,std::vector<double>& samples){
         host.game.setTouchControls(0,0,look,0,vacuum,false,false,melee,false,false);
         host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+        const auto audioBegin=std::chrono::steady_clock::now();host.audio.update(host.game.state());const auto audioEnd=std::chrono::steady_clock::now();audioSamples.push_back(std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count());
         const auto begin=std::chrono::steady_clock::now();host.renderer.draw(host.game.state());glFinish();const auto end=std::chrono::steady_clock::now();
         samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();
         int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
@@ -1039,6 +1041,7 @@ int runCombatCrowdStress(GLFWwindow* window,HostState& host){
     }
     host.renderer.resize(originalWidth,originalHeight);
     for(std::size_t scaleIndex=0;scaleIndex<resolutionScales.size();++scaleIndex){const auto stats=RuntimePerfTrace::stats(resolutionSamples[scaleIndex]);std::printf("COMBAT_CROWD_RESOLUTION scale=%.2f width=%d height=%d render_avg=%.3f render_p95=%.3f render_max=%.3f\n",resolutionScales[scaleIndex],std::max(1,static_cast<int>(originalWidth*resolutionScales[scaleIndex])),std::max(1,static_cast<int>(originalHeight*resolutionScales[scaleIndex])),stats.average,stats.p95,stats.maximum);}
+    const auto audioStats=RuntimePerfTrace::stats(audioSamples);std::printf("COMBAT_CROWD_AUDIO samples=%zu update_avg=%.3f update_p95=%.3f update_max=%.3f\n",audioSamples.size(),audioStats.average,audioStats.p95,audioStats.maximum);
     std::printf("COMBAT_CROWD_STRESS_OK waves=%d enemies=%d wave_early=%.3f wave_late=%.3f wave_ratio=%.3f snapshot_early=%.3f snapshot_late=%.3f snapshot_ratio=%.3f peak_particles=%d peak_fragments=%d peak_souls=%d\n",waves,crowd,waveEarly,waveLate,waveEarly>0?waveLate/waveEarly:0,early.average,late.average,early.average>0?late.average/early.average:0,peakParticles,peakFragments,peakSouls);return 0;
 }
 

@@ -11,7 +11,7 @@ public:
     ~DesktopAudio();
     DesktopAudio(const DesktopAudio&)=delete;
     DesktopAudio& operator=(const DesktopAudio&)=delete;
-    void setAssetRoot(const std::filesystem::path& root) { root_=root; }
+    void setAssetRoot(const std::filesystem::path& root);
     void update(const GameState& state);
     void playMenuCue(bool confirm);
     void stopAll();
