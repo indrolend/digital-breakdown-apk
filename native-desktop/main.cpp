@@ -334,6 +334,95 @@ PhoneTransformState interpolatePhoneTransform(
     return result;
 }
 
+struct TargetPresentationSample {
+    bool alive=false;
+    bool slurpable=false;
+    Vec3 pos;
+    float visualYaw=0.0f;
+    float visualWalkPhase=0.0f;
+    float humanAnimationTime=0.0f;
+    float attackTimer=0.0f;
+    float locomotionAmount=0.0f;
+    HumanReactionVisual visualReaction;
+    float hitFlash=0.0f;
+};
+
+struct FramePresentationSample {
+    float time=0.0f;
+    std::array<TargetPresentationSample,TARGET_COUNT> targets{};
+    float crosshairRotationDegrees=0.0f;
+    float crosshairSpreadPixels=8.0f;
+    float crosshairOpacity=0.0f;
+    float critMarkerOpacity=0.0f;
+};
+
+FramePresentationSample capturePresentation(const GameState& state){
+    FramePresentationSample sample;
+    sample.time=state.time;
+    for(int i=0;i<TARGET_COUNT;++i){
+        const TargetState& target=state.targets[i];
+        sample.targets[i]={target.alive,target.slurpable,target.pos,target.visualYaw,
+            target.visualWalkPhase,target.humanAnimationTime,target.attackTimer,
+            target.locomotionAmount,target.visualReaction,target.hitFlash};
+    }
+    sample.crosshairRotationDegrees=state.hud.crosshairRotationDegrees;
+    sample.crosshairSpreadPixels=state.hud.crosshairSpreadPixels;
+    sample.crosshairOpacity=state.hud.crosshairOpacity;
+    sample.critMarkerOpacity=state.hud.critMarkerOpacity;
+    return sample;
+}
+
+float interpolateWrappedAngle(float previous,float current,float alpha){
+    const float delta=std::atan2(std::sin(current-previous),std::cos(current-previous));
+    return previous+delta*alpha;
+}
+
+void interpolatePresentation(GameState& renderState,const FramePresentationSample& previous,const GameState& current,float alpha){
+    renderState.time=previous.time+(current.time-previous.time)*alpha;
+    for(int i=0;i<TARGET_COUNT;++i){
+        const TargetPresentationSample& before=previous.targets[i];
+        const TargetState& now=current.targets[i];
+        TargetState& target=renderState.targets[i];
+        const bool continuous=before.alive==now.alive&&before.slurpable==now.slurpable&&
+            lengthSq(before.pos-now.pos)<16.0f;
+        if(!continuous)continue;
+        target.pos=before.pos+(now.pos-before.pos)*alpha;
+        target.visualYaw=interpolateWrappedAngle(before.visualYaw,now.visualYaw,alpha);
+        target.visualWalkPhase=before.visualWalkPhase+(now.visualWalkPhase-before.visualWalkPhase)*alpha;
+        target.humanAnimationTime=before.humanAnimationTime+(now.humanAnimationTime-before.humanAnimationTime)*alpha;
+        target.attackTimer=before.attackTimer+(now.attackTimer-before.attackTimer)*alpha;
+        target.locomotionAmount=before.locomotionAmount+(now.locomotionAmount-before.locomotionAmount)*alpha;
+        target.visualReaction.locomotionPhase=before.visualReaction.locomotionPhase+
+            (now.visualReaction.locomotionPhase-before.visualReaction.locomotionPhase)*alpha;
+        target.visualReaction.locomotionAmount=before.visualReaction.locomotionAmount+
+            (now.visualReaction.locomotionAmount-before.visualReaction.locomotionAmount)*alpha;
+        target.visualReaction.hitAmount=before.visualReaction.hitAmount+
+            (now.visualReaction.hitAmount-before.visualReaction.hitAmount)*alpha;
+        target.visualReaction.hitDirectionLocal=before.visualReaction.hitDirectionLocal+
+            (now.visualReaction.hitDirectionLocal-before.visualReaction.hitDirectionLocal)*alpha;
+        target.visualReaction.vacuumPullAmount=before.visualReaction.vacuumPullAmount+
+            (now.visualReaction.vacuumPullAmount-before.visualReaction.vacuumPullAmount)*alpha;
+        target.visualReaction.captureCollapseAmount=before.visualReaction.captureCollapseAmount+
+            (now.visualReaction.captureCollapseAmount-before.visualReaction.captureCollapseAmount)*alpha;
+        target.visualReaction.visibility=before.visualReaction.visibility+
+            (now.visualReaction.visibility-before.visualReaction.visibility)*alpha;
+        target.visualReaction.soulCubeAmount=before.visualReaction.soulCubeAmount+
+            (now.visualReaction.soulCubeAmount-before.visualReaction.soulCubeAmount)*alpha;
+        target.visualReaction.attackTimer=before.visualReaction.attackTimer+
+            (now.visualReaction.attackTimer-before.visualReaction.attackTimer)*alpha;
+        target.hitFlash=before.hitFlash+(now.hitFlash-before.hitFlash)*alpha;
+    }
+    renderState.hud.crosshairRotationDegrees=interpolateWrappedAngle(
+        previous.crosshairRotationDegrees*DB_PI/180.0f,
+        current.hud.crosshairRotationDegrees*DB_PI/180.0f,alpha)*180.0f/DB_PI;
+    renderState.hud.crosshairSpreadPixels=previous.crosshairSpreadPixels+
+        (current.hud.crosshairSpreadPixels-previous.crosshairSpreadPixels)*alpha;
+    renderState.hud.crosshairOpacity=previous.crosshairOpacity+
+        (current.hud.crosshairOpacity-previous.crosshairOpacity)*alpha;
+    renderState.hud.critMarkerOpacity=previous.critMarkerOpacity+
+        (current.hud.critMarkerOpacity-previous.critMarkerOpacity)*alpha;
+}
+
 int phoneMenuItemAt(const GameState& state,float cursorX,float cursorY,int fw,int fh){
     if(state.upgradeMenu.active||state.camera.firstPerson)return -1;
     if(state.started&&!soloPauseMenu(state))return -1;
@@ -1543,6 +1632,7 @@ int main(int argc, char** argv) {
     double simulationAccumulator = 0.0;
     auto previousCamera = host.game.state().camera;
     auto previousPhoneTransform = host.game.state().phoneTransform;
+    auto previousPresentation = capturePresentation(host.game.state());
     int captureFrames=0;
     bool captureDemoSucceeded=false;
     bool multiplayerAutoStartIssued=false;
@@ -1811,12 +1901,14 @@ int main(int argc, char** argv) {
         if (capturePath||captureDemo) {
             previousCamera = host.game.state().camera;
             previousPhoneTransform = host.game.state().phoneTransform;
+            previousPresentation = capturePresentation(host.game.state());
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
             simulationSteps=1;
         } else {
             while (simulationAccumulator >= SIMULATION_STEP_SECONDS && simulationSteps < MAX_SIMULATION_STEPS_PER_FRAME) {
                 previousCamera = host.game.state().camera;
                 previousPhoneTransform = host.game.state().phoneTransform;
+                previousPresentation = capturePresentation(host.game.state());
                 host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
                 simulationAccumulator -= SIMULATION_STEP_SECONDS;
                 ++simulationSteps;
@@ -1848,6 +1940,7 @@ int main(int argc, char** argv) {
             const float alpha = clampf(static_cast<float>(simulationAccumulator / SIMULATION_STEP_SECONDS), 0.0f, 1.0f);
             const auto& currentCamera = host.game.state().camera;
             const auto& currentPhoneTransform = host.game.state().phoneTransform;
+            interpolatePresentation(renderState,previousPresentation,host.game.state(),alpha);
 
             const bool cameraCut =
                 previousCamera.firstPerson != currentCamera.firstPerson ||
@@ -1871,13 +1964,6 @@ int main(int argc, char** argv) {
                     normalized(
                         renderState.camera.lookTarget -
                         renderState.camera.pos
-                    );
-                renderState.time =
-                    std::max(
-                        0.0f,
-                        host.game.state().time -
-                        (1.0f - alpha) *
-                            static_cast<float>(SIMULATION_STEP_SECONDS)
                     );
             }
 
