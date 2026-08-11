@@ -852,14 +852,14 @@ struct RuntimePerfTrace {
     std::ofstream output;
     std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point windowStarted=started;
-    std::vector<double> totalMs,updateMs,renderMs,swapMs;
+    std::vector<double> totalMs,updateMs,audioMs,renderMs,swapMs;
     int maximumSimulationSteps=0;
     int droppedAccumulatorFrames=0;
 
     explicit RuntimePerfTrace(const char* path) {
         if(!path||!*path)return;
         output.open(path,std::ios::trunc);
-        if(output)output<<"seconds,game_frame,room,samples,total_avg,total_p95,total_max,update_avg,update_p95,update_max,render_avg,render_p95,render_max,swap_avg,swap_p95,swap_max,sim_steps_max,dropped_accumulator_frames,active_humans,exposed_souls,active_particles,active_fragments,pending_respawns,stored_souls\n";
+        if(output)output<<"seconds,game_frame,room,samples,total_avg,total_p95,total_max,update_avg,update_p95,update_max,audio_avg,audio_p95,audio_max,render_avg,render_p95,render_max,swap_avg,swap_p95,swap_max,sim_steps_max,dropped_accumulator_frames,active_humans,exposed_souls,active_particles,active_fragments,pending_respawns,stored_souls\n";
     }
     bool active() const{return output.is_open();}
     static Stats stats(std::vector<double> values){
@@ -869,9 +869,9 @@ struct RuntimePerfTrace {
         result.p95=values[static_cast<std::size_t>(std::round(0.95*static_cast<double>(values.size()-1)))];
         result.maximum=values.back();return result;
     }
-    void sample(const GameState& state,double total,double update,double render,double swap,int simulationSteps,bool dropped){
+    void sample(const GameState& state,double total,double update,double audio,double render,double swap,int simulationSteps,bool dropped){
         if(!active())return;
-        totalMs.push_back(total);updateMs.push_back(update);renderMs.push_back(render);swapMs.push_back(swap);
+        totalMs.push_back(total);updateMs.push_back(update);audioMs.push_back(audio);renderMs.push_back(render);swapMs.push_back(swap);
         maximumSimulationSteps=std::max(maximumSimulationSteps,simulationSteps);
         if(dropped)++droppedAccumulatorFrames;
         const auto now=std::chrono::steady_clock::now();
@@ -880,12 +880,13 @@ struct RuntimePerfTrace {
         for(const auto& target:state.targets){if(gameplay::isActiveHuman(target))++humans;if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;}
         for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.kind==1)++fragments;}
         for(const auto& request:state.respawnQueue)if(request.active)++respawns;
-        const Stats totalStats=stats(totalMs),updateStats=stats(updateMs),renderStats=stats(renderMs),swapStats=stats(swapMs);
+        const Stats totalStats=stats(totalMs),updateStats=stats(updateMs),audioStats=stats(audioMs),renderStats=stats(renderMs),swapStats=stats(swapMs);
         output<<std::fixed<<std::setprecision(3)<<std::chrono::duration<double>(now-started).count()<<','<<state.frame<<','<<state.roomIndex<<','<<totalMs.size()<<','
             <<totalStats.average<<','<<totalStats.p95<<','<<totalStats.maximum<<','<<updateStats.average<<','<<updateStats.p95<<','<<updateStats.maximum<<','
+            <<audioStats.average<<','<<audioStats.p95<<','<<audioStats.maximum<<','
             <<renderStats.average<<','<<renderStats.p95<<','<<renderStats.maximum<<','<<swapStats.average<<','<<swapStats.p95<<','<<swapStats.maximum<<','
             <<maximumSimulationSteps<<','<<droppedAccumulatorFrames<<','<<humans<<','<<souls<<','<<particles<<','<<fragments<<','<<respawns<<','<<state.player.souls<<'\n';
-        output.flush();totalMs.clear();updateMs.clear();renderMs.clear();swapMs.clear();maximumSimulationSteps=0;droppedAccumulatorFrames=0;windowStarted=now;
+        output.flush();totalMs.clear();updateMs.clear();audioMs.clear();renderMs.clear();swapMs.clear();maximumSimulationSteps=0;droppedAccumulatorFrames=0;windowStarted=now;
     }
 };
 
@@ -1766,7 +1767,9 @@ int main(int argc, char** argv) {
         const auto updateEnd=std::chrono::steady_clock::now();
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         updateOutcomeRumble(host);
+        const auto audioBegin=std::chrono::steady_clock::now();
         host.audio.update(host.game.state());
+        const auto audioEnd=std::chrono::steady_clock::now();
         const auto& permanent=host.game.state().progression.permanent;if((host.game.state().frame%60)==0||permanent.revision!=host.savedProgressionRevision){if(saveProgression(permanent,host.game.state().localSettings,host.progressionPath))host.savedProgressionRevision=permanent.revision;}
         GameState renderState = host.game.state();
         host.multiplayer.applyPresentation(renderState);
@@ -1832,7 +1835,7 @@ int main(int argc, char** argv) {
             const auto swapBegin=std::chrono::steady_clock::now();
             glfwSwapBuffers(window);
             const auto frameEnd=std::chrono::steady_clock::now();
-            perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
+            perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
             if((captureFrames%2)==0){
                 glReadBuffer(GL_FRONT);
                 char frameName[32];
@@ -1853,7 +1856,7 @@ int main(int argc, char** argv) {
         const auto swapBegin=std::chrono::steady_clock::now();
         glfwSwapBuffers(window);
         const auto frameEnd=std::chrono::steady_clock::now();
-        perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
+        perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
     }
 
     const bool finalSaveOk=saveProgression(host.game.state().progression.permanent,host.game.state().localSettings,host.progressionPath);
