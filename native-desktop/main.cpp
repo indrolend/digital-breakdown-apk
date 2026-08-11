@@ -1416,6 +1416,7 @@ int main(int argc, char** argv) {
         GameState& fixture=host.game.networkMutableState();
         host.game.prepareStartScreen();
         fixture.localSettings.menuPage=LocalMenuPage::Main;
+        fixture.localSettings.menuScroll=0.0f;
         if(page&&std::strcmp(page,"pause")==0){host.game.restart();fixture.cinematic.introActive=false;host.game.setUiPaused(true);}
         else if(page&&std::strcmp(page,"online")==0)fixture.localSettings.menuPage=LocalMenuPage::Online;
         else if(page&&std::strcmp(page,"settings")==0)fixture.localSettings.menuPage=LocalMenuPage::Settings;
