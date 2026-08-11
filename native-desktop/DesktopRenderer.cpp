@@ -790,6 +790,14 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     }
 
     if(state.multiplayer.enabled){const std::string code=state.multiplayer.roomCode.data();const std::string net=state.multiplayer.status.data(),focus=code.empty()?net:code;const float w=std::max(92.0f,static_cast<float>(focus.size())*8.1f+18.0f),x=width_-w-12.0f;quad(x,12,w,30,0.005f,0.012f,0.016f,0.54f);text(focus,x+(w-focus.size()*7.2f)*0.5f,20,1.2f,0.66f,0.96f,1.0f);}
+    if(state.camera.spectatedPlayerId>=0){
+        const std::string label="SPECTATING  P"+std::to_string(state.camera.spectatedPlayerId+1);
+        const float scale=1.35f,tw=label.size()*6.0f*scale,pw=tw+24.0f,px=(width_-pw)*0.5f;
+        quad(px,18,pw,24,0.005f,0.012f,0.016f,0.62f);
+        quad(px,18,pw,1.5f,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
+        text(label,px+12.0f,25,scale,0.72f,0.96f,1.0f,0.94f);
+        glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);return;
+    }
 
     // Browser goal strip: five compact top-center receptacles.
     const int goalCount=std::max(1,state.hud.requiredGoals);

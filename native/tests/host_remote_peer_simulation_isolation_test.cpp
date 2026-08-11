@@ -18,6 +18,10 @@ struct HostRemotePeerSimulationIsolationAccess {
   static void savePlayerContext(const Game& game, NetworkPeerState& context) {
     game.savePlayerContext(context);
   }
+
+  static void updateCamera(Game& game, float dt) {
+    game.updateCamera(dt);
+  }
 };
 
 namespace {
@@ -330,6 +334,29 @@ bool localContextRestoresExactly() {
   return restored;
 }
 
+bool eliminatedLocalPlayerSpectatesOnlyLivingPeer() {
+  Game game = makeHostWithActivePeer(1);
+  GameState& state = game.networkMutableState();
+  state.player.alive = false;
+  state.player.downed = false;
+  state.multiplayer.peers[1].player.pos = {2.0f, 0.08f, -3.0f};
+  state.multiplayer.peers[1].player.yaw = 0.45f;
+  state.multiplayer.peers[1].player.vel = {3.0f, 0.0f, -2.0f};
+
+  HostRemotePeerSimulationIsolationAccess::updateCamera(game, kDt);
+  const int livingSubject = game.state().camera.spectatedPlayerId;
+  const bool thirdPerson = !game.state().camera.firstPerson;
+
+  state.multiplayer.peers[1].player.downed = true;
+  HostRemotePeerSimulationIsolationAccess::updateCamera(game, kDt);
+  const int downedSubject = game.state().camera.spectatedPlayerId;
+
+  std::printf(
+      "SPECTATOR_CAMERA_OBSERVED livingSubject=%d downedSubject=%d thirdPerson=%d\n",
+      livingSubject, downedSubject, thirdPerson ? 1 : 0);
+  return livingSubject == 1 && downedSubject == -1 && thirdPerson;
+}
+
 }  // namespace
 
 int main() {
@@ -337,6 +364,7 @@ int main() {
   ok &= progressionTimersAdvanceOnce();
   ok &= remoteActionsDoNotEmitHostAudio();
   ok &= localContextRestoresExactly();
+  ok &= eliminatedLocalPlayerSpectatesOnlyLivingPeer();
   if (!ok) {
     std::fprintf(stderr, "HOST_REMOTE_PEER_SIMULATION_ISOLATION_FAILED\n");
     return 1;

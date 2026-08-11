@@ -163,6 +163,7 @@ struct CameraState {
     float pitch = 0.0f;
     float verticalFovDegrees = 60.0f;
     bool firstPerson = false;
+    int spectatedPlayerId = -1;
     Vec3 pos {0.0f, 1.18f, 3.0f};
     Vec3 forward {0.0f, 0.0f, -1.0f};
     Vec3 lookTarget {0.0f, 0.53f, 0.0f};

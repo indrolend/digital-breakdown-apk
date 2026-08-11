@@ -2156,6 +2156,7 @@ void Game::updateCamera(float dt) {
     const float targetFov=camera.firstPerson?(mobile?60.0f:64.0f):(mobile?56.0f:60.0f)+motionFov*(mobile?0.72f:1.0f);
     if(dt>0.0f)camera.verticalFovDegrees+=(targetFov-camera.verticalFovDegrees)*(1.0f-std::exp(-(targetFov>camera.verticalFovDegrees?5.2f:2.8f)*dt));else camera.verticalFovDegrees=targetFov;
     if (player.inSecretRoom) {
+        camera.spectatedPlayerId = -1;
         camera.firstPerson = false;
         const Vec3 desired{37.18f, 1.34f, 0.0f};
         const Vec3 desiredTarget{41.16f, 0.62f, 0.0f};
@@ -2175,6 +2176,31 @@ void Game::updateCamera(float dt) {
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
     }
+    if(simulationPlayerId_==0&&state_.multiplayer.enabled&&!player.alive){
+        const NetworkPeerState* subject=nullptr;
+        for(const auto& peer:state_.multiplayer.peers){
+            if(peer.active&&peer.playerId!=state_.multiplayer.localPlayerId&&peer.player.alive&&!peer.player.downed){subject=&peer;break;}
+        }
+        if(subject){
+            const PlayerState& watched=subject->player;
+            const Vec3 forward{-std::sin(watched.yaw),0.0f,-std::cos(watched.yaw)};
+            const Vec3 right{std::cos(watched.yaw),0.0f,-std::sin(watched.yaw)};
+            const float speed=horizontalLength(watched.vel);
+            Vec3 desired=watched.pos-forward*1.68f+right*0.54f+Vec3{0,0.86f,0};
+            constrainThirdPersonCamera(desired,watched.pos);
+            const Vec3 desiredTarget=watched.pos+forward*(0.34f+clampf(speed*0.045f,0.0f,0.34f))+Vec3{0,0.40f,0};
+            const float response=dt>0.0f?1.0f-std::exp(-(camera.spectatedPlayerId==subject->playerId?5.2f:3.2f)*dt):1.0f;
+            camera.pos+=(desired-camera.pos)*response;
+            camera.lookTarget+=(desiredTarget-camera.lookTarget)*response;
+            const float desiredFov=46.0f+clampf((speed-3.0f)*0.52f,0.0f,5.0f);
+            camera.verticalFovDegrees+=(desiredFov-camera.verticalFovDegrees)*(dt>0.0f?1.0f-std::exp(-4.5f*dt):1.0f);
+            camera.forward=normalized(camera.lookTarget-camera.pos);
+            camera.firstPerson=false;
+            camera.spectatedPlayerId=subject->playerId;
+            return;
+        }
+    }
+    camera.spectatedPlayerId=-1;
     if (localPhoneMenuPresentation(state_)) {
         const PhoneTransformState& phone = state_.phoneTransform;
         const float fovRadians = MENU_CAMERA_VERTICAL_FOV * DB_PI / 180.0f;

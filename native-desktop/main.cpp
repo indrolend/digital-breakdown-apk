@@ -1080,6 +1080,7 @@ void printUsage() {
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
     std::printf("  --build-identity-json    Print machine-readable build identity and exit.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
+    std::printf("  --capture-spectator-frame PATH  Capture the multiplayer spectator presentation.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
     std::printf("  --capture-cinematic-demo DIR  Record the real lunge/capture sequence from a cinematic spectator camera.\n");
@@ -1328,6 +1329,7 @@ int main(int argc, char** argv) {
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
+    const bool captureSpectator=argValue(argc,argv,"--capture-spectator-frame")!=nullptr;
     const char* captureDemoDir=argValue(argc,argv,"--capture-cpu-demo");
     const char* captureCinematicDir=argValue(argc,argv,"--capture-cinematic-demo");
     const bool captureCinematic=captureCinematicDir!=nullptr;
@@ -1344,7 +1346,7 @@ int main(int argc, char** argv) {
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
-    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):argValue(argc,argv,"--capture-frame")))))));
+    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame"))))))));
     const int windowWidth=std::max(320,std::min(7680,argInt(argc,argv,"--capture-width",1280)));
     const int windowHeight=std::max(180,std::min(4320,argInt(argc,argv,"--capture-height",720)));
     if (hasArg(argc, argv, "--smoke-test")) {
@@ -1455,6 +1457,21 @@ int main(int argc, char** argv) {
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(capturePaused)host.game.setUiPaused(true);
     if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;}
+    if(captureSpectator){
+        host.game.configureNetworkHost();
+        host.game.setNetworkPeerActive(1,true);
+        GameState& fixture=host.game.networkMutableState();
+        for(auto& target:fixture.targets)target.alive=false;
+        fixture.player.alive=false;
+        fixture.player.downed=false;
+        auto& peer=fixture.multiplayer.peers[1];
+        peer.player.alive=true;
+        peer.player.downed=false;
+        peer.player.pos={0.4f,0.08f,-2.2f};
+        peer.player.yaw=-0.35f;
+        peer.input.touchMoveZ=0.72f;
+        peer.input.touchSprint=true;
+    }
     if(captureDemo){
         std::filesystem::create_directories(captureDemoDir);
         host.game.restart();

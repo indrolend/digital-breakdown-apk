@@ -454,6 +454,14 @@ void Renderer::drawHud(const GameState& state) {
         const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;const float white[4]={0.92f,0.97f,1,0.94f*menuAlpha};const std::string action=state.dead?"TAP TO RESTART":"START";const float startScale=std::max(2.0f,std::min(width_,height_)/240.0f)*(state.dead?1.0f:0.8f);floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.46f,startScale,white);
         glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST); return;
     }
+    if(state.camera.spectatedPlayerId>=0){
+        const std::string label="SPECTATING  P"+std::to_string(state.camera.spectatedPlayerId+1);
+        const float scale=1.35f,tw=label.size()*6.0f*scale,pw=tw+24.0f,px=(width_-pw)*0.5f;
+        const float spectatorPanel[4]={0.005f,0.012f,0.016f,0.62f};
+        quad(px,18,pw,24,spectatorPanel);
+        text(label,px+12.0f,25,scale,cyan);
+        glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;
+    }
     const int goals=std::max(1,state.hud.requiredGoals); const float gs=22,gap=8,total=goals*gs+(goals-1)*gap,start=(width_-total)*0.5f;
     for(int i=0;i<goals;++i){const float empty[4]={0.01f,0.02f,0.025f,0.90f}; const float filled[4]={Pass7Visual::AcidChartreuse.r,Pass7Visual::AcidChartreuse.g,Pass7Visual::AcidChartreuse.b,0.95f}; quad(start+i*(gs+gap),18,gs,gs,cyan); quad(start+i*(gs+gap)+2,20,gs-4,gs-4,i<state.hud.filledGoals?filled:empty);}
     quad(12,74,120,82,panel);
