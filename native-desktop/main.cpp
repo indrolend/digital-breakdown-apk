@@ -190,6 +190,11 @@ bool loadProgression(Game& game,const std::filesystem::path& path){
         if(version>=3&&!(input>>settings.controllerTriggerSensitivity))return false;
         if(version>=4&&!(input>>settings.controllerVibration))return false;
         for(int& key:settings.keyboardBindings)if(!(input>>key))return false;
+        // Migrate only the mistaken native defaults. Never overwrite a player's
+        // customized layout, including saves created before rebinding existed.
+        const std::array<int,10> mistakenNativeDefaults{{87,83,65,68,340,32,67,81,86,70}};
+        if(settings.keyboardBindings==mistakenNativeDefaults)
+            settings.keyboardBindings={{87,83,65,68,340,32,70,81,67,0}};
         if(!std::isfinite(settings.musicVolume)||!std::isfinite(settings.sfxVolume)||!std::isfinite(settings.mouseLookSensitivity)||!std::isfinite(settings.touchLookSensitivity)||!std::isfinite(settings.controllerLookSensitivity))return false;
         settings.musicVolume=clampf(settings.musicVolume,0,1);settings.sfxVolume=clampf(settings.sfxVolume,0,1);
         settings.graphicsPreset=std::max(0,std::min(2,settings.graphicsPreset));
@@ -264,6 +269,12 @@ int runSaveRoundtripTest(){
             (version<3||legacyState.localSettings.controllerTriggerSensitivity==2);
     };
     const bool legacyVersionsOk=legacyLoads(1)&&legacyLoads(2)&&legacyLoads(3);
+    LocalSettingsState mistakenDefaults=settings;
+    mistakenDefaults.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};
+    const bool mistakenDefaultsWritten=saveProgression(source.state().progression.permanent,mistakenDefaults,path);
+    Game migratedDefaults;
+    const bool mistakenDefaultsMigrated=mistakenDefaultsWritten&&loadProgression(migratedDefaults,path)&&
+        migratedDefaults.state().localSettings.keyboardBindings==std::array<int,10>{{87,83,65,68,340,32,70,81,67,0}};
     {std::ofstream corrupt(path,std::ios::trunc);corrupt<<"DBPROG 4 999 5";}
     Game rejected;rejected.setPersistentProgression(11,1,1,1);
     const bool corruptRejected=!loadProgression(rejected,path)&&rejected.state().progression.permanent.tokens==11;
@@ -272,15 +283,15 @@ int runSaveRoundtripTest(){
     Game repaired;const bool primaryRepaired=loadProgression(repaired,path)&&repaired.state().progression.permanent.tokens==37;
     {std::ofstream future(path,std::ios::trunc);future<<"DBPROG 99 500 5 5 5\n";}
     Game futureRejected;const bool futureRejectedOk=!loadProgression(futureRejected,path);
-    const bool allValid=matches&&dirtyDetectionOk&&legacyVersionsOk&&corruptRejected&&recoveredOk&&primaryRepaired&&futureRejectedOk;
+    const bool allValid=matches&&dirtyDetectionOk&&legacyVersionsOk&&mistakenDefaultsMigrated&&corruptRejected&&recoveredOk&&primaryRepaired&&futureRejectedOk;
     std::error_code cleanupError;std::filesystem::remove(path,cleanupError);std::filesystem::remove(progressionBackupPath(path),cleanupError);std::filesystem::remove(root,cleanupError);
-    std::printf("SAVE_ROUNDTRIP_%s format=4 dirty_detection=%d legacy_versions=%d corruption_rejected=%d backup_recovered=%d primary_repaired=%d future_rejected=%d\n",allValid?"OK":"FAILED",dirtyDetectionOk?1:0,legacyVersionsOk?1:0,corruptRejected?1:0,recoveredOk?1:0,primaryRepaired?1:0,futureRejectedOk?1:0);
+    std::printf("SAVE_ROUNDTRIP_%s format=4 dirty_detection=%d legacy_versions=%d default_bindings_migrated=%d corruption_rejected=%d backup_recovered=%d primary_repaired=%d future_rejected=%d\n",allValid?"OK":"FAILED",dirtyDetectionOk?1:0,legacyVersionsOk?1:0,mistakenDefaultsMigrated?1:0,corruptRejected?1:0,recoveredOk?1:0,primaryRepaired?1:0,futureRejectedOk?1:0);
     return allValid?0:1;
 }
 
 int androidKeyForGlfw(const LocalSettingsState& settings,int key) {
-    const int semantic[10]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_C_ANDROID,KEY_Q_ANDROID,KEY_V_ANDROID,KEY_F_ANDROID};
-    for(int i=0;i<10;++i)if(settings.keyboardBindings[i]==key)return semantic[i];
+    const int semantic[9]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_F_ANDROID,KEY_Q_ANDROID,KEY_C_ANDROID};
+    for(int i=0;i<9;++i)if(settings.keyboardBindings[i]==key)return semantic[i];
     return key==GLFW_KEY_RIGHT_SHIFT?KEY_SHIFT_RIGHT_ANDROID:-1;
 }
 
@@ -598,7 +609,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(row.action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);openMenuRoot(host);}
         else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
-        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,70,81,67,0}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(row.action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
@@ -620,7 +631,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
-        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,67,81,86,70}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
+        else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,70,81,67,0}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
     }

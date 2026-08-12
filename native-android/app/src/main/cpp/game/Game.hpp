@@ -428,7 +428,9 @@ struct LocalSettingsState {
     int menuHistoryDepth = 0;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
-    std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
+    // Public desktop contract: WASD, Shift, Space, F attack, Q shoot, C camera.
+    // Slot 9 is retained only for save-layout compatibility with older builds.
+    std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,70,81,67,0}};
     int rebindingAction = -1;
     int pendingBinding = -1;
     int conflictingAction = -1;
