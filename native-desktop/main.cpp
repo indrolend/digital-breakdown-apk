@@ -48,7 +48,6 @@ constexpr int KEY_S_ANDROID = 47;
 constexpr int KEY_D_ANDROID = 32;
 constexpr int KEY_Q_ANDROID = 45;
 constexpr int KEY_C_ANDROID = 31;
-constexpr int KEY_V_ANDROID = 50;
 constexpr int KEY_F_ANDROID = 34;
 constexpr int KEY_SHIFT_LEFT_ANDROID = 59;
 constexpr int KEY_SHIFT_RIGHT_ANDROID = 60;
@@ -200,7 +199,7 @@ bool loadProgression(Game& game,const std::filesystem::path& path){
         settings.graphicsPreset=std::max(0,std::min(2,settings.graphicsPreset));
         settings.mouseLookSensitivity=clampf(settings.mouseLookSensitivity,0.5f,1.75f);settings.touchLookSensitivity=clampf(settings.touchLookSensitivity,0.5f,1.75f);settings.controllerLookSensitivity=clampf(settings.controllerLookSensitivity,0.5f,1.75f);
         settings.controllerTriggerSensitivity=std::max(0,std::min(2,settings.controllerTriggerSensitivity));settings.controllerVibration=std::max(0,std::min(2,settings.controllerVibration));
-        settings.menuPage=LocalMenuPage::Main;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;
+        settings.menuPage=LocalMenuPage::Main;settings.rebindingAction=-1;
     }
     game.setPersistentProgression(tokens,shot,lunge,attack);
     if(version>=2)game.networkMutableState().localSettings=settings;
@@ -489,7 +488,7 @@ int deathMenuItemAt(const GameState& state,float x,float y,float canvasW,float c
 }
 
 void clearMenuHistory(LocalSettingsState& settings){settings.menuHistoryDepth=0;settings.menuScroll=0.0f;}
-void setMenuPageDirect(HostState& host,LocalMenuPage page,int selection=0,float scroll=0.0f){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;state.localSettings.menuScroll=std::max(0.0f,scroll);state.localSettings.rebindingAction=-1;state.localSettings.pendingBinding=-1;state.localSettings.conflictingAction=-1;state.hud.menuSelection=std::max(0,selection);state.cinematic.textInteraction=0.36f;}
+void setMenuPageDirect(HostState& host,LocalMenuPage page,int selection=0,float scroll=0.0f){GameState& state=host.game.networkMutableState();state.localSettings.menuPage=page;state.localSettings.menuScroll=std::max(0.0f,scroll);state.localSettings.rebindingAction=-1;state.hud.menuSelection=std::max(0,selection);state.cinematic.textInteraction=0.36f;}
 void openMenuRoot(HostState& host,LocalMenuPage page=LocalMenuPage::Main){GameState& state=host.game.networkMutableState();clearMenuHistory(state.localSettings);setMenuPageDirect(host,page);}
 void pushMenuPage(HostState& host,LocalMenuPage page){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;if(settings.menuHistoryDepth<LocalSettingsState::MenuHistoryCapacity){settings.menuHistory[settings.menuHistoryDepth++]={settings.menuPage,state.hud.menuSelection,settings.menuScroll};}else{for(int i=1;i<LocalSettingsState::MenuHistoryCapacity;++i)settings.menuHistory[i-1]=settings.menuHistory[i];settings.menuHistory[LocalSettingsState::MenuHistoryCapacity-1]={settings.menuPage,state.hud.menuSelection,settings.menuScroll};}setMenuPageDirect(host,page);}
 bool popMenuPage(HostState& host){GameState& state=host.game.networkMutableState();auto& settings=state.localSettings;if(settings.menuHistoryDepth<=0)return false;const LocalMenuHistoryEntry entry=settings.menuHistory[--settings.menuHistoryDepth];setMenuPageDirect(host,entry.page,entry.selection,entry.scroll);return true;}
@@ -608,7 +607,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(row.action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
         else if(row.action==PhoneMenuAction::ExitRun){host.multiplayer.disconnect();host.game.prepareStartScreen();setMouseCaptured(window,host,false);openMenuRoot(host);}
         else if(row.action==PhoneMenuAction::Back){if(!popMenuPage(host))setMouseCaptured(window,host,true);}
-        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
+        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,70,81,67,0}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(row.action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
@@ -630,7 +629,7 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
         else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
         else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
-        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;settings.pendingBinding=-1;settings.conflictingAction=-1;}
+        else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings={{87,83,65,68,340,32,70,81,67,0}};settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
         return;
@@ -828,7 +827,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if (!host) return;
     if(action==GLFW_PRESS&&host->game.state().attractMode){host->game.dismissAttractMode();setMouseCaptured(window,*host,false);return;}
 
-    if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;settings.pendingBinding=-1;settings.conflictingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<10;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=settings.pendingBinding=settings.conflictingAction=-1;host->audio.playMenuCue(true);return;}
+    if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<9;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=-1;host->audio.playMenuCue(true);return;}
 
     const bool menuActive=menuItemCount(host->game.state())>0;
     if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){

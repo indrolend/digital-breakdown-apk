@@ -560,7 +560,6 @@ std::uint64_t phoneDisplayRenderKey(const GameState& state) {
     hashPhoneDisplayFloat(hash, state.localSettings.menuScroll, 10.0f);
     hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(0, state.hud.menuSelection)));
     hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(-1, state.localSettings.rebindingAction) + 1));
-    hashPhoneDisplayValue(hash, static_cast<std::uint64_t>(std::max(-1, state.localSettings.conflictingAction) + 1));
     hashPhoneDisplayValue(hash, state.localSettings.musicMuted ? 1u : 0u);
     hashPhoneDisplayValue(hash, state.localSettings.sfxMuted ? 1u : 0u);
     hashPhoneDisplayValue(hash, state.localSettings.shadows ? 1u : 0u);

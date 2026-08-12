@@ -53,15 +53,10 @@ struct InputState {
     bool touchSprint = false;
     bool touchPrimaryHeld = false;
 
-    float touchX = 0.0f;
-    float touchY = 0.0f;
-    float lastTouchX = 0.0f;
-    float lastTouchY = 0.0f;
     float lookDeltaX = 0.0f;
     float lookDeltaY = 0.0f;
     float wiggleAxis = 0.0f;
     int commSignalPressed = 0;
-    bool touching = false;
 };
 
 enum PlayerCommandButton : std::uint16_t {
@@ -432,8 +427,6 @@ struct LocalSettingsState {
     // Slot 9 is retained only for save-layout compatibility with older builds.
     std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,70,81,67,0}};
     int rebindingAction = -1;
-    int pendingBinding = -1;
-    int conflictingAction = -1;
 };
 
 struct UpgradeMenuState {
@@ -478,7 +471,6 @@ struct MeleeVisualState {
     float landingPosePitch = 0.0f;
     float wallGripTimer = 0.0f;
     Vec3 wallNormal;
-    float wallClimbRemaining = 0.48f;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;
@@ -527,7 +519,6 @@ struct HudState {
     float supplementalFill = 0.0f;
     int flowerStacks = 0;
     bool hasTarget = false;
-    bool hasAimTarget = false;
     bool lowBattery = false;
     bool gameOver = false;
     std::array<char,48> energyTicker{};

@@ -37,7 +37,6 @@ constexpr float AIR_JUMP_SPEED = 4.25f;
 constexpr float COYOTE_TIME = 0.12f;
 constexpr float JUMP_BUFFER = 0.12f;
 constexpr float LANDING_MOMENTUM_BOOST = 1.04f;
-constexpr float WALL_CLIMB_MAX_TIME = 0.48f;
 constexpr float CEILING_CLEARANCE = 0.42f;
 constexpr float PLAYER_CEILING_BODY_CLEARANCE = gameplay::PHONE_BODY.ceilingClearance;
 constexpr float PLAYER_COLLISION_RADIUS = gameplay::PHONE_BODY.collisionRadius;
@@ -339,8 +338,6 @@ void Game::reset() {
     state_.localSettings.menuScroll=0.0f;
     state_.localSettings.menuHistoryDepth=0;
     state_.localSettings.rebindingAction=-1;
-    state_.localSettings.pendingBinding=-1;
-    state_.localSettings.conflictingAction=-1;
     state_.secretTv.tolerance=2+(std::abs(state_.roomSeed)%3);
     resetRoom();
     state_.started=true;
@@ -1021,24 +1018,15 @@ void Game::clearInputState() {
     input.meleePressed = false;
     input.shootPressed = false;
     input.cameraTogglePressed = false;
-    input.touching = false;
 }
 
 void Game::setTouch(int action, float x, float y, int pointerCount) {
     if(state_.attractMode&&action==TOUCH_DOWN){dismissAttractMode();return;}
+    (void)x;
+    (void)y;
     (void)pointerCount;
-    // Android's role-based controller owns gameplay input.  This legacy raw
-    // touch channel is retained only for touch diagnostics; allowing it to own
-    // primaryHeld made every action-button press vacuum simultaneously.
-    InputState& input = state_.input;
-    if (action == TOUCH_DOWN) {
-        input.touching = true;
-        input.touchX = input.lastTouchX = x; input.touchY = input.lastTouchY = y;
-    } else if (action == TOUCH_MOVE) {
-        input.touchX = input.lastTouchX = x; input.touchY = input.lastTouchY = y;
-    } else if (action == TOUCH_UP || action == TOUCH_CANCEL) {
-        input.touching = false;
-    }
+    // Android's role-based controls own gameplay input. The raw channel remains
+    // only as the platform gesture used to dismiss the title showcase.
 }
 
 void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lookDeltaY,
@@ -1775,7 +1763,6 @@ void Game::updatePlayer(float dt) {
     MeleeVisualState& lunge=state_.meleeVisual;
     lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
     lunge.wallGripTimer=std::max(0.0f,lunge.wallGripTimer-dt);
-    if(p.grounded)lunge.wallClimbRemaining=WALL_CLIMB_MAX_TIME;
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
     const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
@@ -3212,28 +3199,6 @@ void Game::updateCrosshair(float dt) {
     const float opacityTarget=!fullyCommitted&&crosshairAction?1.0f:0.0f;
     const float opacityResponse=opacityTarget>hud.crosshairOpacity?12.0f:14.0f;
     hud.crosshairOpacity+=(opacityTarget-hud.crosshairOpacity)*std::min(1.0f,dt*opacityResponse);
-    bool aimTarget=state_.vacuum.target!=-1;
-    const Vec3 characterForward=cameraForwardFlat();
-    for(const auto& target:state_.targets) {
-        if(!target.alive) continue;
-        Vec3 world=target.pos;
-        const int centerTile=getRoomTileIndex(state_.camera.pos.z);
-        float bestZ=wrapZ(target.pos.z)+getRoomTileOriginZ(centerTile);
-        for(int offset:{-1,1}) {
-            const float candidate=wrapZ(target.pos.z)+getRoomTileOriginZ(centerTile+offset);
-            if(std::abs(candidate-state_.camera.pos.z)<std::abs(bestZ-state_.camera.pos.z)) bestZ=candidate;
-        }
-        world.z=bestZ;
-        const Vec3 toTarget=world-state_.camera.pos;
-        const float forwardDistance=dot3(toTarget,state_.camera.forward);
-        if(forwardDistance<=0.0f) continue;
-        Vec3 flat{target.pos.x-state_.player.pos.x,0.0f,wrapZ(target.pos.z)-wrapZ(state_.player.pos.z)};
-        if(lengthSq(flat)>0.00001f && dot3(normalized(flat),characterForward)<0.72f) continue;
-        const Vec3 radial=toTarget-state_.camera.forward*forwardDistance;
-        if(lengthSq(radial)<=0.55f*0.55f) {aimTarget=true; break;}
-    }
-    hud.hasAimTarget=aimTarget;
-
     const float spinDt=std::min(dt,0.05f);
     const float hover=std::sin(state_.time*3.0f)*2.0f;
     const float slurpStrength=state_.vacuum.active
