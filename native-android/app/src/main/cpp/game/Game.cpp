@@ -405,6 +405,29 @@ void Game::debugStartSecretTvTest(bool enterRoom) {
     updateCamera(0.0f);
 }
 
+void Game::debugStartTraversalLab() {
+    reset();
+    state_.traversalLab=true;
+    state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;
+    state_.upgradeMenu.active=false;state_.cinematic.introActive=false;
+    for(auto& target:state_.targets)target=TargetState{};
+    for(auto& capture:state_.captures)capture=CapturePointState{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};
+    const auto box=[&](int index,float x,float z,float width,float depth,float height){
+        RoomCollider& c=state_.roomColliders[index];
+        c.minX=x-width*0.5f;c.maxX=x+width*0.5f;c.minZ=z-depth*0.5f;c.maxZ=z+depth*0.5f;
+        c.bottomY=0;c.topY=height;c.width=width;c.depth=depth;c.height=height;c.center={x,height*0.5f,z};
+    };
+    box(0,0,15,5,4,0.45f);box(1,0,9.5f,5,4,0.45f);box(2,0,3.5f,5,4,0.45f);box(3,0,-3,5,4,0.45f);
+    box(4,7,14.5f,3.4f,3.4f,0.25f);box(5,7,9.8f,3.4f,3.4f,0.55f);box(6,7,4.8f,3.4f,3.4f,0.90f);box(7,7,-0.6f,3.4f,3.4f,1.30f);
+    box(8,-7,13.5f,3.8f,3,0.55f);box(9,-7,8.5f,3.8f,3,1.05f);box(10,-7,3.5f,3.8f,3,1.55f);box(11,-7,-1.5f,3.8f,3,2.05f);
+    state_.debug.colliderCount=12;
+    state_.player.pos={0,0.53f,16};state_.player.vel={};state_.player.jumpVel=0;state_.player.grounded=true;
+    state_.player.airJumpsRemaining=1;state_.player.battery=100;
+    state_.camera.yaw=0;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;
+    updatePhoneDisplay(0.0f);
+}
+
 void Game::setPersistentProgression(std::int64_t tokens,int shotLevel,int lungeLevel,int attackLevel){
     auto& permanent=state_.progression.permanent;
     permanent.tokens=std::max<std::int64_t>(0,tokens);

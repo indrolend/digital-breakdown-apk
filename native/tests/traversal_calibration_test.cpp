@@ -15,7 +15,7 @@ void setBox(RoomCollider& box,float x,float z,float width,float depth,float heig
     box.width=width;box.depth=depth;box.height=height;box.center={x,height*0.5f,z};
 }
 
-bool runJumpTrial(float gap,int timingOffset,float steeringError){
+bool runJumpTrial(float gap,int timingOffset,float steeringError,float targetHeight=PlatformTop,float targetWidth=5.0f){
     Game game;game.reset();
     GameState& state=game.networkMutableState();
     state.debug.colliderCount=2;
@@ -26,7 +26,7 @@ bool runJumpTrial(float gap,int timingOffset,float steeringError){
     const float targetBack=sourceFront-gap;
     const float targetCenterZ=targetBack-depth*0.5f;
     setBox(state.roomColliders[0],0.0f,sourceCenterZ,5.0f,depth,PlatformTop);
-    setBox(state.roomColliders[1],0.0f,targetCenterZ,5.0f,depth,PlatformTop);
+    setBox(state.roomColliders[1],0.0f,targetCenterZ,targetWidth,depth,targetHeight);
     state.player.pos={0.0f,PlatformTop+0.08f,sourceCenterZ+1.15f};
     state.player.vel={};state.player.jumpVel=0.0f;state.player.grounded=true;
     state.player.airJumpsRemaining=1;state.player.battery=100.0f;
@@ -46,16 +46,16 @@ bool runJumpTrial(float gap,int timingOffset,float steeringError){
         const RoomCollider& landing=after.roomColliders[1];
         const bool inside=after.player.pos.x>landing.minX&&after.player.pos.x<landing.maxX&&
                           after.player.pos.z>landing.minZ&&after.player.pos.z<landing.maxZ;
-        if(leftSource&&after.player.grounded)return inside&&after.player.pos.y>PlatformTop-0.02f;
+        if(leftSource&&after.player.grounded)return inside&&after.player.pos.y>targetHeight-0.02f;
     }
     return false;
 }
 
-int successes(float gap){
+int successes(float gap,float targetHeight=PlatformTop,float targetWidth=5.0f){
     constexpr std::array<int,7> timingOffsets{{-3,-2,-1,0,1,2,3}};
     constexpr std::array<float,3> steering{{-0.035f,0.0f,0.035f}};
     int result=0;
-    for(int offset:timingOffsets)for(float error:steering)if(runJumpTrial(gap,offset,error))++result;
+    for(int offset:timingOffsets)for(float error:steering)if(runJumpTrial(gap,offset,error,targetHeight,targetWidth))++result;
     return result;
 }
 
@@ -72,12 +72,34 @@ int main(){
     const int easy=successes(1.50f),medium=successes(2.00f),hard=successes(2.50f);
     const int repeatEasy=successes(1.50f),repeatMedium=successes(2.00f),repeatHard=successes(2.50f);
     std::printf("TRAVERSAL_CALIBRATION jump gap=1.50 success=%d/21 gap=2.00 success=%d/21 gap=2.50 success=%d/21\n",easy,medium,hard);
+    const int ascentLow=successes(1.50f,1.30f),ascentHigh=successes(1.50f,1.50f);
+    const int narrowLanding=successes(2.00f,PlatformTop,1.50f);
+    const int repeatAscentLow=successes(1.50f,1.30f),repeatAscentHigh=successes(1.50f,1.50f);
+    const int repeatNarrowLanding=successes(2.00f,PlatformTop,1.50f);
+    std::printf("TRAVERSAL_CALIBRATION ascent gap=1.50 rise=0.30 success=%d/21 rise=0.50 success=%d/21 narrow_landing gap=2.00 width=1.50 success=%d/21\n",ascentLow,ascentHigh,narrowLanding);
     if(easy!=repeatEasy||medium!=repeatMedium||hard!=repeatHard){
         std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL repeated controller sweep was not deterministic\n");
         return 1;
     }
     if(easy<18||easy<medium||medium<hard||hard>=21){
         std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL invalid reliability ordering or insufficient easy margin\n");
+        return 1;
+    }
+    if(ascentLow!=repeatAscentLow||ascentHigh!=repeatAscentHigh||narrowLanding!=repeatNarrowLanding){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL expanded controller sweep was not deterministic\n");
+        return 1;
+    }
+    if(ascentLow<15||ascentHigh<15||narrowLanding<18){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL baseline ascent or landing reliability regressed\n");
+        return 1;
+    }
+    Game lab;lab.debugStartTraversalLab();const GameState& labState=lab.state();
+    if(!labState.traversalLab||labState.debug.colliderCount!=12||!labState.roomClear||labState.requiredSouls!=0){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL playable lab did not establish its bounded fixture\n");
+        return 1;
+    }
+    for(const TargetState& target:labState.targets)if(target.alive){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL playable lab contains combat interference\n");
         return 1;
     }
     return 0;

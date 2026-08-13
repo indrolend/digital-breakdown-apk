@@ -615,6 +615,7 @@ struct GameState {
     bool dead = false;
     bool uiPaused = false;
     bool attractMode = false;
+    bool traversalLab = false;
     CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
@@ -637,6 +638,7 @@ public:
     void dismissAttractMode();
     // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
     void debugStartSecretTvTest(bool enterRoom);
+    void debugStartTraversalLab();
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);

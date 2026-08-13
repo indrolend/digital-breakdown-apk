@@ -917,6 +917,15 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     text("GOALS: "+std::to_string(state.hud.filledGoals)+"/"+std::to_string(state.hud.requiredGoals),12,187,1.5f);
     text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?0.72f:1.0f,1.0f,state.roomClear?0.74f:1.0f);
     text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,0.82f,1.0f,0.91f);
+    if(state.traversalLab){
+        const float panelW=520.0f,panelX=(width_-panelW)*0.5f;
+        quad(panelX,12,panelW,74,0.005f,0.012f,0.016f,0.72f);
+        quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.78f);
+        text("TRAVERSAL LAB",panelX+12,20,1.65f,0.82f,1.0f,0.94f);
+        text("CENTER  GAPS 1.5  2.0  2.5",panelX+12,40,1.15f,1.0f,1.0f,1.0f);
+        text("LEFT  LEDGES     RIGHT  ASCENT",panelX+12,55,1.05f,0.72f,0.94f,1.0f);
+        text("SPACE JUMP   F LUNGE   SHIFT SPRINT",panelX+12,70,1.0f,0.82f,1.0f,0.88f);
+    }
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));text(tax,12,320,1.05f,1.0f,0.72f,0.62f);}
     if(state.hud.buildLabel[0])text(state.hud.buildLabel.data(),12,336,1.0f,0.58f,0.92f,1.0f,0.82f);

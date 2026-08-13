@@ -54,12 +54,20 @@ The initial 21-trial sweep observed:
 - 1.50-unit ground-jump gap: 21/21
 - 2.00-unit ground-jump gap: 21/21
 - 2.50-unit ground-jump gap: 10/21
+- 1.50-unit gap with a 0.30 rise: 18/21
+- 1.50-unit gap with a 0.50 rise: 21/21
+- 2.00-unit gap with a 1.50-wide landing: 21/21
 
 These measurements are regression fixtures for one controller profile, not
 universal human-accessibility limits. They establish that 2.50 units must not
 be called comfortable based only on analytic physics. Human calibration and
 additional approach-speed, landing-width, height, camera, and action profiles
 must precede use as generation policy.
+
+The higher ascent outperforming the lower ascent is an observed interaction of
+the actual arc, platform face, support, and takeoff profile. Difficulty must not
+be inferred by independently sorting gap or height; useful generation bands
+need measurements of complete edge configurations.
 
 ## Observed mappings
 
