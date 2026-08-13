@@ -776,7 +776,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     const float topH = ROOM_WALL_HEIGHT - doorHeight;
     const float topY = doorHeight + topH * 0.5f;
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
-    const bool field=plan.premise==early_browser_visuals::RoomPremise::Field,sterile=plan.premise==early_browser_visuals::RoomPremise::Sterile;
+    const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile;
     drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?0.247f:(sterile?0.58f:Pass7Visual::RoomFloor.r),field?0.455f:(sterile?0.61f:Pass7Visual::RoomFloor.g),field?0.282f:(sterile?0.63f:Pass7Visual::RoomFloor.b));
     if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {

@@ -2,6 +2,7 @@
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "gameplay/TraversalCapabilities.hpp"
 #include "EarlyBrowserVisuals.hpp"
 
 #include <algorithm>
@@ -32,9 +33,9 @@ constexpr float AIR_FRICTION = 0.985f;
 constexpr float AIR_ACCEL_MULT = 0.62f;
 constexpr float AIR_MAX_SPEED_MULT = 1.08f;
 constexpr float WALL_SLIDE_RETENTION = 0.94f;
-constexpr float GRAVITY = 14.0f;
-constexpr float JUMP_SPEED = 4.5f;
-constexpr float AIR_JUMP_SPEED = 4.25f;
+constexpr float GRAVITY = gameplay::TRAVERSAL_CAPABILITIES.gravity;
+constexpr float JUMP_SPEED = gameplay::TRAVERSAL_CAPABILITIES.groundJumpSpeed;
+constexpr float AIR_JUMP_SPEED = gameplay::TRAVERSAL_CAPABILITIES.airJumpSpeed;
 constexpr float COYOTE_TIME = 0.12f;
 constexpr float JUMP_BUFFER = 0.12f;
 constexpr float LANDING_MOMENTUM_BOOST = 1.04f;
@@ -142,7 +143,7 @@ constexpr float VACUUM_DAMAGE = 0.28f;
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
 constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
 constexpr float AIR_MELEE_LOCOMOTION_DURATION = 0.68f;
-constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = 5.40f;
+constexpr float AIR_MELEE_LOCOMOTION_DISTANCE = gameplay::TRAVERSAL_CAPABILITIES.airLungeDistance;
 constexpr float AIR_MELEE_PHONE_RADIUS = gameplay::PHONE_BODY.airMeleeRadius;
 constexpr float AIR_MELEE_BODY_FORGIVENESS = gameplay::PHONE_BODY.airMeleeBodyForgiveness;
 constexpr float HEADSHOT_BATTERY_GAIN = 3.0f;
@@ -873,7 +874,11 @@ float Game::wrapZ(float z) const {
 
 void Game::buildRoomColliders() {
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
-    state_.debug.colliderCount=std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount);
+    // Completeness is never randomized. If a future grammar combination fails
+    // its conservative required-route contract, retain the room shell and
+    // objectives but reject its optional obstacle geometry.
+    const bool routeValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
+    state_.debug.colliderCount=routeValid?std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount):0;
     for (auto& c : state_.roomColliders) c = RoomCollider{};
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);

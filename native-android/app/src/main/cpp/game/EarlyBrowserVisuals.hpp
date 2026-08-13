@@ -5,19 +5,34 @@
 #include <cstdint>
 
 #include "Math.hpp"
+#include "gameplay/TraversalCapabilities.hpp"
 
 namespace early_browser_visuals {
 
-enum class RoomPremise : unsigned char { Field, City, Sterile };
+enum class RoomSetting : unsigned char { Field, City, Sterile };
+enum class RoomForm : unsigned char { Open, Corridor, Courtyard };
+enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
+enum class RoomCondition : unsigned char { Normal, Recovery };
+
+struct TraversalRoute {
+    static constexpr int Capacity = 5;
+    Vec3 points[Capacity]{};
+    int pointCount = 0;
+};
 
 struct RoomEnvironmentPlan {
-    RoomPremise premise = RoomPremise::Field;
+    RoomSetting setting = RoomSetting::Field;
+    RoomForm form = RoomForm::Open;
+    RoomScale scale = RoomScale::Standard;
+    RoomCondition condition = RoomCondition::Normal;
     int obstacleCount = 0;
-    bool recovery = false;
     bool grass = true;
     bool sidewalks = false;
     float grassAmount = 1.0f;
     int enemyAdjustment = 0;
+    TraversalRoute requiredRoute{};
+
+    constexpr bool recovery() const { return condition == RoomCondition::Recovery; }
 };
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
@@ -45,26 +60,45 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     RoomEnvironmentPlan plan;
     const std::uint32_t key=roomKey(roomSeed,roomIndex);
     const float recoveryChance=std::min(0.22f,0.10f+std::max(0,roomIndex-4)*0.004f);
-    plan.recovery=roomIndex>=4&&unit(key+91u)<recoveryChance;
+    plan.condition=roomIndex>=4&&unit(key+91u)<recoveryChance?RoomCondition::Recovery:RoomCondition::Normal;
     const float roll=unit(key+17u);
-    if(roomIndex==1||plan.recovery) plan.premise=RoomPremise::Field;
-    else if(roomIndex<8) plan.premise=roll<0.46f?RoomPremise::Field:(roll<0.80f?RoomPremise::City:RoomPremise::Sterile);
-    else plan.premise=roll<0.30f?RoomPremise::Field:(roll<0.68f?RoomPremise::City:RoomPremise::Sterile);
-    if(plan.premise==RoomPremise::Field){plan.obstacleCount=plan.recovery?1:3;plan.grass=true;plan.grassAmount=plan.recovery?1.0f:0.82f;plan.enemyAdjustment=plan.recovery?-2:0;}
-    else if(plan.premise==RoomPremise::City){plan.obstacleCount=10;plan.grass=false;plan.sidewalks=true;}
-    else {plan.obstacleCount=6;plan.grass=false;}
+    if(roomIndex==1||plan.recovery()) plan.setting=RoomSetting::Field;
+    else if(roomIndex<8) plan.setting=roll<0.46f?RoomSetting::Field:(roll<0.80f?RoomSetting::City:RoomSetting::Sterile);
+    else plan.setting=roll<0.30f?RoomSetting::Field:(roll<0.68f?RoomSetting::City:RoomSetting::Sterile);
+
+    plan.scale=unit(key+143u)<0.18f?RoomScale::Compact:(unit(key+143u)<0.82f?RoomScale::Standard:RoomScale::Large);
+    if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.obstacleCount=plan.recovery()?1:3;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
+    else if(plan.setting==RoomSetting::City){
+        plan.form=roomIndex>=4&&unit(key+151u)<0.18f?RoomForm::Courtyard:RoomForm::Corridor;
+        plan.obstacleCount=10;plan.grass=false;plan.sidewalks=true;
+    }
+    else {plan.form=RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
+
+    plan.requiredRoute.pointCount=4;
+    plan.requiredRoute.points[0]={0.0f,0.0f,15.5f};
+    plan.requiredRoute.points[1]={0.0f,0.0f,5.0f};
+    plan.requiredRoute.points[2]={0.0f,0.0f,-11.5f};
+    plan.requiredRoute.points[3]={0.0f,0.0f,-19.4f};
     return plan;
 }
 
 inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,int index) {
     const std::uint32_t key=roomKey(roomSeed,roomIndex)+static_cast<std::uint32_t>(index)*131u;
-    if(plan.premise==RoomPremise::Field){
+    if(plan.setting==RoomSetting::Field){
         const float side=(index&1)?1.0f:-1.0f;
         const float x=side*(6.8f+unit(key+1u)*4.8f),z=-7.0f+index*7.0f+unit(key+2u)*1.4f;
         const float w=1.1f+unit(key+3u)*1.4f,d=1.1f+unit(key+4u)*1.4f,h=0.45f+unit(key+5u)*0.65f;
         return {{x,h*0.5f,z},{w,h,d}};
     }
-    if(plan.premise==RoomPremise::City){
+    if(plan.setting==RoomSetting::City&&plan.form==RoomForm::Courtyard){
+        const float scale=plan.scale==RoomScale::Compact?0.86f:(plan.scale==RoomScale::Large?1.12f:1.0f);
+        const int sideIndex=index&3,row=index/4;
+        const float radius=(7.2f+static_cast<float>(row)*2.1f)*scale;
+        const float angle=static_cast<float>(sideIndex)*1.5707963f+0.7853982f+(unit(key+1u)-0.5f)*0.10f;
+        const float w=(3.0f+unit(key+3u)*1.1f)*scale,d=(2.8f+unit(key+4u)*1.0f)*scale,h=1.35f+unit(key+5u)*2.0f;
+        return {{std::cos(angle)*radius,h*0.5f,std::sin(angle)*radius-1.5f},{w,h,d}};
+    }
+    if(plan.setting==RoomSetting::City){
         const float side=(index&1)?1.0f:-1.0f;
         const int row=index/2;
         const float w=3.4f+unit(key+3u)*1.6f,d=3.0f+unit(key+4u)*1.8f,h=1.2f+unit(key+5u)*2.3f;
@@ -73,6 +107,30 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
     const int row=index/2;const float side=(index&1)?1.0f:-1.0f;
     const float w=2.4f+unit(key+3u)*0.8f,d=2.4f+unit(key+4u)*0.8f,h=0.75f+row*0.28f;
     return {{side*(4.1f+row*1.35f),h*0.5f,-8.0f+row*8.0f},{w,h,d}};
+}
+
+inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,
+                                       const gameplay::TraversalCapabilities& capabilities=gameplay::TRAVERSAL_CAPABILITIES) {
+    if(plan.requiredRoute.pointCount<2||plan.requiredRoute.pointCount>TraversalRoute::Capacity)return false;
+    const float clearance=capabilities.comfortableClearanceRadius;
+    for(int point=0;point<plan.requiredRoute.pointCount;++point){
+        const Vec3 p=plan.requiredRoute.points[point];
+        if(std::abs(p.x)>15.0f-clearance||std::abs(p.z)>21.0f-clearance)return false;
+    }
+    for(int segment=1;segment<plan.requiredRoute.pointCount;++segment){
+        const Vec3 a=plan.requiredRoute.points[segment-1],b=plan.requiredRoute.points[segment];
+        const float dx=b.x-a.x,dz=b.z-a.z,length=std::sqrt(dx*dx+dz*dz);
+        const int samples=std::max(1,static_cast<int>(std::ceil(length/0.25f)));
+        for(int sample=0;sample<=samples;++sample){
+            const float t=static_cast<float>(sample)/static_cast<float>(samples),x=a.x+dx*t,z=a.z+dz*t;
+            for(int index=0;index<plan.obstacleCount;++index){
+                const ObstacleSpec spec=obstacle(plan,roomSeed,roomIndex,index);
+                if(x>spec.center.x-spec.size.x*0.5f-clearance&&x<spec.center.x+spec.size.x*0.5f+clearance&&
+                   z>spec.center.z-spec.size.z*0.5f-clearance&&z<spec.center.z+spec.size.z*0.5f+clearance)return false;
+            }
+        }
+    }
+    return true;
 }
 
 inline GrassBlade grassBlade(int roomSeed,int roomIndex,int tileIndex,int index) {

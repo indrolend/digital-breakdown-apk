@@ -423,8 +423,8 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
 void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int tileIndex) {
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
-    const bool field=plan.premise==early_browser_visuals::RoomPremise::Field;
-    const bool sterile=plan.premise==early_browser_visuals::RoomPremise::Sterile;
+    const bool field=plan.setting==early_browser_visuals::RoomSetting::Field;
+    const bool sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile;
     const float groundColor[4] = {field?0.247f:(sterile?0.48f:Pass7Visual::RoomFloor.r),field?0.455f:(sterile?0.50f:Pass7Visual::RoomFloor.g),field?0.282f:(sterile?0.52f:Pass7Visual::RoomFloor.b),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
 

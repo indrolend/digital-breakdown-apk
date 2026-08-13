@@ -5,21 +5,36 @@
 int main(){
     using namespace early_browser_visuals;
     const auto first=roomPlan(12345,1);
-    assert(first.premise==RoomPremise::Field&&first.grass&&!first.sidewalks);
-    assert(first.obstacleCount==3&&!first.recovery);
+    assert(first.setting==RoomSetting::Field&&first.form==RoomForm::Open&&first.grass&&!first.sidewalks);
+    assert(first.obstacleCount==3&&!first.recovery());
+    assert(requiredRouteIsTraversable(first,12345,1));
 
-    bool sawField=false,sawCity=false,sawSterile=false,sawRecovery=false;
+    bool sawField=false,sawCity=false,sawSterile=false,sawRecovery=false,sawCourtyard=false;
+    bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
-        assert(a.premise==b.premise&&a.obstacleCount==b.obstacleCount&&a.recovery==b.recovery);
-        sawField|=a.premise==RoomPremise::Field;sawCity|=a.premise==RoomPremise::City;sawSterile|=a.premise==RoomPremise::Sterile;sawRecovery|=a.recovery;
-        if(a.premise==RoomPremise::Field){assert(a.grass&&!a.sidewalks);assert(a.obstacleCount==1||a.obstacleCount==3);}
-        if(a.premise==RoomPremise::City){assert(!a.grass&&a.sidewalks&&a.obstacleCount==10);}
-        if(a.premise==RoomPremise::Sterile){assert(!a.grass&&!a.sidewalks&&a.obstacleCount==6);}
-        if(a.recovery){assert(a.premise==RoomPremise::Field&&a.enemyAdjustment==-2&&a.obstacleCount==1);}
+        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.obstacleCount==b.obstacleCount);
+        assert(requiredRouteIsTraversable(a,seed,room));
+        sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawRecovery|=a.recovery();
+        if(a.setting==RoomSetting::Field){assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks);assert(a.obstacleCount==1||a.obstacleCount==3);}
+        if(a.setting==RoomSetting::City){assert(!a.grass&&a.sidewalks&&a.obstacleCount==10);}
+        if(a.setting==RoomSetting::Sterile){assert(a.form==RoomForm::Corridor&&!a.grass&&!a.sidewalks&&a.obstacleCount==6);}
+        if(a.recovery()){assert(a.setting==RoomSetting::Field&&a.enemyAdjustment==-2&&a.obstacleCount==1);}
+        if(a.form==RoomForm::Courtyard){
+            assert(a.setting==RoomSetting::City);sawCourtyard=true;
+            sawCompactCourtyard|=a.scale==RoomScale::Compact;
+            sawStandardCourtyard|=a.scale==RoomScale::Standard;
+            sawLargeCourtyard|=a.scale==RoomScale::Large;
+        }
         for(int i=0;i<a.obstacleCount;++i){const auto obstacleA=obstacle(a,seed,room,i),obstacleB=obstacle(a,seed,room,i);assert(obstacleA.center.x==obstacleB.center.x&&obstacleA.size.y==obstacleB.size.y);assert(std::abs(obstacleA.center.x)>3.0f);}
     }
-    assert(sawField&&sawCity&&sawSterile&&sawRecovery);
+    assert(sawField&&sawCity&&sawSterile&&sawRecovery&&sawCourtyard);
+    assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
+
+    const auto capabilities=gameplay::TRAVERSAL_CAPABILITIES;
+    assert(std::abs(capabilities.maximumGroundJumpHeight()-0.7232142f)<0.0001f);
+    assert(std::abs(capabilities.maximumDoubleJumpAddedHeight()-0.6450892f)<0.0001f);
+    assert(std::abs(capabilities.airLungeDistance-5.40f)<0.0001f);
 
     const auto blade=grassBlade(12345,2,0,7),sameBlade=grassBlade(12345,2,0,7);
     assert(blade.root.x==sameBlade.root.x&&blade.height==sameBlade.height);
