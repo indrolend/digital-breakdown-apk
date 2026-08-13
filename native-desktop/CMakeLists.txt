@@ -242,6 +242,10 @@ add_executable(
 target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
 
+add_executable(EarlyBrowserVisualsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/early_browser_visuals_test.cpp")
+target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(EarlyBrowserVisualsTest PRIVATE cxx_std_17)
+
 add_executable(
     GameplayFlowProbe
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_flow_probe.cpp"
@@ -278,6 +282,7 @@ add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
 add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
 add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
+add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
 add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)

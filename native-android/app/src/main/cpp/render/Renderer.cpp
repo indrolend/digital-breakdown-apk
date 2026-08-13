@@ -1,6 +1,7 @@
 #include "Renderer.hpp"
 #include "../game/HumanVisual.hpp"
 #include "../game/BitmapFont.hpp"
+#include "../game/EarlyBrowserVisuals.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
@@ -73,6 +74,7 @@ const char* VERT_SRC =
     "uniform mat4 uModel;\n"
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
+    "varying float vFog;\n"
     "void main() {\n"
     "  vec3 radial = normalize(aPos + vec3(0.0001));\n"
     "  vec3 modelNormal = normalize(mat3(uModel) * aNormal + vec3(0.0001));\n"
@@ -81,6 +83,7 @@ const char* VERT_SRC =
     "  float fill = max(dot(n, normalize(vec3(-0.46, 0.57, -0.68))), 0.0);\n"
     "  vLight = uUseNormal < -0.5 ? 1.0 : clamp(0.48 + sun * 0.42 + fill * 0.10, 0.0, 1.0);\n"
     "  gl_Position = uMvp * vec4(aPos, 1.0);\n"
+    "  vFog = smoothstep(0.72, 0.99, gl_Position.z / max(gl_Position.w, 0.001));\n"
     "}\n";
 
 const char* FRAG_SRC =
@@ -88,12 +91,14 @@ const char* FRAG_SRC =
     "uniform vec4 uColor;\n"
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
+    "varying float vFog;\n"
     "void main() {\n"
     "  vec3 lit = uUseNormal > 0.5 ? uColor.rgb * vLight : uColor.rgb;\n"
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  gl_FragColor = vec4(uUseNormal > -0.5 ? graded : lit, uColor.a);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.035,0.055,0.070), vFog * 0.72);\n"
+    "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
 
 const char* DATAMOSH_VERT="attribute vec2 aPos;attribute vec2 aUv;varying vec2 vUv;void main(){vUv=aUv;gl_Position=vec4(aPos,0.0,1.0);}";
@@ -315,6 +320,14 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
     glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices); glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLE_STRIP,0,vertexCount);
 }
 
+void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
+    constexpr int maxVertices=early_browser_visuals::GrassBladeCountHigh*2;std::array<float,maxVertices*3> vertices{};
+    const int count=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
+    const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH,shot=clampf(state.energy.dischargePositionAmount,0.0f,1.0f);int out=0;
+    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
+    float identity[16];ident(identity);const float color[4]={0.22f,0.52f,0.26f,0.92f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_LINES,0,count*2);
+}
+
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
     if (!program_ || !roundedVbo_ || roundedVertexCount_ <= 0) return;
     float model[16];
@@ -424,6 +437,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
     for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
+    const auto city=early_browser_visuals::cityForTile(state.roomSeed,tileIndex);for(const auto& primitive:city){const float shade=primitive.material==0?0.30f:(0.13f+primitive.material*0.035f),color[4]={shade,shade+0.035f,shade+0.045f,1.0f};drawBox(viewProj,{primitive.pos.x,primitive.pos.y,z0+primitive.pos.z},primitive.size,0,color);}drawGrassBatch(viewProj,state,tileIndex);
 }
 
 void Renderer::drawHud(const GameState& state) {
@@ -498,6 +512,8 @@ void Renderer::drawHud(const GameState& state) {
     if(state.player.grabbedByTarget>=0){const std::string hint="WIGGLE  LEFT  RIGHT";const float s=1.7f,warm[4]={1.0f,0.82f,0.68f,0.94f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.69f,s,warm);}
     if(state.player.downed){const std::string hint="SIGNAL DOWN  "+std::to_string(static_cast<int>(std::ceil(state.player.bleedoutTimer)));const float s=1.8f,cost[4]={1.0f,0.48f,0.42f,0.96f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.55f,s,cost);}
     if(state.player.inSecretRoom){const std::string hint=state.secretTv.broken?"NO SIGNAL":"SIGNAL "+std::to_string(state.secretTv.signal)+"   SHOOT TO DONATE";const float s=1.35f,tv[4]={0.72f,0.94f,0.96f,0.88f};text(hint,(width_-hint.size()*6*s)*0.5f,54,s,tv);}
+    {const Vec3 f=normalized(state.camera.lookTarget-state.camera.pos),r=normalized(cross(f,{0,1,0})),u=cross(r,f);const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);for(int i=0;i<TARGET_COUNT;++i){const auto& target=state.targets[i];if(!target.alive||!target.slurpable||!target.soulVisual.visible||target.soulCubeAmount<=0.001f)continue;const Vec3 world=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0},delta=world-state.camera.pos;const float depth=dot(delta,f);if(depth<=0.18f||depth>18.0f)continue;const float nx=dot(delta,r)/(depth*tanHalf*aspect),ny=dot(delta,u)/(depth*tanHalf);if(std::abs(nx)>1.02f||std::abs(ny)>1.02f)continue;const float scale=clampf(8.0f/depth,1.0f,2.1f),sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,alpha=0.78f*target.soulCubeAmount,shadow[4]={0,0,0,alpha},color[4]={target.soulVisual.color.r,target.soulVisual.color.g,target.soulVisual.color.b,alpha};const std::string glyph(1,early_browser_visuals::soulSymbol(state.roomSeed,i));text(glyph,sx-2.5f*scale+1,sy-3.5f*scale+1,scale,shadow);text(glyph,sx-2.5f*scale,sy-3.5f*scale,scale,color);}}
+
     const float cx=width_*0.5f,cy=height_*0.5f,spread=state.hud.crosshairSpreadPixels,arm=14,thick=3,angle=state.hud.crosshairRotationDegrees*DB_PI/180.0f;
     const float reticle[4]={state.hud.shootJoinTimer>0?1.0f:0.498f,state.hud.shootJoinTimer>0?1.0f:0.906f,1,0.98f*clampf(state.hud.crosshairOpacity,0.0f,1.0f)};
     const auto armQuad=[&](float ox,float oy,float w,float h){const float c=std::cos(angle),s=std::sin(angle);pixelRotatedQuad(cx+ox*c-oy*s,cy+ox*s+oy*c,w,h,angle,reticle);};
@@ -602,7 +618,8 @@ void Renderer::draw(const GameState& state) {
 
     const float phoneBody[4] = {Pass7Visual::PhoneBody.r, Pass7Visual::PhoneBody.g, Pass7Visual::PhoneBody.b, 1.0f};
     const float screenBrightness = std::min(1.0f, 0.45f + state.phoneVisual.screenGlow * 0.36f);
-    const float phoneScreen[4] = {Pass7Visual::PhoneEmission.r * screenBrightness, Pass7Visual::PhoneEmission.g * screenBrightness, Pass7Visual::PhoneEmission.b * screenBrightness, 1.0f};
+    const float actionGlow=clampf(state.vacuum.power*0.45f+state.energy.dischargePositionAmount*0.85f,0.0f,1.0f);
+    const float phoneScreen[4] = {Pass7Visual::PhoneEmission.r * screenBrightness+actionGlow*0.08f, Pass7Visual::PhoneEmission.g * screenBrightness+actionGlow*0.18f, Pass7Visual::PhoneEmission.b * screenBrightness+actionGlow*0.22f, 1.0f};
     if (state.phoneVisual.visible) {
         const Vec3 phonePos = state.phoneTransform.position;
         const Quat phoneOrientation = state.phoneTransform.orientation;

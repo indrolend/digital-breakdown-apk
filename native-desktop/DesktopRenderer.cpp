@@ -1,6 +1,7 @@
 #include "DesktopRenderer.hpp"
 #include "HumanVisual.hpp"
 #include "BitmapFont.hpp"
+#include "EarlyBrowserVisuals.hpp"
 #include "PhoneDisplayLayout.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -787,6 +788,14 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
         const RoomCollider& c=state.roomColliders[i];
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
     }
+    // Renderer-only dressing: no collision, spawn, authority, or snapshot state.
+    const auto city=early_browser_visuals::cityForTile(state.roomSeed,tileIndex);
+    for(const auto& primitive:city){const float shade=primitive.material==0?0.30f:(0.13f+primitive.material*0.035f);drawBox({primitive.pos.x,primitive.pos.y,z0+primitive.pos.z},primitive.size,0,0,0,shade,shade+0.035f,shade+0.045f);}
+    const int grassCount=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
+    const float shot=clampf(state.energy.dischargePositionAmount,0.0f,1.0f);
+    glDisable(GL_LIGHTING);glColor4f(0.22f,0.52f,0.26f,0.92f);glLineWidth(1.0f);glBegin(GL_LINES);
+    for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);glVertex3f(blade.root.x,blade.root.y,blade.root.z);glVertex3f(tip.x,tip.y,tip.z);}
+    glEnd();glEnable(GL_LIGHTING);
 }
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
@@ -943,6 +952,9 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     if(state.player.inSecretRoom){const std::string hint=state.secretTv.broken?"NO SIGNAL":"SIGNAL "+std::to_string(state.secretTv.signal)+"   SHOOT TO DONATE";const float s=1.35f;text(hint,(width_-hint.size()*6*s)*0.5f,54,s,0.72f,0.94f,0.96f,0.88f);}
 
     // Browser reticle: one persistent rotor owns four independently translated arms.
+    // Stable bitmap identity for each visible soul cube.
+    {const Vec3 f=normalized(state.camera.lookTarget-state.camera.pos),r=normalized(cross3(f,{0,1,0})),u=cross3(r,f);const float tanHalf=std::tan(state.camera.verticalFovDegrees*PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);for(int i=0;i<TARGET_COUNT;++i){const auto& target=state.targets[i];if(!target.alive||!target.slurpable||!target.soulVisual.visible||target.soulCubeAmount<=0.001f)continue;const Vec3 world=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0},delta=world-state.camera.pos;const float depth=dot3(delta,f);if(depth<=0.18f||depth>18.0f)continue;const float nx=dot3(delta,r)/(depth*tanHalf*aspect),ny=dot3(delta,u)/(depth*tanHalf);if(std::abs(nx)>1.02f||std::abs(ny)>1.02f)continue;const float scale=clampf(8.0f/depth,1.0f,2.1f),sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,alpha=0.78f*target.soulCubeAmount;const std::string glyph(1,early_browser_visuals::soulSymbol(state.roomSeed,i));text(glyph,sx-2.5f*scale+1,sy-3.5f*scale+1,scale,0,0,0,alpha);text(glyph,sx-2.5f*scale,sy-3.5f*scale,scale,target.soulVisual.color.r,target.soulVisual.color.g,target.soulVisual.color.b,alpha);}}
+
     const float cx=width_*0.5f, cy=height_*0.5f;
     const float spread=state.hud.crosshairSpreadPixels,arm=14.0f,thick=3.0f;
     const float angle=state.hud.crosshairRotationDegrees*PI/180.0f;
@@ -995,12 +1007,17 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
 void DesktopRenderer::draw(const GameState& state) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
     glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_COLOR_MATERIAL);
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
     const GLfloat ambient[]={0.30f,0.37f,0.40f,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
     const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};
     glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
     const GLfloat fillDiffuse[]={0.20f,0.28f,0.35f,1.0f}, fillPos[]={-20.0f,25.0f,-30.0f,0.0f};
     glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
+    const float phonePulse=clampf(state.vacuum.power*0.62f+state.energy.dischargePositionAmount,0.0f,1.0f);
+    const GLfloat phoneDiffuse[]={0.12f*phonePulse,0.74f*phonePulse,0.92f*phonePulse,1.0f};
+    const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
+    glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
+    glEnable(GL_FOG);const GLfloat fogColor[]={Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.018f);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
