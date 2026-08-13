@@ -97,7 +97,7 @@ const char* FRAG_SRC =
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.035,0.055,0.070), vFog * 0.72);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.557,0.792,0.902), vFog);\n"
     "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
 
@@ -327,7 +327,7 @@ void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int t
     const int count=static_cast<int>(static_cast<float>(budget)*plan.grassAmount);
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH,shot=clampf(state.energy.dischargePositionAmount,0.0f,1.0f);int out=0;
     for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
-    float identity[16];ident(identity);const float color[4]={0.22f,0.52f,0.26f,0.92f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_LINES,0,count*2);
+    float identity[16];ident(identity);const float color[4]={0.290f,0.486f,0.349f,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_LINES,0,count*2);
 }
 
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
@@ -423,7 +423,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
     const bool field=plan.premise==early_browser_visuals::RoomPremise::Field;
     const bool sterile=plan.premise==early_browser_visuals::RoomPremise::Sterile;
-    const float groundColor[4] = {field?0.16f:(sterile?0.48f:Pass7Visual::RoomFloor.r),field?0.34f:(sterile?0.50f:Pass7Visual::RoomFloor.g),field?0.14f:(sterile?0.52f:Pass7Visual::RoomFloor.b),1.0f};
+    const float groundColor[4] = {field?0.247f:(sterile?0.48f:Pass7Visual::RoomFloor.r),field?0.455f:(sterile?0.50f:Pass7Visual::RoomFloor.g),field?0.282f:(sterile?0.52f:Pass7Visual::RoomFloor.b),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
@@ -565,7 +565,7 @@ void Renderer::drawDoorDataMosh(const GameState& state){
 
 void Renderer::draw(const GameState& state) {
     ++mobileFpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-mobileFpsWindowStart).count();if(elapsed>=0.5f){displayedMobileFps=mobileFpsFrames/elapsed;mobileFpsFrames=0;mobileFpsWindowStart=now;}
-    glClearColor(Pass7Visual::Background.r, Pass7Visual::Background.g, Pass7Visual::Background.b, 1.0f);
+    glClearColor(0.557f,0.792f,0.902f,1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float proj[16];

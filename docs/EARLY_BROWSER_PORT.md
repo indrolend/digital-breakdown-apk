@@ -14,6 +14,7 @@
 
 ## Observed mappings
 
+- Recovered May 21 and mature May 24–26 browser sources specify sky/fog `#8ecae6`, exponential fog density `0.018`, rough flat ground `#3f7448`, grass base `#4a7c59`, hemisphere sky/ground colors `#bfe9ff` / `#315c38`, a white sun at `(30,60,25)`, and cool fill `#90caf9` from `(-20,25,-30)`. Native uses these authored values or direct fixed-function/GLES equivalents.
 - The native runtime already had layered sun/fill/ambient lighting, translucent soul cubes, bitmap glyph rendering, pooled impact particles, and movement/action-driven phone pose. These were extended or retained rather than replaced.
 - `roomSeed` and `roomIndex` are existing deterministic inputs. They now derive one compact `RoomEnvironmentPlan` shared by gameplay and both renderers, so physical obstacles and presentation agree without adding replicated state.
 - The first room is a field. Later rooms deterministically select field, city, or sterile premises; occasional recovery rooms are sparse fields with two fewer active enemies.
