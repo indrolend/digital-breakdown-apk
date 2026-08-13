@@ -6,6 +6,7 @@
 
 #include "Math.hpp"
 #include "gameplay/TraversalCapabilities.hpp"
+#include "gameplay/TraversalGraph.hpp"
 
 namespace early_browser_visuals {
 
@@ -13,12 +14,6 @@ enum class RoomSetting : unsigned char { Field, City, Sterile };
 enum class RoomForm : unsigned char { Open, Corridor, Courtyard };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
-
-struct TraversalRoute {
-    static constexpr int Capacity = 5;
-    Vec3 points[Capacity]{};
-    int pointCount = 0;
-};
 
 struct RoomEnvironmentPlan {
     RoomSetting setting = RoomSetting::Field;
@@ -30,7 +25,7 @@ struct RoomEnvironmentPlan {
     bool sidewalks = false;
     float grassAmount = 1.0f;
     int enemyAdjustment = 0;
-    TraversalRoute requiredRoute{};
+    gameplay::TraversalGraph traversal{};
 
     constexpr bool recovery() const { return condition == RoomCondition::Recovery; }
 };
@@ -74,11 +69,15 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     }
     else {plan.form=RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
 
-    plan.requiredRoute.pointCount=4;
-    plan.requiredRoute.points[0]={0.0f,0.0f,15.5f};
-    plan.requiredRoute.points[1]={0.0f,0.0f,5.0f};
-    plan.requiredRoute.points[2]={0.0f,0.0f,-11.5f};
-    plan.requiredRoute.points[3]={0.0f,0.0f,-19.4f};
+    plan.traversal.surfaceCount=4;
+    plan.traversal.edgeCount=3;
+    plan.traversal.surfaces[0]={{0.0f,0.0f,15.5f},{1.8f,0.0f,1.8f},true};
+    plan.traversal.surfaces[1]={{0.0f,0.0f,5.0f},{1.8f,0.0f,1.8f},true};
+    plan.traversal.surfaces[2]={{0.0f,0.0f,-11.5f},{1.8f,0.0f,1.8f},true};
+    plan.traversal.surfaces[3]={{0.0f,0.0f,-19.4f},{1.8f,0.0f,1.0f},true};
+    for(int edge=0;edge<plan.traversal.edgeCount;++edge){
+        plan.traversal.edges[edge]={edge,edge+1,gameplay::TraversalAction::Walk,gameplay::TraversalDifficulty::Automatic,true};
+    }
     return plan;
 }
 
@@ -111,14 +110,17 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
 
 inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,
                                        const gameplay::TraversalCapabilities& capabilities=gameplay::TRAVERSAL_CAPABILITIES) {
-    if(plan.requiredRoute.pointCount<2||plan.requiredRoute.pointCount>TraversalRoute::Capacity)return false;
+    if(!gameplay::validTraversalGraphTopology(plan.traversal))return false;
     const float clearance=capabilities.comfortableClearanceRadius;
-    for(int point=0;point<plan.requiredRoute.pointCount;++point){
-        const Vec3 p=plan.requiredRoute.points[point];
+    for(int point=0;point<plan.traversal.surfaceCount;++point){
+        const Vec3 p=plan.traversal.surfaces[point].center;
         if(std::abs(p.x)>15.0f-clearance||std::abs(p.z)>21.0f-clearance)return false;
     }
-    for(int segment=1;segment<plan.requiredRoute.pointCount;++segment){
-        const Vec3 a=plan.requiredRoute.points[segment-1],b=plan.requiredRoute.points[segment];
+    for(int segment=0;segment<plan.traversal.edgeCount;++segment){
+        const gameplay::TraversalEdge& edge=plan.traversal.edges[segment];
+        if(!edge.required)continue;
+        if(edge.action!=gameplay::TraversalAction::Walk)return false;
+        const Vec3 a=plan.traversal.surfaces[edge.from].center,b=plan.traversal.surfaces[edge.to].center;
         const float dx=b.x-a.x,dz=b.z-a.z,length=std::sqrt(dx*dx+dz*dz);
         const int samples=std::max(1,static_cast<int>(std::ceil(length/0.25f)));
         for(int sample=0;sample<=samples;++sample){

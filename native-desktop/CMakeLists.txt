@@ -247,6 +247,14 @@ target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_SHARED_ROOT}/ga
 target_compile_features(EarlyBrowserVisualsTest PRIVATE cxx_std_17)
 
 add_executable(
+    TraversalCalibrationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/traversal_calibration_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(TraversalCalibrationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(TraversalCalibrationTest PRIVATE cxx_std_17)
+
+add_executable(
     GameplayFlowProbe
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_flow_probe.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
@@ -283,6 +291,7 @@ add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
 add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
+add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
 add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
 add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)

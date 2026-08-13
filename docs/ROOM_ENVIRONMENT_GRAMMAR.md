@@ -34,6 +34,33 @@ comfortable clearance radius. The native collider builder rejects optional
 obstacles if a future plan fails this contract, leaving the stable room shell,
 objectives, and exit reachable.
 
+The route is now represented as a bounded action-labelled traversal graph.
+Surfaces are graph nodes; edges identify the intended verb (`Walk`, `Jump`,
+`DoubleJump`, `Lunge`, `JumpLunge`, `Drop`, or `LedgeRecover`) and an intended
+difficulty band (`Automatic` through `Expert`). Existing rooms currently use
+only required `Walk` edges, so this representation change does not silently
+turn scenery into mandatory parkour.
+
+## Automated traversal calibration
+
+`TraversalCalibrationTest` drives the real `Game` input/update path against a
+controlled two-platform fixture. It does not set jump velocity or teleport the
+player during an attempt. Its initial profile holds ordinary forward movement,
+varies takeoff position across approximately 0.84 world units, applies plus or
+minus two degrees of steering error, and records landing success.
+
+The initial 21-trial sweep observed:
+
+- 1.50-unit ground-jump gap: 21/21
+- 2.00-unit ground-jump gap: 21/21
+- 2.50-unit ground-jump gap: 10/21
+
+These measurements are regression fixtures for one controller profile, not
+universal human-accessibility limits. They establish that 2.50 units must not
+be called comfortable based only on analytic physics. Human calibration and
+additional approach-speed, landing-width, height, camera, and action profiles
+must precede use as generation policy.
+
 ## Observed mappings
 
 - Room seed and index already determine the complete environment plan.
@@ -62,5 +89,8 @@ objectives, and exit reachable.
 
 Run-level passages, setting transitions, vertical required routes, no-floor
 rooms, atmosphere interpolation, elevated enemy/objective placement, shareable
-run seeds, and dynamic room dimensions remain future work. Historical browser
+run seeds, dynamic room dimensions, and a playable human calibration course
+remain future work. The automated controller currently measures only level
+ground jumps; it does not yet estimate double-jump, lunge, ledge recovery, route
+discovery, camera readability, combat interference, or fun. Historical browser
 artifacts remain reference-only and provide no gameplay authority here.
