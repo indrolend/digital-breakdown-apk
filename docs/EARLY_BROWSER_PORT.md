@@ -21,7 +21,8 @@
 - Vacuum response uses `VacuumState::power`; shot response begins when `processPendingShots` commits a real projectile.
 - A renderer-facing `EnvironmentVisualState` records only the origin and age of the latest actually spawned projectile. It does not decide shots, damage, collision, capture, or network authority.
 - Grass reads the native phone's existing `vacuumPullPoint`, so body displacement pushes away from the player while vacuum response pulls toward the screen intake.
-- Grass placement uses deterministic irregular patches. Low graphics uses 160 segments; higher presets use 320. Android submits all grass as one `GL_LINES` call per visible tile.
+- Player, shot, intake, and grass positions stay in the native renderer's existing world-coordinate space across repeated room tiles; a regression check covers translated-tile reaction equivalence.
+- Grass placement uses deterministic irregular patches. Low graphics uses 160 blades; higher presets use 320. Android submits the opaque ribbons as one triangle call per visible tile.
 - The recovered local wind envelope, 0.9-unit player displacement, 1.4-second expanding shot ring, decaying after-wobble, and eight-unit pulsing vacuum response are mapped onto the bounded native representation.
 
 ## Derived mappings (ancestry uncertain)
@@ -34,7 +35,8 @@
 ## Performance bounds
 
 - City: 10 deterministic authoritative obstacles plus two renderer-only sidewalk strips.
-- Grass: field rooms only, bounded to 131/262 typical blades from the 160/320 low/high budgets; one batch per visible tile.
+- Grass: field rooms only, bounded to 131/262 typical opaque flat ribbons from the 160/320 low/high budgets; one triangle batch per visible tile. Width varies around the recovered 0.08-unit box-blade profile.
+- The detailed phone display texture is reserved for interactive phone-menu/intro presentation. Ordinary gameplay retains the modeled emissive screen without laying the menu compositor over it.
 - No allocations in gameplay update, new replicated fields, textures, text rasterizers, dynamic shadows, or unbounded emitters.
 
 ## Validation

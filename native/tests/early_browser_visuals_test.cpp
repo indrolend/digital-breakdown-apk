@@ -33,4 +33,8 @@ int main(){
     const Vec3 vacuum=grassTip(blade,0.5f,vacuumInput);
     assert(std::isfinite(calm.x)&&std::isfinite(displaced.x)&&std::isfinite(shot.x)&&std::isfinite(vacuum.x));
     assert(vacuum.x>calm.x);
+    GrassBlade translatedBlade=blade;translatedBlade.root.z+=36.0f;
+    GrassReactionInputs translatedInput=vacuumInput;translatedInput.player.z+=36.0f;translatedInput.vacuumOrigin.z+=36.0f;translatedInput.shotOrigin.z+=36.0f;
+    const Vec3 translated=grassTip(translatedBlade,0.5f,translatedInput);
+    assert(std::abs((translated.x-translatedBlade.root.x)-(vacuum.x-blade.root.x))<0.0001f);
 }

@@ -88,7 +88,7 @@ inline GrassBlade grassBlade(int roomSeed,int roomIndex,int tileIndex,int index)
     } else {x=-13.2f+unit(key)*26.4f;z=-18.0f+unit(key+1u)*36.0f;}
     x=std::max(-13.2f,std::min(13.2f,x+(unit(key+37u)-0.5f)*0.45f));
     z=std::max(-18.0f,std::min(18.0f,z+(unit(key+41u)-0.5f)*0.45f));
-    return {{x,0.02f,z},0.225f+unit(key+2u)*0.56f,0.021f+unit(key+3u)*0.032f,unit(key+4u)*6.2831853f};
+    return {{x,0.02f,z},0.225f+unit(key+2u)*0.56f,0.055f+unit(key+3u)*0.035f,unit(key+4u)*6.2831853f};
 }
 
 inline float smooth01(float value){value=std::max(0.0f,std::min(1.0f,value));return value*value*(3.0f-2.0f*value);}
