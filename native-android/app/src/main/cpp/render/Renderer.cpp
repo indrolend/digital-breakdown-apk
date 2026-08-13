@@ -325,8 +325,9 @@ void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int t
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
     const int budget=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
     const int count=static_cast<int>(static_cast<float>(budget)*plan.grassAmount);
-    const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH,shot=clampf(state.energy.dischargePositionAmount,0.0f,1.0f);int out=0;
-    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
+    const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;int out=0;
+    early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};reaction.player.z+=z0;reaction.vacuumOrigin.z+=z0;reaction.shotOrigin.z+=z0;
+    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
     float identity[16];ident(identity);const float color[4]={0.290f,0.486f,0.349f,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_LINES,0,count*2);
 }
 

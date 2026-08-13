@@ -1041,6 +1041,7 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
     state_.time += dt; state_.frame += 1;
+    state_.environmentVisual.latestShotAge=std::min(9999.0f,state_.environmentVisual.latestShotAge+dt);
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
     state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
@@ -2737,6 +2738,8 @@ void Game::processPendingShots(float dt) {
         *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute;
         slot->pos=state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f);
         slot->pos.y=std::max(slot->pos.y,0.95f);
+        state_.environmentVisual.latestShotOrigin=slot->pos;
+        state_.environmentVisual.latestShotAge=0.0f;
         slot->vel=direction*(slot->brute?BULLET_BRUTE_SPEED:BULLET_SPEED);
         slot->vel.y+=BULLET_VERTICAL_LIFT;
         emitAudio(AudioCue::SentMessage,0.62f);

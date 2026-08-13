@@ -18,8 +18,11 @@
 - The native runtime already had layered sun/fill/ambient lighting, translucent soul cubes, bitmap glyph rendering, pooled impact particles, and movement/action-driven phone pose. These were extended or retained rather than replaced.
 - `roomSeed` and `roomIndex` are existing deterministic inputs. They now derive one compact `RoomEnvironmentPlan` shared by gameplay and both renderers, so physical obstacles and presentation agree without adding replicated state.
 - The first room is a field. Later rooms deterministically select field, city, or sterile premises; occasional recovery rooms are sparse fields with two fewer active enemies.
-- Vacuum response uses `VacuumState::power`; shot response uses the already-decaying `EnergyState::dischargePositionAmount`.
-- Low graphics uses 40 grass segments; higher presets use 96. Android submits all grass as one `GL_LINES` call per visible tile.
+- Vacuum response uses `VacuumState::power`; shot response begins when `processPendingShots` commits a real projectile.
+- A renderer-facing `EnvironmentVisualState` records only the origin and age of the latest actually spawned projectile. It does not decide shots, damage, collision, capture, or network authority.
+- Grass reads the native phone's existing `vacuumPullPoint`, so body displacement pushes away from the player while vacuum response pulls toward the screen intake.
+- Grass placement uses deterministic irregular patches. Low graphics uses 160 segments; higher presets use 320. Android submits all grass as one `GL_LINES` call per visible tile.
+- The recovered local wind envelope, 0.9-unit player displacement, 1.4-second expanding shot ring, decaying after-wobble, and eight-unit pulsing vacuum response are mapped onto the bounded native representation.
 
 ## Derived mappings (ancestry uncertain)
 
@@ -31,7 +34,7 @@
 ## Performance bounds
 
 - City: 10 deterministic authoritative obstacles plus two renderer-only sidewalk strips.
-- Grass: field rooms only, bounded to 32/78 typical blades from the 40/96 low/high budgets; one batch per visible tile.
+- Grass: field rooms only, bounded to 131/262 typical blades from the 160/320 low/high budgets; one batch per visible tile.
 - No allocations in gameplay update, new replicated fields, textures, text rasterizers, dynamic shadows, or unbounded emitters.
 
 ## Validation

@@ -153,6 +153,11 @@ struct EnergyState {
     float dischargePositionAmount = 0.0f;
 };
 
+struct EnvironmentVisualState {
+    Vec3 latestShotOrigin;
+    float latestShotAge = 9999.0f;
+};
+
 struct CameraState {
     float yaw = 0.0f;
     float pitch = 0.0f;
@@ -572,6 +577,7 @@ struct GameState {
     InputState input;
     PlayerState player;
     EnergyState energy;
+    EnvironmentVisualState environmentVisual;
     CameraState camera;
     VacuumState vacuum;
     std::array<TargetState, TARGET_COUNT> targets;

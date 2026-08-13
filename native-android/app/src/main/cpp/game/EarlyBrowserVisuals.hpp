@@ -22,9 +22,10 @@ struct RoomEnvironmentPlan {
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
+struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
 
-constexpr int GrassBladeCountLow = 40;
-constexpr int GrassBladeCountHigh = 96;
+constexpr int GrassBladeCountLow = 160;
+constexpr int GrassBladeCountHigh = 320;
 
 inline std::uint32_t mix(std::uint32_t value) {
     value ^= value >> 16; value *= 0x7feb352du;
@@ -75,16 +76,31 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
 }
 
 inline GrassBlade grassBlade(int roomSeed,int roomIndex,int tileIndex,int index) {
-    const std::uint32_t key=roomKey(roomSeed,roomIndex)^static_cast<std::uint32_t>(tileIndex*4099+index*131);
-    return {{-13.2f+unit(key)*26.4f,0.02f,-18.0f+unit(key+1u)*36.0f},0.20f+unit(key+2u)*0.28f,0.025f+unit(key+3u)*0.025f,unit(key+4u)*6.2831853f};
+    const std::uint32_t room=roomKey(roomSeed,roomIndex)^static_cast<std::uint32_t>(tileIndex*4099);
+    const std::uint32_t key=room^static_cast<std::uint32_t>(index*131);
+    float x,z;
+    if(unit(key+19u)<0.82f){
+        const int patch=static_cast<int>(unit(key+23u)*12.0f)%12;
+        const std::uint32_t patchKey=room+static_cast<std::uint32_t>(patch*977);
+        const float centerX=-11.4f+unit(patchKey+1u)*22.8f,centerZ=-15.8f+unit(patchKey+2u)*31.6f;
+        const float radius=1.0f+unit(patchKey+3u)*2.3f,angle=unit(key+29u)*6.2831853f,radiusSample=std::sqrt(unit(key+31u))*radius;
+        x=centerX+std::cos(angle)*radiusSample;z=centerZ+std::sin(angle)*radiusSample;
+    } else {x=-13.2f+unit(key)*26.4f;z=-18.0f+unit(key+1u)*36.0f;}
+    x=std::max(-13.2f,std::min(13.2f,x+(unit(key+37u)-0.5f)*0.45f));
+    z=std::max(-18.0f,std::min(18.0f,z+(unit(key+41u)-0.5f)*0.45f));
+    return {{x,0.02f,z},0.225f+unit(key+2u)*0.56f,0.021f+unit(key+3u)*0.032f,unit(key+4u)*6.2831853f};
 }
 
-inline Vec3 grassTip(const GrassBlade& blade,float time,const Vec3& player,float vacuumStrength,float shotImpulse) {
-    const float wind=std::sin(time*1.7f+blade.phase+blade.root.z*0.19f)*0.075f;
-    const Vec3 delta=blade.root-player;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z);
-    const float proximity=distance<1.7f?(1.0f-distance/1.7f):0.0f,invDistance=distance>0.001f?1.0f/distance:0.0f;
-    const float away=proximity*0.22f,vacuum=vacuumStrength*proximity*0.16f,impulse=shotImpulse*std::max(0.0f,1.0f-distance/4.0f)*0.24f;
-    return {blade.root.x+wind+delta.x*invDistance*(away+impulse-vacuum),blade.root.y+blade.height,blade.root.z+delta.z*invDistance*(away+impulse-vacuum)};
+inline float smooth01(float value){value=std::max(0.0f,std::min(1.0f,value));return value*value*(3.0f-2.0f*value);}
+inline Vec3 grassTip(const GrassBlade& blade,float time,const GrassReactionInputs& input) {
+    Vec3 tip{blade.root.x,blade.root.y+blade.height,blade.root.z};
+    const Vec3 playerDelta=blade.root-input.player;const float playerDistance=std::sqrt(playerDelta.x*playerDelta.x+playerDelta.z*playerDelta.z);
+    const float windMask=1.0f-smooth01((playerDistance-4.0f)/8.0f);
+    tip.x+=std::sin(time*2.0f+blade.root.x*0.65f+blade.root.z*0.45f+blade.phase)*0.07f*windMask;
+    if(playerDistance<0.9f&&playerDistance>0.001f){const float power=1.0f-playerDistance/0.9f;tip.x+=playerDelta.x/playerDistance*power*0.3f;tip.z+=playerDelta.z/playerDistance*power*0.3f;tip.y-=power*0.08f;}
+    if(input.shotAge>=0.0f&&input.shotAge<1.4f){const Vec3 delta=blade.root-input.shotOrigin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f;const float wave=input.shotAge*7.5f,ring=1.0f-smooth01(std::abs(distance-wave)/0.85f),range=1.0f-smooth01(distance/7.5f),decay=std::exp(-input.shotAge*2.4f),wobble=std::sin(input.shotAge*18.0f-distance*2.0f)*decay,blast=ring*range*decay,after=wobble*range*0.22f;tip.x+=delta.x*inv*(blast*0.9f+after);tip.z+=delta.z*inv*(blast*0.9f+after);tip.y-=blast*0.14f;}
+    if(input.vacuumStrength>0.01f){const Vec3 delta=input.vacuumOrigin-blade.root;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f,pullMask=1.0f-smooth01((distance-0.5f)/7.5f),pulse=0.75f+0.25f*std::sin(time*2.0f*18.0f+distance*3.0f),pull=pullMask*pulse*input.vacuumStrength;tip.x+=delta.x*inv*pull*0.45f;tip.z+=delta.z*inv*pull*0.45f;tip.y-=pull*0.1f;}
+    return tip;
 }
 
 } // namespace early_browser_visuals
