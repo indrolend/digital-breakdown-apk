@@ -2,6 +2,7 @@
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "EarlyBrowserVisuals.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -871,18 +872,12 @@ float Game::wrapZ(float z) const {
 }
 
 void Game::buildRoomColliders() {
-    state_.debug.colliderCount = std::min(ROOM_COLLIDER_COUNT, 8 + std::min(state_.roomIndex, 7));
+    const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+    state_.debug.colliderCount=std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount);
     for (auto& c : state_.roomColliders) c = RoomCollider{};
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
-        float px = (seededRoomValue(20 + i) - 0.5f) * (ROOM_WIDTH - 8.0f);
-        float pz = ROOM_MIN_SPAWN_Z + seededRoomValue(60 + i) * (ROOM_MAX_SPAWN_Z - ROOM_MIN_SPAWN_Z);
-        const bool keepStartClear = std::abs(px) < 4.5f && pz > ROOM_START_Z - 4.5f;
-        const bool keepGoalClear = std::abs(px) < 5.5f && std::abs(pz - ROOM_GRID_Z) < 4.5f;
-        if (keepStartClear) px += px < 0.0f ? -5.0f : 5.0f;
-        if (keepGoalClear) pz += 5.0f;
-        const float w = 1.0f + seededRoomValue(120 + i) * 1.7f;
-        const float d = 1.0f + seededRoomValue(150 + i) * 1.7f;
-        const float h = 0.55f + seededRoomValue(90 + i) * 1.45f;
+        const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);
+        const float px=spec.center.x,pz=spec.center.z,w=spec.size.x,h=spec.size.y,d=spec.size.z;
         RoomCollider& c = state_.roomColliders[i];
         c.minX = px - w * 0.5f; c.maxX = px + w * 0.5f;
         c.minZ = pz - d * 0.5f; c.maxZ = pz + d * 0.5f;
@@ -1616,8 +1611,9 @@ int Game::activeHumanTarget() const {
     int activePlayers=1;
     if(state_.multiplayer.authoritativeHost)for(int id=1;id<NETWORK_PLAYER_COUNT;++id)if(state_.multiplayer.peers[id].active)++activePlayers;
     const int roomExtra=std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(0,state_.roomIndex-1));
-    return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,
-        ACTIVE_HUMAN_TARGET+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2));
+    const int environmentAdjustment=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex).enemyAdjustment;
+    return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(1,
+        ACTIVE_HUMAN_TARGET+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2+environmentAdjustment)));
 }
 
 void Game::advanceRunRulesForRoom() {

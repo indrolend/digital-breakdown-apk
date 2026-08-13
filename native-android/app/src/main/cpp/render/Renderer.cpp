@@ -322,9 +322,11 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
 
 void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
     constexpr int maxVertices=early_browser_visuals::GrassBladeCountHigh*2;std::array<float,maxVertices*3> vertices{};
-    const int count=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    const int budget=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
+    const int count=static_cast<int>(static_cast<float>(budget)*plan.grassAmount);
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH,shot=clampf(state.energy.dischargePositionAmount,0.0f,1.0f);int out=0;
-    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
+    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,state.player.pos,state.vacuum.power,shot);for(const Vec3 p:{blade.root,tip}){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;}}
     float identity[16];ident(identity);const float color[4]={0.22f,0.52f,0.26f,0.92f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_LINES,0,count*2);
 }
 
@@ -418,7 +420,10 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
 
 void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int tileIndex) {
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;
-    const float groundColor[4] = {Pass7Visual::RoomFloor.r, Pass7Visual::RoomFloor.g, Pass7Visual::RoomFloor.b, 1.0f};
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    const bool field=plan.premise==early_browser_visuals::RoomPremise::Field;
+    const bool sterile=plan.premise==early_browser_visuals::RoomPremise::Sterile;
+    const float groundColor[4] = {field?0.16f:(sterile?0.48f:Pass7Visual::RoomFloor.r),field?0.34f:(sterile?0.50f:Pass7Visual::RoomFloor.g),field?0.14f:(sterile?0.52f:Pass7Visual::RoomFloor.b),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
@@ -427,7 +432,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const float sideX=doorWidth*0.5f+sideWidth*0.5f;
     const float topHeight=wallHeight-doorHeight;
     const float topY=doorHeight+topHeight*0.5f;
-    drawBox(viewProj,{0,wallHeight+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,wallColor);
+    if(sterile) drawBox(viewProj,{0,wallHeight+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,wallColor);
     for(float seam:{-ROOM_DEPTH*0.5f,ROOM_DEPTH*0.5f}) {
         drawBox(viewProj,{-sideX,wallHeight*0.5f,z0+seam},{sideWidth,wallHeight,0.5f},0,wallColor);
         drawBox(viewProj,{sideX,wallHeight*0.5f,z0+seam},{sideWidth,wallHeight,0.5f},0,wallColor);
@@ -437,7 +442,8 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
     for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
-    const auto city=early_browser_visuals::cityForTile(state.roomSeed,tileIndex);for(const auto& primitive:city){const float shade=primitive.material==0?0.30f:(0.13f+primitive.material*0.035f),color[4]={shade,shade+0.035f,shade+0.045f,1.0f};drawBox(viewProj,{primitive.pos.x,primitive.pos.y,z0+primitive.pos.z},primitive.size,0,color);}drawGrassBatch(viewProj,state,tileIndex);
+    if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};drawBox(viewProj,{-5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);}
+    if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);
 }
 
 void Renderer::drawHud(const GameState& state) {
@@ -512,8 +518,6 @@ void Renderer::drawHud(const GameState& state) {
     if(state.player.grabbedByTarget>=0){const std::string hint="WIGGLE  LEFT  RIGHT";const float s=1.7f,warm[4]={1.0f,0.82f,0.68f,0.94f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.69f,s,warm);}
     if(state.player.downed){const std::string hint="SIGNAL DOWN  "+std::to_string(static_cast<int>(std::ceil(state.player.bleedoutTimer)));const float s=1.8f,cost[4]={1.0f,0.48f,0.42f,0.96f};text(hint,(width_-hint.size()*6*s)*0.5f,height_*0.55f,s,cost);}
     if(state.player.inSecretRoom){const std::string hint=state.secretTv.broken?"NO SIGNAL":"SIGNAL "+std::to_string(state.secretTv.signal)+"   SHOOT TO DONATE";const float s=1.35f,tv[4]={0.72f,0.94f,0.96f,0.88f};text(hint,(width_-hint.size()*6*s)*0.5f,54,s,tv);}
-    {const Vec3 f=normalized(state.camera.lookTarget-state.camera.pos),r=normalized(cross(f,{0,1,0})),u=cross(r,f);const float tanHalf=std::tan(state.camera.verticalFovDegrees*DB_PI/360.0f),aspect=static_cast<float>(width_)/std::max(1,height_);for(int i=0;i<TARGET_COUNT;++i){const auto& target=state.targets[i];if(!target.alive||!target.slurpable||!target.soulVisual.visible||target.soulCubeAmount<=0.001f)continue;const Vec3 world=target.pos+Vec3{0,0.57f+target.soulVisual.verticalOffset,0},delta=world-state.camera.pos;const float depth=dot(delta,f);if(depth<=0.18f||depth>18.0f)continue;const float nx=dot(delta,r)/(depth*tanHalf*aspect),ny=dot(delta,u)/(depth*tanHalf);if(std::abs(nx)>1.02f||std::abs(ny)>1.02f)continue;const float scale=clampf(8.0f/depth,1.0f,2.1f),sx=(nx*0.5f+0.5f)*width_,sy=(0.5f-ny*0.5f)*height_,alpha=0.78f*target.soulCubeAmount,shadow[4]={0,0,0,alpha},color[4]={target.soulVisual.color.r,target.soulVisual.color.g,target.soulVisual.color.b,alpha};const std::string glyph(1,early_browser_visuals::soulSymbol(state.roomSeed,i));text(glyph,sx-2.5f*scale+1,sy-3.5f*scale+1,scale,shadow);text(glyph,sx-2.5f*scale,sy-3.5f*scale,scale,color);}}
-
     const float cx=width_*0.5f,cy=height_*0.5f,spread=state.hud.crosshairSpreadPixels,arm=14,thick=3,angle=state.hud.crosshairRotationDegrees*DB_PI/180.0f;
     const float reticle[4]={state.hud.shootJoinTimer>0?1.0f:0.498f,state.hud.shootJoinTimer>0?1.0f:0.906f,1,0.98f*clampf(state.hud.crosshairOpacity,0.0f,1.0f)};
     const auto armQuad=[&](float ox,float oy,float w,float h){const float c=std::cos(angle),s=std::sin(angle);pixelRotatedQuad(cx+ox*c-oy*s,cy+ox*s+oy*c,w,h,angle,reticle);};

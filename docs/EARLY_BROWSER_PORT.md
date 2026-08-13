@@ -15,21 +15,22 @@
 ## Observed mappings
 
 - The native runtime already had layered sun/fill/ambient lighting, translucent soul cubes, bitmap glyph rendering, pooled impact particles, and movement/action-driven phone pose. These were extended or retained rather than replaced.
-- `roomSeed` and tile index are existing deterministic inputs. Visual city and grass layouts derive only from these values and never enter gameplay or multiplayer state.
+- `roomSeed` and `roomIndex` are existing deterministic inputs. They now derive one compact `RoomEnvironmentPlan` shared by gameplay and both renderers, so physical obstacles and presentation agree without adding replicated state.
+- The first room is a field. Later rooms deterministically select field, city, or sterile premises; occasional recovery rooms are sparse fields with two fewer active enemies.
 - Vacuum response uses `VacuumState::power`; shot response uses the already-decaying `EnergyState::dischargePositionAmount`.
 - Low graphics uses 40 grass segments; higher presets use 96. Android submits all grass as one `GL_LINES` call per visible tile.
 
 ## Derived mappings (ancestry uncertain)
 
 - The supplied `DATA-Windows-Test-8df5e28.zip` is a binary runtime package, not the historical browser source archive. City proportions, fog density, grass counts, response radii, and colors are therefore conservative native interpretations of the described browser behavior.
-- Buildings are renderer-only silhouettes beyond the room sidewalks. Making them gameplay colliders would change current authority and was intentionally avoided.
+- Historical grass, sidewalks, and block forms are treated as a vocabulary, not universal decoration. Field rooms own grass and sparse rocks, city rooms own sidewalks and paired block/building obstacles, and sterile rooms own symmetrical geometric cover.
 - Desktop uses one bounded positional phone light. GLES uses emissive screen brightening and shader atmosphere because a dynamic-light system is inappropriate for the target low-end hardware.
-- `soulSymbol` provides stable base-36 identity through the existing bitmap-compatible character set. Both renderers project that stable glyph onto each visible soul cube using their existing bitmap HUD paths; no text textures or runtime font system were added.
+- Billboarded symbols were deliberately removed from this foundation pass. Existing enemy and soul identity remains intact while room premise and pacing are established first.
 
 ## Performance bounds
 
-- City: 10 deterministic primitives per visible tile, including two sidewalks.
-- Grass: 40 or 96 blades; one batch on GLES and one immediate line batch on desktop.
+- City: 10 deterministic authoritative obstacles plus two renderer-only sidewalk strips.
+- Grass: field rooms only, bounded to 32/78 typical blades from the 40/96 low/high budgets; one batch per visible tile.
 - No allocations in gameplay update, new replicated fields, textures, text rasterizers, dynamic shadows, or unbounded emitters.
 
 ## Validation
