@@ -444,7 +444,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
     for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
-    if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};drawBox(viewProj,{-5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);}
+    if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;const float walkX=canyon?3.55f:(skyline?8.15f:5.2f),walkW=canyon?1.1f:(skyline?2.4f:2.0f);drawBox(viewProj,{-walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);}
     const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
     for(int i=0;propsValid&&i<early_browser_visuals::environmentPropCount(plan);++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};using early_browser_visuals::EnvironmentPrimitive;

@@ -9,7 +9,7 @@ int main(){
     assert(first.obstacleCount==3&&!first.recovery());
     assert(requiredRouteIsTraversable(first,12345,1));
 
-    bool sawField=false,sawCity=false,sawSterile=false,sawRecovery=false,sawCourtyard=false;
+    bool sawField=false,sawCity=false,sawSterile=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
@@ -28,12 +28,14 @@ int main(){
             sawStandardCourtyard|=a.scale==RoomScale::Standard;
             sawLargeCourtyard|=a.scale==RoomScale::Large;
         }
+        if(a.form==RoomForm::Canyon){assert(a.setting==RoomSetting::City);sawCanyon=true;}
+        if(a.form==RoomForm::Skyline){assert(a.setting==RoomSetting::City);sawSkyline=true;}
         for(int i=0;i<a.obstacleCount;++i){const auto obstacleA=obstacle(a,seed,room,i),obstacleB=obstacle(a,seed,room,i);assert(obstacleA.center.x==obstacleB.center.x&&obstacleA.size.y==obstacleB.size.y);assert(std::abs(obstacleA.center.x)>3.0f);}
         const int propCount=environmentPropCount(a);assert(propCount>=3&&propCount<=6);
         if(!environmentPropsValid(a,seed,room))return 2;
         for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(std::abs(propA.center.x)>7.0f);}
     }
-    assert(sawField&&sawCity&&sawSterile&&sawRecovery&&sawCourtyard);
+    assert(sawField&&sawCity&&sawSterile&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
 
     const auto capabilities=gameplay::TRAVERSAL_CAPABILITIES;

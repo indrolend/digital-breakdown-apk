@@ -791,7 +791,11 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
         const RoomCollider& c=state.roomColliders[i];
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
     }
-    if(plan.sidewalks){drawBox({-5.2f,0.025f,z0},{1.35f,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);drawBox({5.2f,0.025f,z0},{1.35f,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);}
+    if(plan.sidewalks){
+        const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;
+        const float walkX=canyon?3.55f:(skyline?8.15f:5.2f),walkW=canyon?1.1f:(skyline?2.4f:1.35f);
+        drawBox({-walkX,0.025f,z0},{walkW,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);drawBox({walkX,0.025f,z0},{walkW,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);
+    }
     const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
     for(int i=0;propsValid&&i<early_browser_visuals::environmentPropCount(plan);++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};

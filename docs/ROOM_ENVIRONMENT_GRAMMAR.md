@@ -18,7 +18,7 @@ milestone does not alter their authority or the network protocol.
 A room plan now names four separate dimensions:
 
 - `RoomSetting`: Field, City, Sterile
-- `RoomForm`: Open, Corridor, Courtyard
+- `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline
 - `RoomScale`: Compact, Standard, Large, Arena
 - `RoomCondition`: Normal, Recovery
 
@@ -26,6 +26,12 @@ Field/Open, City/Corridor, and Sterile/Corridor preserve the prior layouts.
 City/Courtyard is the first new form. Its scale changes the bounded structure
 radius and footprint while the fixed shell depth remains unchanged. Arena is
 reserved vocabulary and is not selected yet.
+
+City/Canyon and City/Skyline add two deliberately simple but visibly distinct
+compositions without changing the safe permanent-floor contract. Canyon pulls
+tall masses inward to compress the route and visible sky. Skyline pushes taller
+masses to the perimeter, leaving a broad circulation arena framed by distant
+silhouettes. Both reuse the existing box geometry and collider authority.
 
 Rooms also expose a bounded deterministic presentation-prop layer built from a
 small reusable primitive kit: stepped-roof house silhouettes, trunk/crown

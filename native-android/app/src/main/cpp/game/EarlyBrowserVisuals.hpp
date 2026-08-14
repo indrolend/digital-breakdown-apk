@@ -11,7 +11,7 @@
 namespace early_browser_visuals {
 
 enum class RoomSetting : unsigned char { Field, City, Sterile };
-enum class RoomForm : unsigned char { Open, Corridor, Courtyard };
+enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
 
@@ -66,7 +66,11 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     plan.scale=unit(key+143u)<0.18f?RoomScale::Compact:(unit(key+143u)<0.82f?RoomScale::Standard:RoomScale::Large);
     if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.obstacleCount=plan.recovery()?1:3;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
     else if(plan.setting==RoomSetting::City){
-        plan.form=roomIndex>=4&&unit(key+151u)<0.18f?RoomForm::Courtyard:RoomForm::Corridor;
+        const float formRoll=unit(key+151u);
+        plan.form=roomIndex<4?RoomForm::Corridor:
+            (formRoll<0.22f?RoomForm::Courtyard:
+             formRoll<0.44f?RoomForm::Canyon:
+             formRoll<0.62f?RoomForm::Skyline:RoomForm::Corridor);
         plan.obstacleCount=10;plan.grass=false;plan.sidewalks=true;
     }
     else {plan.form=RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
@@ -98,6 +102,16 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
         const float angle=static_cast<float>(sideIndex)*1.5707963f+0.7853982f+(unit(key+1u)-0.5f)*0.10f;
         const float w=(3.0f+unit(key+3u)*1.1f)*scale,d=(2.8f+unit(key+4u)*1.0f)*scale,h=1.35f+unit(key+5u)*2.0f;
         return {{std::cos(angle)*radius,h*0.5f,std::sin(angle)*radius-1.5f},{w,h,d}};
+    }
+    if(plan.setting==RoomSetting::City&&plan.form==RoomForm::Canyon){
+        const float side=(index&1)?1.0f:-1.0f;const int row=index/2;
+        const float w=3.0f+unit(key+3u)*0.8f,d=5.0f+unit(key+4u)*1.8f,h=4.6f+unit(key+5u)*2.4f;
+        return {{side*(6.0f+unit(key+1u)*0.65f),h*0.5f,-15.5f+row*7.8f+(unit(key+2u)-0.5f)*0.5f},{w,h,d}};
+    }
+    if(plan.setting==RoomSetting::City&&plan.form==RoomForm::Skyline){
+        const float side=(index&1)?1.0f:-1.0f;const int row=index/2;
+        const float w=2.2f+unit(key+3u)*1.2f,d=2.8f+unit(key+4u)*1.6f,h=3.4f+unit(key+5u)*3.6f;
+        return {{side*(8.7f+unit(key+1u)*0.55f),h*0.5f,-15.0f+row*7.5f+(unit(key+2u)-0.5f)*1.0f},{w,h,d}};
     }
     if(plan.setting==RoomSetting::City){
         const float side=(index&1)?1.0f:-1.0f;
