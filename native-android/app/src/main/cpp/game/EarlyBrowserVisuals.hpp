@@ -131,12 +131,24 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
         return {EnvironmentPrimitive::LawnFragment,{x,0.035f,z},{3.0f+unit(key+3u)*1.8f,0.07f,4.0f+unit(key+4u)*2.2f},unit(key+5u)*0.08f,static_cast<unsigned char>(index%3)};
     }
     if(plan.setting==RoomSetting::City){
-        const int row=index/2;const float x=side*(10.7f+unit(key+1u)*1.1f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*1.0f;
-        const float scale=0.82f+unit(key+3u)*0.34f;
-        return {EnvironmentPrimitive::House,{x,0,z},{2.2f*scale,1.65f*scale,2.0f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
+        const int row=index/2;const float x=side*(13.05f+unit(key+1u)*0.12f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*0.7f;
+        const float scale=0.86f+unit(key+3u)*0.20f;
+        return {EnvironmentPrimitive::House,{x,0,z},{1.35f*scale,1.45f*scale,1.55f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
     }
     const float x=side*(9.6f+unit(key+1u)*1.8f),z=-12.0f+static_cast<float>(index/2)*16.0f;
     return {EnvironmentPrimitive::MarkerPillar,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
+}
+
+inline bool environmentPropsValid(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex){
+    constexpr float wallInset=0.55f,separation=0.55f;int solidCount=0;
+    const auto overlaps=[&](const ObstacleSpec& a,const ObstacleSpec& b){return a.center.x+a.size.x*0.5f+separation>b.center.x-b.size.x*0.5f&&a.center.x-a.size.x*0.5f-separation<b.center.x+b.size.x*0.5f&&a.center.z+a.size.z*0.5f+separation>b.center.z-b.size.z*0.5f&&a.center.z-a.size.z*0.5f-separation<b.center.z+b.size.z*0.5f;};
+    for(int i=0;i<environmentPropCount(plan);++i){const auto prop=environmentProp(plan,roomSeed,roomIndex,i);if(!environmentPropSolid(prop))continue;++solidCount;const auto box=environmentPropCollider(prop);
+        if(box.center.x-box.size.x*0.5f<-15.0f+wallInset||box.center.x+box.size.x*0.5f>15.0f-wallInset||box.center.z-box.size.z*0.5f<-21.0f+wallInset||box.center.z+box.size.z*0.5f>21.0f-wallInset)return false;
+        for(int obstacleIndex=0;obstacleIndex<plan.obstacleCount;++obstacleIndex)if(overlaps(box,obstacle(plan,roomSeed,roomIndex,obstacleIndex)))return false;
+        for(int prior=0;prior<i;++prior){const auto priorProp=environmentProp(plan,roomSeed,roomIndex,prior);if(environmentPropSolid(priorProp)&&overlaps(box,environmentPropCollider(priorProp)))return false;}
+        for(int node=0;node<plan.traversal.surfaceCount;++node){const auto& surface=plan.traversal.surfaces[node];const ObstacleSpec route{{surface.center.x,0,surface.center.z},{surface.halfSize.x*2,0,surface.halfSize.z*2}};if(overlaps(box,route))return false;}
+    }
+    return plan.obstacleCount+solidCount<=15;
 }
 
 inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,

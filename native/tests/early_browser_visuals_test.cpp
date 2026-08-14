@@ -30,6 +30,7 @@ int main(){
         }
         for(int i=0;i<a.obstacleCount;++i){const auto obstacleA=obstacle(a,seed,room,i),obstacleB=obstacle(a,seed,room,i);assert(obstacleA.center.x==obstacleB.center.x&&obstacleA.size.y==obstacleB.size.y);assert(std::abs(obstacleA.center.x)>3.0f);}
         const int propCount=environmentPropCount(a);assert(propCount>=3&&propCount<=6);
+        if(!environmentPropsValid(a,seed,room))return 2;
         for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(std::abs(propA.center.x)>7.0f);}
     }
     assert(sawField&&sawCity&&sawSterile&&sawRecovery&&sawCourtyard);

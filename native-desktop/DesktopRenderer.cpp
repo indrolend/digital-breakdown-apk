@@ -792,7 +792,8 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
     }
     if(plan.sidewalks){drawBox({-5.2f,0.025f,z0},{1.35f,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);drawBox({5.2f,0.025f,z0},{1.35f,0.05f,ROOM_DEPTH-1.0f},0,0,0,0.43f,0.45f,0.46f);}
-    for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i){
+    const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
+    for(int i=0;propsValid&&i<early_browser_visuals::environmentPropCount(plan);++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};
         using early_browser_visuals::EnvironmentPrimitive;
         if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.40f,0.47f,0.50f);drawBox(p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},0,prop.yaw,0,0.30f,0.37f,0.41f);drawBox(p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},0,prop.yaw,0,0.26f,0.32f,0.36f);drawBox(p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},0,prop.yaw,0,0.05f,0.08f,0.09f);}

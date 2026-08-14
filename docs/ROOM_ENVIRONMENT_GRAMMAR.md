@@ -44,6 +44,14 @@ remains available in the kit but is withheld from generation until placement
 validation accounts for nearby ledge-selection volumes; an early solid-tree
 trial correctly failed the existing lunge-to-ledge regression fixture.
 
+The complete prop set is now accepted or rejected by one deterministic pure
+validation function shared by simulation and both renderers. It checks room
+bounds, protected traversal surfaces, clearance from gameplay obstacles,
+prop-to-prop separation, and the fixed collider budget. A rejected set produces
+neither visible props nor colliders, preventing partial render/simulation
+disagreement. The regression sweep exercises this contract across 4,096
+seed/room pairs in Release builds.
+
 Every generated plan contains a small required traversal route from entry,
 through the central circulation space, to the capture/exit approach. Generation
 tests validate that route against every obstacle with the phone's canonical

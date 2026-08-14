@@ -912,7 +912,8 @@ void Game::buildRoomColliders() {
         c.bottomY = 0.0f; c.topY = h;
         c.width = w; c.depth = d; c.height = h; c.center = {px, h * 0.5f, pz};
     }
-    if(routeValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
+    const bool propsValid=routeValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
+    if(propsValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!early_browser_visuals::environmentPropSolid(prop))continue;
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
