@@ -8,7 +8,9 @@
 namespace {
 
 constexpr std::uint32_t kSeed = 0xD1617A1u;
-constexpr int kFrames = 36000;
+// Fifty simulated minutes at the native fixed step. This is intentionally a
+// brain-dead controller: longevity and bounded state matter more than skill.
+constexpr int kFrames = 180000;
 constexpr float kDt = 1.0f / 60.0f;
 
 struct Random {

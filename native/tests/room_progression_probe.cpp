@@ -1,5 +1,6 @@
 #include "Game.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "EarlyBrowserVisuals.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +10,9 @@ namespace {
 
 constexpr float kDt = 1.0f / 60.0f;
 constexpr float kRoomDepth = 42.0f;
-constexpr int kRooms = 18;
+// Exercise seed evolution, difficulty/rule saturation, environment rebuilding,
+// upgrade interludes and door ownership far beyond an ordinary test session.
+constexpr int kRooms = 256;
 
 void step(Game& game, int frames = 1) {
     for (int frame = 0; frame < frames; ++frame) {
@@ -44,6 +47,18 @@ bool finiteState(const GameState& state) {
            activeHumans(state) >= 1 && activeHumans(state) <= TARGET_COUNT;
 }
 
+bool freshRoomGeometryValid(const GameState& state){
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    if(!early_browser_visuals::requiredRouteIsTraversable(plan,state.roomSeed,state.roomIndex)||
+       !early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex))return false;
+    int expected=plan.obstacleCount;
+    for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++expected;
+    if(state.debug.colliderCount!=expected)return false;
+    for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(!std::isfinite(c.center.x)||!std::isfinite(c.center.y)||!std::isfinite(c.center.z)||c.minX>=c.maxX||c.minZ>=c.maxZ||c.width<=0||c.height<=0||c.depth<=0)return false;if(state.player.pos.x>c.minX-0.20f&&state.player.pos.x<c.maxX+0.20f&&state.player.pos.z>c.minZ-0.20f&&state.player.pos.z<c.maxZ+0.20f)return false;}
+    for(const TargetState& target:state.targets)if(gameplay::isActiveHuman(target))for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(target.pos.x>c.minX-0.20f&&target.pos.x<c.maxX+0.20f&&target.pos.z>c.minZ-0.20f&&target.pos.z<c.maxZ+0.20f)return false;}
+    return true;
+}
+
 int fail(int iteration, const char* phase, const GameState& state) {
     std::fprintf(stderr,
                  "ROOM_PROBE_FAIL iteration=%d phase=%s room=%d seed=%d "
@@ -68,7 +83,7 @@ int main() {
 
     for (int iteration = 1; iteration <= kRooms; ++iteration) {
         const GameState& roomStart = game.state();
-        if (!finiteState(roomStart) || roomStart.roomClear || roomStart.upgradeMenu.active ||
+        if (!finiteState(roomStart) || !freshRoomGeometryValid(roomStart) || roomStart.roomClear || roomStart.upgradeMenu.active ||
             filledGoals(roomStart) != 0) {
             return fail(iteration, "invalid_room_start", roomStart);
         }
