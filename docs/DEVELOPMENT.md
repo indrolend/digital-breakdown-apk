@@ -61,6 +61,10 @@ bash scripts/verify-macos-baseline.sh
 open build/macos-release/bin/DigitalBreakdown.app
 ```
 
+After the first checkout, Finder users can double-click `Play Data on
+Mac.command` for an incremental Release build and normal launch, or `Playtest
+Traversal Lab.command` to launch directly into the isolated movement course.
+
 The app bundle identifier is `com.indrolend.digitalbreakdown.native`. Architecture
 comes from the selected CMake/Xcode toolchain; universal packaging belongs in the
 release workflow rather than local default builds.
