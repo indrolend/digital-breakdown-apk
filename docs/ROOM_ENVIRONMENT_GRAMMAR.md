@@ -27,6 +27,23 @@ City/Courtyard is the first new form. Its scale changes the bounded structure
 radius and footprint while the fixed shell depth remains unchanged. Arena is
 reserved vocabulary and is not selected yet.
 
+Rooms also expose a bounded deterministic presentation-prop layer built from a
+small reusable primitive kit: stepped-roof house silhouettes, trunk/crown
+trees, lawn fragments, and sterile marker pillars. These props are placed
+outside the protected required route. Recognizable solid roles contribute
+bounded native colliders and therefore remain honest under player contact;
+ground-coincident lawn fragments remain presentation-only. Desktop and Android
+derive identical prop specifications and assemble them from their existing
+reusable box geometry, while multiplayer snapshots carry the resulting native
+colliders. The kit is architectural vocabulary, not a
+commitment to houses as the central theme; later settings can recombine or
+transform the same primitive roles.
+
+Field currently deploys only ground-coincident lawn fragments. Tree geometry
+remains available in the kit but is withheld from generation until placement
+validation accounts for nearby ledge-selection volumes; an early solid-tree
+trial correctly failed the existing lunge-to-ledge regression fixture.
+
 Every generated plan contains a small required traversal route from entry,
 through the central circulation space, to the capture/exit approach. Generation
 tests validate that route against every obstacle with the phone's canonical

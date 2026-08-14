@@ -31,6 +31,8 @@ struct RoomEnvironmentPlan {
 };
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
+enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar };
+struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
 struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
 
@@ -106,6 +108,35 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
     const int row=index/2;const float side=(index&1)?1.0f:-1.0f;
     const float w=2.4f+unit(key+3u)*0.8f,d=2.4f+unit(key+4u)*0.8f,h=0.75f+row*0.28f;
     return {{side*(4.1f+row*1.35f),h*0.5f,-8.0f+row*8.0f},{w,h,d}};
+}
+
+inline int environmentPropCount(const RoomEnvironmentPlan& plan){
+    if(plan.setting==RoomSetting::Field)return 3;
+    if(plan.setting==RoomSetting::City)return plan.form==RoomForm::Courtyard?5:4;
+    return 4;
+}
+
+inline bool environmentPropSolid(const EnvironmentPropSpec& prop){return prop.primitive!=EnvironmentPrimitive::LawnFragment;}
+inline ObstacleSpec environmentPropCollider(const EnvironmentPropSpec& prop){
+    if(prop.primitive==EnvironmentPrimitive::Tree)return {prop.center+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.28f,prop.size.y*0.70f,prop.size.z*0.28f}};
+    if(prop.primitive==EnvironmentPrimitive::House)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
+    return {prop.center+Vec3{0,prop.size.y*0.5f,0},prop.size};
+}
+
+inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,int index){
+    const std::uint32_t key=roomKey(roomSeed,roomIndex)+0x51f15e5du+static_cast<std::uint32_t>(index)*313u;
+    const float side=(index&1)?1.0f:-1.0f;
+    if(plan.setting==RoomSetting::Field){
+        const float x=side*(9.2f+unit(key+1u)*2.4f),z=-12.0f+static_cast<float>(index)*11.0f+unit(key+2u)*1.2f;
+        return {EnvironmentPrimitive::LawnFragment,{x,0.035f,z},{3.0f+unit(key+3u)*1.8f,0.07f,4.0f+unit(key+4u)*2.2f},unit(key+5u)*0.08f,static_cast<unsigned char>(index%3)};
+    }
+    if(plan.setting==RoomSetting::City){
+        const int row=index/2;const float x=side*(10.7f+unit(key+1u)*1.1f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*1.0f;
+        const float scale=0.82f+unit(key+3u)*0.34f;
+        return {EnvironmentPrimitive::House,{x,0,z},{2.2f*scale,1.65f*scale,2.0f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
+    }
+    const float x=side*(9.6f+unit(key+1u)*1.8f),z=-12.0f+static_cast<float>(index/2)*16.0f;
+    return {EnvironmentPrimitive::MarkerPillar,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
 }
 
 inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,

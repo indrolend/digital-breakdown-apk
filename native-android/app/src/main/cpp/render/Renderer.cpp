@@ -443,8 +443,16 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{-ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
-    for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
+    for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
     if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};drawBox(viewProj,{-5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{5.2f,0.08f,z0},{2.0f,0.16f,ROOM_DEPTH},0,sidewalk);}
+    for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i){
+        const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};using early_browser_visuals::EnvironmentPrimitive;
+        const float structure[4]={0.40f,0.47f,0.50f,1},roof[4]={0.28f,0.34f,0.38f,1},dark[4]={0.05f,0.08f,0.09f,1},trunk[4]={0.25f,0.20f,0.14f,1},leaf[4]={0.18f,0.42f,0.24f,1},lawn[4]={0.20f,0.39f,0.23f,1},marker[4]={0.48f,0.55f,0.58f,1},cap[4]={0.72f,0.90f,0.94f,1};
+        if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,structure);drawBox(viewProj,p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},prop.yaw,roof);drawBox(viewProj,p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},prop.yaw,roof);drawBox(viewProj,p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},prop.yaw,dark);}
+        else if(prop.primitive==EnvironmentPrimitive::Tree){drawBox(viewProj,p+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.20f,prop.size.y*0.70f,prop.size.z*0.20f},prop.yaw,trunk);drawBox(viewProj,p+Vec3{0,prop.size.y*0.88f,0},{prop.size.x,prop.size.y*0.72f,prop.size.z},prop.yaw,leaf);}
+        else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(viewProj,p,prop.size,prop.yaw,lawn);
+        else {drawBox(viewProj,p+Vec3{0,prop.size.y*0.5f,0},prop.size,prop.yaw,marker);drawBox(viewProj,p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},prop.yaw,cap);}
+    }
     if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);
 }
 
