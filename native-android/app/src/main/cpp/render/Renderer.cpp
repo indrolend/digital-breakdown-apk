@@ -319,6 +319,15 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
     glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices); glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLE_STRIP,0,vertexCount);
 }
 
+void Renderer::drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha){
+    constexpr int segments=8;std::array<float,(segments+2)*3> vertices{};int out=0;
+    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
+    const float stretch=height*0.16f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);
+    const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=center.y;vertices[out++]=z;};emit(center.x,center.z);
+    for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*(halfWidth+stretch*0.35f),localZ=std::sin(a)*(halfDepth+stretch);emit(center.x+localX*c-localZ*s,center.z+localX*s+localZ*c);}
+    float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
+}
+
 void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
     constexpr int maxVertices=early_browser_visuals::GrassBladeCountHigh*6;std::array<float,maxVertices*3> vertices{};
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
@@ -619,19 +628,16 @@ void Renderer::draw(const GameState& state) {
         drawBox(viewProj,{41.35f,0.18f,-0.80f},{1.8f,0.055f,0.055f},0.18f,cable);drawBox(viewProj,{41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},-0.22f,cable);
     }
 
-    // Project every caster's geometry along the browser sun vector (30,60,25)
-    // onto the floor. This preserves physical direction, length and silhouette
-    // while avoiding a shadow-map texture pass on mobile tile GPUs.
-    if(state.localSettings.shadows){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    float shadowViewProj[16];multiply(shadowViewProj,viewProj,shadowMatrix);
+    // One bounded footprint per dynamic caster avoids projected mesh triangles
+    // repeatedly darkening the same pixels on low-end tile GPUs.
+    if(state.localSettings.shadows){
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    const float shadow[4]={0.012f,0.018f,0.022f,0.28f};
-    if(state.phoneVisual.visible){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation,true);else drawBox(shadowViewProj,state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadow);}
-    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
+    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(viewProj,peer.player.pos,0.25f,0.18f,0.95f,0.20f);
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
-    for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
-    for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(shadowViewProj,bullet.pos,{size,size,size},bullet.spin*1.7f,shadow);}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(viewProj,target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(viewProj,target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}
+    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow(viewProj,{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
+    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(viewProj,bullet.pos,radius,radius,radius*2.0f,0.14f);}
     // Static room colliders are receivers, not shadow casters. Projecting them
     // produced room-sized overlapping sheets across the Field floor.
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
