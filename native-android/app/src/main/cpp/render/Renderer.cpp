@@ -97,7 +97,7 @@ const char* FRAG_SRC =
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.557,0.792,0.902), vFog);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.0314,0.0627,0.0941), vFog);\n"
     "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
 
@@ -328,7 +328,7 @@ void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int t
     early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};
     const auto emit=[&](const Vec3& p){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;};
     for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;emit(rootL);emit(rootR);emit(tipR);emit(rootL);emit(tipR);emit(tipL);}
-    float identity[16];ident(identity);const float color[4]={0.290f,0.486f,0.349f,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLES,0,count*6);
+    float identity[16];ident(identity);const float color[4]={Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLES,0,count*6);
 }
 
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
@@ -425,7 +425,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field;
     const bool sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile;
     const bool coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
-    const float groundColor[4] = {field?0.247f:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?0.455f:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?0.282f:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
+    const float groundColor[4] = {field?Pass7Visual::FieldGround.r:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
     if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.005f,z0},{23.5f,0.01f,35.5f},0,sand);}
 
@@ -580,7 +580,7 @@ void Renderer::drawDoorDataMosh(const GameState& state){
 
 void Renderer::draw(const GameState& state) {
     ++mobileFpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-mobileFpsWindowStart).count();if(elapsed>=0.5f){displayedMobileFps=mobileFpsFrames/elapsed;mobileFpsFrames=0;mobileFpsWindowStart=now;}
-    glClearColor(0.557f,0.792f,0.902f,1.0f);
+    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float proj[16];
@@ -624,7 +624,9 @@ void Renderer::draw(const GameState& state) {
     // while avoiding a shadow-map texture pass on mobile tile GPUs.
     if(state.localSettings.shadows){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
     float shadowViewProj[16];multiply(shadowViewProj,viewProj,shadowMatrix);
-    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+    // Projected triangles share the receiving plane. Depth writes prevent
+    // self-overlap from accumulating into opaque-looking shadow patches.
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);
     const float shadow[4]={0.012f,0.018f,0.022f,0.28f};
     if(state.phoneVisual.visible){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation,true);else drawBox(shadowViewProj,state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadow);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
@@ -632,7 +634,8 @@ void Renderer::draw(const GameState& state) {
     for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
     for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
     for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(shadowViewProj,bullet.pos,{size,size,size},bullet.spin*1.7f,shadow);}
-    for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox(shadowViewProj,{c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,shadow);}
+    // Static room colliders are receivers, not shadow casters. Projecting them
+    // produced room-sized overlapping sheets across the Field floor.
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
 
     const float phoneBody[4] = {Pass7Visual::PhoneBody.r, Pass7Visual::PhoneBody.g, Pass7Visual::PhoneBody.b, 1.0f};

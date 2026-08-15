@@ -777,7 +777,9 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     const float topY = doorHeight + topH * 0.5f;
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
-    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?0.247f:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?0.455f:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?0.282f:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
+    if(field)glDisable(GL_LIGHTING);
+    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
+    if(field)glEnable(GL_LIGHTING);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
     if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
@@ -807,7 +809,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
         else if(prop.primitive==EnvironmentPrimitive::Ruin){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.38f,0.36f,0.30f);drawBox(p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},0,prop.yaw,0,0.29f,0.28f,0.25f);}
         else {drawBox(p+Vec3{0,prop.size.y*0.5f,0},prop.size,0,prop.yaw,0,0.48f,0.55f,0.58f);drawBox(p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},0,prop.yaw,0,0.72f,0.90f,0.94f);}
     }
-    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glDisable(GL_LIGHTING);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;glColor4f(0.192f,0.361f,0.220f,1);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);glColor4f(0.368f,0.617f,0.443f,1);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();glEnable(GL_LIGHTING);}
+    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glDisable(GL_LIGHTING);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();glEnable(GL_LIGHTING);}
 }
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
@@ -1034,7 +1036,7 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
 
 void DesktopRenderer::draw(const GameState& state) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
-    glClearColor(0.031f,0.063f,0.094f,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
     const GLfloat ambient[]={0.32f,0.43f,0.34f,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
     const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};
@@ -1045,7 +1047,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     const GLfloat phoneDiffuse[]={0.12f*phonePulse,0.74f*phonePulse,0.92f*phonePulse,1.0f};
     const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
-    glEnable(GL_FOG);const GLfloat fogColor[]={0.031f,0.063f,0.094f,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.026f);
+    glEnable(GL_FOG);const GLfloat fogColor[]={Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.026f);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
@@ -1085,11 +1087,14 @@ void DesktopRenderer::draw(const GameState& state) const {
     // come from object vertices, height and light direction rather than blobs.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
     if(state.localSettings.shadows&&menuPresentation&&state.phoneVisual.visible&&!state.dead){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);
     glPopMatrix();glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
     if(state.localSettings.shadows&&!menuPresentation){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
+    // Projected geometry is coplanar. Let the first fragment write depth so
+    // overlapping triangles form one silhouette instead of repeatedly
+    // alpha-darkening the floor into a mottled mask.
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(!state.camera.firstPerson){if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
