@@ -22,7 +22,7 @@ constexpr VisualColor AcidChartreuse{0xd4 / 255.0f, 0xec / 255.0f, 0x8e / 255.0f
 constexpr VisualColor DeepPlum{0x60 / 255.0f, 0x3f / 255.0f, 0x5b / 255.0f};
 constexpr VisualColor Copper{0xaa / 255.0f, 0x80 / 255.0f, 0x66 / 255.0f};
 constexpr VisualColor WarmGold{0xe1 / 255.0f, 0xb8 / 255.0f, 0x7f / 255.0f};
-constexpr VisualColor Background{0x08 / 255.0f, 0x10 / 255.0f, 0x18 / 255.0f};
+constexpr VisualColor Background{0x8e / 255.0f, 0xca / 255.0f, 0xe6 / 255.0f};
 // Recovered Field material family. Keep floor and blade colors together so
 // desktop fixed-function rendering and the GLES shader do not drift apart.
 constexpr VisualColor FieldGround{0x3f / 255.0f, 0x74 / 255.0f, 0x48 / 255.0f};

@@ -777,9 +777,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     const float topY = doorHeight + topH * 0.5f;
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
-    if(field)glDisable(GL_LIGHTING);
     drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
-    if(field)glEnable(GL_LIGHTING);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
     if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
@@ -1047,7 +1045,7 @@ void DesktopRenderer::draw(const GameState& state) const {
     const GLfloat phoneDiffuse[]={0.12f*phonePulse,0.74f*phonePulse,0.92f*phonePulse,1.0f};
     const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
-    glEnable(GL_FOG);const GLfloat fogColor[]={Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.026f);
+    glEnable(GL_FOG);const GLfloat fogColor[]={Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.018f);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
@@ -1087,14 +1085,11 @@ void DesktopRenderer::draw(const GameState& state) const {
     // come from object vertices, height and light direction rather than blobs.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
     if(state.localSettings.shadows&&menuPresentation&&state.phoneVisual.visible&&!state.dead){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);glPushMatrix();glMultMatrixf(shadowMatrix);
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);
     glPopMatrix();glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
     if(state.localSettings.shadows&&!menuPresentation){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    // Projected geometry is coplanar. Let the first fragment write depth so
-    // overlapping triangles form one silhouette instead of repeatedly
-    // alpha-darkening the floor into a mottled mask.
-    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);glPushMatrix();glMultMatrixf(shadowMatrix);
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glPushMatrix();glMultMatrixf(shadowMatrix);
     if(!state.camera.firstPerson){if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);else drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0.012f,0.018f,0.022f);}
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
@@ -1158,8 +1153,11 @@ void DesktopRenderer::draw(const GameState& state) const {
     }
     std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+    // Draw one camera-facing surface of each convex shell. With culling
+    // disabled, several cube faces compound alpha and produce false opacity.
+    glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
     for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,0.68f);}
-    glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDisable(GL_BLEND);
     for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;
@@ -1177,8 +1175,9 @@ void DesktopRenderer::draw(const GameState& state) const {
             const Vec3 toCamera=normalized(state.camera.pos-center);const Vec3 glyphRight=normalized(cross3({0,1,0},toCamera));const Vec3 glyphUp=normalized(cross3(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);
             for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(pixel,{0.058f,0.058f,0.028f},0,glyphYaw,0,0.94f,1.0f,0.86f);}
             glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            glEnable(GL_CULL_FACE);glCullFace(GL_BACK);
             drawBox(center,{0.72f,0.72f,0.72f},0,flower.rotationY,0,Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,0.36f);
-            glDepthMask(GL_TRUE);glDisable(GL_BLEND);
+            glDisable(GL_CULL_FACE);glDepthMask(GL_TRUE);glDisable(GL_BLEND);
         }
     }
     for (const auto& bullet:state.bullets) if (bullet.alive) {

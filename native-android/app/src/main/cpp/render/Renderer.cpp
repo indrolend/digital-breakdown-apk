@@ -97,7 +97,7 @@ const char* FRAG_SRC =
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.0314,0.0627,0.0941), vFog);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.557,0.792,0.902), vFog);\n"
     "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
 
@@ -624,9 +624,7 @@ void Renderer::draw(const GameState& state) {
     // while avoiding a shadow-map texture pass on mobile tile GPUs.
     if(state.localSettings.shadows){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
     float shadowViewProj[16];multiply(shadowViewProj,viewProj,shadowMatrix);
-    // Projected triangles share the receiving plane. Depth writes prevent
-    // self-overlap from accumulating into opaque-looking shadow patches.
-    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_TRUE);
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
     const float shadow[4]={0.012f,0.018f,0.022f,0.28f};
     if(state.phoneVisual.visible){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation,true);else drawBox(shadowViewProj,state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadow);}
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
@@ -696,15 +694,18 @@ void Renderer::draw(const GameState& state) {
     }
     std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+    // The GLES cube VBO is inward-wound; culling its front-wound triangles
+    // retains one outward camera-facing shell surface without alpha buildup.
+    glEnable(GL_CULL_FACE); glCullFace(GL_FRONT);
     for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];const float color[4]={soul.color.r,soul.color.g,soul.color.b,0.68f};drawBox(viewProj,soul.center,soul.scale,soul.rotationY,color);}
-    glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 
     const float flowerColor[4]={Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,1.0f};
     const float flowerTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        constexpr char flowerGlyphs[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";const unsigned int phase=static_cast<unsigned int>(state.time*3.0f),positionHash=static_cast<unsigned int>(std::abs(flower.pos.x)*97.0f+std::abs(flower.pos.z)*193.0f)+static_cast<unsigned int>(state.roomIndex)*17u;const unsigned int symbolHash=(phase+positionHash)*1664525u+1013904223u;const auto rows=bitmapGlyph(flowerGlyphs[(symbolHash>>16)%36u]);const Vec3 toCamera=normalized(state.camera.pos-center),glyphRight=normalized(cross({0,1,0},toCamera)),glyphUp=normalized(cross(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);const float glyphColor[4]={0.94f,1.0f,0.86f,1.0f};for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(viewProj,pixel,{0.058f,0.058f,0.028f},glyphYaw,glyphColor);}glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);const float shellColor[4]={flowerColor[0],flowerColor[1],flowerColor[2],0.36f};drawBox(viewProj,center,{0.72f,0.72f,0.72f},flower.rotationY,shellColor);glDepthMask(GL_TRUE);glDisable(GL_BLEND);
+        constexpr char flowerGlyphs[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";const unsigned int phase=static_cast<unsigned int>(state.time*3.0f),positionHash=static_cast<unsigned int>(std::abs(flower.pos.x)*97.0f+std::abs(flower.pos.z)*193.0f)+static_cast<unsigned int>(state.roomIndex)*17u;const unsigned int symbolHash=(phase+positionHash)*1664525u+1013904223u;const auto rows=bitmapGlyph(flowerGlyphs[(symbolHash>>16)%36u]);const Vec3 toCamera=normalized(state.camera.pos-center),glyphRight=normalized(cross({0,1,0},toCamera)),glyphUp=normalized(cross(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);const float glyphColor[4]={0.94f,1.0f,0.86f,1.0f};for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(viewProj,pixel,{0.058f,0.058f,0.028f},glyphYaw,glyphColor);}glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glEnable(GL_CULL_FACE);glCullFace(GL_FRONT);const float shellColor[4]={flowerColor[0],flowerColor[1],flowerColor[2],0.36f};drawBox(viewProj,center,{0.72f,0.72f,0.72f},flower.rotationY,shellColor);glDisable(GL_CULL_FACE);glDepthMask(GL_TRUE);glDisable(GL_BLEND);
         }
     }
 
