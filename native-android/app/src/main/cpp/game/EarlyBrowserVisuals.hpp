@@ -11,7 +11,7 @@
 namespace early_browser_visuals {
 
 enum class RoomSetting : unsigned char { Field, City, Sterile, Coastal };
-enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline, Shore };
+enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
 
@@ -74,7 +74,7 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
         plan.obstacleCount=10;plan.grass=false;plan.sidewalks=true;
     }
     else if(plan.setting==RoomSetting::Coastal){plan.form=RoomForm::Shore;plan.obstacleCount=5;plan.grass=false;plan.sidewalks=false;}
-    else {plan.form=RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
+    else {plan.form=roomIndex>=5&&unit(key+173u)<0.52f?RoomForm::Chamber:RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
 
     plan.traversal.surfaceCount=4;
     plan.traversal.edgeCount=3;
@@ -124,6 +124,11 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
         const float side=(index&1)?1.0f:-1.0f;
         const float w=1.2f+unit(key+3u)*1.5f,d=1.2f+unit(key+4u)*1.6f,h=0.35f+unit(key+5u)*0.75f;
         return {{side*(5.4f+unit(key+1u)*2.0f),h*0.5f,-13.5f+index*6.7f+(unit(key+2u)-0.5f)*1.0f},{w,h,d}};
+    }
+    if(plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Chamber){
+        const int row=index/2;const float side=(index&1)?1.0f:-1.0f;
+        const float w=1.7f+unit(key+3u)*0.65f,d=2.4f+unit(key+4u)*0.8f,h=2.2f+unit(key+5u)*3.0f;
+        return {{side*(6.1f+unit(key+1u)*0.55f),h*0.5f,-11.5f+row*11.5f+(unit(key+2u)-0.5f)*0.6f},{w,h,d}};
     }
     const int row=index/2;const float side=(index&1)?1.0f:-1.0f;
     const float w=2.4f+unit(key+3u)*0.8f,d=2.4f+unit(key+4u)*0.8f,h=0.75f+row*0.28f;

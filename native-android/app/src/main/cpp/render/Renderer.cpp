@@ -428,7 +428,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const bool coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
     const float groundColor[4] = {field?0.247f:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?0.455f:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?0.282f:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
-    if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.015f,z0},{23.5f,0.11f,35.5f},0,sand);}
+    if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.005f,z0},{23.5f,0.01f,35.5f},0,sand);}
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
     const float doorWidth=5.35f,doorHeight=3.95f,wallHeight=7.2f;

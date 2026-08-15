@@ -778,7 +778,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
     drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?0.247f:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?0.455f:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?0.282f:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
-    if(coastal)drawBox({0,0.015f,z0},{23.5f,0.11f,35.5f},0,0,0,0.64f,0.58f,0.43f);
+    if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
     if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
         drawBox({-sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);

@@ -18,7 +18,7 @@ milestone does not alter their authority or the network protocol.
 A room plan now names four separate dimensions:
 
 - `RoomSetting`: Field, City, Sterile, Coastal
-- `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline, Shore
+- `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber
 - `RoomScale`: Compact, Standard, Large, Arena
 - `RoomCondition`: Normal, Recovery
 
@@ -37,6 +37,11 @@ Coastal/Shore is a grounded deserted-coast premise: a bounded sandy landmass,
 shallow blue perimeter, sparse rocks, lawn remnants, and two broken structure
 silhouettes. It deliberately retains the safe permanent floor. It does not yet
 claim island water hazards, swimming, falling, or floating-island behavior.
+
+Sterile/Chamber separates the sterile setting from its original corridor by
+placing six tall bounded pillars around a broad central volume. It changes
+enclosure, sightlines, and circulation while preserving the automatic required
+route and ground-level objective contract.
 
 Rooms also expose a bounded deterministic presentation-prop layer built from a
 small reusable primitive kit: stepped-roof house silhouettes, trunk/crown
