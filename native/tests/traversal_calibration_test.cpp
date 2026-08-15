@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "EarlyBrowserVisuals.hpp"
 #include "gameplay/TraversalGraph.hpp"
 
 #include <array>
@@ -102,5 +103,19 @@ int main(){
         std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL playable lab contains combat interference\n");
         return 1;
     }
+    Game inspector;inspector.debugStartRoomInspector();
+    for(int preset=0;preset<8;++preset){
+        const GameState& state=inspector.state();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+        if(!state.roomInspector||state.roomInspectorPreset!=preset||!early_browser_visuals::matchesInspectorPreset(plan,preset)||!state.roomClear||state.requiredSouls!=0){
+            std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector preset %d is not reproducible\n",preset);return 1;
+        }
+        if(preset<7)inspector.debugStepRoomInspector(1);
+    }
+    const int previousSeed=inspector.state().roomSeed;inspector.debugStepRoomInspector(0,true);
+    if(inspector.state().roomSeed==previousSeed||inspector.state().roomInspectorPreset!=7){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector seed regeneration failed\n");return 1;
+    }
+    inspector.debugToggleRoomInspectorEnemies();bool sawEnemy=false;for(const auto& target:inspector.state().targets)sawEnemy|=target.alive;
+    if(!inspector.state().roomInspectorEnemies||!sawEnemy){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector enemy toggle failed\n");return 1;}
     return 0;
 }

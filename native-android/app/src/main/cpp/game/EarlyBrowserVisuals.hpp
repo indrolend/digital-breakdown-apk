@@ -15,6 +15,10 @@ enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
 
+inline const char* settingName(RoomSetting setting){switch(setting){case RoomSetting::Field:return "FIELD";case RoomSetting::City:return "CITY";case RoomSetting::Sterile:return "STERILE";case RoomSetting::Coastal:return "COASTAL";}return "UNKNOWN";}
+inline const char* formName(RoomForm form){switch(form){case RoomForm::Open:return "OPEN";case RoomForm::Corridor:return "CORRIDOR";case RoomForm::Courtyard:return "COURTYARD";case RoomForm::Canyon:return "CANYON";case RoomForm::Skyline:return "SKYLINE";case RoomForm::Shore:return "SHORE";case RoomForm::Chamber:return "CHAMBER";}return "UNKNOWN";}
+inline const char* scaleName(RoomScale scale){switch(scale){case RoomScale::Compact:return "COMPACT";case RoomScale::Standard:return "STANDARD";case RoomScale::Large:return "LARGE";case RoomScale::Arena:return "ARENA";}return "UNKNOWN";}
+
 struct RoomEnvironmentPlan {
     RoomSetting setting = RoomSetting::Field;
     RoomForm form = RoomForm::Open;
@@ -87,6 +91,8 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     }
     return plan;
 }
+
+inline bool matchesInspectorPreset(const RoomEnvironmentPlan& plan,int preset){switch(preset){case 0:return plan.setting==RoomSetting::Field&&plan.form==RoomForm::Open&&!plan.recovery();case 1:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor;case 2:return plan.form==RoomForm::Courtyard;case 3:return plan.form==RoomForm::Canyon;case 4:return plan.form==RoomForm::Skyline;case 5:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Corridor;case 6:return plan.form==RoomForm::Chamber;case 7:return plan.setting==RoomSetting::Coastal&&plan.form==RoomForm::Shore;default:return false;}}
 
 inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,int index) {
     const std::uint32_t key=roomKey(roomSeed,roomIndex)+static_cast<std::uint32_t>(index)*131u;

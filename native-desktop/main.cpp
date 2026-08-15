@@ -877,6 +877,13 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         return;
     }
 
+    if(action==GLFW_PRESS&&host->game.state().roomInspector){
+        if(key==GLFW_KEY_LEFT_BRACKET){host->game.debugStepRoomInspector(-1);return;}
+        if(key==GLFW_KEY_RIGHT_BRACKET){host->game.debugStepRoomInspector(1);return;}
+        if(key==GLFW_KEY_R){host->game.debugStepRoomInspector(0,true);return;}
+        if(key==GLFW_KEY_E){host->game.debugToggleRoomInspectorEnemies();return;}
+    }
+
     if(action==GLFW_PRESS&&host->game.state().started&&!host->game.state().uiPaused&&key>=GLFW_KEY_1&&key<=GLFW_KEY_4){
         host->game.setCommSignal(key-GLFW_KEY_1+1);
         return;
@@ -1197,6 +1204,7 @@ void printUsage() {
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
+    std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
     std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
     std::printf("  --combat-crowd-stress   Measure repeated six-enemy overlapping combat waves.\n");
@@ -1470,6 +1478,7 @@ int main(int argc, char** argv) {
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
+    const bool roomInspector=hasArg(argc,argv,"--room-inspector");
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
@@ -1578,6 +1587,7 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
+    if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E\n");}
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     host.savedSettings=host.game.state().localSettings;
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;
@@ -1648,7 +1658,7 @@ int main(int argc, char** argv) {
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
-    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab){
+    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!roomInspector){
         host.multiplayer.configureImpairment(
             argInt(argc,argv,"--net-latency-ms"),
             argInt(argc,argv,"--net-jitter-ms"),

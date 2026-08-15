@@ -428,6 +428,28 @@ void Game::debugStartTraversalLab() {
     updatePhoneDisplay(0.0f);
 }
 
+void Game::debugStartRoomInspector(){
+    reset();state_.roomInspector=true;state_.roomInspectorPreset=0;state_.roomInspectorEnemies=false;
+    debugStepRoomInspector(0,false);
+}
+
+void Game::debugStepRoomInspector(int delta,bool newSeed){
+    if(!state_.roomInspector)return;
+    constexpr int presetCount=8,inspectionRoom=12;
+    state_.roomInspectorPreset=(state_.roomInspectorPreset+delta%presetCount+presetCount)%presetCount;
+    int candidate=newSeed?state_.roomSeed+1:1;
+    for(int attempt=0;attempt<250000;++attempt,++candidate){if(early_browser_visuals::matchesInspectorPreset(early_browser_visuals::roomPlan(candidate,inspectionRoom),state_.roomInspectorPreset))break;}
+    state_.roomIndex=inspectionRoom;state_.roomSeed=candidate;resetRoom();
+    state_.roomInspector=true;state_.started=true;state_.dead=false;state_.uiPaused=false;state_.cinematic=CinematicState{};state_.upgradeMenu.active=false;
+    state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;for(auto& capture:state_.captures)capture=CapturePointState{};
+    if(!state_.roomInspectorEnemies)for(auto& target:state_.targets)target=TargetState{};
+    state_.player.battery=100.0f;updatePhoneDisplay(0.0f);updatePhoneTransform();updateCamera(0.0f);
+}
+
+void Game::debugToggleRoomInspectorEnemies(){
+    if(!state_.roomInspector)return;state_.roomInspectorEnemies=!state_.roomInspectorEnemies;debugStepRoomInspector(0,false);
+}
+
 void Game::setPersistentProgression(std::int64_t tokens,int shotLevel,int lungeLevel,int attackLevel){
     auto& permanent=state_.progression.permanent;
     permanent.tokens=std::max<std::int64_t>(0,tokens);

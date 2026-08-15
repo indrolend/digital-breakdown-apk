@@ -110,6 +110,14 @@ the actual arc, platform face, support, and takeoff profile. Difficulty must not
 be inferred by independently sorting gap or height; useful generation bands
 need measurements of complete edge configurations.
 
+## Room inspector
+
+The desktop-only `--room-inspector` mode exposes each implemented premise
+without changing normal run selection or network state. Bracket keys cycle the
+eight current setting/form families, `R` finds another deterministic seed for
+the selected family, and `E` toggles enemies. Its HUD reports the exact setting,
+form, scale, and room seed so human feedback can identify a reproducible room.
+
 ## Observed mappings
 
 - Room seed and index already determine the complete environment plan.

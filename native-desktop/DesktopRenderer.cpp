@@ -942,6 +942,13 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         text("LEFT  LEDGES     RIGHT  ASCENT",panelX+12,55,1.05f,0.72f,0.94f,1.0f);
         text("SPACE JUMP   F LUNGE   SHIFT SPRINT",panelX+12,70,1.0f,0.82f,1.0f,0.88f);
     }
+    if(state.roomInspector){
+        const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);const float panelW=600.0f,panelX=(width_-panelW)*0.5f;
+        quad(panelX,12,panelW,74,0.005f,0.012f,0.016f,0.78f);quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
+        text(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / "+early_browser_visuals::scaleName(plan.scale),panelX+12,20,1.55f,0.82f,1.0f,0.94f);
+        text("SEED "+std::to_string(state.roomSeed)+"   [ ] PREMISE   R NEW SEED",panelX+12,43,1.05f,1.0f,1.0f,1.0f);
+        text(std::string("E ENEMIES: ")+(state.roomInspectorEnemies?"ON":"OFF"),panelX+12,62,1.05f,0.72f,0.94f,1.0f);
+    }
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));text(tax,12,320,1.05f,1.0f,0.72f,0.62f);}
     if(state.hud.buildLabel[0])text(state.hud.buildLabel.data(),12,336,1.0f,0.58f,0.92f,1.0f,0.82f);

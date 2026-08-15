@@ -616,6 +616,9 @@ struct GameState {
     bool uiPaused = false;
     bool attractMode = false;
     bool traversalLab = false;
+    bool roomInspector = false;
+    bool roomInspectorEnemies = false;
+    int roomInspectorPreset = 0;
     CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
@@ -639,6 +642,9 @@ public:
     // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
     void debugStartSecretTvTest(bool enterRoom);
     void debugStartTraversalLab();
+    void debugStartRoomInspector();
+    void debugStepRoomInspector(int delta,bool newSeed=false);
+    void debugToggleRoomInspectorEnemies();
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);

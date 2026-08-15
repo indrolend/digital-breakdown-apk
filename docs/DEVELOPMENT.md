@@ -64,6 +64,9 @@ open build/macos-release/bin/DigitalBreakdown.app
 After the first checkout, Finder users can double-click `Play Data on
 Mac.command` for an incremental Release build and normal launch, or `Playtest
 Traversal Lab.command` to launch directly into the isolated movement course.
+`Playtest Rooms on Mac.command` opens the room inspector: bracket keys cycle
+premises, `R` selects another deterministic seed of the same premise, and `E`
+toggles enemies.
 
 The app bundle identifier is `com.indrolend.digitalbreakdown.native`. Architecture
 comes from the selected CMake/Xcode toolchain; universal packaging belongs in the
