@@ -125,7 +125,7 @@ enum class AudioCue : unsigned char {
     VcEnded, VcInvitation, ConnectPower, LowPower, NegativeAck, ReceivedMessage,
     SentMessage, PhoneAttack, PaymentSuccess, PaymentFailure, EndCallTone,
     SlurpRingtoneStart, SlurpRingtoneStop, Capture1, Capture2, Capture3, Capture4, Capture5,
-    Headshot, HeadshotCritical, RewardWoah, RewardNice
+    Headshot, HeadshotCritical, RewardWoah, RewardNice, FlowerTheme
 };
 
 struct AudioEventState {

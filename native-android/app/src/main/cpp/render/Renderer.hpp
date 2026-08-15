@@ -21,8 +21,6 @@ private:
     unsigned int roundedVbo_ = 0;
     unsigned int phoneVbo_ = 0;
     unsigned int phoneNormalVbo_ = 0;
-    unsigned int flowerVbo_ = 0;
-    unsigned int flowerNormalVbo_ = 0;
     unsigned int humanVbo_ = 0;
     unsigned int humanNormalVbo_ = 0;
     unsigned int soulSurfaceVbo_ = 0;
@@ -43,7 +41,6 @@ private:
     int uUseNormal_ = -1;
     std::string assetRoot_;
     StaticModelData phoneModel_;
-    StaticModelData flowerModel_;
     HumanModelData humanModel_;
     TvGifWall tvGifWall_;
     std::vector<float> humanVertices_;

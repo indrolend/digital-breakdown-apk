@@ -9,12 +9,12 @@
 
 namespace {
 const char* cueFile(AudioCue cue) {
-    constexpr std::array<const char*,22> names={{
+    constexpr std::array<const char*,23> names={{
         "vc_ended.mp3","vc_invitation.mp3","connect_power.mp3","low_power.mp3","negative_ack.mp3",
         "received_message.mp3","sent_message.mp3","phone_attack.mp3","payment_success.mp3","payment_failure.mp3",
         "end_call_tone.mp3","slurp_ringtone.mp3","slurp_ringtone.mp3","capture_1.mp3","capture_2.mp3",
         "capture_3.mp3","capture_4.mp3","capture_5.mp3","headshot.mp3","headshot_critical.mp3",
-        "reward_woah.mp3","reward_nice.mp3"
+        "reward_woah.mp3","reward_nice.mp3","flowertheme.wav"
     }};
     const int index=static_cast<int>(cue);
     return index>=0&&index<static_cast<int>(names.size())?names[index]:nullptr;
@@ -34,6 +34,7 @@ struct DesktopAudio::Impl {
     Voice tvRoomPad;
     Voice secretKnock;
     Voice gameOver;
+    Voice flowerTheme;
     bool musicActive=false;
     bool menuMusicActive=false;
     bool secretKnockActive=false;
@@ -75,13 +76,14 @@ void DesktopAudio::setAssetRoot(const std::filesystem::path& root) {
     ma_resource_manager* resources=ma_engine_get_resource_manager(&impl_->engine);
     for(const auto& path:impl_->registeredCueFiles)ma_resource_manager_unregister_file(resources,path.c_str());
     impl_->registeredCueFiles.clear();
-    for(int index=0;index<22;++index){const char* filename=cueFile(static_cast<AudioCue>(index));if(!filename)continue;const std::string path=(root_/filename).u8string();if(!std::filesystem::exists(path)||std::find(impl_->registeredCueFiles.begin(),impl_->registeredCueFiles.end(),path)!=impl_->registeredCueFiles.end())continue;if(ma_resource_manager_register_file(resources,path.c_str(),MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE)==MA_SUCCESS)impl_->registeredCueFiles.push_back(path);}
+    for(int index=0;index<23;++index){const char* filename=cueFile(static_cast<AudioCue>(index));if(!filename)continue;const std::string path=(root_/filename).u8string();if(!std::filesystem::exists(path)||std::find(impl_->registeredCueFiles.begin(),impl_->registeredCueFiles.end(),path)!=impl_->registeredCueFiles.end())continue;if(ma_resource_manager_register_file(resources,path.c_str(),MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE)==MA_SUCCESS)impl_->registeredCueFiles.push_back(path);}
     const auto loadPersistent=[&](Impl::Voice& voice,const char* filename,ma_uint32 flags){if(voice.initialized){ma_sound_stop(&voice.sound);ma_sound_uninit(&voice.sound);voice.initialized=false;}const std::string path=(root_/filename).u8string();if(std::filesystem::exists(path)&&ma_sound_init_from_file(&impl_->engine,path.c_str(),flags,nullptr,nullptr,&voice.sound)==MA_SUCCESS)voice.initialized=true;};
     loadPersistent(impl_->menuMusic,"menu_music.mp3",LONG_LOOP_FLAGS);
     loadPersistent(impl_->music,"game_music.mp3",LONG_LOOP_FLAGS);
     loadPersistent(impl_->tvRoomPad,"tv_room_pad.mp3",LONG_LOOP_FLAGS);
     loadPersistent(impl_->secretKnock,"door_knock.mp3",LONG_ONESHOT_FLAGS);
     loadPersistent(impl_->gameOver,"game_over.mp3",LONG_ONESHOT_FLAGS);
+    loadPersistent(impl_->flowerTheme,"flowertheme.wav",LONG_LOOP_FLAGS);
 }
 
 namespace {
@@ -100,6 +102,7 @@ bool startVoice(DesktopAudio::Impl& impl,DesktopAudio::Impl::Voice& voice,const 
 void DesktopAudio::play(const AudioEventState& event) {
     if(!impl_||!impl_->initialized)return;
     if(event.cue==AudioCue::SlurpRingtoneStop){stopVoice(impl_->slurp);slurpPlaying_=false;return;}
+    if(event.cue==AudioCue::FlowerTheme){playLoadedVoice(impl_->flowerTheme,event.volume*musicLevel_,false);return;}
     if(event.cue==AudioCue::RewardWoah)impl_->rewardDuck=std::max(impl_->rewardDuck,0.18f);else if(event.cue==AudioCue::RewardNice)impl_->rewardDuck=std::max(impl_->rewardDuck,0.09f);
     const char* filename=cueFile(event.cue);if(!filename||root_.empty())return;
     constexpr ma_uint32 cueFlags=MA_SOUND_FLAG_DECODE|MA_SOUND_FLAG_NO_SPATIALIZATION;
@@ -113,6 +116,7 @@ void DesktopAudio::playMenuCue(bool confirm){if(!impl_||!impl_->initialized||sfx
 void DesktopAudio::update(const GameState& state) {
     sfxLevel_=state.localSettings.sfxMuted?0.0f:clampf(state.localSettings.sfxVolume,0.0f,1.0f);
     const float musicLevel=state.localSettings.musicMuted?0.0f:clampf(state.localSettings.musicVolume,0.0f,1.0f);
+    musicLevel_=musicLevel;
     if(impl_&&impl_->initialized&&!root_.empty()){
         // The attract simulation may die and reset repeatedly, but it is still
         // one continuous title presentation.  Its music belongs to the title,
@@ -139,7 +143,7 @@ void DesktopAudio::update(const GameState& state) {
 void DesktopAudio::stopAll() {
     if(!impl_)return;
     for(auto& voice:impl_->voices)stopVoice(voice);
-    stopVoice(impl_->slurp);stopVoice(impl_->music);stopVoice(impl_->menuMusic);stopVoice(impl_->tvRoomPad);stopVoice(impl_->secretKnock);stopVoice(impl_->gameOver);
+    stopVoice(impl_->slurp);stopVoice(impl_->music);stopVoice(impl_->menuMusic);stopVoice(impl_->tvRoomPad);stopVoice(impl_->secretKnock);stopVoice(impl_->gameOver);stopVoice(impl_->flowerTheme);
     for(auto& voice:impl_->uiVoices)stopVoice(voice);
     impl_->musicActive=false;impl_->menuMusicActive=false;impl_->secretKnockActive=false;impl_->menuCuePulse=0.0f;impl_->menuCueBend=0.0f;impl_->tvRoomMix=0.0f;slurpPlaying_=false;
 }

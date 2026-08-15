@@ -22,9 +22,7 @@ private:
     mutable int width_ = 1280;
     mutable int height_ = 720;
     unsigned int phoneModelList_ = 0;
-    unsigned int flowerModelList_ = 0;
     unsigned int phoneShadowList_ = 0;
-    unsigned int flowerShadowList_ = 0;
     HumanModelData humanModel_;
     mutable std::vector<float> humanVertices_;
     mutable unsigned int datamoshTexture_ = 0;

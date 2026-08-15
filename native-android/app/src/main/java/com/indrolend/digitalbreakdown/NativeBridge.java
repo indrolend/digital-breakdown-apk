@@ -22,6 +22,7 @@ public final class NativeBridge {
     private static MediaPlayer menuMusicPlayer;
     private static MediaPlayer tvRoomPlayer;
     private static MediaPlayer gameOverPlayer;
+    private static MediaPlayer flowerThemePlayer;
     private static SoundPool soundPool;
     private static final SparseArray<Integer> cueSamples = new SparseArray<>();
     private static final SparseArray<Boolean> loadedSamples = new SparseArray<>();
@@ -106,6 +107,17 @@ public final class NativeBridge {
     public static synchronized void playAudioCue(int cue, float volume) {
         if (audioContext == null) return;
         if(cue==20)rewardDuck=Math.max(rewardDuck,0.18f);else if(cue==21)rewardDuck=Math.max(rewardDuck,0.09f);
+        if (cue == 22) {
+            if (flowerThemePlayer != null) { flowerThemePlayer.stop(); flowerThemePlayer.release(); }
+            flowerThemePlayer = MediaPlayer.create(audioContext, R.raw.flowertheme);
+            if (flowerThemePlayer != null) {
+                final MediaPlayer startedPlayer = flowerThemePlayer;
+                flowerThemePlayer.setVolume(volume * localMusicLevel, volume * localMusicLevel);
+                flowerThemePlayer.setOnCompletionListener(player -> { synchronized (NativeBridge.class) { player.release(); if (flowerThemePlayer == startedPlayer) flowerThemePlayer = null; } });
+                flowerThemePlayer.start();
+            }
+            return;
+        }
         volume *= localSfxLevel;
         if (cue == 12) {
             if (slurpPlayer != null) { slurpPlayer.stop(); slurpPlayer.release(); slurpPlayer = null; }

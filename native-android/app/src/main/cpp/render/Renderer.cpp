@@ -268,11 +268,10 @@ void Renderer::surfaceCreated() {
     initProgram();
     initDatamoshProgram();
     if(!assetRoot_.empty()) {
-        phoneModel_.load(assetRoot_+"/phone.dbmesh"); flowerModel_.load(assetRoot_+"/flower.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
+        phoneModel_.load(assetRoot_+"/phone.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
         if(phoneModel_.valid()){glGenBuffers(1,&phoneVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.vertices.size()*sizeof(float),phoneModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&phoneNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneNormalVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.normals.size()*sizeof(float),phoneModel_.normals.data(),GL_STATIC_DRAW);}
-        if(flowerModel_.valid()){glGenBuffers(1,&flowerVbo_);glBindBuffer(GL_ARRAY_BUFFER,flowerVbo_);glBufferData(GL_ARRAY_BUFFER,flowerModel_.vertices.size()*sizeof(float),flowerModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&flowerNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,flowerNormalVbo_);glBufferData(GL_ARRAY_BUFFER,flowerModel_.normals.size()*sizeof(float),flowerModel_.normals.data(),GL_STATIC_DRAW);}
         if(humanModel_.valid()){glGenBuffers(1,&humanVbo_);glBindBuffer(GL_ARRAY_BUFFER,humanVbo_);glBufferData(GL_ARRAY_BUFFER,humanModel_.vertices.size()*3u*sizeof(float),nullptr,GL_DYNAMIC_DRAW);glGenBuffers(1,&humanNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,humanNormalVbo_);glBufferData(GL_ARRAY_BUFFER,humanModel_.vertices.size()*3u*sizeof(float),nullptr,GL_DYNAMIC_DRAW);}
-        __android_log_print(ANDROID_LOG_INFO,"DBNATIVE","models phone=%d flower=%d human=%d",phoneModel_.valid()?1:0,flowerModel_.valid()?1:0,humanModel_.valid()?1:0);
+        __android_log_print(ANDROID_LOG_INFO,"DBNATIVE","models phone=%d flower=prismatic human=%d",phoneModel_.valid()?1:0,humanModel_.valid()?1:0);
     }
 }
 
@@ -631,7 +630,7 @@ void Renderer::draw(const GameState& state) {
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
-    for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};if(flowerModel_.valid())drawStaticModel(shadowViewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY),true);else drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
+    for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
     for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(shadowViewProj,bullet.pos,{size,size,size},bullet.spin*1.7f,shadow);}
     for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox(shadowViewProj,{c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,shadow);}
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
@@ -703,9 +702,7 @@ void Renderer::draw(const GameState& state) {
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        if(!cheapVisuals&&flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
-        else if(cheapVisuals)drawBox(viewProj,center,{0.36f,0.18f,0.36f},flower.rotationY,flowerColor);
-        else {drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}}
+        drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}
         }
     }
 
