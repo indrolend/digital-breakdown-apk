@@ -14,10 +14,13 @@ enum class RoomSetting : unsigned char { Field, City, Sterile, Coastal };
 enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
+enum class RoomPremise : unsigned char { FieldOpen, CityCorridor, CityCourtyard, CityCanyon, CitySkyline, SterileCorridor, SterileChamber, CoastalShore, Count };
 
 inline const char* settingName(RoomSetting setting){switch(setting){case RoomSetting::Field:return "FIELD";case RoomSetting::City:return "CITY";case RoomSetting::Sterile:return "STERILE";case RoomSetting::Coastal:return "COASTAL";}return "UNKNOWN";}
 inline const char* formName(RoomForm form){switch(form){case RoomForm::Open:return "OPEN";case RoomForm::Corridor:return "CORRIDOR";case RoomForm::Courtyard:return "COURTYARD";case RoomForm::Canyon:return "CANYON";case RoomForm::Skyline:return "SKYLINE";case RoomForm::Shore:return "SHORE";case RoomForm::Chamber:return "CHAMBER";}return "UNKNOWN";}
 inline const char* scaleName(RoomScale scale){switch(scale){case RoomScale::Compact:return "COMPACT";case RoomScale::Standard:return "STANDARD";case RoomScale::Large:return "LARGE";case RoomScale::Arena:return "ARENA";}return "UNKNOWN";}
+inline const char* conditionName(RoomCondition condition){switch(condition){case RoomCondition::Normal:return "NORMAL";case RoomCondition::Recovery:return "RECOVERY";}return "UNKNOWN";}
+inline const char* premiseName(RoomPremise premise){switch(premise){case RoomPremise::FieldOpen:return "FIELD_OPEN";case RoomPremise::CityCorridor:return "CITY_CORRIDOR";case RoomPremise::CityCourtyard:return "CITY_COURTYARD";case RoomPremise::CityCanyon:return "CITY_CANYON";case RoomPremise::CitySkyline:return "CITY_SKYLINE";case RoomPremise::SterileCorridor:return "STERILE_CORRIDOR";case RoomPremise::SterileChamber:return "STERILE_CHAMBER";case RoomPremise::CoastalShore:return "COASTAL_SHORE";case RoomPremise::Count:break;}return "UNKNOWN";}
 
 struct RoomEnvironmentPlan {
     RoomSetting setting = RoomSetting::Field;
@@ -87,12 +90,14 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     plan.traversal.surfaces[2]={{0.0f,0.0f,-11.5f},{1.8f,0.0f,1.8f},true};
     plan.traversal.surfaces[3]={{0.0f,0.0f,-19.4f},{1.8f,0.0f,1.0f},true};
     for(int edge=0;edge<plan.traversal.edgeCount;++edge){
-        plan.traversal.edges[edge]={edge,edge+1,gameplay::TraversalAction::Walk,gameplay::TraversalDifficulty::Automatic,true};
+        plan.traversal.edges[edge]={edge,edge+1,gameplay::TraversalAction::Walk,gameplay::TraversalDifficulty::Automatic,gameplay::TraversalRole::Required};
     }
     return plan;
 }
 
-inline bool matchesInspectorPreset(const RoomEnvironmentPlan& plan,int preset){switch(preset){case 0:return plan.setting==RoomSetting::Field&&plan.form==RoomForm::Open&&!plan.recovery();case 1:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor;case 2:return plan.form==RoomForm::Courtyard;case 3:return plan.form==RoomForm::Canyon;case 4:return plan.form==RoomForm::Skyline;case 5:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Corridor;case 6:return plan.form==RoomForm::Chamber;case 7:return plan.setting==RoomSetting::Coastal&&plan.form==RoomForm::Shore;default:return false;}}
+inline bool matchesInspectorPremise(const RoomEnvironmentPlan& plan,RoomPremise premise){switch(premise){case RoomPremise::FieldOpen:return plan.setting==RoomSetting::Field&&plan.form==RoomForm::Open&&!plan.recovery();case RoomPremise::CityCorridor:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor;case RoomPremise::CityCourtyard:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Courtyard;case RoomPremise::CityCanyon:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Canyon;case RoomPremise::CitySkyline:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Skyline;case RoomPremise::SterileCorridor:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Corridor;case RoomPremise::SterileChamber:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Chamber;case RoomPremise::CoastalShore:return plan.setting==RoomSetting::Coastal&&plan.form==RoomForm::Shore;case RoomPremise::Count:break;}return false;}
+
+inline int representativeInspectorSeed(RoomPremise premise){constexpr int seeds[]={8,26,16,4,2,1,7,11};const int index=static_cast<int>(premise);return index>=0&&index<static_cast<int>(RoomPremise::Count)?seeds[index]:1;}
 
 inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,int index) {
     const std::uint32_t key=roomKey(roomSeed,roomIndex)+static_cast<std::uint32_t>(index)*131u;
@@ -198,7 +203,7 @@ inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomS
     }
     for(int segment=0;segment<plan.traversal.edgeCount;++segment){
         const gameplay::TraversalEdge& edge=plan.traversal.edges[segment];
-        if(!edge.required)continue;
+        if(!gameplay::isRequired(edge))continue;
         if(edge.action!=gameplay::TraversalAction::Walk)return false;
         const Vec3 a=plan.traversal.surfaces[edge.from].center,b=plan.traversal.surfaces[edge.to].center;
         const float dx=b.x-a.x,dz=b.z-a.z,length=std::sqrt(dx*dx+dz*dz);

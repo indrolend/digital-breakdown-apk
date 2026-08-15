@@ -943,11 +943,14 @@ void DesktopRenderer::drawHud(const GameState& state) const {
         text("SPACE JUMP   F LUNGE   SHIFT SPRINT",panelX+12,70,1.0f,0.82f,1.0f,0.88f);
     }
     if(state.roomInspector){
-        const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);const float panelW=600.0f,panelX=(width_-panelW)*0.5f;
-        quad(panelX,12,panelW,74,0.005f,0.012f,0.016f,0.78f);quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
-        text(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / "+early_browser_visuals::scaleName(plan.scale),panelX+12,20,1.55f,0.82f,1.0f,0.94f);
-        text("SEED "+std::to_string(state.roomSeed)+"   [ ] PREMISE   R NEW SEED",panelX+12,43,1.05f,1.0f,1.0f,1.0f);
-        text(std::string("E ENEMIES: ")+(state.roomInspectorEnemies?"ON":"OFF"),panelX+12,62,1.05f,0.72f,0.94f,1.0f);
+        const auto& r=state.roomInspectorReport;const float panelW=std::min(780.0f,static_cast<float>(width_)-24.0f),panelX=(width_-panelW)*0.5f;
+        quad(panelX,12,panelW,132,0.005f,0.012f,0.016f,0.82f);quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
+        text(std::string(early_browser_visuals::premiseName(r.premise))+"  "+early_browser_visuals::settingName(r.setting)+" / "+early_browser_visuals::formName(r.form)+" / "+early_browser_visuals::scaleName(r.scale)+" / "+early_browser_visuals::conditionName(r.condition),panelX+12,20,1.30f,0.82f,1.0f,0.94f);
+        text("SEED "+std::to_string(r.seed)+"  ROOM "+std::to_string(r.roomIndex)+"  ROUTE "+(r.requiredRouteValid?"VALID":"INVALID")+"  "+gameplay::traversalDifficultyName(r.requiredBand),panelX+12,42,1.05f,1.0f,1.0f,1.0f);
+        text("SURF "+std::to_string(r.traversalSurfaceCount)+"  EDGE "+std::to_string(r.traversalEdgeCount)+" (REQ "+std::to_string(r.requiredEdgeCount)+")  COLLIDER "+std::to_string(r.colliderCount)+"  PROP "+std::to_string(r.presentationPropCount),panelX+12,61,1.0f,0.72f,0.94f,1.0f);
+        text("ENEMY "+std::to_string(r.enemyCount)+" / "+std::to_string(r.enemyBudget)+"  TRANSPARENT "+std::to_string(r.transparentPrimitiveCount)+"  VISIBLE~ "+std::to_string(r.visiblePrimitiveEstimate)+"  DRAW "+(r.drawCallBucket==0?"LOW":(r.drawCallBucket==1?"MED":"HIGH")),panelX+12,79,1.0f,0.82f,1.0f,0.88f);
+        text(std::string("[ ] PREMISE  R SEED  E ENEMIES ")+(state.roomInspectorEnemies?"ON":"OFF"),panelX+12,99,1.0f,1.0f,1.0f,1.0f);
+        text("5 KEEP  6 TUNE  7 REDESIGN  8 REMOVE",panelX+12,118,1.0f,0.72f,1.0f,0.74f);
     }
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));text(tax,12,320,1.05f,1.0f,0.72f,0.62f);}

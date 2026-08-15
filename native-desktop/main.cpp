@@ -882,6 +882,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         if(key==GLFW_KEY_RIGHT_BRACKET){host->game.debugStepRoomInspector(1);return;}
         if(key==GLFW_KEY_R){host->game.debugStepRoomInspector(0,true);return;}
         if(key==GLFW_KEY_E){host->game.debugToggleRoomInspectorEnemies();return;}
+        if(key>=GLFW_KEY_5&&key<=GLFW_KEY_8){const RoomReviewRating rating=key==GLFW_KEY_5?RoomReviewRating::Keep:(key==GLFW_KEY_6?RoomReviewRating::Tune:(key==GLFW_KEY_7?RoomReviewRating::Redesign:RoomReviewRating::Remove));std::printf("%s\n",host->game.debugRoomReviewLine(rating).c_str());std::fflush(stdout);return;}
     }
 
     if(action==GLFW_PRESS&&host->game.state().started&&!host->game.state().uiPaused&&key>=GLFW_KEY_1&&key<=GLFW_KEY_4){
@@ -1205,6 +1206,7 @@ void printUsage() {
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
+    std::printf("  --room-inspector-smoke  Sweep every inspector premise and three reproducible seeds.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
     std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
     std::printf("  --combat-crowd-stress   Measure repeated six-enemy overlapping combat waves.\n");
@@ -1447,6 +1449,30 @@ int runControllerLiveTest(){
     std::printf("CONTROLLER_LIVE_DONE\n");
     return 0;
 }
+
+int runRoomInspectorSmoke(Game& game){
+    game.debugStartRoomInspector();
+    bool ok=true;
+    for(int premiseIndex=0;premiseIndex<static_cast<int>(early_browser_visuals::RoomPremise::Count);++premiseIndex){
+        for(int sample=0;sample<3;++sample){
+            const Vec3 start=game.state().player.pos;
+            game.setTouchControls(0,0.35f,0,0,false,false,false,false,false,false);
+            for(int frame=0;frame<12;++frame)game.update(1.0f/60.0f);
+            const auto& state=game.state();const auto& r=state.roomInspectorReport;
+            const bool playable=state.player.alive&&std::isfinite(state.player.pos.x)&&std::isfinite(state.player.pos.y)&&std::isfinite(state.player.pos.z)&&length(state.player.pos-start)>0.0001f;
+            ok&=r.seedSelectionValid&&r.requiredRouteValid&&playable&&r.premise==static_cast<early_browser_visuals::RoomPremise>(premiseIndex);
+            std::printf("ROOM_INSPECT premise=%s seed=%d room=%d route=%s band=%s surfaces=%d edges=%d colliders=%d props=%d enemies=%d/%d playable=%s\n",early_browser_visuals::premiseName(r.premise),r.seed,r.roomIndex,r.requiredRouteValid?"VALID":"INVALID",gameplay::traversalDifficultyName(r.requiredBand),r.traversalSurfaceCount,r.traversalEdgeCount,r.colliderCount,r.presentationPropCount,r.enemyCount,r.enemyBudget,playable?"YES":"NO");
+            const RoomReviewRating rating=sample==0?RoomReviewRating::Keep:(sample==1?RoomReviewRating::Tune:RoomReviewRating::Redesign);
+            std::printf("%s\n",game.debugRoomReviewLine(rating).c_str());
+            if(sample==0){game.debugToggleRoomInspectorEnemies();ok&=game.state().roomInspectorReport.enemyCount>0;game.debugToggleRoomInspectorEnemies();}
+            if(sample<2)game.debugStepRoomInspector(0,true);
+        }
+        if(premiseIndex+1<static_cast<int>(early_browser_visuals::RoomPremise::Count))game.debugStepRoomInspector(1,false);
+    }
+    Game normal;normal.reset();ok&=!normal.state().roomInspector&&!normal.state().traversalLab&&normal.state().started&&normal.state().roomIndex==1;
+    std::printf("ROOM_INSPECTOR_SMOKE_%s normal_solo=%s\n",ok?"OK":"FAILED",(!normal.state().roomInspector&&normal.state().roomIndex==1)?"CLEAN":"LEAKED");
+    return ok?0:1;
+}
 }
 
 int main(int argc, char** argv) {
@@ -1479,7 +1505,8 @@ int main(int argc, char** argv) {
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
-    const bool roomInspector=hasArg(argc,argv,"--room-inspector");
+    const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
+    const bool roomInspector=hasArg(argc,argv,"--room-inspector")||roomInspectorSmoke;
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
@@ -1588,7 +1615,7 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
-    if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E\n");}
+    if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     host.savedSettings=host.game.state().localSettings;
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;
@@ -1662,6 +1689,7 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(captureDemo||captureHideHud)host.renderer.setHudVisible(false);
+    if(roomInspectorSmoke){const int result=runRoomInspectorSmoke(host.game);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}

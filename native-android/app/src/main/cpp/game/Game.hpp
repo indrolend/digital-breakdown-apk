@@ -2,11 +2,13 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 #include "HumanVisual.hpp"
 #include "VisualIdentity.hpp"
 #include "Math.hpp"
 #include "PhoneDisplay.hpp"
+#include "EarlyBrowserVisuals.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -512,6 +514,31 @@ struct PlayerDebugState {
     int colliderCount = 0;
 };
 
+enum class RoomReviewRating : unsigned char { Keep, Tune, Redesign, Remove };
+
+struct RoomInspectorReport {
+    early_browser_visuals::RoomPremise premise=early_browser_visuals::RoomPremise::FieldOpen;
+    early_browser_visuals::RoomSetting setting=early_browser_visuals::RoomSetting::Field;
+    early_browser_visuals::RoomForm form=early_browser_visuals::RoomForm::Open;
+    early_browser_visuals::RoomScale scale=early_browser_visuals::RoomScale::Standard;
+    early_browser_visuals::RoomCondition condition=early_browser_visuals::RoomCondition::Normal;
+    gameplay::TraversalDifficulty requiredBand=gameplay::TraversalDifficulty::Unknown;
+    int seed=0;
+    int roomIndex=0;
+    int traversalSurfaceCount=0;
+    int traversalEdgeCount=0;
+    int requiredEdgeCount=0;
+    int colliderCount=0;
+    int presentationPropCount=0;
+    int enemyBudget=0;
+    int enemyCount=0;
+    int transparentPrimitiveCount=0;
+    int visiblePrimitiveEstimate=0;
+    int drawCallBucket=0;
+    bool requiredRouteValid=false;
+    bool seedSelectionValid=false;
+};
+
 struct HudState {
     float batteryFill = 1.0f;
     int storedSouls = 0;
@@ -620,7 +647,8 @@ struct GameState {
     bool traversalLab = false;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
-    int roomInspectorPreset = 0;
+    early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
+    RoomInspectorReport roomInspectorReport;
     CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
@@ -647,6 +675,7 @@ public:
     void debugStartRoomInspector();
     void debugStepRoomInspector(int delta,bool newSeed=false);
     void debugToggleRoomInspectorEnemies();
+    std::string debugRoomReviewLine(RoomReviewRating rating) const;
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);
@@ -734,6 +763,7 @@ private:
     void updateRoomPopulation(float dt);
     void updateDoorTransition();
     void updateFlowerPowerups(float dt);
+    void refreshRoomInspectorReport(bool seedSelectionValid=true);
     void updateParticles(float dt);
     void spawnParticleBurst(const Vec3& position);
     void spawnFlameBurst(const Vec3& position, float strength);

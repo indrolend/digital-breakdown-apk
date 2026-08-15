@@ -12,6 +12,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <sstream>
 
 namespace {
 constexpr float ROOM_WIDTH = 30.0f;
@@ -443,25 +444,56 @@ void Game::debugStartTraversalLab() {
 }
 
 void Game::debugStartRoomInspector(){
-    reset();state_.roomInspector=true;state_.roomInspectorPreset=0;state_.roomInspectorEnemies=false;
+    reset();state_.roomInspector=true;state_.roomInspectorPremise=early_browser_visuals::RoomPremise::FieldOpen;state_.roomInspectorEnemies=false;
     debugStepRoomInspector(0,false);
 }
 
 void Game::debugStepRoomInspector(int delta,bool newSeed){
     if(!state_.roomInspector)return;
-    constexpr int presetCount=8,inspectionRoom=12;
-    state_.roomInspectorPreset=(state_.roomInspectorPreset+delta%presetCount+presetCount)%presetCount;
-    int candidate=newSeed?state_.roomSeed+1:1;
-    for(int attempt=0;attempt<250000;++attempt,++candidate){if(early_browser_visuals::matchesInspectorPreset(early_browser_visuals::roomPlan(candidate,inspectionRoom),state_.roomInspectorPreset))break;}
+    constexpr int premiseCount=static_cast<int>(early_browser_visuals::RoomPremise::Count),inspectionRoom=12,maxSearch=4096;
+    const int current=static_cast<int>(state_.roomInspectorPremise);
+    state_.roomInspectorPremise=static_cast<early_browser_visuals::RoomPremise>((current+delta%premiseCount+premiseCount)%premiseCount);
+    int candidate=delta!=0?early_browser_visuals::representativeInspectorSeed(state_.roomInspectorPremise):state_.roomSeed;
+    bool found=early_browser_visuals::matchesInspectorPremise(early_browser_visuals::roomPlan(candidate,inspectionRoom),state_.roomInspectorPremise);
+    if(newSeed){candidate=state_.roomSeed+1;found=false;for(int attempt=0;attempt<maxSearch;++attempt,++candidate)if(early_browser_visuals::matchesInspectorPremise(early_browser_visuals::roomPlan(candidate,inspectionRoom),state_.roomInspectorPremise)){found=true;break;}}
+    if(!found){candidate=early_browser_visuals::representativeInspectorSeed(state_.roomInspectorPremise);found=early_browser_visuals::matchesInspectorPremise(early_browser_visuals::roomPlan(candidate,inspectionRoom),state_.roomInspectorPremise);}
     state_.roomIndex=inspectionRoom;state_.roomSeed=candidate;resetRoom();
     state_.roomInspector=true;state_.started=true;state_.dead=false;state_.uiPaused=false;state_.cinematic=CinematicState{};state_.upgradeMenu.active=false;
     state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;for(auto& capture:state_.captures)capture=CapturePointState{};
     if(!state_.roomInspectorEnemies)for(auto& target:state_.targets)target=TargetState{};
-    state_.player.battery=100.0f;updatePhoneDisplay(0.0f);updatePhoneTransform();updateCamera(0.0f);
+    state_.player.battery=100.0f;updatePhoneDisplay(0.0f);updatePhoneTransform();updateCamera(0.0f);refreshRoomInspectorReport(found);
 }
 
 void Game::debugToggleRoomInspectorEnemies(){
     if(!state_.roomInspector)return;state_.roomInspectorEnemies=!state_.roomInspectorEnemies;debugStepRoomInspector(0,false);
+}
+
+void Game::refreshRoomInspectorReport(bool seedSelectionValid){
+    if(!state_.roomInspector)return;
+    const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
+    report.requiredRouteValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
+    report.traversalSurfaceCount=plan.traversal.surfaceCount;report.traversalEdgeCount=plan.traversal.edgeCount;
+    bool uncalibrated=false;gameplay::TraversalDifficulty band=gameplay::TraversalDifficulty::Automatic;
+    for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
+    report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
+    report.colliderCount=state_.debug.colliderCount;
+    report.presentationPropCount=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
+    report.enemyBudget=activeHumanTarget();
+    for(const auto& target:state_.targets){if(gameplay::isActiveHuman(target))++report.enemyCount;if(target.alive&&target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f)++report.transparentPrimitiveCount;}
+    report.visiblePrimitiveEstimate=report.colliderCount+report.presentationPropCount+report.enemyCount+report.transparentPrimitiveCount+(plan.grass?1:0)+2;
+    report.drawCallBucket=report.visiblePrimitiveEstimate<12?0:(report.visiblePrimitiveEstimate<24?1:2);
+    state_.roomInspectorReport=report;
+}
+
+std::string Game::debugRoomReviewLine(RoomReviewRating rating) const{
+    if(!state_.roomInspector)return {};
+    const char* ratingName=rating==RoomReviewRating::Keep?"KEEP":(rating==RoomReviewRating::Tune?"TUNE":(rating==RoomReviewRating::Redesign?"REDESIGN":"REMOVE"));
+    const auto& r=state_.roomInspectorReport;std::ostringstream out;
+    out<<"ROOM_REVIEW premise="<<early_browser_visuals::premiseName(r.premise)<<" seed="<<r.seed<<" room="<<r.roomIndex<<" rating="<<ratingName
+       <<" setting="<<early_browser_visuals::settingName(r.setting)<<" form="<<early_browser_visuals::formName(r.form)<<" scale="<<early_browser_visuals::scaleName(r.scale)
+       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
+    return out.str();
 }
 
 void Game::setPersistentProgression(std::int64_t tokens,int shotLevel,int lungeLevel,int attackLevel){
@@ -1283,6 +1315,7 @@ void Game::update(float dt) {
         ? clampf(state_.energy.supplementalValue/state_.energy.supplementalMax,0.0f,1.0f) : 0.0f;
     state_.hud.flowerStacks=state_.energy.flowerStacks;
     updatePhoneDisplay(dt);
+    refreshRoomInspectorReport(state_.roomInspectorReport.seedSelectionValid);
 }
 
 void Game::configureNetworkHost(){state_.multiplayer=MultiplayerRuntimeState{};state_.multiplayer.enabled=true;state_.multiplayer.authoritativeHost=true;state_.multiplayer.connected=true;state_.multiplayer.localPlayerId=0;std::snprintf(state_.multiplayer.status.data(),state_.multiplayer.status.size(),"HOSTING");}

@@ -159,6 +159,14 @@ int main() {
   world = captureWorld(game.state(), players, 123);
   world.world=inputWorld;
   auto snapshotBytes = encodeSnapshot(0, world, 8);
+  worldState.roomInspector=true;
+  worldState.roomInspectorEnemies=true;
+  worldState.roomInspectorPremise=early_browser_visuals::RoomPremise::CitySkyline;
+  worldState.roomInspectorReport.seed=999999;
+  worldState.roomInspectorReport.colliderCount=15;
+  auto debugOnlyWorld=captureWorld(game.state(),players,123);debugOnlyWorld.world=inputWorld;
+  const auto debugOnlyBytes=encodeSnapshot(0,debugOnlyWorld,8);
+  ok &= debugOnlyBytes==snapshotBytes;
   WorldSnapshot roundtrip;
   ok &= decodeSnapshot(snapshotBytes.data(), snapshotBytes.size(), h,
                        roundtrip) &&
