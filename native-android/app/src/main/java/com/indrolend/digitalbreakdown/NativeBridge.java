@@ -37,6 +37,7 @@ public final class NativeBridge {
     private static float tvRoomMix;
     private static long tvRoomPitchUpdateNs;
     private static float rewardDuck;
+    private static float flowerThemeMix;
     private static float localMusicLevel = 0.70f;
     private static float localSfxLevel = 0.55f;
     private static final AudioTrack[] menuVoices = new AudioTrack[2];
@@ -107,17 +108,6 @@ public final class NativeBridge {
     public static synchronized void playAudioCue(int cue, float volume) {
         if (audioContext == null) return;
         if(cue==20)rewardDuck=Math.max(rewardDuck,0.18f);else if(cue==21)rewardDuck=Math.max(rewardDuck,0.09f);
-        if (cue == 22) {
-            if (flowerThemePlayer != null) { flowerThemePlayer.stop(); flowerThemePlayer.release(); }
-            flowerThemePlayer = MediaPlayer.create(audioContext, R.raw.flowertheme);
-            if (flowerThemePlayer != null) {
-                final MediaPlayer startedPlayer = flowerThemePlayer;
-                flowerThemePlayer.setVolume(volume * localMusicLevel, volume * localMusicLevel);
-                flowerThemePlayer.setOnCompletionListener(player -> { synchronized (NativeBridge.class) { player.release(); if (flowerThemePlayer == startedPlayer) flowerThemePlayer = null; } });
-                flowerThemePlayer.start();
-            }
-            return;
-        }
         volume *= localSfxLevel;
         if (cue == 12) {
             if (slurpPlayer != null) { slurpPlayer.stop(); slurpPlayer.release(); slurpPlayer = null; }
@@ -146,8 +136,13 @@ public final class NativeBridge {
             R.raw.reward_woah,R.raw.reward_nice
         }; }
 
-    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, float headshotCrush, float phoneProximity) {
+    public static synchronized void syncMusic(boolean started, boolean dead, boolean menuFiltered, boolean inTvRoom, boolean flowerActive, float headshotCrush, float phoneProximity) {
         if (audioContext == null) return;
+        float flowerTarget=started&&!dead&&flowerActive?1.0f:0.0f;
+        if(flowerTarget>0.0f&&flowerThemePlayer==null){flowerThemePlayer=MediaPlayer.create(audioContext,R.raw.flowertheme);if(flowerThemePlayer!=null){flowerThemePlayer.setLooping(true);flowerThemePlayer.setVolume(0.0f,0.0f);flowerThemePlayer.start();}}
+        flowerThemeMix+=(flowerTarget-flowerThemeMix)*0.025f;
+        if(flowerThemePlayer!=null){float flowerVolume=0.72f*localMusicLevel*flowerThemeMix;flowerThemePlayer.setVolume(flowerVolume,flowerVolume);if(flowerTarget==0.0f&&flowerThemeMix<0.001f){flowerThemePlayer.stop();flowerThemePlayer.release();flowerThemePlayer=null;}}
+        rewardDuck=Math.max(rewardDuck,flowerThemeMix*0.82f);
         if (!started && !dead) {
             if (!menuMusicStarted) { menuMusicStarted = true; menuMusicPlayer = createNamedPlayer("menu_music", true, 0.0f); }
             if (menuMusicPlayer != null) {

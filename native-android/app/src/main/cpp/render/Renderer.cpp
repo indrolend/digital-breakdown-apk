@@ -697,12 +697,11 @@ void Renderer::draw(const GameState& state) {
     glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 
     const float flowerColor[4]={Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,1.0f};
-    const float flowerCore[4]={Pass7Visual::FlowerCore.r,Pass7Visual::FlowerCore.g,Pass7Visual::FlowerCore.b,1.0f};
     const float flowerTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}
+        constexpr char flowerGlyphs[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";const unsigned int phase=static_cast<unsigned int>(state.time*3.0f),positionHash=static_cast<unsigned int>(std::abs(flower.pos.x)*97.0f+std::abs(flower.pos.z)*193.0f)+static_cast<unsigned int>(state.roomIndex)*17u;const unsigned int symbolHash=(phase+positionHash)*1664525u+1013904223u;const auto rows=bitmapGlyph(flowerGlyphs[(symbolHash>>16)%36u]);const Vec3 toCamera=normalized(state.camera.pos-center),glyphRight=normalized(cross({0,1,0},toCamera)),glyphUp=normalized(cross(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);const float glyphColor[4]={0.94f,1.0f,0.86f,1.0f};for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(viewProj,pixel,{0.058f,0.058f,0.028f},glyphYaw,glyphColor);}glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);const float shellColor[4]={flowerColor[0],flowerColor[1],flowerColor[2],0.36f};drawBox(viewProj,center,{0.72f,0.72f,0.72f},flower.rotationY,shellColor);glDepthMask(GL_TRUE);glDisable(GL_BLEND);
         }
     }
 

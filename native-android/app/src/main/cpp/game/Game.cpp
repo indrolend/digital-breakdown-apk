@@ -719,7 +719,6 @@ void Game::updateFlowerPowerups(float dt) {
         const bool vacuumCapture=vacuumOffered&&length(state_.phoneTransform.vacuumPullPoint-flowerWorld)<=FLOWER_VACUUM_CAPTURE_RADIUS;
         if (bodyContact||vacuumCapture) {
             addFlowerPowerupStack(FLOWER_PICKUP_VALUE);
-            emitAudio(AudioCue::FlowerTheme, 0.72f);
             flower = FlowerPowerupState{};
         }
     }

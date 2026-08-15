@@ -1136,13 +1136,9 @@ int main() {
         flower.pos=setup.player.pos+Vec3{0.5f,0.30f,0.0f};
     }
     step(game);
-    const unsigned int flowerPickupSerial=game.state().audio.nextSerial-1u;
-    const AudioEventState& flowerPickupAudio=game.state().audio.events[(flowerPickupSerial-1u)%AUDIO_EVENT_COUNT];
     ok &= expect(!game.state().flowers[0].active && game.state().energy.flowerStacks==1 &&
         near(game.state().energy.supplementalValue,46.0f,0.0001f) && near(game.state().energy.supplementalMax,85.0f,0.0001f),
         "three-dimensional flower pickup activates the first 46-of-85 supplemental stack");
-    ok &= expect(flowerPickupAudio.serial==flowerPickupSerial&&flowerPickupAudio.cue==AudioCue::FlowerTheme,
-        "flower pickup emits its theme exactly through the authoritative pickup transaction");
 
     game.reset();
     {

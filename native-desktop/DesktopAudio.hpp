@@ -21,7 +21,6 @@ private:
     unsigned int nextVoice_=0;
     bool slurpPlaying_=false;
     float sfxLevel_=0.55f;
-    float musicLevel_=0.70f;
     std::unique_ptr<Impl> impl_;
     void play(const AudioEventState& event);
 };

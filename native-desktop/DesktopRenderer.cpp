@@ -1160,12 +1160,15 @@ void DesktopRenderer::draw(const GameState& state) const {
     for(const auto& flower:state.flowers) if(flower.active){
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){
             const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+static_cast<float>(state.topology.currentTileIndex+offset)*ROOM_DEPTH};
-            drawBox(center,{0.20f,0.20f,0.20f},0,flower.rotationY,0,Pass7Visual::FlowerCore.r,Pass7Visual::FlowerCore.g,Pass7Visual::FlowerCore.b);
-            for(int petal=0;petal<5;++petal){
-                const float angle=flower.rotationY+static_cast<float>(petal)*PI*2.0f/5.0f;
-                const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};
-                drawBox(p,{0.30f,0.12f,0.16f},0,-angle,0,Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b);
-            }
+            constexpr char flowerGlyphs[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const unsigned int phase=static_cast<unsigned int>(state.time*3.0f),positionHash=static_cast<unsigned int>(std::abs(flower.pos.x)*97.0f+std::abs(flower.pos.z)*193.0f)+static_cast<unsigned int>(state.roomIndex)*17u;
+            unsigned int symbolHash=(phase+positionHash)*1664525u+1013904223u;
+            const auto rows=bitmapGlyph(flowerGlyphs[(symbolHash>>16)%36u]);
+            const Vec3 toCamera=normalized(state.camera.pos-center);const Vec3 glyphRight=normalized(cross3({0,1,0},toCamera));const Vec3 glyphUp=normalized(cross3(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);
+            for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(pixel,{0.058f,0.058f,0.028f},0,glyphYaw,0,0.94f,1.0f,0.86f);}
+            glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            drawBox(center,{0.72f,0.72f,0.72f},0,flower.rotationY,0,Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,0.36f);
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);
         }
     }
     for (const auto& bullet:state.bullets) if (bullet.alive) {
