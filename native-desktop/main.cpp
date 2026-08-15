@@ -1460,6 +1460,7 @@ int main(int argc, char** argv) {
     }
     const bool captureHuman=argValue(argc,argv,"--capture-human-frame")!=nullptr;
     const bool captureSoul=argValue(argc,argv,"--capture-soul-frame")!=nullptr;
+    const bool captureOcclusion=argValue(argc,argv,"--capture-occlusion-frame")!=nullptr;
     const bool captureStart=argValue(argc,argv,"--capture-start-frame")!=nullptr;
     const bool capturePaused=argValue(argc,argv,"--capture-paused-frame")!=nullptr;
     const bool captureMosh=argValue(argc,argv,"--capture-mosh-frame")!=nullptr;
@@ -1484,7 +1485,7 @@ int main(int argc, char** argv) {
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
-    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame"))))))));
+    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureOcclusion?argValue(argc,argv,"--capture-occlusion-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame")))))))));
     const int windowWidth=std::max(320,std::min(7680,argInt(argc,argv,"--capture-width",1280)));
     const int windowHeight=std::max(180,std::min(4320,argInt(argc,argv,"--capture-height",720)));
     if (hasArg(argc, argv, "--smoke-test")) {
@@ -1595,6 +1596,12 @@ int main(int argc, char** argv) {
     host.lastHapticAudioSerial=host.game.state().audio.nextSerial>0?host.game.state().audio.nextSerial-1:0;
     if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
+    if(captureOcclusion){
+        GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target=TargetState{};
+        auto& cube=fixture.targets[0];cube.alive=true;cube.slurpable=true;cube.soulMorph=1;cube.soulCubeAmount=1;cube.pos=fixture.player.pos+Vec3{0,0.1f,-2.4f};cube.walkTarget=cube.pos;cube.health=1;cube.armor=0;cube.soulState=SoulState::Free;cube.soulVisual=makeSoulVisualState(1,0,0,0,fixture.time,0,true,1,1);
+        auto& human=fixture.targets[1];human.alive=true;human.slurpable=false;human.pos=fixture.player.pos+Vec3{0,0,hasArg(argc,argv,"--occlusion-enemy-front")?-1.35f:-3.55f};human.walkTarget=human.pos;human.attackCooldown=999.0f;
+        fixture.camera.yaw=0;fixture.camera.pitch=0;
+    }
     if(capturePaused)host.game.setUiPaused(true);
     if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;}
     if(captureSpectator){

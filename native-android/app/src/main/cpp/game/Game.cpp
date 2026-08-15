@@ -124,7 +124,12 @@ constexpr float FLOWER_ATTACK_FEED = 2.8f;
 constexpr float FLOWER_SLURP_FEED = 9.0f;
 constexpr float FLOWER_PICKUP_VALUE = 46.0f;
 constexpr float FLOWER_DROP_CHANCE = 0.26f;
-constexpr float FLOWER_PICKUP_RADIUS = 1.05f;
+constexpr float FLOWER_PICKUP_HORIZONTAL_RADIUS = 0.82f;
+constexpr float FLOWER_PICKUP_VERTICAL_RADIUS = 0.62f;
+constexpr float FLOWER_VACUUM_ACCELERATION = 4.2f;
+constexpr float FLOWER_VACUUM_MAX_SPEED = 3.4f;
+constexpr float FLOWER_VACUUM_DIRECTION_RESPONSE = 2.4f;
+constexpr float FLOWER_VACUUM_CAPTURE_RADIUS = 0.52f;
 
 bool localPhoneMenuPresentation(const GameState& state) {
     return (((!state.started && !state.dead) || state.cinematic.introActive || state.uiPaused) &&
@@ -139,6 +144,15 @@ constexpr float POWERUP_STOCK_BASE_MAX = 85.0f;
 constexpr float POWERUP_STOCK_PER_STACK = 32.0f;
 constexpr float TARGET_HITFLASH_DECAY_PER_FRAME = 0.045f;
 constexpr float VACUUM_DAMAGE = 0.28f;
+
+bool withinVacuumOffer(const CameraState& camera,const Vec3& point,float range,float coneRadius){
+    const Vec3 toBody=point-camera.pos;
+    const float forwardDistance=dot3(toBody,camera.forward);
+    if(forwardDistance<=0.0f||forwardDistance>range)return false;
+    const Vec3 radial=toBody-camera.forward*forwardDistance;
+    const float allowedRadius=coneRadius*(0.24f+forwardDistance/range);
+    return lengthSq(radial)<=allowedRadius*allowedRadius;
+}
 
 constexpr float MELEE_COMBO_WINDOW = 0.720f;
 constexpr float AIR_MELEE_LATERAL_RETENTION = 0.52f;
@@ -641,12 +655,37 @@ void Game::updateFlowerPowerups(float dt) {
     for (auto& flower : state_.flowers) {
         if (!flower.active) continue;
         flower.age += dt;
-        flower.pos.y = flower.baseY + std::sin(flower.age * 3.2f) * FLOWER_BOB_HEIGHT;
         flower.rotationY += dt * 1.35f;
+        Vec3 flowerWorld=flower.pos;
+        flowerWorld.z=wrapZ(flower.pos.z)+getRoomTileOriginZ(getRoomTileIndex(state_.phoneTransform.vacuumPullPoint.z));
+        const bool vacuumOffered=state_.vacuum.active&&state_.vacuum.power>0.32f&&withinVacuumOffer(state_.camera,flowerWorld,SOUL_ATTRACTION_RANGE,SOUL_ATTRACTION_CONE_RADIUS);
+        if(vacuumOffered){
+            flower.vacuumAttracted=true;
+            Vec3 delta=state_.phoneTransform.vacuumPullPoint-flowerWorld;
+            const float distance=length(delta);
+            if(distance>0.001f){
+                const Vec3 desiredVelocity=normalized(delta)*FLOWER_VACUUM_MAX_SPEED*state_.vacuum.power;
+                const float directionBlend=1.0f-std::exp(-FLOWER_VACUUM_DIRECTION_RESPONSE*dt);
+                flower.vacuumVelocity=flower.vacuumVelocity+(desiredVelocity-flower.vacuumVelocity)*directionBlend;
+                const float speed=length(flower.vacuumVelocity);
+                if(speed<FLOWER_VACUUM_MAX_SPEED)flower.vacuumVelocity=flower.vacuumVelocity+normalized(delta)*(FLOWER_VACUUM_ACCELERATION*state_.vacuum.power*dt);
+                flowerWorld=flowerWorld+flower.vacuumVelocity*dt;
+                flower.pos={flowerWorld.x,flowerWorld.y,wrapZ(flowerWorld.z)};
+                flower.baseY=flower.pos.y;
+            }
+        } else {
+            flower.vacuumAttracted=false;
+            flower.vacuumVelocity=flower.vacuumVelocity*std::exp(-1.8f*dt);
+            flower.pos=flower.pos+flower.vacuumVelocity*dt;
+            flower.baseY=std::max(FLOWER_POWERUP_GROUND_Y,flower.baseY);
+            flower.pos.y=flower.baseY+std::sin(flower.age*3.2f)*FLOWER_BOB_HEIGHT;
+        }
         const float dx = flower.pos.x - state_.player.pos.x;
         const float dz = flower.pos.z - playerLocalZ;
         const float dy = flower.pos.y - state_.player.pos.y;
-        if (dx*dx + dy*dy + dz*dz <= FLOWER_PICKUP_RADIUS*FLOWER_PICKUP_RADIUS) {
+        const bool bodyContact=(dx*dx+dz*dz<=FLOWER_PICKUP_HORIZONTAL_RADIUS*FLOWER_PICKUP_HORIZONTAL_RADIUS&&std::abs(dy)<=FLOWER_PICKUP_VERTICAL_RADIUS);
+        const bool vacuumCapture=vacuumOffered&&length(state_.phoneTransform.vacuumPullPoint-flowerWorld)<=FLOWER_VACUUM_CAPTURE_RADIUS;
+        if (bodyContact||vacuumCapture) {
             addFlowerPowerupStack(FLOWER_PICKUP_VALUE);
             flower = FlowerPowerupState{};
         }
@@ -1097,8 +1136,12 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
-    state_.time += dt; state_.frame += 1;
-    state_.environmentVisual.latestShotAge=std::min(9999.0f,state_.environmentVisual.latestShotAge+dt);
+    const bool soloSimulationPaused=state_.started&&state_.uiPaused&&!state_.multiplayer.enabled;
+    if(!soloSimulationPaused){
+        state_.time += dt;
+        state_.environmentVisual.latestShotAge=std::min(9999.0f,state_.environmentVisual.latestShotAge+dt);
+    }
+    state_.frame += 1;
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
     state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
@@ -1167,7 +1210,6 @@ void Game::update(float dt) {
         state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,false);
         updatePhoneTransform();
         updateCamera(dt);
-        updateSoulLattices();
         updateCrosshair(dt);
         return;
     }
@@ -1908,32 +1950,27 @@ void Game::updatePlayer(float dt) {
 
 void Game::updatePhoneTransform() {
     PhoneTransformState& transform = state_.phoneTransform;
-    if (localPhoneMenuPresentation(state_)) {
-        transform.orientation = quatAxisAngle({0,1,0}, state_.player.yaw);
-        transform.position = state_.player.pos;
-        transform.screenRight = normalized(rotate(transform.orientation, {1,0,0}));
-        transform.screenUp = normalized(rotate(transform.orientation, {0,1,0}));
-        transform.screenNormal = normalized(rotate(transform.orientation, {0,0,1}));
-        transform.screenCenter = transform.position + transform.screenNormal * PHONE_SCREEN_Z_OFFSET;
-        transform.vacuumPullPoint = transform.screenCenter;
-        return;
-    }
     const Vec3 forward{-std::sin(state_.player.yaw), 0.0f, -std::cos(state_.player.yaw)};
     const Vec3 right{std::cos(state_.player.yaw), 0.0f, -std::sin(state_.player.yaw)};
-    transform.orientation = state_.player.downed?quatNormalized(quatAxisAngle({0,1,0},state_.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatNormalized(
+    const Quat gameplayOrientation = state_.player.downed?quatNormalized(quatAxisAngle({0,1,0},state_.player.yaw)*quatAxisAngle({1,0,0},DB_PI*0.5f)):quatNormalized(
         state_.phonePose.orientation *
         quatAxisAngle({1,0,0}, state_.phoneVisual.pitch) *
         quatAxisAngle({0,0,1}, state_.phoneVisual.roll));
-    transform.position = state_.player.pos + Vec3{0, state_.phonePose.lift + state_.phoneVisual.actionLift, 0}
+    const Vec3 gameplayPosition = state_.player.pos + Vec3{0, state_.phonePose.lift + state_.phoneVisual.actionLift, 0}
         + forward * (state_.phonePose.forward - state_.phoneVisual.actionForward)
         + right * state_.phonePose.side;
+    const Quat menuOrientation=quatAxisAngle({0,1,0},state_.player.yaw);
+    const float menuBlend=clampf(state_.phoneDisplay.presentationBlend,0.0f,1.0f);
+    transform.orientation=quatSlerp(gameplayOrientation,menuOrientation,menuBlend);
+    transform.position=gameplayPosition+(state_.player.pos-gameplayPosition)*menuBlend;
     transform.screenRight = normalized(rotate(transform.orientation, {1,0,0}));
     transform.screenUp = normalized(rotate(transform.orientation, {0,1,0}));
     transform.screenNormal = normalized(rotate(transform.orientation, {0,0,1}));
     transform.screenCenter = transform.position + transform.screenNormal * (PHONE_SCREEN_Z_OFFSET + state_.phoneVisual.screenOffset);
-    transform.vacuumPullPoint = state_.camera.firstPerson
+    const Vec3 gameplayPullPoint = state_.camera.firstPerson
         ? state_.camera.pos - state_.camera.forward * 0.85f
         : transform.screenCenter;
+    transform.vacuumPullPoint=gameplayPullPoint+(transform.screenCenter-gameplayPullPoint)*menuBlend;
 }
 
 void Game::updatePhoneDisplay(float dt) {
@@ -1946,6 +1983,8 @@ void Game::updatePhoneDisplay(float dt) {
     } else {
         display.transitionProgress = finiteClamped(display.transitionProgress + dt * 5.5f, 0.0f, 1.0f);
     }
+    const float presentationTarget=localPhoneMenuPresentation(state_)?1.0f:0.0f;
+    display.presentationBlend+=(presentationTarget-display.presentationBlend)*(1.0f-std::exp(-12.0f*dt));
 
     const float decay = std::exp(-dt * 5.5f);
     display.damagePulse *= decay;
@@ -3108,14 +3147,7 @@ void Game::updateVacuum(float dt) {
         return d.x*d.x + d.z*d.z <= SOUL_CAPTURE_CYLINDER_RADIUS*SOUL_CAPTURE_CYLINDER_RADIUS &&
             std::abs(d.y) <= SOUL_CAPTURE_CYLINDER_HEIGHT * 0.5f;
     };
-    auto inOffer = [&](const Vec3& p) {
-        const Vec3 toSoul = p - state_.camera.pos;
-        const float forwardDistance = dot3(toSoul, state_.camera.forward);
-        if (forwardDistance <= 0.0f || forwardDistance > SOUL_ATTRACTION_RANGE) return false;
-        const Vec3 radial = toSoul - state_.camera.forward * forwardDistance;
-        const float coneRadius = SOUL_ATTRACTION_CONE_RADIUS * (0.24f + forwardDistance / SOUL_ATTRACTION_RANGE);
-        return lengthSq(radial) <= coneRadius * coneRadius;
-    };
+    auto inOffer = [&](const Vec3& p) {return withinVacuumOffer(state_.camera,p,SOUL_ATTRACTION_RANGE,SOUL_ATTRACTION_CONE_RADIUS);};
 
     int offeredFreeSoul = -1;
     float offeredScore = 1e9f;

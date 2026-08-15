@@ -173,9 +173,11 @@ int main() {
     ok &= expect(game.state().cinematic.textInteraction<0.01f,
         "floating text interaction expansion settles smoothly instead of remaining stretched");
     {GameState& pauseFixture=const_cast<GameState&>(game.state());pauseFixture.camera.firstPerson=true;}
-    game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
+    game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;const float pausedTime=game.state().time;const float pausedShotAge=game.state().environmentVisual.latestShotAge;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
+    ok &= expect(near(game.state().time,pausedTime,0.0001f)&&near(game.state().environmentVisual.latestShotAge,pausedShotAge,0.0001f),
+        "solo pause freezes the shared simulation and environment animation clocks");
     ok &= expect(game.state().camera.firstPerson&&game.state().phoneVisual.visible&&length(game.state().camera.pos-game.state().phoneTransform.position)<0.85f,
         "first-person pause preserves camera preference while framing a readable phone menu");
     Game onlineMenuGame;onlineMenuGame.reset();onlineMenuGame.configureNetworkHost();
@@ -187,6 +189,18 @@ int main() {
     step(game);
     ok &= expect(game.state().camera.firstPerson,
         "resuming from the phone menu restores first-person gameplay without a camera-mode toggle");
+    bool repeatedMenuTransitionsFinite=true;
+    for(int cycle=0;cycle<3;++cycle){
+        const Vec3 beforeEnter=game.state().phoneTransform.position;
+        game.setUiPaused(true);step(game);
+        repeatedMenuTransitionsFinite&=length(game.state().phoneTransform.position-beforeEnter)<0.65f;
+        step(game,20);const Vec3 beforeExit=game.state().phoneTransform.position;
+        game.setUiPaused(false);step(game);
+        repeatedMenuTransitionsFinite&=length(game.state().phoneTransform.position-beforeExit)<0.65f;
+        step(game,30);
+    }
+    ok &= expect(repeatedMenuTransitionsFinite&&game.state().phoneDisplay.presentationBlend<0.03f,
+        "repeated pause transitions continue from the rendered phone pose and settle on one canonical gameplay presentation");
     game.reset();
 
     game.setTouchControls(0, 1, 0, 0, false, false, false, false, false, false);
@@ -1137,6 +1151,23 @@ int main() {
         near(game.state().flowers[0].pos.y,0.50f+std::sin(1.6f)*0.16f,0.0001f) &&
         near(game.state().flowers[0].rotationY,0.25f+0.5f*1.35f,0.0001f),
         "flower bob and rotation reproduce the browser 60 FPS motion equations");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        FlowerPowerupState& flower=setup.flowers[0];flower.active=true;flower.baseY=setup.phoneTransform.vacuumPullPoint.y;
+        const Vec3 offered=setup.phoneTransform.vacuumPullPoint+setup.camera.forward*5.0f;
+        flower.pos=offered;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,12);
+    const float heavyFlowerSpeed=length(game.state().flowers[0].vacuumVelocity);
+    ok &= expect(game.state().flowers[0].active&&game.state().flowers[0].vacuumAttracted&&heavyFlowerSpeed>0.05f&&heavyFlowerSpeed<=3.6f,
+        "flower enters the shared vacuum offer cone with a bounded heavy-body response");
+    step(game,180);
+    ok &= expect(!game.state().flowers[0].active&&game.state().energy.flowerStacks==1,
+        "continued vacuum attraction captures the heavy flower without changing its powerup semantics");
 
     std::cout << "numeric forward0=(" << forward0.player.vel.x << "," << forward0.player.vel.z << ")"
               << " forward90=(" << forward90.player.vel.x << "," << forward90.player.vel.z << ")"

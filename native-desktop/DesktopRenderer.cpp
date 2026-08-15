@@ -1123,6 +1123,9 @@ void DesktopRenderer::draw(const GameState& state) const {
         glDisable(GL_BLEND); glEnable(GL_LIGHTING);
     }
 
+    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
+    std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
+    int translucentSoulCount=0;
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for (auto target:state.targets) if (target.alive) {
         Vec3 p=target.pos; p.z=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
@@ -1139,11 +1142,14 @@ void DesktopRenderer::draw(const GameState& state) const {
             const Vec3 soulCenter=p+Vec3{0,0.57f+sv.verticalOffset,0};
             drawSoulFlesh(target,soulCenter);
             const float cube=0.72f*0.78f*target.scale*sv.morphScale;
-            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
-            drawBox(soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,sv.color.r,sv.color.g,sv.color.b,0.68f);
-            glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+            const Vec3 delta=soulCenter-state.camera.pos;
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
     }
+    std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,0.68f);}
+    glDepthMask(GL_TRUE); glDisable(GL_BLEND);
     for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;

@@ -283,9 +283,11 @@ struct PendingShotState {
 
 struct FlowerPowerupState {
     Vec3 pos;
+    Vec3 vacuumVelocity;
     float baseY = 0.38f;
     float age = 0.0f;
     float rotationY = 0.0f;
+    bool vacuumAttracted = false;
     bool active = false;
 };
 

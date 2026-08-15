@@ -485,7 +485,9 @@ void Renderer::drawHud(const GameState& state) {
     if(state.attractMode){
         const float cx=width_*0.5f;
         const std::string title="DATA";
-        const float titleScale=5.2f,titleW=title.size()*6.0f*titleScale;
+        // Bitmap text advances six cells but the final glyph is only five
+        // cells wide.  Center the visible ink, not the unused trailing advance.
+        const float titleScale=5.2f,titleW=(title.size()*6.0f-1.0f)*titleScale;
         const float veil[4]={0,0,0,0.10f};
         quad(0,0,static_cast<float>(width_),static_cast<float>(height_),veil);
         float pen=cx-titleW*0.5f;
@@ -665,6 +667,9 @@ void Renderer::draw(const GameState& state) {
         glDisable(GL_BLEND);
     }
 
+    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
+    std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
+    int translucentSoulCount=0;
     const float targetColor[4] = {Pass7Visual::NormalEnemy.r, Pass7Visual::NormalEnemy.g, Pass7Visual::NormalEnemy.b, 1.0f};
     const float targetTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for (auto target : state.targets) {
@@ -683,12 +688,14 @@ void Renderer::draw(const GameState& state) {
             if (!target.soulVisual.visible) continue;
             const auto& sv=target.soulVisual; const Vec3 soulCenter=target.pos+Vec3{0.0f,0.57f+sv.verticalOffset,0.0f}; const float cube=0.72f*0.78f*target.scale*sv.morphScale;
             if(!cheapVisuals)drawSoulFlesh(viewProj,target,soulCenter);
-            const float soulColor[4] = {sv.color.r, sv.color.g, sv.color.b, 0.68f};
-            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
-            drawBox(viewProj, soulCenter, {cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z}, sv.rotationY, soulColor);
-            glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+            const Vec3 delta=soulCenter-state.camera.pos;
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
     }
+    std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];const float color[4]={soul.color.r,soul.color.g,soul.color.b,0.68f};drawBox(viewProj,soul.center,soul.scale,soul.rotationY,color);}
+    glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 
     const float flowerColor[4]={Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,1.0f};
     const float flowerCore[4]={Pass7Visual::FlowerCore.r,Pass7Visual::FlowerCore.g,Pass7Visual::FlowerCore.b,1.0f};
