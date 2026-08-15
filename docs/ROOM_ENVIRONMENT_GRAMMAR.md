@@ -17,8 +17,8 @@ milestone does not alter their authority or the network protocol.
 
 A room plan now names four separate dimensions:
 
-- `RoomSetting`: Field, City, Sterile
-- `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline
+- `RoomSetting`: Field, City, Sterile, Coastal
+- `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline, Shore
 - `RoomScale`: Compact, Standard, Large, Arena
 - `RoomCondition`: Normal, Recovery
 
@@ -32,6 +32,11 @@ compositions without changing the safe permanent-floor contract. Canyon pulls
 tall masses inward to compress the route and visible sky. Skyline pushes taller
 masses to the perimeter, leaving a broad circulation arena framed by distant
 silhouettes. Both reuse the existing box geometry and collider authority.
+
+Coastal/Shore is a grounded deserted-coast premise: a bounded sandy landmass,
+shallow blue perimeter, sparse rocks, lawn remnants, and two broken structure
+silhouettes. It deliberately retains the safe permanent floor. It does not yet
+claim island water hazards, swimming, falling, or floating-island behavior.
 
 Rooms also expose a bounded deterministic presentation-prop layer built from a
 small reusable primitive kit: stepped-roof house silhouettes, trunk/crown

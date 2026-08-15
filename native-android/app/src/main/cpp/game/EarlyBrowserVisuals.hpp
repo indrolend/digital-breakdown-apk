@@ -10,8 +10,8 @@
 
 namespace early_browser_visuals {
 
-enum class RoomSetting : unsigned char { Field, City, Sterile };
-enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline };
+enum class RoomSetting : unsigned char { Field, City, Sterile, Coastal };
+enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline, Shore };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
 
@@ -31,7 +31,7 @@ struct RoomEnvironmentPlan {
 };
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
-enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar };
+enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin };
 struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
 struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
@@ -60,8 +60,8 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     plan.condition=roomIndex>=4&&unit(key+91u)<recoveryChance?RoomCondition::Recovery:RoomCondition::Normal;
     const float roll=unit(key+17u);
     if(roomIndex==1||plan.recovery()) plan.setting=RoomSetting::Field;
-    else if(roomIndex<8) plan.setting=roll<0.46f?RoomSetting::Field:(roll<0.80f?RoomSetting::City:RoomSetting::Sterile);
-    else plan.setting=roll<0.30f?RoomSetting::Field:(roll<0.68f?RoomSetting::City:RoomSetting::Sterile);
+    else if(roomIndex<8) plan.setting=roll<0.42f?RoomSetting::Field:(roll<0.74f?RoomSetting::City:(roll<0.91f?RoomSetting::Sterile:RoomSetting::Coastal));
+    else plan.setting=roll<0.27f?RoomSetting::Field:(roll<0.60f?RoomSetting::City:(roll<0.82f?RoomSetting::Sterile:RoomSetting::Coastal));
 
     plan.scale=unit(key+143u)<0.18f?RoomScale::Compact:(unit(key+143u)<0.82f?RoomScale::Standard:RoomScale::Large);
     if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.obstacleCount=plan.recovery()?1:3;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
@@ -73,6 +73,7 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
              formRoll<0.62f?RoomForm::Skyline:RoomForm::Corridor);
         plan.obstacleCount=10;plan.grass=false;plan.sidewalks=true;
     }
+    else if(plan.setting==RoomSetting::Coastal){plan.form=RoomForm::Shore;plan.obstacleCount=5;plan.grass=false;plan.sidewalks=false;}
     else {plan.form=RoomForm::Corridor;plan.obstacleCount=6;plan.grass=false;}
 
     plan.traversal.surfaceCount=4;
@@ -119,6 +120,11 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
         const float w=3.4f+unit(key+3u)*1.6f,d=3.0f+unit(key+4u)*1.8f,h=1.2f+unit(key+5u)*2.3f;
         return {{side*(7.0f+unit(key+1u)*2.2f),h*0.5f,-12.0f+row*6.0f+unit(key+2u)*0.7f},{w,h,d}};
     }
+    if(plan.setting==RoomSetting::Coastal){
+        const float side=(index&1)?1.0f:-1.0f;
+        const float w=1.2f+unit(key+3u)*1.5f,d=1.2f+unit(key+4u)*1.6f,h=0.35f+unit(key+5u)*0.75f;
+        return {{side*(5.4f+unit(key+1u)*2.0f),h*0.5f,-13.5f+index*6.7f+(unit(key+2u)-0.5f)*1.0f},{w,h,d}};
+    }
     const int row=index/2;const float side=(index&1)?1.0f:-1.0f;
     const float w=2.4f+unit(key+3u)*0.8f,d=2.4f+unit(key+4u)*0.8f,h=0.75f+row*0.28f;
     return {{side*(4.1f+row*1.35f),h*0.5f,-8.0f+row*8.0f},{w,h,d}};
@@ -127,13 +133,14 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
 inline int environmentPropCount(const RoomEnvironmentPlan& plan){
     if(plan.setting==RoomSetting::Field)return 3;
     if(plan.setting==RoomSetting::City)return plan.form==RoomForm::Courtyard?5:4;
+    if(plan.setting==RoomSetting::Coastal)return 4;
     return 4;
 }
 
 inline bool environmentPropSolid(const EnvironmentPropSpec& prop){return prop.primitive!=EnvironmentPrimitive::LawnFragment;}
 inline ObstacleSpec environmentPropCollider(const EnvironmentPropSpec& prop){
     if(prop.primitive==EnvironmentPrimitive::Tree)return {prop.center+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.28f,prop.size.y*0.70f,prop.size.z*0.28f}};
-    if(prop.primitive==EnvironmentPrimitive::House)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
+    if(prop.primitive==EnvironmentPrimitive::House||prop.primitive==EnvironmentPrimitive::Ruin)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
     return {prop.center+Vec3{0,prop.size.y*0.5f,0},prop.size};
 }
 
@@ -148,6 +155,11 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
         const int row=index/2;const float x=side*(13.05f+unit(key+1u)*0.12f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*0.7f;
         const float scale=0.86f+unit(key+3u)*0.20f;
         return {EnvironmentPrimitive::House,{x,0,z},{1.35f*scale,1.45f*scale,1.55f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
+    }
+    if(plan.setting==RoomSetting::Coastal){
+        const float x=side*(10.7f+unit(key+1u)*0.8f),z=-12.0f+static_cast<float>(index)*8.0f;
+        if(index==1||index==3)return {EnvironmentPrimitive::LawnFragment,{x,0.035f,z},{2.4f+unit(key+3u)*1.2f,0.07f,3.0f+unit(key+4u)*1.6f},unit(key+5u)*0.10f,static_cast<unsigned char>(index)};
+        return {EnvironmentPrimitive::Ruin,{x,0,z},{1.7f+unit(key+3u)*0.5f,1.05f+unit(key+4u)*0.45f,1.6f+unit(key+5u)*0.6f},side*1.5707963f,static_cast<unsigned char>(index)};
     }
     const float x=side*(9.6f+unit(key+1u)*1.8f),z=-12.0f+static_cast<float>(index/2)*16.0f;
     return {EnvironmentPrimitive::MarkerPillar,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
