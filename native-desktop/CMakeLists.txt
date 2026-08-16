@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
-# Set the runtime before dependencies are configured so DigitalBreakdown and
-# statically linked libraries such as GLFW agree on /MT versus /MD.
+project(DigitalBreakdownDesktop LANGUAGES C CXX)
+
+# MSVC is identified by project(), so set the runtime immediately afterward
+# and before any targets or dependencies are configured. This keeps
+# DigitalBreakdown and static libraries such as GLFW on /MT rather than /MD.
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
-
-project(DigitalBreakdownDesktop LANGUAGES C CXX)
 
 enable_testing()
 

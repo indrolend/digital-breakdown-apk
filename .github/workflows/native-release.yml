@@ -10,6 +10,7 @@ on:
       - 'tools/desktop/**'
       - 'tools/release/**'
       - 'tools/dbdev.ps1'
+      - 'distribution/**'
       - '.github/workflows/native-release.yml'
 
 permissions:
@@ -52,24 +53,69 @@ jobs:
             throw 'Desktop smoke test did not produce its success marker.'
           }
 
-      - name: Package Windows build
+          'WINDOWS_BUILD=PASS' | Write-Host
+          'WINDOWS_SMOKE_BUILD_TREE=PASS' | Write-Host
+
+      - name: Stage, inspect, package, and test Windows distribution
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $sha = '${{ github.sha }}'
+          if ($sha -notmatch '^[0-9a-fA-F]{40}$' -or $sha -eq ('0' * 40)) {
+            throw "Release commit provenance is unusable: '$sha'."
+          }
+
+          $runtimeCandidates = @(
+            'build/desktop-release/bin/Release',
+            'build/desktop-release/bin'
+          )
+          $runtime = $runtimeCandidates | Where-Object {
+            Test-Path (Join-Path $_ 'DigitalBreakdown.exe')
+          } | Select-Object -First 1
+          if (-not $runtime) { throw 'The CMake-owned runnable directory was not produced.' }
+
           $stage = 'dist/windows/DigitalBreakdown'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item (Join-Path $runtime '*') $stage -Recurse -Force
 
-          $candidates = @(
-            'build/desktop-release/bin/Release/DigitalBreakdown.exe',
-            'build/desktop-release/bin/DigitalBreakdown.exe'
-          )
-          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
+          @('DigitalBreakdown.exe', 'audio', 'fonts', 'models', 'tv-gifs') | ForEach-Object {
+            if (-not (Test-Path (Join-Path $stage $_))) {
+              throw "Staged runtime is incomplete: missing $_."
+            }
+          }
+          'WINDOWS_STAGE_COMPLETE=PASS' | Write-Host
 
-          Copy-Item $exe "$stage/DigitalBreakdown.exe"
+          $exe = Join-Path $stage 'DigitalBreakdown.exe'
+          $llvmReadObj = Get-Command llvm-readobj -ErrorAction SilentlyContinue
+          if ($llvmReadObj) {
+            $imports = & $llvmReadObj.Source --coff-imports $exe 2>&1
+          } else {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            if (-not (Test-Path $vswhere)) { throw 'No deterministic PE import inspector is available.' }
+            $dumpbin = & $vswhere -latest -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' |
+              Select-Object -First 1
+            if (-not $dumpbin) { throw 'dumpbin.exe was not found in the Visual Studio installation.' }
+            $imports = & $dumpbin /dependents $exe 2>&1
+          }
+          $imports | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "PE import inspection exited with $LASTEXITCODE." }
+          $forbiddenRuntime = '(?i)\b(?:MSVCP\d+D?|VCRUNTIME\d+(?:_\d+)?D?|UCRTBASED)\.dll\b'
+          $matches = [regex]::Matches(($imports -join "`n"), $forbiddenRuntime) |
+            ForEach-Object Value | Sort-Object -Unique
+          if ($matches) {
+            throw "Executable dynamically imports forbidden MSVC runtime DLLs: $($matches -join ', ')."
+          }
+          'WINDOWS_MSVC_PORTABILITY=PASS' | Write-Host
+
           @{
-            commit = '${{ github.sha }}'
-            shortCommit = '${{ github.sha }}'.Substring(0, 7)
+            schemaVersion = 1
+            project = 'DATA'
+            displayName = 'Digital Breakdown'
+            creator = 'indrolend'
+            commit = $sha
+            shortCommit = $sha.Substring(0, 7)
             platform = 'windows-x64'
             configuration = 'Release'
             portable = $true
@@ -78,7 +124,43 @@ jobs:
             builtAt = (Get-Date).ToUniversalTime().ToString('o')
           } | ConvertTo-Json | Set-Content "$stage/build-info.json" -Encoding UTF8
 
-          Compress-Archive -Path "$stage/*" -DestinationPath 'dist/DigitalBreakdown-Windows.zip' -Force
+          $buildInfo = Get-Content -Raw "$stage/build-info.json" | ConvertFrom-Json
+          if ($buildInfo.commit -ne $sha -or $buildInfo.shortCommit.Length -lt 7 -or
+              $buildInfo.portable -ne $true -or $buildInfo.platform -ne 'windows-x64') {
+            throw 'Windows build-info.json failed provenance validation.'
+          }
+          'WINDOWS_PROVENANCE=PASS' | Write-Host
+
+          $zip = 'dist/DigitalBreakdown-Windows.zip'
+          Compress-Archive -Path $stage -DestinationPath $zip -Force
+          if (-not (Test-Path $zip)) { throw 'Windows ZIP was not created.' }
+          'WINDOWS_ZIP_CREATED=PASS' | Write-Host
+
+          $extract = Join-Path $env:RUNNER_TEMP "digital-breakdown-extracted-${{ github.run_id }}"
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $extractedExe = Join-Path $extract 'DigitalBreakdown/DigitalBreakdown.exe'
+          if (-not (Test-Path $extractedExe)) { throw 'Extracted Windows executable is missing.' }
+          'WINDOWS_ZIP_EXTRACT=PASS' | Write-Host
+
+          Push-Location (Split-Path $extractedExe)
+          try {
+            $output = & '.\DigitalBreakdown.exe' --smoke-test 2>&1
+            $smokeExitCode = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          $output | Write-Host
+          if ($smokeExitCode -ne 0) { throw "Extracted smoke test exited with $smokeExitCode." }
+          if (($output -join "`n") -notmatch 'SMOKE_TEST_OK') {
+            throw 'Extracted smoke test did not produce its success marker.'
+          }
+          'WINDOWS_SMOKE_EXTRACTED=PASS' | Write-Host
+
+          $zipSha = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($zipSha -notmatch '^[0-9a-f]{64}$') { throw 'Windows ZIP SHA-256 is invalid.' }
+          $zipSha | Set-Content 'dist/DigitalBreakdown-Windows.zip.sha256' -Encoding ascii
+          'WINDOWS_SHA256=PASS' | Write-Host
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
@@ -232,7 +314,7 @@ jobs:
 
   publish:
     name: Publish unified native bundle
-    needs: [windows, android]
+    needs: [windows, android, macos]
     runs-on: ubuntu-latest
 
     steps:
@@ -248,6 +330,12 @@ jobs:
           name: native-android-package
           path: release
 
+      - name: Download macOS package
+        uses: actions/download-artifact@v4
+        with:
+          name: native-macos-universal
+          path: release
+
       - name: Generate checksums and manifest
         shell: bash
         run: |
@@ -256,20 +344,52 @@ jobs:
 
           WINDOWS_SHA=$(sha256sum DigitalBreakdown-Windows.zip | awk '{print $1}')
           ANDROID_SHA=$(sha256sum DigitalBreakdown-Android.apk | awk '{print $1}')
+          MACOS_SHA=$(sha256sum DigitalBreakdown-macOS-Universal.zip | awk '{print $1}')
           SHORT_SHA="${GITHUB_SHA::7}"
           ANDROID_VARIANT=$(cat android-variant.txt)
           RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
 
-          sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk > checksums.txt
+          sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk DigitalBreakdown-macOS-Universal.zip > checksums.txt
 
           cat > build-manifest.json <<EOF
           {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
+            "project": {
+              "id": "indrolend/data",
+              "name": "DATA",
+              "displayName": "Digital Breakdown",
+              "creator": "indrolend"
+            },
+            "repository": "${GITHUB_REPOSITORY}",
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${SHORT_SHA}",
             "channel": "latest-native",
+            "builtAt": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "workflow": "${GITHUB_WORKFLOW}",
             "runId": "${GITHUB_RUN_ID}",
+            "artifacts": {
+              "windows-x64": {
+                "available": true,
+                "filename": "DigitalBreakdown-Windows.zip",
+                "portable": true,
+                "sha256": "${WINDOWS_SHA}",
+                "url": "${RELEASE_BASE}/DigitalBreakdown-Windows.zip"
+              },
+              "android-armeabi-v7a": {
+                "available": true,
+                "filename": "DigitalBreakdown-Android.apk",
+                "variant": "${ANDROID_VARIANT}",
+                "sha256": "${ANDROID_SHA}",
+                "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk"
+              },
+              "macos-universal": {
+                "available": true,
+                "filename": "DigitalBreakdown-macOS-Universal.zip",
+                "architectures": ["x86_64", "arm64"],
+                "sha256": "${MACOS_SHA}",
+                "url": "${RELEASE_BASE}/DigitalBreakdown-macOS-Universal.zip"
+              }
+            },
             "windows": {
               "available": true,
               "architecture": "x64",
@@ -285,6 +405,12 @@ jobs:
               "applicationId": "com.indrolend.digitalbreakdown.native",
               "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk",
               "sha256": "${ANDROID_SHA}"
+            },
+            "macos": {
+              "available": true,
+              "architectures": ["x86_64", "arm64"],
+              "url": "${RELEASE_BASE}/DigitalBreakdown-macOS-Universal.zip",
+              "sha256": "${MACOS_SHA}"
             }
           }
           EOF
@@ -296,6 +422,7 @@ jobs:
           path: |
             release/DigitalBreakdown-Windows.zip
             release/DigitalBreakdown-Android.apk
+            release/DigitalBreakdown-macOS-Universal.zip
             release/build-manifest.json
             release/checksums.txt
             release/android-build-info.json
@@ -325,12 +452,12 @@ jobs:
             gh release edit latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes "Canonical latest-native Windows, Android, and macOS builds from ${GITHUB_SHA}. See build-manifest.json; filenames alone are not release authority."
           else
             gh release create latest-native \
               --repo "$GITHUB_REPOSITORY" \
               --title "Digital Breakdown Native Latest" \
-              --notes "Automated native Windows and Android builds from ${GITHUB_SHA}."
+              --notes "Canonical latest-native Windows, Android, and macOS builds from ${GITHUB_SHA}. See build-manifest.json; filenames alone are not release authority."
           fi
 
           gh release upload latest-native release/* \

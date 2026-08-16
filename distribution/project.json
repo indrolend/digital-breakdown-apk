@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "indrolend/data",
+  "name": "DATA",
+  "displayName": "Digital Breakdown",
+  "creator": "indrolend",
+  "aliases": [
+    "DATA",
+    "Digital Breakdown",
+    "DigitalBreakdown"
+  ],
+  "repository": "indrolend/digital-breakdown-apk",
+  "channel": "latest-native",
+  "manifest": "https://github.com/indrolend/digital-breakdown-apk/releases/download/latest-native/build-manifest.json",
+  "channels": {
+    "latest-native": "Canonical downloadable native application artifacts",
+    "latest-dev": "Development portal, WebAssembly, reference, and research artifacts"
+  },
+  "developmentRepository": "indrolend/Digital-breakdown-dev"
+}
