@@ -464,6 +464,13 @@ jobs:
               --notes "Canonical latest-native Windows, Android, and macOS builds from ${GITHUB_SHA}. See build-manifest.json; filenames alone are not release authority."
           fi
 
-          gh release upload latest-native release/* \
+          gh release upload latest-native \
+            release/DigitalBreakdown-Windows.zip \
+            release/DigitalBreakdown-Android.apk \
+            release/DigitalBreakdown-macOS-Universal.zip \
+            release/build-manifest.json \
+            release/checksums.txt \
+            release/android-build-info.json \
+            release/apk-contents.txt \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
