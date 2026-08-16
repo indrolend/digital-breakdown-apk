@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "hud": "./tools/hud/cli.mjs"
+  },
   "scripts": {
+    "hud": "node ./tools/hud/cli.mjs",
+    "hud:test": "node --test ./tools/hud/*.test.mjs",
     "menu": "node ./tools/dev-menu.mjs",
     "build:web": "esbuild ./www/android-entry.mjs --bundle --platform=browser --format=iife --target=chrome61 --outfile=./www/android-bundle.js --log-level=info",
     "cap:sync": "cap sync android",
