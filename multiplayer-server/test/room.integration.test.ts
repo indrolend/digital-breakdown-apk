@@ -1,5 +1,7 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { MatchRoom } from "../src/index";
 import { BINARY_HEADER_BYTES, BINARY_MAGIC, PROTOCOL_VERSION } from "../src/protocol";
 
 interface Inbox {
@@ -7,6 +9,7 @@ interface Inbox {
   waiters: Array<(event: MessageEvent) => void>;
 }
 const inboxes = new WeakMap<WebSocket, Inbox>();
+const PEER_SILENCE_TIMEOUT_MS = MatchRoom.peerSilenceTimeoutMs;
 
 function inbox(socket: WebSocket): Inbox {
   let value = inboxes.get(socket);
@@ -71,6 +74,40 @@ async function connect(path: string): Promise<WebSocket> {
   return socket;
 }
 
+async function expirePeers(code: string, now: number): Promise<void> {
+  const stub = env.MATCH_ROOMS.getByName(code);
+  await runInDurableObject(stub, async (instance) => {
+    await (instance as unknown as { expireSilentPeers(now: number): Promise<void> }).expireSilentPeers(now);
+  });
+}
+
+async function setPeerActivity(code: string, hostAt: number, guestAt: number): Promise<void> {
+  const stub = env.MATCH_ROOMS.getByName(code);
+  await runInDurableObject(stub, (_instance, state) => {
+    for (const socket of state.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as {
+        playerId: number; role: "host" | "guest"; build: string; lastActivityAt: number;
+      };
+      socket.serializeAttachment({
+        ...attachment,
+        lastActivityAt: attachment.role === "host" ? hostAt : guestAt,
+      });
+    }
+  });
+}
+
+async function peerActivity(code: string, role: "host" | "guest"): Promise<number> {
+  return runInDurableObject(env.MATCH_ROOMS.getByName(code), (_instance, state) => {
+    for (const socket of state.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as {
+        role: "host" | "guest"; lastActivityAt: number;
+      };
+      if (attachment.role === role) return attachment.lastActivityAt;
+    }
+    throw new Error(`missing ${role} socket`);
+  });
+}
+
 describe("room relay integration", () => {
   it("creates, joins, relays both directions, and reports disconnect", async () => {
     const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
@@ -91,12 +128,26 @@ describe("room relay integration", () => {
 
     const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
     const hostWelcome = await nextJsonType(host, "welcome");
-    expect(hostWelcome).toMatchObject({ type: "welcome", playerId: 0, role: "host", room: room.code });
+    expect(hostWelcome).toMatchObject({
+      type: "welcome",
+      playerId: 0,
+      role: "host",
+      room: room.code,
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
+    });
     expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 1, capacity: 2, started: false });
 
     const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
     const guestWelcome = await nextJsonType(guest, "welcome");
-    expect(guestWelcome).toMatchObject({ type: "welcome", playerId: 1, role: "guest", room: room.code });
+    expect(guestWelcome).toMatchObject({
+      type: "welcome",
+      playerId: 1,
+      role: "guest",
+      room: room.code,
+      source: "https://github.com/indrolend/digital-breakdown",
+      license: "AGPL-3.0",
+    });
     expect(await nextJsonType(host, "player_joined")).toMatchObject({ playerId: 1 });
     expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 2 });
     expect(await nextJsonType(guest, "lobby_state")).toMatchObject({ playerCount: 2 });
@@ -125,11 +176,178 @@ describe("room relay integration", () => {
       headers: { Upgrade: "websocket" },
     }));
     expect(lateJoin.status).toBe(409);
-    expect(await lateJoin.json()).toMatchObject({ error: "match_started" });
+    expect(await lateJoin.json()).toMatchObject({ error: "late_join_unsupported" });
 
     const leftAtHost = nextMessage(host);
     guest.close(1000, "leaving");
     expect(JSON.parse(String((await leftAtHost).data))).toMatchObject({ type: "player_left", playerId: 1 });
+    host.close(1000, "leaving");
+  });
+
+  it("rejects duplicates, invalid joins, and reconnect after start", async () => {
+    const missing = await exports.default.fetch(new Request("http://local.test/v1/rooms/ABC234/connect?role=guest&build=test&gameplay=5", {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: "room_not_found" });
+
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+
+    const duplicateHost = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await duplicateHost.json()).toMatchObject({ error: "host_already_connected" });
+
+    const incompatible = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=4`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await incompatible.json()).toMatchObject({ error: "incompatible_build" });
+
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+    const duplicateGuest = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await duplicateGuest.json()).toMatchObject({ error: "room_full" });
+
+    host.send(JSON.stringify({ type: "start_match", startId: 9, gameplayVersion: 5 }));
+    await nextJsonType(host, "start_match");
+    await nextJsonType(guest, "start_match");
+    guest.close(1000, "leaving");
+    await nextJsonType(host, "player_left");
+    const reconnect = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(await reconnect.json()).toMatchObject({ error: "late_join_unsupported" });
+    host.close(1000, "leaving");
+  });
+
+  it("invalidates the room when the host departs", async () => {
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+    const matchClosed = nextJsonType(guest, "match_closed");
+    host.close(1000, "leaving");
+    expect(await matchClosed).toMatchObject({ reason: "host_left" });
+    const stale = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(stale.status).toBe(404);
+    expect(await stale.json()).toMatchObject({ error: "room_not_found" });
+  });
+
+  it("expires a silent guest once while the host and room continue", async () => {
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+
+    const now = Date.now();
+    await setPeerActivity(room.code, now, now - PEER_SILENCE_TIMEOUT_MS - 1);
+    await expirePeers(room.code, now);
+    expect(await nextJsonType(host, "player_left")).toMatchObject({
+      playerId: 1, code: 4008, reason: "guest_timeout",
+    });
+    expect(await nextJsonType(host, "lobby_state")).toMatchObject({ playerCount: 1 });
+    await expirePeers(room.code, now + 1);
+    host.send(JSON.stringify({ type: "heartbeat", sentAt: 9 }));
+    expect(await nextJsonType(host, "heartbeat_ack")).toMatchObject({ sentAt: 9 });
+    host.close(1000, "leaving");
+  });
+
+  it("expires a silent host, rejects stale room traffic, and permits a fresh room", async () => {
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+
+    const now = Date.now();
+    await setPeerActivity(room.code, now - PEER_SILENCE_TIMEOUT_MS - 1, now);
+    const closed = nextJsonType(guest, "match_closed");
+    await expirePeers(room.code, now);
+    expect(await closed).toMatchObject({ reason: "host_timeout" });
+    await expirePeers(room.code, now + 1);
+    const stale = await exports.default.fetch(new Request(`http://local.test/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`, {
+      headers: { Upgrade: "websocket" },
+    }));
+    expect(stale.status).toBe(404);
+    expect(await stale.json()).toMatchObject({ error: "room_not_found" });
+
+    const replacement = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    expect(replacement.status).toBe(201);
+    const nextRoom = await replacement.json() as { code: string; hostKey: string };
+    const nextHost = await connect(`/v1/rooms/${nextRoom.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(nextRoom.hostKey)}`);
+    expect(await nextJsonType(nextHost, "welcome")).toMatchObject({ room: nextRoom.code });
+    nextHost.close(1000, "leaving");
+  });
+
+  it("refreshes a peer deadline when activity arrives", async () => {
+    const created = await exports.default.fetch(new Request("http://local.test/v1/rooms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameplayVersion: 5 }),
+    }));
+    const room = await created.json() as { code: string; hostKey: string };
+    const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
+    await nextJsonType(host, "welcome");
+    await nextJsonType(host, "lobby_state");
+    const guest = await connect(`/v1/rooms/${room.code}/connect?role=guest&build=test&gameplay=5`);
+    await nextJsonType(guest, "welcome");
+    await nextJsonType(host, "player_joined");
+    await nextJsonType(host, "lobby_state");
+    await nextJsonType(guest, "lobby_state");
+
+    const old = Date.now() - PEER_SILENCE_TIMEOUT_MS + 100;
+    await setPeerActivity(room.code, old, old);
+    guest.send(JSON.stringify({ type: "heartbeat", sentAt: 11 }));
+    expect(await nextJsonType(guest, "heartbeat_ack")).toMatchObject({ sentAt: 11 });
+    expect(await peerActivity(room.code, "guest")).toBeGreaterThan(old);
+    const now = Date.now();
+    const guestAt = await peerActivity(room.code, "guest");
+    await setPeerActivity(room.code, now, guestAt);
+    await expirePeers(room.code, now + PEER_SILENCE_TIMEOUT_MS - 1);
+    host.send(JSON.stringify({ type: "heartbeat", sentAt: 12 }));
+    expect(await nextJsonType(host, "heartbeat_ack")).toMatchObject({ sentAt: 12 });
     host.close(1000, "leaving");
   });
 });

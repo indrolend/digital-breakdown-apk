@@ -22,7 +22,12 @@ constexpr VisualColor AcidChartreuse{0xd4 / 255.0f, 0xec / 255.0f, 0x8e / 255.0f
 constexpr VisualColor DeepPlum{0x60 / 255.0f, 0x3f / 255.0f, 0x5b / 255.0f};
 constexpr VisualColor Copper{0xaa / 255.0f, 0x80 / 255.0f, 0x66 / 255.0f};
 constexpr VisualColor WarmGold{0xe1 / 255.0f, 0xb8 / 255.0f, 0x7f / 255.0f};
-constexpr VisualColor Background{0x08 / 255.0f, 0x10 / 255.0f, 0x18 / 255.0f};
+constexpr VisualColor Background{0x8e / 255.0f, 0xca / 255.0f, 0xe6 / 255.0f};
+// Recovered Field material family. Keep floor and blade colors together so
+// desktop fixed-function rendering and the GLES shader do not drift apart.
+constexpr VisualColor FieldGround{0x3f / 255.0f, 0x74 / 255.0f, 0x48 / 255.0f};
+constexpr VisualColor GrassRoot{0x31 / 255.0f, 0x5c / 255.0f, 0x38 / 255.0f};
+constexpr VisualColor GrassTip{0x5e / 255.0f, 0x9d / 255.0f, 0x71 / 255.0f};
 constexpr VisualColor Floor{0x7f / 255.0f, 0xa9 / 255.0f, 0xae / 255.0f};
 constexpr VisualColor Wall{0x86 / 255.0f, 0x8b / 255.0f, 0xb2 / 255.0f};
 constexpr VisualColor RoomFloor{0.50f, 0.55f, 0.57f};
@@ -145,7 +150,11 @@ inline SoulVisualState makeSoulVisualState(int soulState, float vacuumPull, floa
     visual.phase = time * 7.0f + seed;
     visual.verticalOffset = std::sin(time * 2.0f + floatOffset) * 0.18f;
     visual.rotationY = time * spinSpeed;
-    visual.morphScale = visualSmooth01(morph);
+    // Once latched, the soul moves into the phone at close camera range. Contract
+    // the translucent shell with that motion instead of leaving it full-sized
+    // until the final visibility cutoff, where it can obscure the capture itself.
+    const float ingestContraction = 1.0f - visualSmooth01(visual.ingestAmount);
+    visual.morphScale = visualSmooth01(morph) * ingestContraction;
     const float active = std::max(visual.pullAmount, std::max(visual.latchAmount * 0.72f, visual.ingestAmount));
     visual.elasticity = std::max(0.0f, std::min(1.0f, active + visual.hitAmount * 0.18f));
     const float baseBreath = 1.0f + std::sin(time * 3.0f + seed * 1.7f) * 0.035f;

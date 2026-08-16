@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 
 /build/
 /DigitalBreakdownDev.exe
@@ -65,3 +65,4 @@ android/app/src/test/
 android/app/src/main/assets/
 android/app/src/main/res/xml/config.xml
 android/capacitor-cordova-android-plugins/
+backup-*/

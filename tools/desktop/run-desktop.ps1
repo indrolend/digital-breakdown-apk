@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug','Release')]
-    [string]$Configuration = 'Debug',
+    [string]$Configuration = 'Release',
     [ValidateSet('x64','Win32')]
     [string]$Architecture = 'x64',
     [switch]$Reconfigure,
@@ -159,6 +159,14 @@ if ($SmokeTest) {
 } else {
     Write-ProgressEvent 94 'Launching local desktop game'
     Write-Stage 'Launch native desktop host' 'run'
+    $existingProcesses = @(Get-Process -Name 'DigitalBreakdown' -ErrorAction SilentlyContinue)
+    if ($existingProcesses.Count -gt 0) {
+        $processSummary = ($existingProcesses | ForEach-Object {
+            $path = try { $_.Path } catch { 'path unavailable' }
+            "PID $($_.Id) [$path]"
+        }) -join '; '
+        throw "DESKTOP_ALREADY_RUNNING: Close the existing game before launching another copy. $processSummary"
+    }
     Start-Process -FilePath $ExecutablePath -WorkingDirectory $RepoRoot
     Write-Stage "Desktop $BuildId launched" 'ok'
     Write-ProgressEvent 100 'Local desktop game launched'

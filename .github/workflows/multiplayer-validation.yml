@@ -1,0 +1,86 @@
+name: Multiplayer Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - agent/windows-multiplayer-visual-pause-fix
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed-file whitespace
+        shell: pwsh
+        run: |
+          $base = "${{ github.event.before }}"
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $base = "${{ github.event.pull_request.base.sha }}"
+          }
+          if (-not $base -or $base -match '^0+$') {
+            $base = "HEAD^"
+          }
+          git diff --check "$base..HEAD"
+
+      - name: Configure native desktop
+        shell: pwsh
+        run: |
+          cmake `
+            -S ./native-desktop `
+            -B ./build/windows-release `
+            -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          cmake --build ./build/windows-release `
+            --config Release `
+            --parallel
+
+      - name: Run native tests
+        shell: pwsh
+        run: |
+          ctest `
+            --test-dir ./build/windows-release `
+            -C Release `
+            --output-on-failure
+
+      - name: Verify gameplay
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass `
+            -File ./scripts/verify-gameplay.ps1
+
+  multiplayer-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: multiplayer-server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: multiplayer-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check protocol consistency
+        run: npm run protocol:check
+
+      - name: Run Worker tests
+        run: npm test

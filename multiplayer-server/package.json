@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "check": "wrangler types --check && tsc --noEmit && vitest run",
+    "protocol:check": "node ../tools/release/protocol-consistency.mjs",
     "test": "vitest run",
     "types": "wrangler types",
     "dev": "wrangler dev",

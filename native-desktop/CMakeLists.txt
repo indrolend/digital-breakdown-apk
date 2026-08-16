@@ -13,6 +13,45 @@ enable_testing()
 
 include(FetchContent)
 
+set(DB_CHANNEL "experimental" CACHE STRING "Digital Breakdown release channel")
+set(DB_SAVE_FORMAT_VERSION "4" CACHE STRING "Digital Breakdown persistent save format version")
+string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
+string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
+if(NOT DEFINED DB_HUMAN_VERSION)
+    set(DB_HUMAN_VERSION "experimental-${DB_BUILD_DATE}")
+endif()
+if(NOT DEFINED DB_COMMIT_SHA)
+    execute_process(
+        COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}/.." rev-parse HEAD
+        OUTPUT_VARIABLE DB_COMMIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(NOT DB_COMMIT_SHA)
+    set(DB_COMMIT_SHA "unknown")
+endif()
+string(SUBSTRING "${DB_COMMIT_SHA}" 0 7 DB_COMMIT_SHORT)
+if(WIN32)
+    set(DB_PLATFORM "windows")
+elseif(APPLE)
+    set(DB_PLATFORM "macos")
+else()
+    set(DB_PLATFORM "desktop")
+endif()
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" DB_ARCHITECTURE)
+if(DB_ARCHITECTURE MATCHES "^(amd64|x86_64)$")
+    set(DB_ARCHITECTURE "x64")
+elseif(DB_ARCHITECTURE MATCHES "^(aarch64|arm64)$")
+    set(DB_ARCHITECTURE "arm64")
+endif()
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/BuildIdentity.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
+    @ONLY
+)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -55,10 +94,18 @@ add_executable(
     DesktopRenderer.cpp
     DesktopAudio.cpp
     DesktopMultiplayer.cpp
+    DesktopUpdateService.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
     "${miniaudio_SOURCE_DIR}/miniaudio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
+if(WIN32)
+    target_sources(DigitalBreakdown PRIVATE ControllerRumbleWin.cpp)
+elseif(APPLE)
+    target_sources(DigitalBreakdown PRIVATE ControllerRumbleMac.m)
+    set_source_files_properties(ControllerRumbleMac.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+endif()
 
 target_include_directories(
     DigitalBreakdown
@@ -67,11 +114,15 @@ target_include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${miniaudio_SOURCE_DIR}"
 )
 
 target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
-target_compile_definitions(DigitalBreakdown PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(DigitalBreakdown PRIVATE
+    GLFW_INCLUDE_NONE
+    DB_BUILD_CONFIGURATION="$<CONFIG>"
+)
 
 target_link_libraries(
     DigitalBreakdown
@@ -80,14 +131,17 @@ target_link_libraries(
     OpenGL::GL
 )
 if(APPLE)
-    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket)
+    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework AppKit" "-framework GameController" "-framework CoreHaptics")
     set_target_properties(DigitalBreakdown PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
+        MACOSX_BUNDLE_BUNDLE_NAME "Data"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.indrolend.digitalbreakdown.native"
         MACOSX_BUNDLE_BUNDLE_VERSION "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
     )
+endif()
+if(WIN32)
+    target_link_libraries(DigitalBreakdown PRIVATE xinput9_1_0)
 endif()
 
 add_executable(
@@ -106,6 +160,23 @@ add_executable(
 )
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+
+add_executable(
+    MultiplayerDeterminismTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_determinism_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MultiplayerDeterminismTest PRIVATE cxx_std_17)
+
+add_executable(
+    HostRemotePeerSimulationIsolationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/host_remote_peer_simulation_isolation_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(HostRemotePeerSimulationIsolationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(HostRemotePeerSimulationIsolationTest PRIVATE cxx_std_17)
 
 add_executable(
     MultiplayerConnectionStateTest
@@ -157,6 +228,13 @@ target_include_directories(PhoneMenuLayoutTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(PhoneMenuLayoutTest PRIVATE cxx_std_17)
 
 add_executable(
+    MenuNavigationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/menu_navigation_test.cpp"
+)
+target_include_directories(MenuNavigationTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(MenuNavigationTest PRIVATE cxx_std_17)
+
+add_executable(
     PhoneDisplayStateTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_display_state_test.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
@@ -164,15 +242,60 @@ add_executable(
 target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
 
+add_executable(EarlyBrowserVisualsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/early_browser_visuals_test.cpp")
+target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(EarlyBrowserVisualsTest PRIVATE cxx_std_17)
+
+add_executable(
+    TraversalCalibrationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/traversal_calibration_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(TraversalCalibrationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(TraversalCalibrationTest PRIVATE cxx_std_17)
+
+add_executable(
+    GameplayFlowProbe
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_flow_probe.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(GameplayFlowProbe PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(GameplayFlowProbe PRIVATE cxx_std_17)
+
+add_executable(
+    RoomProgressionProbe
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/room_progression_probe.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(RoomProgressionProbe PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(RoomProgressionProbe PRIVATE cxx_std_17)
+
+add_executable(
+    DeterministicInputSoak
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/deterministic_input_soak.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(DeterministicInputSoak PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(DeterministicInputSoak PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
+add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
+add_test(NAME HostRemotePeerSimulationIsolationTest COMMAND HostRemotePeerSimulationIsolationTest)
 add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
 add_test(NAME GameplayStateContractsTest COMMAND GameplayStateContractsTest)
 add_test(NAME PhoneBodyContractTest COMMAND PhoneBodyContractTest)
 add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
+add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
+add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
+add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
+add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
+add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
+add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)
+add_test(NAME DeterministicInputSoak COMMAND DeterministicInputSoak)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)

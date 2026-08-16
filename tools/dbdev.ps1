@@ -28,6 +28,7 @@ $AndroidDeployScript = Join-Path $RepoRoot 'tools\device\deploy-local.ps1'
 $DevUiBuildScript = Join-Path $RepoRoot 'tools\dev-ui\build-dev-ui.ps1'
 $EnvironmentResolver = Join-Path $RepoRoot 'tools\environment\resolve-dev-environment.ps1'
 $EnvironmentRepair = Join-Path $RepoRoot 'tools\environment\repair-dev-environment.ps1'
+$NativeAndroidRoot = Join-Path $RepoRoot 'native-android'
 $DesktopExeCandidates = @(
     (Join-Path $RepoRoot 'build\desktop-debug\bin\Debug\DigitalBreakdown.exe'),
     (Join-Path $RepoRoot 'build\desktop-debug\bin\DigitalBreakdown.exe'),
@@ -70,6 +71,25 @@ function Get-Environment {
     if (-not (Test-Path $EnvironmentResolver)) { throw "Missing $EnvironmentResolver" }
     if ($ProvisionCMake) { return & $EnvironmentResolver -ProvisionCMake }
     return & $EnvironmentResolver
+}
+
+function Ensure-NativeAndroidSdk {
+    $localProperties = Join-Path $NativeAndroidRoot 'local.properties'
+    if (Test-Path $localProperties) { return }
+
+    $sdkCandidates = @(
+        $env:ANDROID_HOME,
+        $env:ANDROID_SDK_ROOT,
+        $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Android\Sdk' })
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    $sdk = @($sdkCandidates | Select-Object -First 1)
+    if ($sdk.Count -eq 0) {
+        throw 'Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT.'
+    }
+
+    $escapedSdk = $sdk[0].Replace('\', '\\')
+    "sdk.dir=$escapedSdk" | Set-Content -LiteralPath $localProperties -Encoding ASCII
+    Write-Host "Created machine-local Android SDK configuration: $localProperties"
 }
 
 function Show-Status {
@@ -129,18 +149,18 @@ switch ($Command) {
     }
     'desktop-build' {
         if (-not (Test-Path $DesktopScript)) { throw "Missing $DesktopScript" }
-        & $DesktopScript -BuildOnly
+        & $DesktopScript -Configuration Release -BuildOnly
         if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
     }
     'desktop-run' {
         if (-not (Test-Path $DesktopScript)) { throw "Missing $DesktopScript" }
-        & $DesktopScript
+        & $DesktopScript -Configuration Release
         if ($LASTEXITCODE -ne 0) { throw 'Desktop build/run failed.' }
     }
     'desktop-smoke' {
         $exe = Get-DesktopExe
         if (-not $exe) {
-            & $DesktopScript -BuildOnly
+            & $DesktopScript -Configuration Release -BuildOnly
             if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
             $exe = Get-DesktopExe
         }
@@ -148,14 +168,17 @@ switch ($Command) {
         Invoke-Checked $exe @('--smoke-test')
     }
     'android-build' {
+        Ensure-NativeAndroidSdk
         Invoke-Checked (Join-Path $RepoRoot 'android\gradlew.bat') @('-p', (Join-Path $RepoRoot 'native-android'), 'assembleDebug', '--stacktrace')
     }
     'android-install' {
+        Ensure-NativeAndroidSdk
         if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
         & $AndroidDeployScript
         if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
     }
     'android-stream' {
+        Ensure-NativeAndroidSdk
         if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
         & $AndroidDeployScript
         if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }

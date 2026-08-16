@@ -21,8 +21,6 @@ private:
     unsigned int roundedVbo_ = 0;
     unsigned int phoneVbo_ = 0;
     unsigned int phoneNormalVbo_ = 0;
-    unsigned int flowerVbo_ = 0;
-    unsigned int flowerNormalVbo_ = 0;
     unsigned int humanVbo_ = 0;
     unsigned int humanNormalVbo_ = 0;
     unsigned int soulSurfaceVbo_ = 0;
@@ -43,7 +41,6 @@ private:
     int uUseNormal_ = -1;
     std::string assetRoot_;
     StaticModelData phoneModel_;
-    StaticModelData flowerModel_;
     HumanModelData humanModel_;
     TvGifWall tvGifWall_;
     std::vector<float> humanVertices_;
@@ -54,6 +51,8 @@ private:
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]);
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]);
     void drawFxStrip(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4], const float* vertices, int vertexCount);
+    void drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha);
+    void drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex);
     void drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]);
     void drawRoomTile(const float* viewProj, const GameState& state, int tileIndex);
     void drawHud(const GameState& state);

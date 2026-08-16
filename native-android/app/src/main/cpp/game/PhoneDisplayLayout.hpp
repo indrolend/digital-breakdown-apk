@@ -19,6 +19,7 @@ struct PhoneDisplayMenuRow {
     PhoneMenuAction action = PhoneMenuAction::None;
     int selectableIndex = -1;
     int bindingAction = -1;
+    PhoneMenuHorizontal horizontal = PhoneMenuHorizontal::None;
     std::string label;
     std::string value;
     PhoneDisplayRect visual;
@@ -90,6 +91,7 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
         row.kind = element.kind;
         row.action = element.action;
         row.bindingAction = element.bindingAction;
+        row.horizontal = element.horizontal;
         row.label = element.label;
         row.value = element.value;
         row.selectable = element.selectable;
@@ -143,6 +145,24 @@ inline float phoneDisplayScrollForSelection(const PhoneDisplayMenuLayout& layout
     if (rowTop < next + margin) next = rowTop - margin;
     if (rowBottom > next + layout.content.h - margin) next = rowBottom - layout.content.h + margin;
     return std::max(0.0f, std::min(layout.maxScroll, next));
+}
+
+inline bool phoneDisplayHasMoreAbove(const PhoneDisplayMenuLayout& layout) {
+    return layout.maxScroll > 0.0f && layout.scrollOffset > 0.5f;
+}
+
+inline bool phoneDisplayHasMoreBelow(const PhoneDisplayMenuLayout& layout) {
+    return layout.maxScroll > 0.0f && layout.scrollOffset < layout.maxScroll - 0.5f;
+}
+
+inline float phoneDisplayScrollThumbFraction(const PhoneDisplayMenuLayout& layout) {
+    if (layout.maxScroll <= 0.0f || layout.contentHeight <= 0.0f) return 1.0f;
+    return std::max(0.12f, std::min(1.0f, layout.content.h / layout.contentHeight));
+}
+
+inline float phoneDisplayScrollProgress(const PhoneDisplayMenuLayout& layout) {
+    if (layout.maxScroll <= 0.0f) return 0.0f;
+    return std::max(0.0f, std::min(1.0f, layout.scrollOffset / layout.maxScroll));
 }
 
 inline int phoneDisplayItemAt(const PhoneDisplayMenuLayout& layout, float x, float y) {

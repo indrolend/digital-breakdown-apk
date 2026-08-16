@@ -14,6 +14,7 @@ public:
     static void drawBox(const Vec3& position, const Vec3& scale, const Quat& orientation, float r, float g, float b);
     void setAssetRoot(const std::filesystem::path& root);
     void resize(int width, int height);
+    void setHudVisible(bool visible);
     void draw(const GameState& state) const;
 
 private:
@@ -21,9 +22,7 @@ private:
     mutable int width_ = 1280;
     mutable int height_ = 720;
     unsigned int phoneModelList_ = 0;
-    unsigned int flowerModelList_ = 0;
     unsigned int phoneShadowList_ = 0;
-    unsigned int flowerShadowList_ = 0;
     HumanModelData humanModel_;
     mutable std::vector<float> humanVertices_;
     mutable unsigned int datamoshTexture_ = 0;
@@ -34,6 +33,7 @@ private:
     mutable bool phoneDisplayCacheValid_ = false;
     mutable bool phoneDisplayTextureAllocated_ = false;
     mutable bool datamoshFrameReady_ = false;
+    bool hudVisible_ = true;
 
     static void drawRoomTile(const GameState& state, int tileIndex);
     static void applyCamera(const GameState& state, float aspect);

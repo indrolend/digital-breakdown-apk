@@ -93,6 +93,21 @@ int main() {
     const float caughtTop=ledgeHangGame->state().player.pos.y+PHONE_MODEL_HEIGHT*0.5f;
     ok &= expect(ledgeHangGame->state().player.ledgeHanging&&near(caughtTop,ledgeHangGame->state().roomColliders[0].topY+0.008f,0.002f),
         "descending phone catches the obstacle lip with its visible top edge instead of its collision capsule");
+    auto lungeLedgeGame=std::make_unique<Game>();lungeLedgeGame->reset();
+    {
+        GameState& ledge=const_cast<GameState&>(lungeLedgeGame->state());const RoomCollider& platform=ledge.roomColliders[0];
+        ledge.player.pos={platform.maxX+0.34f,platform.topY-PHONE_MODEL_HEIGHT*0.5f,platform.center.z};
+        ledge.player.vel={0,0,5.0f};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;
+        ledge.meleeVisual.airLungeLandingPending=true;ledge.meleeVisual.locomotionLunge=true;
+        ledge.meleeVisual.airLungeTimer=0.12f;ledge.meleeVisual.airLungeAngularVelocity=8.0f;
+    }
+    step(*lungeLedgeGame);
+    ok &= expect(lungeLedgeGame->state().player.ledgeHanging&&
+                 !lungeLedgeGame->state().meleeVisual.airLungeLandingPending&&
+                 !lungeLedgeGame->state().meleeVisual.locomotionLunge&&
+                 lungeLedgeGame->state().meleeVisual.landingRecovery<=0.0f&&
+                 lungeLedgeGame->state().player.ledgeShimmySpeed>1.0f,
+        "a descending locomotion lunge cancels into ledge grab and carries tangent speed into shimmy");
     const float shimmyStart=ledgeHangGame->state().player.pos.z;
     {GameState& ledge=const_cast<GameState&>(ledgeHangGame->state());ledge.camera.yaw=3.14159265f;}
     ledgeHangGame->setTouchControls(0,1,0,0,false,false,false,false,false,false);step(*ledgeHangGame,18);
@@ -157,15 +172,35 @@ int main() {
         "direction held through the entrance becomes active on the first gameplay frame");
     ok &= expect(game.state().cinematic.textInteraction<0.01f,
         "floating text interaction expansion settles smoothly instead of remaining stretched");
-    game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
+    {GameState& pauseFixture=const_cast<GameState&>(game.state());pauseFixture.camera.firstPerson=true;}
+    game.setUiPaused(true);const Vec3 pausedPosition=game.state().player.pos;const float pausedTime=game.state().time;const float pausedShotAge=game.state().environmentVisual.latestShotAge;game.setTouchControls(1,1,50,50,true,true,true,true,true,true);step(game,10);
     ok &= expect(game.state().uiPaused&&near(length(game.state().player.pos-pausedPosition),0.0f,0.0001f)&&!game.state().vacuum.active,
         "open native HUD pause freezes gameplay and releases held vacuum input");
+    ok &= expect(near(game.state().time,pausedTime,0.0001f)&&near(game.state().environmentVisual.latestShotAge,pausedShotAge,0.0001f),
+        "solo pause freezes the shared simulation and environment animation clocks");
+    ok &= expect(game.state().camera.firstPerson&&game.state().phoneVisual.visible&&length(game.state().camera.pos-game.state().phoneTransform.position)<0.85f,
+        "first-person pause preserves camera preference while framing a readable phone menu");
     Game onlineMenuGame;onlineMenuGame.reset();onlineMenuGame.configureNetworkHost();
     {GameState& online=const_cast<GameState&>(onlineMenuGame.state());online.targets[0].alive=true;online.targets[0].slurpable=false;online.targets[0].attackTimer=0.50f;online.enemyAttackOwner=0;}
     onlineMenuGame.setUiPaused(true);const float onlineAttackBefore=onlineMenuGame.state().targets[0].attackTimer;step(onlineMenuGame);
     ok &= expect(onlineMenuGame.state().uiPaused&&onlineMenuGame.state().targets[0].attackTimer<onlineAttackBefore,
         "connected menu releases local controls without freezing the authoritative match clock");
     game.setUiPaused(false);
+    step(game);
+    ok &= expect(game.state().camera.firstPerson,
+        "resuming from the phone menu restores first-person gameplay without a camera-mode toggle");
+    bool repeatedMenuTransitionsFinite=true;
+    for(int cycle=0;cycle<3;++cycle){
+        const Vec3 beforeEnter=game.state().phoneTransform.position;
+        game.setUiPaused(true);step(game);
+        repeatedMenuTransitionsFinite&=length(game.state().phoneTransform.position-beforeEnter)<0.65f;
+        step(game,20);const Vec3 beforeExit=game.state().phoneTransform.position;
+        game.setUiPaused(false);step(game);
+        repeatedMenuTransitionsFinite&=length(game.state().phoneTransform.position-beforeExit)<0.65f;
+        step(game,30);
+    }
+    ok &= expect(repeatedMenuTransitionsFinite&&game.state().phoneDisplay.presentationBlend<0.03f,
+        "repeated pause transitions continue from the rendered phone pose and settle on one canonical gameplay presentation");
     game.reset();
 
     game.setTouchControls(0, 1, 0, 0, false, false, false, false, false, false);
@@ -656,6 +691,24 @@ int main() {
     ok &= expect(hasAudioCue(game.state(),AudioCue::ConnectPower),"recovery to full emits connect-power once after crossing the browser 14-percent arming threshold");
 
     game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=true;setup.player.jumpVel=0.0f;}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f,
+        "a ground jump that exhausts battery enters death without applying airborne movement");
+
+    game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=false;setup.player.pos.y=1.0f;setup.player.jumpVel=0.0f;setup.player.airJumpsRemaining=1;}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f&&game.state().player.airJumpsRemaining==1,
+        "a double jump that exhausts battery cannot consume or apply its air impulse after death");
+
+    game.reset();
+    {GameState& setup=const_cast<GameState&>(game.state());setup.player.battery=1.0f;setup.player.souls=0;setup.player.grounded=false;setup.player.pos.y=1.0f;setup.player.jumpVel=0.0f;setup.meleeVisual.wallGripTimer=0.2f;setup.meleeVisual.wallNormal={1,0,0};}
+    game.setTouchControls(0,0,0,0,false,false,true,false,false,false);step(game);
+    ok &= expect(game.state().dead&&!game.state().player.alive&&game.state().player.jumpVel==0.0f&&horizontalSpeed(game.state().player.vel)==0.0f,
+        "a wall jump that exhausts battery cannot apply its launch after death");
+
+    game.reset();
     step(game);
     {
         GameState& setup=const_cast<GameState&>(game.state());
@@ -1098,6 +1151,23 @@ int main() {
         near(game.state().flowers[0].pos.y,0.50f+std::sin(1.6f)*0.16f,0.0001f) &&
         near(game.state().flowers[0].rotationY,0.25f+0.5f*1.35f,0.0001f),
         "flower bob and rotation reproduce the browser 60 FPS motion equations");
+
+    game.reset();
+    step(game);
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        FlowerPowerupState& flower=setup.flowers[0];flower.active=true;flower.baseY=setup.phoneTransform.vacuumPullPoint.y;
+        const Vec3 offered=setup.phoneTransform.vacuumPullPoint+setup.camera.forward*5.0f;
+        flower.pos=offered;
+    }
+    game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
+    step(game,12);
+    const float heavyFlowerSpeed=length(game.state().flowers[0].vacuumVelocity);
+    ok &= expect(game.state().flowers[0].active&&game.state().flowers[0].vacuumAttracted&&heavyFlowerSpeed>0.05f&&heavyFlowerSpeed<=3.6f,
+        "flower enters the shared vacuum offer cone with a bounded heavy-body response");
+    step(game,180);
+    ok &= expect(!game.state().flowers[0].active&&game.state().energy.flowerStacks==1,
+        "continued vacuum attraction captures the heavy flower without changing its powerup semantics");
 
     std::cout << "numeric forward0=(" << forward0.player.vel.x << "," << forward0.player.vel.z << ")"
               << " forward90=(" << forward90.player.vel.x << "," << forward90.player.vel.z << ")"

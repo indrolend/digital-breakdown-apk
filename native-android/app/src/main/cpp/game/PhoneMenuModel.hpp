@@ -26,6 +26,8 @@ enum class PhoneMenuAction : unsigned char {
     Rebind,
     AdjustMouse,
     AdjustController,
+    AdjustTriggers,
+    AdjustVibration,
     Defaults,
     MusicVolume,
     SfxVolume,
@@ -35,10 +37,18 @@ enum class PhoneMenuAction : unsigned char {
     ToggleShadows,
     ToggleParticles,
     ToggleFps,
+    CheckUpdates,
     Restart
 };
 
 enum class PhoneMenuHorizontal : unsigned char { None, Adjust, Toggle };
+
+inline void applyPhoneGraphicsPreset(LocalSettingsState& settings, int preset) {
+    settings.graphicsPreset = std::max(0, std::min(2, preset));
+    settings.shadows = settings.graphicsPreset >= 2;
+    settings.portalWindow = settings.graphicsPreset >= 1;
+    settings.particles = settings.graphicsPreset >= 1;
+}
 
 struct PhoneMenuElement {
     PhoneMenuRowKind kind = PhoneMenuRowKind::Item;
@@ -73,6 +83,30 @@ inline int phoneMenuPercent(float value) {
     return static_cast<int>(std::round(value * 100.0f));
 }
 
+inline int phoneMenuCycleIndex(int value, int direction, int count) {
+    if (count <= 0 || direction == 0) return value;
+    const int normalized = (value % count + count) % count;
+    return (normalized + (direction > 0 ? 1 : count - 1)) % count;
+}
+
+inline float phoneMenuCycleFloat(float value, int direction, float minimum, float maximum, float step) {
+    if (direction == 0 || maximum <= minimum || step <= 0.0f) return clampf(value, minimum, maximum);
+    constexpr float epsilon = 0.0001f;
+    if (direction > 0 && value >= maximum - epsilon) return minimum;
+    if (direction < 0 && value <= minimum + epsilon) return maximum;
+    return clampf(value + (direction > 0 ? step : -step), minimum, maximum);
+}
+
+inline const char* phoneMenuTriggerSensitivityName(int value) {
+    static constexpr const char* Names[] = {"Deep", "Balanced", "Hair"};
+    return Names[std::max(0, std::min(2, value))];
+}
+
+inline const char* phoneMenuVibrationName(int value) {
+    static constexpr const char* Names[] = {"Off", "Standard", "Strong"};
+    return Names[std::max(0, std::min(2, value))];
+}
+
 inline void addPhoneMenuElement(PhoneMenuPageViewModel& page, PhoneMenuElement element) {
     if (page.elementCount >= PhoneMenuPageViewModel::MaxElements) return;
     if (element.selectable) ++page.selectableCount;
@@ -104,7 +138,9 @@ inline void addPhoneMenuValue(PhoneMenuPageViewModel& page, const std::string& l
     element.label = label;
     element.value = value;
     element.selectable = true;
-    element.horizontal = PhoneMenuHorizontal::Adjust;
+    element.horizontal = action == PhoneMenuAction::Rebind
+        ? PhoneMenuHorizontal::None
+        : PhoneMenuHorizontal::Adjust;
     addPhoneMenuElement(page, element);
 }
 
@@ -126,8 +162,6 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
     PhoneMenuPageViewModel page;
     const bool pausedSolo = phoneMenuPausedSolo(state);
     if (state.cinematic.introActive) {
-        page.title = "DATA";
-        page.paletteTitle = true;
         addPhoneMenuItem(page, "Start", PhoneMenuAction::Start);
     } else if (state.dead) {
         page.title = "";
@@ -139,8 +173,6 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
         addPhoneMenuItem(page, "Exit Run", PhoneMenuAction::ExitRun);
     } else if (state.localSettings.menuPage == LocalMenuPage::Main) {
-        page.title = "DATA";
-        page.paletteTitle = true;
         addPhoneMenuItem(page, "Solo", PhoneMenuAction::Solo);
         addPhoneMenuItem(page, "Online", PhoneMenuAction::Online);
         addPhoneMenuItem(page, "Settings", PhoneMenuAction::Settings);
@@ -173,6 +205,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Controls", PhoneMenuAction::Controls);
         addPhoneMenuItem(page, "Audio", PhoneMenuAction::Audio);
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
+        addPhoneMenuItem(page, "Check Updates", PhoneMenuAction::CheckUpdates);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Controls) {
         page.title = "Controls";
@@ -185,13 +218,14 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuValue(page, "Run", phoneMenuKeyName(state.localSettings.keyboardBindings[4]), PhoneMenuAction::Rebind, 4);
         addPhoneMenuValue(page, "Jump", phoneMenuKeyName(state.localSettings.keyboardBindings[5]), PhoneMenuAction::Rebind, 5);
         addPhoneMenuSection(page, "Actions");
-        addPhoneMenuValue(page, "Lunge", phoneMenuKeyName(state.localSettings.keyboardBindings[6]), PhoneMenuAction::Rebind, 6);
+        addPhoneMenuValue(page, "Attack", phoneMenuKeyName(state.localSettings.keyboardBindings[6]), PhoneMenuAction::Rebind, 6);
         addPhoneMenuValue(page, "Shoot", phoneMenuKeyName(state.localSettings.keyboardBindings[7]), PhoneMenuAction::Rebind, 7);
         addPhoneMenuValue(page, "Camera", phoneMenuKeyName(state.localSettings.keyboardBindings[8]), PhoneMenuAction::Rebind, 8);
-        addPhoneMenuValue(page, "Alternate", phoneMenuKeyName(state.localSettings.keyboardBindings[9]), PhoneMenuAction::Rebind, 9);
         addPhoneMenuSection(page, "Look");
         addPhoneMenuValue(page, "Mouse", std::to_string(phoneMenuPercent(state.localSettings.mouseLookSensitivity)) + "%", PhoneMenuAction::AdjustMouse);
         addPhoneMenuValue(page, "Controller", std::to_string(phoneMenuPercent(state.localSettings.controllerLookSensitivity)) + "%", PhoneMenuAction::AdjustController);
+        addPhoneMenuValue(page, "Triggers", phoneMenuTriggerSensitivityName(state.localSettings.controllerTriggerSensitivity), PhoneMenuAction::AdjustTriggers);
+        addPhoneMenuValue(page, "Vibration", phoneMenuVibrationName(state.localSettings.controllerVibration), PhoneMenuAction::AdjustVibration);
         addPhoneMenuItem(page, "Defaults", PhoneMenuAction::Defaults);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Audio) {

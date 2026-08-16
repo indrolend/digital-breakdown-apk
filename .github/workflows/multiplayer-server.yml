@@ -1,0 +1,39 @@
+name: Multiplayer server checks
+
+on:
+  pull_request:
+    paths:
+      - "multiplayer-server/**"
+      - "native-network/**"
+      - "native-android/app/src/main/java/com/indrolend/digitalbreakdown/MultiplayerClient.java"
+      - "tools/release/protocol-consistency.mjs"
+      - ".github/workflows/multiplayer-server.yml"
+  push:
+    branches: [main]
+    paths:
+      - "multiplayer-server/**"
+      - "native-network/**"
+      - "native-android/app/src/main/java/com/indrolend/digitalbreakdown/MultiplayerClient.java"
+      - "tools/release/protocol-consistency.mjs"
+      - ".github/workflows/multiplayer-server.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: multiplayer-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: multiplayer-server/package-lock.json
+      - run: npm ci
+      - run: npm run protocol:check
+      - run: npm run check
+      - run: npm run deploy:dry -- --env staging

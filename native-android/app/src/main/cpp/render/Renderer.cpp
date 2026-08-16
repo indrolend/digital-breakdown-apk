@@ -1,6 +1,7 @@
 #include "Renderer.hpp"
 #include "../game/HumanVisual.hpp"
 #include "../game/BitmapFont.hpp"
+#include "../game/EarlyBrowserVisuals.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
@@ -73,6 +74,7 @@ const char* VERT_SRC =
     "uniform mat4 uModel;\n"
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
+    "varying float vFog;\n"
     "void main() {\n"
     "  vec3 radial = normalize(aPos + vec3(0.0001));\n"
     "  vec3 modelNormal = normalize(mat3(uModel) * aNormal + vec3(0.0001));\n"
@@ -81,6 +83,7 @@ const char* VERT_SRC =
     "  float fill = max(dot(n, normalize(vec3(-0.46, 0.57, -0.68))), 0.0);\n"
     "  vLight = uUseNormal < -0.5 ? 1.0 : clamp(0.48 + sun * 0.42 + fill * 0.10, 0.0, 1.0);\n"
     "  gl_Position = uMvp * vec4(aPos, 1.0);\n"
+    "  vFog = smoothstep(0.72, 0.99, gl_Position.z / max(gl_Position.w, 0.001));\n"
     "}\n";
 
 const char* FRAG_SRC =
@@ -88,12 +91,14 @@ const char* FRAG_SRC =
     "uniform vec4 uColor;\n"
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
+    "varying float vFog;\n"
     "void main() {\n"
     "  vec3 lit = uUseNormal > 0.5 ? uColor.rgb * vLight : uColor.rgb;\n"
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  gl_FragColor = vec4(uUseNormal > -0.5 ? graded : lit, uColor.a);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.557,0.792,0.902), vFog);\n"
+    "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
 
 const char* DATAMOSH_VERT="attribute vec2 aPos;attribute vec2 aUv;varying vec2 vUv;void main(){vUv=aUv;gl_Position=vec4(aPos,0.0,1.0);}";
@@ -263,11 +268,10 @@ void Renderer::surfaceCreated() {
     initProgram();
     initDatamoshProgram();
     if(!assetRoot_.empty()) {
-        phoneModel_.load(assetRoot_+"/phone.dbmesh"); flowerModel_.load(assetRoot_+"/flower.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
+        phoneModel_.load(assetRoot_+"/phone.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
         if(phoneModel_.valid()){glGenBuffers(1,&phoneVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.vertices.size()*sizeof(float),phoneModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&phoneNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneNormalVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.normals.size()*sizeof(float),phoneModel_.normals.data(),GL_STATIC_DRAW);}
-        if(flowerModel_.valid()){glGenBuffers(1,&flowerVbo_);glBindBuffer(GL_ARRAY_BUFFER,flowerVbo_);glBufferData(GL_ARRAY_BUFFER,flowerModel_.vertices.size()*sizeof(float),flowerModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&flowerNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,flowerNormalVbo_);glBufferData(GL_ARRAY_BUFFER,flowerModel_.normals.size()*sizeof(float),flowerModel_.normals.data(),GL_STATIC_DRAW);}
         if(humanModel_.valid()){glGenBuffers(1,&humanVbo_);glBindBuffer(GL_ARRAY_BUFFER,humanVbo_);glBufferData(GL_ARRAY_BUFFER,humanModel_.vertices.size()*3u*sizeof(float),nullptr,GL_DYNAMIC_DRAW);glGenBuffers(1,&humanNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,humanNormalVbo_);glBufferData(GL_ARRAY_BUFFER,humanModel_.vertices.size()*3u*sizeof(float),nullptr,GL_DYNAMIC_DRAW);}
-        __android_log_print(ANDROID_LOG_INFO,"DBNATIVE","models phone=%d flower=%d human=%d",phoneModel_.valid()?1:0,flowerModel_.valid()?1:0,humanModel_.valid()?1:0);
+        __android_log_print(ANDROID_LOG_INFO,"DBNATIVE","models phone=%d flower=prismatic human=%d",phoneModel_.valid()?1:0,humanModel_.valid()?1:0);
     }
 }
 
@@ -313,6 +317,27 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
     if(!program_) return; float model[16],mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
     glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glBindBuffer(GL_ARRAY_BUFFER,0); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices); glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLE_STRIP,0,vertexCount);
+}
+
+void Renderer::drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha){
+    constexpr int segments=8;std::array<float,(segments+2)*3> vertices{};int out=0;
+    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
+    const float stretch=height*0.16f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);
+    const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=center.y;vertices[out++]=z;};emit(center.x,center.z);
+    for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*(halfWidth+stretch*0.35f),localZ=std::sin(a)*(halfDepth+stretch);emit(center.x+localX*c-localZ*s,center.z+localX*s+localZ*c);}
+    float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
+}
+
+void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
+    constexpr int maxVertices=early_browser_visuals::GrassBladeCountHigh*6;std::array<float,maxVertices*3> vertices{};
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    const int budget=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh;
+    const int count=static_cast<int>(static_cast<float>(budget)*plan.grassAmount);
+    const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;int out=0;
+    early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};
+    const auto emit=[&](const Vec3& p){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;};
+    for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;emit(rootL);emit(rootR);emit(tipR);emit(rootL);emit(tipR);emit(tipL);}
+    float identity[16];ident(identity);const float color[4]={Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLES,0,count*6);
 }
 
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
@@ -405,8 +430,13 @@ void Renderer::drawProceduralHuman(const float* viewProj, const TargetState& tar
 
 void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int tileIndex) {
     const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH;
-    const float groundColor[4] = {Pass7Visual::RoomFloor.r, Pass7Visual::RoomFloor.g, Pass7Visual::RoomFloor.b, 1.0f};
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    const bool field=plan.setting==early_browser_visuals::RoomSetting::Field;
+    const bool sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile;
+    const bool coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
+    const float groundColor[4] = {field?Pass7Visual::FieldGround.r:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
+    if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.005f,z0},{23.5f,0.01f,35.5f},0,sand);}
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
     const float doorWidth=5.35f,doorHeight=3.95f,wallHeight=7.2f;
@@ -414,7 +444,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const float sideX=doorWidth*0.5f+sideWidth*0.5f;
     const float topHeight=wallHeight-doorHeight;
     const float topY=doorHeight+topHeight*0.5f;
-    drawBox(viewProj,{0,wallHeight+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,wallColor);
+    if(sterile) drawBox(viewProj,{0,wallHeight+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,wallColor);
     for(float seam:{-ROOM_DEPTH*0.5f,ROOM_DEPTH*0.5f}) {
         drawBox(viewProj,{-sideX,wallHeight*0.5f,z0+seam},{sideWidth,wallHeight,0.5f},0,wallColor);
         drawBox(viewProj,{sideX,wallHeight*0.5f,z0+seam},{sideWidth,wallHeight,0.5f},0,wallColor);
@@ -423,7 +453,19 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{-ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
-    for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
+    for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
+    if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;const float walkX=canyon?3.55f:(skyline?8.15f:5.2f),walkW=canyon?1.1f:(skyline?2.4f:2.0f);drawBox(viewProj,{-walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);}
+    const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
+    for(int i=0;propsValid&&i<early_browser_visuals::environmentPropCount(plan);++i){
+        const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};using early_browser_visuals::EnvironmentPrimitive;
+        const float structure[4]={0.40f,0.47f,0.50f,1},roof[4]={0.28f,0.34f,0.38f,1},dark[4]={0.05f,0.08f,0.09f,1},trunk[4]={0.25f,0.20f,0.14f,1},leaf[4]={0.18f,0.42f,0.24f,1},lawn[4]={0.20f,0.39f,0.23f,1},marker[4]={0.48f,0.55f,0.58f,1},cap[4]={0.72f,0.90f,0.94f,1};
+        if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,structure);drawBox(viewProj,p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},prop.yaw,roof);drawBox(viewProj,p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},prop.yaw,roof);drawBox(viewProj,p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},prop.yaw,dark);}
+        else if(prop.primitive==EnvironmentPrimitive::Tree){drawBox(viewProj,p+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.20f,prop.size.y*0.70f,prop.size.z*0.20f},prop.yaw,trunk);drawBox(viewProj,p+Vec3{0,prop.size.y*0.88f,0},{prop.size.x,prop.size.y*0.72f,prop.size.z},prop.yaw,leaf);}
+        else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(viewProj,p,prop.size,prop.yaw,lawn);
+        else if(prop.primitive==EnvironmentPrimitive::Ruin){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,ruin);drawBox(viewProj,p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},prop.yaw,ruinTop);}
+        else {drawBox(viewProj,p+Vec3{0,prop.size.y*0.5f,0},prop.size,prop.yaw,marker);drawBox(viewProj,p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},prop.yaw,cap);}
+    }
+    if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);
 }
 
 void Renderer::drawHud(const GameState& state) {
@@ -448,11 +490,31 @@ void Renderer::drawHud(const GameState& state) {
     const auto rainbow=[&](float hue){hue-=std::floor(hue);const float x=hue*6.0f,i=std::floor(x),f=x-i,q=1.0f-f;switch(static_cast<int>(i)%6){case 0:return Vec3{1,f,0};case 1:return Vec3{q,1,0};case 2:return Vec3{0,1,f};case 3:return Vec3{0,q,1};case 4:return Vec3{f,0,1};default:return Vec3{1,0,q};}};
     const float panel[4]={0.005f,0.012f,0.016f,0.72f}, cyan[4]={Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.95f};
     if(state.localSettings.fpsCounter){const std::string fps="FPS "+std::to_string(static_cast<int>(std::round(displayedMobileFps)));const float whiteFps[4]={Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b,0.94f};text(fps,width_-fps.size()*7.2f-12,68,1.2f,whiteFps);}
+    if(state.attractMode){
+        const float cx=width_*0.5f;
+        const std::string title="DATA";
+        // Bitmap text advances six cells but the final glyph is only five
+        // cells wide.  Center the visible ink, not the unused trailing advance.
+        const float titleScale=5.2f,titleW=(title.size()*6.0f-1.0f)*titleScale;
+        const float veil[4]={0,0,0,0.10f};
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),veil);
+        float pen=cx-titleW*0.5f;
+        for(std::size_t i=0;i<title.size();++i){const Vec3 rgb=rainbow(state.time*0.026f+static_cast<float>(i)*0.115f);const float color[4]={0.55f+rgb.x*0.42f,0.65f+rgb.y*0.34f,0.72f+rgb.z*0.28f,0.96f};text(std::string(1,title[i]),pen,height_*0.16f,titleScale,color);pen+=6.0f*titleScale;}
+        glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;
+    }
     if(state.cinematic.introActive){const float alpha=1.0f-smoothStep01(clampf(state.cinematic.introElapsed/0.42f,0.0f,1.0f));const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f,ss=std::max(2.0f,std::min(width_,height_)/240.0f);const float fading[4]={0.92f,0.97f,1,0.94f*alpha};const std::string status="READY",action="START";floatingText(status,px+(pw-status.size()*6*ss)*0.5f,py+ph*0.30f,ss,fading);const float startScale=ss*0.8f;floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.60f+10,startScale,fading);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;}
     if(!state.started) {
         const float pw=static_cast<float>(width_)*0.72f,ph=static_cast<float>(height_)*0.25f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
         const float menuAlpha=state.dead?smoothStep01(clampf(state.cinematic.deathElapsed/0.45f,0.0f,1.0f)):1.0f;const float white[4]={0.92f,0.97f,1,0.94f*menuAlpha};const std::string action=state.dead?"TAP TO RESTART":"START";const float startScale=std::max(2.0f,std::min(width_,height_)/240.0f)*(state.dead?1.0f:0.8f);floatingText(action,px+(pw-action.size()*6*startScale)*0.5f,py+ph*0.46f,startScale,white);
         glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST); return;
+    }
+    if(state.camera.spectatedPlayerId>=0){
+        const std::string label="SPECTATING  P"+std::to_string(state.camera.spectatedPlayerId+1);
+        const float scale=1.35f,tw=label.size()*6.0f*scale,pw=tw+24.0f,px=(width_-pw)*0.5f;
+        const float spectatorPanel[4]={0.005f,0.012f,0.016f,0.62f};
+        quad(px,18,pw,24,spectatorPanel);
+        text(label,px+12.0f,25,scale,cyan);
+        glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);return;
     }
     const int goals=std::max(1,state.hud.requiredGoals); const float gs=22,gap=8,total=goals*gs+(goals-1)*gap,start=(width_-total)*0.5f;
     for(int i=0;i<goals;++i){const float empty[4]={0.01f,0.02f,0.025f,0.90f}; const float filled[4]={Pass7Visual::AcidChartreuse.r,Pass7Visual::AcidChartreuse.g,Pass7Visual::AcidChartreuse.b,0.95f}; quad(start+i*(gs+gap),18,gs,gs,cyan); quad(start+i*(gs+gap)+2,20,gs-4,gs-4,i<state.hud.filledGoals?filled:empty);}
@@ -460,8 +522,8 @@ void Renderer::drawHud(const GameState& state) {
     constexpr int mosaicColumns=5,mosaicRows=5,mosaicCells=mosaicColumns*mosaicRows;
     const int filledSoulPixels=state.hud.storedSouls<=0?0:std::max(1,static_cast<int>(std::ceil(state.hud.storedSouls/static_cast<float>(PHONE_CAPACITY)*mosaicCells)));
     const bool tvPreview=state.roomIndex==10&&tvGifWall_.available();
-    const float tile=9.0f,tileGap=2.0f,mosaicW=mosaicColumns*tile+(mosaicColumns-1)*tileGap,mosaicX=12.0f+(120.0f-mosaicW)*0.5f,mosaicY=96.0f;
-    for(int i=0;i<mosaicCells;++i){const int col=i%mosaicColumns,row=i/mosaicColumns;VisualColor c=Pass7Visual::DataMosaicPalette[i];if(tvPreview){const auto tv=tvGifWall_.sample(col*(TvGifWall::Columns-1)/(mosaicColumns-1),row*(TvGifWall::Rows-1)/(mosaicRows-1),0.0f,state.secretTv.signal);c={tv.r,tv.g,tv.b};}const bool filled=i<filledSoulPixels;const float shade=filled?1.0f:0.22f,alpha=filled?0.92f:0.20f,tileColor[4]={c.r*shade,c.g*shade,c.b*shade,alpha},x=mosaicX+col*(tile+tileGap),y=mosaicY+row*(tile+tileGap);quad(x,y,tile,tile,tileColor);if(filled&&i==filledSoulPixels-1){const float pulse=0.5f+0.5f*std::sin(state.time*8.0f),edge[4]={c.r,c.g,c.b,0.28f+0.18f*pulse};quad(x-1,y-1,tile+2,1,edge);quad(x-1,y+tile,tile+2,1,edge);}}
+    const float tile=9.0f,mosaicGap=2.0f,mosaicW=mosaicColumns*tile+(mosaicColumns-1)*mosaicGap,mosaicX=12.0f+(120.0f-mosaicW)*0.5f,mosaicY=96.0f;
+    for(int i=0;i<mosaicCells;++i){const int col=i%mosaicColumns,row=i/mosaicColumns;VisualColor c=Pass7Visual::DataMosaicPalette[i];if(tvPreview){const auto tv=tvGifWall_.sample(col*(TvGifWall::Columns-1)/(mosaicColumns-1),row*(TvGifWall::Rows-1)/(mosaicRows-1),0.0f,state.secretTv.signal);c={tv.r,tv.g,tv.b};}const bool filled=i<filledSoulPixels;const float shade=filled?1.0f:0.22f,alpha=filled?0.92f:0.20f,tileColor[4]={c.r*shade,c.g*shade,c.b*shade,alpha},x=mosaicX+col*(tile+mosaicGap),y=mosaicY+row*(tile+mosaicGap);quad(x,y,tile,tile,tileColor);if(filled&&i==filledSoulPixels-1){const float pulse=0.5f+0.5f*std::sin(state.time*8.0f),edge[4]={c.r,c.g,c.b,0.28f+0.18f*pulse};quad(x-1,y-1,tile+2,1,edge);quad(x-1,y+tile,tile+2,1,edge);}}
     const float white[4]={1,1,1,0.94f},soft[4]={0.78f,0.94f,1,0.82f},green[4]={Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b,0.94f};text("SOULS "+std::to_string(state.hud.storedSouls),20,80,1.2f,soft);text("ROOM: "+std::to_string(state.roomIndex),12,170,1.5f,white);text("GOALS: "+std::to_string(state.hud.filledGoals)+"/"+std::to_string(state.hud.requiredGoals),12,187,1.5f,white);text(state.roomClear?"DOOR: OPEN":"DOOR: LOOP",12,204,1.5f,state.roomClear?green:white);text("TOKENS: "+std::to_string(state.progression.permanent.tokens),12,221,1.25f,green);
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,green);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));const float warm[4]={1.0f,0.72f,0.62f,0.94f};text(tax,12,320,1.05f,warm);}
@@ -527,7 +589,7 @@ void Renderer::drawDoorDataMosh(const GameState& state){
 
 void Renderer::draw(const GameState& state) {
     ++mobileFpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-mobileFpsWindowStart).count();if(elapsed>=0.5f){displayedMobileFps=mobileFpsFrames/elapsed;mobileFpsFrames=0;mobileFpsWindowStart=now;}
-    glClearColor(Pass7Visual::Background.r, Pass7Visual::Background.g, Pass7Visual::Background.b, 1.0f);
+    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float proj[16];
@@ -566,25 +628,24 @@ void Renderer::draw(const GameState& state) {
         drawBox(viewProj,{41.35f,0.18f,-0.80f},{1.8f,0.055f,0.055f},0.18f,cable);drawBox(viewProj,{41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},-0.22f,cable);
     }
 
-    // Project every caster's geometry along the browser sun vector (30,60,25)
-    // onto the floor. This preserves physical direction, length and silhouette
-    // while avoiding a shadow-map texture pass on mobile tile GPUs.
-    if(state.localSettings.shadows){const float shadowMatrix[16]={1,0,0,0,-0.5f,0,-25.0f/60.0f,0,0,0,1,0,0.006f,0.012f,0.005f,1};
-    float shadowViewProj[16];multiply(shadowViewProj,viewProj,shadowMatrix);
+    // One bounded footprint per dynamic caster avoids projected mesh triangles
+    // repeatedly darkening the same pixels on low-end tile GPUs.
+    if(state.localSettings.shadows){
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    const float shadow[4]={0.012f,0.018f,0.022f,0.28f};
-    if(!state.camera.firstPerson){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation,true);else drawBox(shadowViewProj,state.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadow);}
-    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneModel_.valid())drawStaticModel(shadowViewProj,phoneModel_,phoneVbo_,phoneNormalVbo_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation,true);else drawBox(shadowViewProj,peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadow);}
+    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(viewProj,peer.player.pos,0.25f,0.18f,0.95f,0.20f);
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(shadowViewProj,target,state.time,true);else drawProceduralHuman(shadowViewProj,target,state.time,shadow);}if(target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(shadowViewProj,target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,shadow);}}
-    for(const auto& flower:state.flowers)if(flower.active){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};if(flowerModel_.valid())drawStaticModel(shadowViewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY),true);else drawBox(shadowViewProj,center,{0.54f,0.22f,0.54f},flower.rotationY,shadow);}
-    for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(shadowViewProj,bullet.pos,{size,size,size},bullet.spin*1.7f,shadow);}
-    for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox(shadowViewProj,{c.center.x,c.center.y,shadowTileOrigin+c.center.z},{c.width,c.height,c.depth},0,shadow);}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(viewProj,target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(viewProj,target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}
+    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow(viewProj,{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
+    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(viewProj,bullet.pos,radius,radius,radius*2.0f,0.14f);}
+    // Static room colliders are receivers, not shadow casters. Projecting them
+    // produced room-sized overlapping sheets across the Field floor.
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
 
     const float phoneBody[4] = {Pass7Visual::PhoneBody.r, Pass7Visual::PhoneBody.g, Pass7Visual::PhoneBody.b, 1.0f};
     const float screenBrightness = std::min(1.0f, 0.45f + state.phoneVisual.screenGlow * 0.36f);
-    const float phoneScreen[4] = {Pass7Visual::PhoneEmission.r * screenBrightness, Pass7Visual::PhoneEmission.g * screenBrightness, Pass7Visual::PhoneEmission.b * screenBrightness, 1.0f};
+    const float actionGlow=clampf(state.vacuum.power*0.45f+state.energy.dischargePositionAmount*0.85f,0.0f,1.0f);
+    const float phoneScreen[4] = {Pass7Visual::PhoneEmission.r * screenBrightness+actionGlow*0.08f, Pass7Visual::PhoneEmission.g * screenBrightness+actionGlow*0.18f, Pass7Visual::PhoneEmission.b * screenBrightness+actionGlow*0.22f, 1.0f};
     if (state.phoneVisual.visible) {
         const Vec3 phonePos = state.phoneTransform.position;
         const Quat phoneOrientation = state.phoneTransform.orientation;
@@ -612,6 +673,9 @@ void Renderer::draw(const GameState& state) {
         glDisable(GL_BLEND);
     }
 
+    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
+    std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
+    int translucentSoulCount=0;
     const float targetColor[4] = {Pass7Visual::NormalEnemy.r, Pass7Visual::NormalEnemy.g, Pass7Visual::NormalEnemy.b, 1.0f};
     const float targetTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for (auto target : state.targets) {
@@ -630,22 +694,24 @@ void Renderer::draw(const GameState& state) {
             if (!target.soulVisual.visible) continue;
             const auto& sv=target.soulVisual; const Vec3 soulCenter=target.pos+Vec3{0.0f,0.57f+sv.verticalOffset,0.0f}; const float cube=0.72f*0.78f*target.scale*sv.morphScale;
             if(!cheapVisuals)drawSoulFlesh(viewProj,target,soulCenter);
-            const float soulColor[4] = {sv.color.r, sv.color.g, sv.color.b, 0.68f};
-            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
-            drawBox(viewProj, soulCenter, {cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z}, sv.rotationY, soulColor);
-            glDepthMask(GL_TRUE); glDisable(GL_BLEND);
+            const Vec3 delta=soulCenter-state.camera.pos;
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
     }
+    std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+    // The GLES cube VBO is inward-wound; culling its front-wound triangles
+    // retains one outward camera-facing shell surface without alpha buildup.
+    glEnable(GL_CULL_FACE); glCullFace(GL_FRONT);
+    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];const float color[4]={soul.color.r,soul.color.g,soul.color.b,0.68f};drawBox(viewProj,soul.center,soul.scale,soul.rotationY,color);}
+    glDisable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDisable(GL_BLEND);
 
     const float flowerColor[4]={Pass7Visual::Flower.r,Pass7Visual::Flower.g,Pass7Visual::Flower.b,1.0f};
-    const float flowerCore[4]={Pass7Visual::FlowerCore.r,Pass7Visual::FlowerCore.g,Pass7Visual::FlowerCore.b,1.0f};
     const float flowerTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(const auto& flower:state.flowers){
         if(!flower.active) continue;
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+flowerTileOrigin+static_cast<float>(offset)*ROOM_DEPTH};
-        if(!cheapVisuals&&flowerModel_.valid()) drawStaticModel(viewProj,flowerModel_,flowerVbo_,flowerNormalVbo_,center,{1,1,1},quatAxisAngle({0,1,0},flower.rotationY));
-        else if(cheapVisuals)drawBox(viewProj,center,{0.36f,0.18f,0.36f},flower.rotationY,flowerColor);
-        else {drawBox(viewProj,center,{0.20f,0.20f,0.20f},flower.rotationY,flowerCore);for(int petal=0;petal<5;++petal){const float angle=flower.rotationY+static_cast<float>(petal)*DB_PI*2.0f/5.0f;const Vec3 p=center+Vec3{std::cos(angle)*0.23f,0,std::sin(angle)*0.23f};drawBox(viewProj,p,{0.30f,0.12f,0.16f},-angle,flowerColor);}}
+        constexpr char flowerGlyphs[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";const unsigned int phase=static_cast<unsigned int>(state.time*3.0f),positionHash=static_cast<unsigned int>(std::abs(flower.pos.x)*97.0f+std::abs(flower.pos.z)*193.0f)+static_cast<unsigned int>(state.roomIndex)*17u;const unsigned int symbolHash=(phase+positionHash)*1664525u+1013904223u;const auto rows=bitmapGlyph(flowerGlyphs[(symbolHash>>16)%36u]);const Vec3 toCamera=normalized(state.camera.pos-center),glyphRight=normalized(cross({0,1,0},toCamera)),glyphUp=normalized(cross(toCamera,glyphRight));const float glyphYaw=std::atan2(toCamera.x,toCamera.z);const float glyphColor[4]={0.94f,1.0f,0.86f,1.0f};for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const Vec3 pixel=center+glyphRight*((static_cast<float>(col)-2.0f)*0.072f)+glyphUp*((3.0f-static_cast<float>(row))*0.072f);drawBox(viewProj,pixel,{0.058f,0.058f,0.028f},glyphYaw,glyphColor);}glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);glEnable(GL_CULL_FACE);glCullFace(GL_FRONT);const float shellColor[4]={flowerColor[0],flowerColor[1],flowerColor[2],0.36f};drawBox(viewProj,center,{0.72f,0.72f,0.72f},flower.rotationY,shellColor);glDisable(GL_CULL_FACE);glDepthMask(GL_TRUE);glDisable(GL_BLEND);
         }
     }
 

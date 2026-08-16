@@ -20,18 +20,27 @@ run_logged() {
 
 run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 run_logged build cmake --build "$BUILD_DIR" --config Release --target \
+  DigitalBreakdown \
   GameplayRoleAndSoulMotionTest \
   GameplayGeometryAndConfigTest \
   TargetLifecycleTest \
   GameplayStateContractsTest \
   PhoneBodyContractTest \
   PhoneMenuLayoutTest \
+  MenuNavigationTest \
   PhoneDisplayStateTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
+  MultiplayerDeterminismTest \
+  HostRemotePeerSimulationIsolationTest \
   MultiplayerConnectionStateTest \
+  GameplayFlowProbe \
+  RoomProgressionProbe \
+  DeterministicInputSoak \
   --parallel
 run_logged ctest ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
 run_logged parity "$BUILD_DIR/Pass7ParityTest"
 run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
+run_logged determinism "$BUILD_DIR/MultiplayerDeterminismTest"
+run_logged peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
 run_logged diff-check git diff --check

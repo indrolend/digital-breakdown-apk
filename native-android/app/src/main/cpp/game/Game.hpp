@@ -2,11 +2,13 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 #include "HumanVisual.hpp"
 #include "VisualIdentity.hpp"
 #include "Math.hpp"
 #include "PhoneDisplay.hpp"
+#include "EarlyBrowserVisuals.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -53,15 +55,10 @@ struct InputState {
     bool touchSprint = false;
     bool touchPrimaryHeld = false;
 
-    float touchX = 0.0f;
-    float touchY = 0.0f;
-    float lastTouchX = 0.0f;
-    float lastTouchY = 0.0f;
     float lookDeltaX = 0.0f;
     float lookDeltaY = 0.0f;
     float wiggleAxis = 0.0f;
     int commSignalPressed = 0;
-    bool touching = false;
 };
 
 enum PlayerCommandButton : std::uint16_t {
@@ -158,11 +155,17 @@ struct EnergyState {
     float dischargePositionAmount = 0.0f;
 };
 
+struct EnvironmentVisualState {
+    Vec3 latestShotOrigin;
+    float latestShotAge = 9999.0f;
+};
+
 struct CameraState {
     float yaw = 0.0f;
     float pitch = 0.0f;
     float verticalFovDegrees = 60.0f;
     bool firstPerson = false;
+    int spectatedPlayerId = -1;
     Vec3 pos {0.0f, 1.18f, 3.0f};
     Vec3 forward {0.0f, 0.0f, -1.0f};
     Vec3 lookTarget {0.0f, 0.53f, 0.0f};
@@ -175,6 +178,12 @@ struct CinematicState {
     float deathElapsed = 0.0f;
     float textInteraction = 0.0f;
     float baseYaw = 0.0f;
+    float attractCameraYaw = 0.0f;
+    bool attractCameraYawValid = false;
+    bool attractExitActive = false;
+    float attractExitElapsed = 0.0f;
+    bool menuEnterActive = false;
+    float menuEnterElapsed = 0.0f;
     bool menuExitActive = false;
     float menuExitElapsed = 0.0f;
     Vec3 startCameraPos;
@@ -276,9 +285,11 @@ struct PendingShotState {
 
 struct FlowerPowerupState {
     Vec3 pos;
+    Vec3 vacuumVelocity;
     float baseY = 0.38f;
     float age = 0.0f;
     float rotationY = 0.0f;
+    bool vacuumAttracted = false;
     bool active = false;
 };
 
@@ -413,16 +424,18 @@ struct LocalSettingsState {
     float mouseLookSensitivity = 1.0f;
     float touchLookSensitivity = 1.0f;
     float controllerLookSensitivity = 1.15f;
+    int controllerTriggerSensitivity = 1; // 0 deep, 1 balanced, 2 hair
+    int controllerVibration = 1; // 0 off, 1 subtle, 2 strong
     bool mobileFraming = false;
     float menuScroll = 0.0f;
     std::array<LocalMenuHistoryEntry, MenuHistoryCapacity> menuHistory{};
     int menuHistoryDepth = 0;
     // GLFW key values are kept as local presentation/input preferences only.
     // They are intentionally absent from multiplayer snapshots.
-    std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,67,81,86,70}};
+    // Public desktop contract: WASD, Shift, Space, F attack, Q shoot, C camera.
+    // Slot 9 is retained only for save-layout compatibility with older builds.
+    std::array<int, 10> keyboardBindings{{87,83,65,68,340,32,70,81,67,0}};
     int rebindingAction = -1;
-    int pendingBinding = -1;
-    int conflictingAction = -1;
 };
 
 struct UpgradeMenuState {
@@ -448,6 +461,7 @@ struct PhoneTransformState {
 };
 
 struct MeleeVisualState {
+    unsigned short actionSequence = 0;
     float visualTimer = 0.0f;
     float visualDuration = 0.20f;
     float dashTimer = 0.0f;
@@ -466,7 +480,6 @@ struct MeleeVisualState {
     float landingPosePitch = 0.0f;
     float wallGripTimer = 0.0f;
     Vec3 wallNormal;
-    float wallClimbRemaining = 0.48f;
     float travel = 0.0f;
     float lunge = 0.15f;
     float recoilDistance = 0.08f;
@@ -501,6 +514,31 @@ struct PlayerDebugState {
     int colliderCount = 0;
 };
 
+enum class RoomReviewRating : unsigned char { Keep, Tune, Redesign, Remove };
+
+struct RoomInspectorReport {
+    early_browser_visuals::RoomPremise premise=early_browser_visuals::RoomPremise::FieldOpen;
+    early_browser_visuals::RoomSetting setting=early_browser_visuals::RoomSetting::Field;
+    early_browser_visuals::RoomForm form=early_browser_visuals::RoomForm::Open;
+    early_browser_visuals::RoomScale scale=early_browser_visuals::RoomScale::Standard;
+    early_browser_visuals::RoomCondition condition=early_browser_visuals::RoomCondition::Normal;
+    gameplay::TraversalDifficulty requiredBand=gameplay::TraversalDifficulty::Unknown;
+    int seed=0;
+    int roomIndex=0;
+    int traversalSurfaceCount=0;
+    int traversalEdgeCount=0;
+    int requiredEdgeCount=0;
+    int colliderCount=0;
+    int presentationPropCount=0;
+    int enemyBudget=0;
+    int enemyCount=0;
+    int transparentPrimitiveCount=0;
+    int visiblePrimitiveEstimate=0;
+    int drawCallBucket=0;
+    bool requiredRouteValid=false;
+    bool seedSelectionValid=false;
+};
+
 struct HudState {
     float batteryFill = 1.0f;
     int storedSouls = 0;
@@ -515,7 +553,6 @@ struct HudState {
     float supplementalFill = 0.0f;
     int flowerStacks = 0;
     bool hasTarget = false;
-    bool hasAimTarget = false;
     bool lowBattery = false;
     bool gameOver = false;
     std::array<char,48> energyTicker{};
@@ -531,6 +568,7 @@ struct HudState {
 };
 
 constexpr int NETWORK_PLAYER_COUNT = 4;
+constexpr float NETWORK_LOCAL_CORRECTION_SMOOTHING_RATE = 10.0f;
 struct NetworkPeerState {
     bool active = false;
     int playerId = -1;
@@ -561,12 +599,14 @@ struct MultiplayerRuntimeState {
     std::array<char, 64> status{};
     std::array<NetworkPeerState, NETWORK_PLAYER_COUNT> peers{};
     bool hasWorldSnapshot = false;
+    Vec3 localPredictionCorrection;
 };
 
 struct GameState {
     InputState input;
     PlayerState player;
     EnergyState energy;
+    EnvironmentVisualState environmentVisual;
     CameraState camera;
     VacuumState vacuum;
     std::array<TargetState, TARGET_COUNT> targets;
@@ -603,6 +643,12 @@ struct GameState {
     bool started = true;
     bool dead = false;
     bool uiPaused = false;
+    bool attractMode = false;
+    bool traversalLab = false;
+    bool roomInspector = false;
+    bool roomInspectorEnemies = false;
+    early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
+    RoomInspectorReport roomInspectorReport;
     CinematicState cinematic;
     unsigned int flowerRandomState = 0x9e3779b9u;
     float meleeCooldown = 0.0f;
@@ -614,13 +660,22 @@ struct GameState {
     MultiplayerRuntimeState multiplayer;
 };
 
+struct HostRemotePeerSimulationIsolationAccess;
+
 class Game {
 public:
     void reset();
     void restart();
     void prepareStartScreen();
+    void prepareAttractScreen();
+    void dismissAttractMode();
     // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
     void debugStartSecretTvTest(bool enterRoom);
+    void debugStartTraversalLab();
+    void debugStartRoomInspector();
+    void debugStepRoomInspector(int delta,bool newSeed=false);
+    void debugToggleRoomInspectorEnemies();
+    std::string debugRoomReviewLine(RoomReviewRating rating) const;
     void setUiPaused(bool paused);
     void update(float dt);
     void setKey(int keyCode, bool down);
@@ -657,6 +712,7 @@ public:
     GameState& networkMutableState() { return state_; }
 
 private:
+    friend struct HostRemotePeerSimulationIsolationAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
     int simulationPlayerId_ = 0;
@@ -674,6 +730,7 @@ private:
     void savePlayerContext(NetworkPeerState& context) const;
     void loadPlayerContext(const NetworkPeerState& context);
     void updateCamera(float dt);
+    void updateAttractInput(float dt);
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);
@@ -706,6 +763,7 @@ private:
     void updateRoomPopulation(float dt);
     void updateDoorTransition();
     void updateFlowerPowerups(float dt);
+    void refreshRoomInspectorReport(bool seedSelectionValid=true);
     void updateParticles(float dt);
     void spawnParticleBurst(const Vec3& position);
     void spawnFlameBurst(const Vec3& position, float strength);
@@ -728,7 +786,9 @@ private:
     void spawnFlowerPowerup(float x, float y, float z);
     void registerMeleeBatteryHit(int hitCount);
     void updateBattery(float dt);
+    void updateRunProgressionTimers(float dt);
     void triggerRunDeath();
+    void clearPlayerLifecycleActions();
     void emitAudio(AudioCue cue, float volume);
     void updateSlurpAudio();
     void updateBatteryAudio(float beforeValue);
@@ -736,7 +796,7 @@ private:
     void tryJump();
     void startGroundJump();
     void startAirJump();
-    void triggerMelee();
+    void triggerMelee(bool authoritativeDamage = true);
     void shootStoredSoul();
     void releaseSoul(int index);
     void captureSoul(int index);

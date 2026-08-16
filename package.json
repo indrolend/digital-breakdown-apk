@@ -1,7 +1,7 @@
 {
-  "name": "digital-breakdown-apk",
+  "name": "digital-breakdown",
   "version": "1.0.0",
-  "description": "",
+  "description": "Experimental cross-platform action game and multiplayer relay",
   "main": "index.js",
   "bin": {
     "hud": "./tools/hud/cli.mjs"
@@ -52,8 +52,8 @@
     "native:watch-artifacts": "bash ./scripts/watch-native-artifacts.sh"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Joel Gutierrez and contributors",
+  "license": "AGPL-3.0-only",
   "type": "commonjs",
   "dependencies": {
     "@capacitor/android": "^8.4.1",

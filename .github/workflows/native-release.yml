@@ -7,6 +7,8 @@ on:
     paths:
       - 'native-desktop/**'
       - 'native-android/**'
+      - 'native-network/**'
+      - 'multiplayer-server/**'
       - 'native-models/**'
       - 'tools/verify_asset_mirrors.py'
       - 'tools/desktop/**'
@@ -35,8 +37,16 @@ jobs:
       - name: Verify platform asset mirrors
         run: python tools/verify_asset_mirrors.py
 
+      - name: Check protocol declarations
+        run: node tools/release/protocol-consistency.mjs
+
       - name: Configure desktop release
-        run: cmake -S native-desktop -B build/desktop-release -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S native-desktop -B build/desktop-release -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DDB_COMMIT_SHA="${{ github.sha }}"
+          -DDB_CHANNEL=latest-native
+          -DDB_HUMAN_VERSION="latest-native-${{ github.sha }}"
 
       - name: Build desktop release
         run: cmake --build build/desktop-release --config Release --parallel
@@ -291,6 +301,9 @@ jobs:
         run: >-
           cmake -S native-desktop -B build/macos-release
           -DCMAKE_BUILD_TYPE=Release
+          -DDB_COMMIT_SHA="${{ github.sha }}"
+          -DDB_CHANNEL=latest-native
+          -DDB_HUMAN_VERSION="latest-native-${{ github.sha }}"
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
@@ -376,7 +389,12 @@ jobs:
           MACOS_SHA=$(sha256sum DigitalBreakdown-macOS-Universal.zip | awk '{print $1}')
           SHORT_SHA="${GITHUB_SHA::7}"
           ANDROID_VARIANT=$(cat android-variant.txt)
+          PROTOCOL_VERSION=$(sed -nE 's/.*PROTOCOL_VERSION = ([0-9]+).*/\1/p' ../source/native-network/MultiplayerProtocol.hpp | head -1)
+          GAMEPLAY_VERSION=$(sed -nE 's/.*GAMEPLAY_VERSION = ([0-9]+).*/\1/p' ../source/native-network/MultiplayerProtocol.hpp | head -1)
           RELEASE_BASE="https://github.com/indrolend/Digital-breakdown-dev/releases/download/latest-native"
+
+          test -n "$PROTOCOL_VERSION"
+          test -n "$GAMEPLAY_VERSION"
 
           sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk DigitalBreakdown-macOS-Universal.zip > checksums.txt
 
@@ -393,6 +411,9 @@ jobs:
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${SHORT_SHA}",
             "channel": "latest-native",
+            "protocolVersion": ${PROTOCOL_VERSION},
+            "gameplayVersion": ${GAMEPLAY_VERSION},
+            "saveFormatVersion": 4,
             "builtAt": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "workflow": "${GITHUB_WORKFLOW}",
             "runId": "${GITHUB_RUN_ID}",

@@ -48,6 +48,7 @@ struct PhoneDisplayState {
     PhoneDisplayMode mode = PhoneDisplayMode::Off;
     PhoneDisplayMode previousMode = PhoneDisplayMode::Off;
     float transitionProgress = 1.0f;
+    float presentationBlend = 0.0f;
     float brightness = 0.0f;
     float contentOpacity = 0.0f;
     Vec3 screenTint{0.07f, 0.19f, 0.29f};

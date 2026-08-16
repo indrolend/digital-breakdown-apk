@@ -69,6 +69,38 @@ void expectSelectableHit(const PhoneDisplayMenuLayout& layout, int selection) {
 
 int main() {
     Game game;
+    game.prepareAttractScreen();
+    assert(game.state().attractMode);
+    assert(game.state().started);
+    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::Gameplay);
+    const unsigned int attractAudioSerial = game.state().audio.nextSerial;
+    float previousAttractYaw = game.state().camera.yaw;
+    for (int tick = 0; tick < 180; ++tick) {
+        step(game);
+        const float yawStep = std::atan2(
+            std::sin(game.state().camera.yaw - previousAttractYaw),
+            std::cos(game.state().camera.yaw - previousAttractYaw));
+        assert(std::abs(yawStep) < 0.30f);
+        previousAttractYaw = game.state().camera.yaw;
+    }
+    assert(game.state().attractMode);
+    assert(game.state().frame > 0);
+    assert(game.state().audio.nextSerial == attractAudioSerial);
+    GameState& exhaustedAttract = const_cast<GameState&>(game.state());
+    exhaustedAttract.dead = true;
+    step(game);
+    assert(game.state().attractMode);
+    assert(game.state().started);
+    assert(!game.state().dead);
+    game.dismissAttractMode();
+    assert(game.state().attractMode);
+    assert(game.state().cinematic.attractExitActive);
+    for (int tick = 0; tick < 24 && game.state().attractMode; ++tick) step(game);
+    assert(!game.state().attractMode);
+    assert(!game.state().started);
+    assert(game.state().cinematic.menuEnterActive);
+    assert(game.state().phoneDisplay.mode == PhoneDisplayMode::MainMenu);
+
     game.prepareStartScreen();
     assert(game.state().phoneDisplay.mode == PhoneDisplayMode::MainMenu);
     assert(game.state().phoneDisplay.interactive);
@@ -77,7 +109,7 @@ int main() {
     GameState& menu = const_cast<GameState&>(game.state());
     PhoneDisplayMenuLayout mainLayout = makePhoneDisplayMenuLayout(menu);
     expectLayoutInside(mainLayout);
-    assert(mainLayout.title == "DATA");
+    assert(mainLayout.title.empty());
     assert(mainLayout.selectableCount == 4);
     expectSelectableHit(mainLayout, 0);
 
