@@ -318,6 +318,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout canonical project metadata
+        uses: actions/checkout@v4
+        with:
+          path: source
+
       - name: Download Windows package
         uses: actions/download-artifact@v4
         with:
@@ -351,7 +356,7 @@ jobs:
           MACOS_SHA=$(sha256sum DigitalBreakdown-macOS-Universal.zip | awk '{print $1}')
           SHORT_SHA="${GITHUB_SHA::7}"
           ANDROID_VARIANT=$(cat android-variant.txt)
-          RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest-native"
+          RELEASE_BASE="https://github.com/indrolend/Digital-breakdown-dev/releases/download/latest-native"
 
           sha256sum DigitalBreakdown-Windows.zip DigitalBreakdown-Android.apk DigitalBreakdown-macOS-Universal.zip > checksums.txt
 
@@ -433,6 +438,66 @@ jobs:
             release/apk-contents.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish public rolling latest-native release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.DEV_PORTAL_TOKEN }}
+          PUBLIC_REPOSITORY: indrolend/Digital-breakdown-dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+
+          if gh release view latest-native --repo "$PUBLIC_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit latest-native \
+              --repo "$PUBLIC_REPOSITORY" \
+              --title "DATA by indrolend · Latest Native" \
+              --notes "Canonical public native artifacts from indrolend/digital-breakdown-apk@${GITHUB_SHA}. Authority is build-manifest.json, not filenames."
+          else
+            gh release create latest-native \
+              --repo "$PUBLIC_REPOSITORY" \
+              --target main \
+              --title "DATA by indrolend · Latest Native" \
+              --notes "Canonical public native artifacts from indrolend/digital-breakdown-apk@${GITHUB_SHA}. Authority is build-manifest.json, not filenames."
+          fi
+
+          gh release upload latest-native \
+            release/DigitalBreakdown-Windows.zip \
+            release/DigitalBreakdown-Android.apk \
+            release/DigitalBreakdown-macOS-Universal.zip \
+            release/build-manifest.json \
+            release/checksums.txt \
+            release/android-build-info.json \
+            release/apk-contents.txt \
+            --repo "$PUBLIC_REPOSITORY" \
+            --clobber
+
+      - name: Publish resolver metadata to public portal
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+        with:
+          repository: indrolend/Digital-breakdown-dev
+          token: ${{ secrets.DEV_PORTAL_TOKEN }}
+          path: portal
+
+      - name: Update public resolver metadata
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp release/build-manifest.json portal/native-build-manifest.json
+          cp source/distribution/project.json portal/project.json
+          cd portal
+          git config user.name "digital-breakdown-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add native-build-manifest.json project.json
+          if git diff --cached --quiet; then
+            echo "Public resolver metadata is already current."
+          else
+            git commit -m "Publish native resolver metadata ${GITHUB_SHA::7}"
+            git push origin HEAD:main
+          fi
 
       - name: Publish rolling latest-native release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

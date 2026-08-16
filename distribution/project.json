@@ -10,8 +10,9 @@
     "DigitalBreakdown"
   ],
   "repository": "indrolend/digital-breakdown-apk",
+  "publicDistributionRepository": "indrolend/Digital-breakdown-dev",
   "channel": "latest-native",
-  "manifest": "https://github.com/indrolend/digital-breakdown-apk/releases/download/latest-native/build-manifest.json",
+  "manifest": "https://github.com/indrolend/Digital-breakdown-dev/releases/download/latest-native/build-manifest.json",
   "channels": {
     "latest-native": "Canonical downloadable native application artifacts",
     "latest-dev": "Development portal, WebAssembly, reference, and research artifacts"
