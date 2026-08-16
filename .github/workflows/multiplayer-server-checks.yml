@@ -1,0 +1,51 @@
+name: Multiplayer server checks
+
+on:
+  pull_request:
+    paths:
+      - "multiplayer-server/**"
+      - ".github/workflows/multiplayer-server-checks.yml"
+  push:
+    branches: [main]
+    paths:
+      - "multiplayer-server/**"
+      - ".github/workflows/multiplayer-server-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiplayer-server-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: multiplayer-server
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: multiplayer-server/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Reject vulnerable dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Verify generated types, compile, and test
+        run: npm run check
+
+      - name: Verify deployment bundle
+        run: npm run deploy:dry

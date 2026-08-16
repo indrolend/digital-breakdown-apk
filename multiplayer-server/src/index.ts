@@ -27,6 +27,12 @@ async function sha256(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function matchesSha256(value: string, expectedHash: string): Promise<boolean> {
+  const actual = encoder.encode(await sha256(value));
+  const expected = encoder.encode(expectedHash);
+  return actual.byteLength === expected.byteLength && crypto.subtle.timingSafeEqual(actual, expected);
+}
+
 function secureToken(byteCount = 24): string {
   const bytes = new Uint8Array(byteCount);
   crypto.getRandomValues(bytes);
@@ -132,7 +138,7 @@ export class MatchRoom extends DurableObject<Env> {
     if (role === "host") {
       if (connected.some(({ attachment }) => attachment.role === "host")) return jsonResponse({ error: "host_already_connected" }, 409);
       const key = url.searchParams.get("key") ?? "";
-      if ((await sha256(key)) !== metadata.hostKeyHash) return jsonResponse({ error: "invalid_host_key" }, 403);
+      if (!(await matchesSha256(key, metadata.hostKeyHash))) return jsonResponse({ error: "invalid_host_key" }, 403);
     } else if (lifecycle.started || connected.length >= MATCH_CAPACITY || !connected.some(({ attachment }) => attachment.role === "host")) {
       return jsonResponse({ error: lifecycle.started ? "match_started" : connected.length >= MATCH_CAPACITY ? "room_full" : "host_offline" }, 409);
     }

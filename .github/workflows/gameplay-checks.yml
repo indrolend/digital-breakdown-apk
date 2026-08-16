@@ -9,7 +9,11 @@ on:
       - "native-desktop/**.cpp"
       - "native-desktop/**.hpp"
       - "native-network/**"
+      - "native-models/**"
+      - "native-desktop/audio/**"
+      - "native-android/app/src/main/res/raw/**"
       - "scripts/verify-gameplay.*"
+      - "tools/verify_asset_mirrors.py"
       - ".github/workflows/gameplay-checks.yml"
   push:
     branches:
@@ -23,15 +27,24 @@ on:
       - "native-desktop/**.cpp"
       - "native-desktop/**.hpp"
       - "native-network/**"
+      - "native-models/**"
+      - "native-desktop/audio/**"
+      - "native-android/app/src/main/res/raw/**"
       - "scripts/verify-gameplay.*"
+      - "tools/verify_asset_mirrors.py"
       - ".github/workflows/gameplay-checks.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: gameplay-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gameplay:
     runs-on: macos-14
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Verify platform asset mirrors

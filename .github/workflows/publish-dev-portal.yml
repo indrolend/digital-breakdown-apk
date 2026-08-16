@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-dev-portal-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PORTAL_REPOSITORY: indrolend/Digital-breakdown-dev
   PORTAL_TOKEN: ${{ secrets.DEV_PORTAL_TOKEN }}
@@ -22,6 +26,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Check out authoritative game source

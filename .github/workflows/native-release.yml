@@ -7,6 +7,8 @@ on:
     paths:
       - 'native-desktop/**'
       - 'native-android/**'
+      - 'native-models/**'
+      - 'tools/verify_asset_mirrors.py'
       - 'tools/desktop/**'
       - 'tools/release/**'
       - 'tools/dbdev.ps1'
@@ -24,6 +26,7 @@ jobs:
   windows:
     name: Build and test Windows
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout source
@@ -176,6 +179,7 @@ jobs:
   android:
     name: Build and inspect Android
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -277,6 +281,7 @@ jobs:
   macos:
     name: Build universal macOS app
     runs-on: macos-14
+    timeout-minutes: 45
 
     steps:
       - name: Checkout source
@@ -330,6 +335,7 @@ jobs:
     name: Publish unified native bundle
     needs: [windows, android, macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout canonical project metadata

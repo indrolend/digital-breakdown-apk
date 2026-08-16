@@ -82,6 +82,13 @@ describe("room relay integration", () => {
     const room = await created.json() as { code: string; hostKey: string; protocol: number };
     expect(room.protocol).toBe(PROTOCOL_VERSION);
 
+    const rejectedHost = await exports.default.fetch(new Request(
+      `http://local.test/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=invalid`,
+      { headers: { Upgrade: "websocket" } },
+    ));
+    expect(rejectedHost.status).toBe(403);
+    expect(await rejectedHost.json()).toMatchObject({ error: "invalid_host_key" });
+
     const host = await connect(`/v1/rooms/${room.code}/connect?role=host&build=test&gameplay=5&key=${encodeURIComponent(room.hostKey)}`);
     const hostWelcome = await nextJsonType(host, "welcome");
     expect(hostWelcome).toMatchObject({ type: "welcome", playerId: 0, role: "host", room: room.code });
