@@ -42,8 +42,27 @@ function Get-Artifact {
     )
 
     if ($Manifest.artifacts) {
-        $match = @($Manifest.artifacts | Where-Object { $_.platform -eq $Platform } | Select-Object -First 1)
-        if ($match.Count -gt 0) { return $match[0] }
+        if ($Manifest.artifacts -is [array]) {
+            $match = @($Manifest.artifacts | Where-Object { $_.platform -eq $Platform } | Select-Object -First 1)
+            if ($match.Count -gt 0) { return $match[0] }
+        } else {
+            $artifactKey = switch ($Platform) {
+                'windows' { 'windows-x64' }
+                'android' { 'android-armeabi-v7a' }
+                default { $null }
+            }
+            if ($artifactKey) {
+                $property = $Manifest.artifacts.PSObject.Properties[$artifactKey]
+                if ($property -and $property.Value.available) {
+                    $artifact = $property.Value
+                    if (-not $artifact.PSObject.Properties['architecture']) {
+                        $architecture = if ($Platform -eq 'windows') { 'x64' } else { 'armeabi-v7a' }
+                        $artifact | Add-Member -NotePropertyName architecture -NotePropertyValue $architecture
+                    }
+                    return $artifact
+                }
+            }
+        }
     }
 
     if ($Platform -eq 'windows' -and $Manifest.windows -and $Manifest.windows.available) {
