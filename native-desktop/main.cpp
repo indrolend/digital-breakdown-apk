@@ -1742,9 +1742,11 @@ int main(int argc, char** argv) {
                     multiplayerSoulStoredFrame=multiplayerParityFrame;
                 const int dischargeAge=multiplayerSoulStoredFrame<0?0:
                     multiplayerParityFrame-multiplayerSoulStoredFrame;
+                // Hold the scripted edge across several input packets so the
+                // declared loss simulation tests gameplay, not a one-frame pulse.
                 const bool shoot=multiplayerSoulStoredFrame>=0&&
                     host.game.state().player.souls>0&&dischargeAge>=10&&
-                    dischargeAge%20==10;
+                    dischargeAge%20>=10&&dischargeAge%20<15;
                 host.game.setTouchControls(0,0,0,0,vacuum,false,false,melee,
                                            shoot,false);
                 if(shoot&&!multiplayerDischargeIssued){

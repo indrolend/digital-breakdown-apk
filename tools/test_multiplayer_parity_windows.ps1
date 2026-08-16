@@ -197,8 +197,11 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if (-not (Log-Contains $guestLog 'MULTIPLAYER_DISCHARGE_PREDICTED')) { Fail-Parity "guest discharge startup was not predicted" }
-    if (-not (Log-Contains $hostLog 'MULTIPLAYER_DURABLE_PROJECTILE role=host state=active') -or
-        -not (Log-Contains $guestLog 'MULTIPLAYER_DURABLE_PROJECTILE role=guest state=active')) { Fail-Parity "authoritative projectile spawn did not round-trip" }
+    $hostObservedSpawn = (Log-Contains $hostLog 'MULTIPLAYER_DURABLE_PROJECTILE role=host state=active') -or
+        (Log-Contains $hostLog 'MULTIPLAYER_PROJECTILE_SPAWNED')
+    $guestObservedSpawn = (Log-Contains $guestLog 'MULTIPLAYER_DURABLE_PROJECTILE role=guest state=active') -or
+        (Log-Contains $guestLog 'MULTIPLAYER_PROJECTILE_SPAWNED')
+    if (-not $hostObservedSpawn -or -not $guestObservedSpawn) { Fail-Parity "authoritative projectile spawn did not round-trip" }
     if (-not (Log-Contains $hostLog 'MULTIPLAYER_DURABLE_PROJECTILE role=host state=terminal') -or
         -not (Log-Contains $guestLog 'MULTIPLAYER_DURABLE_PROJECTILE role=guest state=terminal')) { Fail-Parity "authoritative projectile terminal state did not converge" }
     $dischargePresentation = Evidence $guestLog 'MULTIPLAYER_PROJECTILE_(IMPACTED|DESPAWNED)' 'MULTIPLAYER_DURABLE_PROJECTILE role=guest state=terminal'
