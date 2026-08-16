@@ -10,7 +10,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$ManifestUrl = 'https://github.com/indrolend/digital-breakdown-apk/releases/download/latest-native/build-manifest.json'
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$ProjectIdentityPath = Join-Path $RepoRoot 'distribution\project.json'
+$ProjectIdentity = Get-Content -Raw -Path $ProjectIdentityPath | ConvertFrom-Json
+if (-not $ProjectIdentity.manifest) { throw "Project identity is missing its canonical manifest: $ProjectIdentityPath" }
+$ManifestUrl = [string]$ProjectIdentity.manifest
 $StateRoot = Join-Path $env:LOCALAPPDATA 'DigitalBreakdown'
 $DownloadRoot = Join-Path $StateRoot 'downloads'
 $ReleaseRoot = Join-Path $StateRoot 'releases'
@@ -24,7 +28,7 @@ function Write-ProgressEvent {
 }
 
 function Get-Manifest {
-    $uri = "$ManifestUrl?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+    $uri = "${ManifestUrl}?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
     $manifest = Invoke-RestMethod -UseBasicParsing -Uri $uri -TimeoutSec 20
     if (-not $manifest.commit -or -not $manifest.shortCommit) { throw 'Release manifest is missing commit identity.' }
     return $manifest
