@@ -11,8 +11,8 @@ android {
         applicationId 'com.indrolend.digitalbreakdown.native'
         minSdk 27
         targetSdk 35
-        versionCode 1
-        versionName '0.1-native'
+        versionCode providers.gradleProperty('versionCode').getOrElse('1').toInteger()
+        versionName providers.gradleProperty('versionName').getOrElse('0.1-native')
         buildConfigField 'String', 'MULTIPLAYER_URL', '"' + (System.getenv('DIGITAL_BREAKDOWN_MULTIPLAYER_URL') ?: 'https://digital-breakdown-multiplayer.indrolend.workers.dev') + '"'
 
         externalNativeBuild {

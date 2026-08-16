@@ -6,16 +6,23 @@ on:
       - "native-android/app/src/main/cpp/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
+      - "native-desktop/**.cpp"
+      - "native-desktop/**.hpp"
+      - "native-network/**"
       - "scripts/verify-gameplay.*"
       - ".github/workflows/gameplay-checks.yml"
   push:
     branches:
+      - main
       - agent/gameplay-architecture-distillation
       - agent/loose-soul-normalization
     paths:
       - "native-android/app/src/main/cpp/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
+      - "native-desktop/**.cpp"
+      - "native-desktop/**.hpp"
+      - "native-network/**"
       - "scripts/verify-gameplay.*"
       - ".github/workflows/gameplay-checks.yml"
 
@@ -26,19 +33,16 @@ jobs:
   gameplay:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Verify platform asset mirrors
+        run: python3 tools/verify_asset_mirrors.py
       - name: Verify gameplay contracts
-        id: verify
-        continue-on-error: true
         run: bash scripts/verify-gameplay.sh
       - name: Upload verification logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gameplay-verification-logs
           path: build/gameplay-checks/verification-logs
           if-no-files-found: warn
           retention-days: 7
-      - name: Enforce verification result
-        if: steps.verify.outcome != 'success'
-        run: exit 1

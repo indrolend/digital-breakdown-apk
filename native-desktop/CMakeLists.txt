@@ -22,14 +22,14 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG 3.4
+    GIT_TAG a74efa0d5628b74adc0426af4c5710e287fa7c2c # 3.4
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(glfw)
 FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG 0.11.25
+    GIT_TAG 9634bedb5b5a2ca38c1ee7108a9358a4e233f14d # 0.11.25
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(miniaudio)
@@ -40,7 +40,7 @@ if(APPLE)
     FetchContent_Declare(
         ixwebsocket
         GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v11.4.6
+        GIT_TAG 2efe037c9cc96fd536774f17bdb5215161ee5087 # v11.4.6
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(ixwebsocket)

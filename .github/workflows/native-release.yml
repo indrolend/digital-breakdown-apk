@@ -27,7 +27,10 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify platform asset mirrors
+        run: python tools/verify_asset_mirrors.py
 
       - name: Configure desktop release
         run: cmake -S native-desktop -B build/desktop-release -A x64 -DCMAKE_BUILD_TYPE=Release
@@ -163,7 +166,7 @@ jobs:
           'WINDOWS_SHA256=PASS' | Write-Host
 
       - name: Upload Windows package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-windows-package
           path: dist/DigitalBreakdown-Windows.zip
@@ -182,16 +185,16 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
 
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
@@ -218,9 +221,11 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$ANDROID_BUILD_VARIANT" == "release" ]]; then
-            ./android/gradlew -p native-android assembleRelease --stacktrace
+            ./android/gradlew -p native-android assembleRelease --stacktrace \
+              -PversionCode="$GITHUB_RUN_NUMBER" -PversionName="0.1-native.${GITHUB_RUN_NUMBER}"
           else
-            ./android/gradlew -p native-android assembleDebug --stacktrace
+            ./android/gradlew -p native-android assembleDebug --stacktrace \
+              -PversionCode="$GITHUB_RUN_NUMBER" -PversionName="0.1-native.${GITHUB_RUN_NUMBER}"
           fi
 
       - name: Package and inspect Android build
@@ -238,6 +243,7 @@ jobs:
           test -f "$APK"
           unzip -l "$APK" > dist/apk-contents.txt
           grep -q 'lib/armeabi-v7a/libdigitalbreakdown.so' dist/apk-contents.txt
+          grep -q 'lib/arm64-v8a/libdigitalbreakdown.so' dist/apk-contents.txt
           grep -q 'AndroidManifest.xml' dist/apk-contents.txt
 
           cp "$APK" dist/DigitalBreakdown-Android.apk
@@ -246,7 +252,8 @@ jobs:
           {
             "commit": "${GITHUB_SHA}",
             "shortCommit": "${GITHUB_SHA::7}",
-            "platform": "android-armeabi-v7a",
+            "platform": "android-universal",
+            "architectures": ["armeabi-v7a", "arm64-v8a"],
             "configuration": "${ANDROID_BUILD_VARIANT}",
             "signed": $([[ "$ANDROID_BUILD_VARIANT" == "release" ]] && echo true || echo false),
             "applicationId": "com.indrolend.digitalbreakdown.native",
@@ -256,7 +263,7 @@ jobs:
           EOF
 
       - name: Upload Android package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-android-package
           path: |
@@ -273,7 +280,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Configure universal release
         run: >-
@@ -300,9 +307,16 @@ jobs:
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$APP" dist/DigitalBreakdown-macOS-Universal.zip
           shasum -a 256 dist/DigitalBreakdown-macOS-Universal.zip > dist/DigitalBreakdown-macOS-Universal.zip.sha256
+          EXTRACTED="$RUNNER_TEMP/digital-breakdown-macos-${GITHUB_RUN_ID}"
+          mkdir -p "$EXTRACTED"
+          ditto -x -k dist/DigitalBreakdown-macOS-Universal.zip "$EXTRACTED"
+          test -x "$EXTRACTED/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown"
+          SMOKE_OUTPUT=$(cd "$EXTRACTED/DigitalBreakdown.app/Contents/MacOS" && ./DigitalBreakdown --smoke-test 2>&1)
+          printf '%s\n' "$SMOKE_OUTPUT"
+          grep -q 'SMOKE_TEST_OK' <<<"$SMOKE_OUTPUT"
 
       - name: Upload macOS package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-macos-universal
           path: |
@@ -319,24 +333,24 @@ jobs:
 
     steps:
       - name: Checkout canonical project metadata
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           path: source
 
       - name: Download Windows package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: native-windows-package
           path: release
 
       - name: Download Android package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: native-android-package
           path: release
 
       - name: Download macOS package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: native-macos-universal
           path: release/macos
@@ -388,6 +402,8 @@ jobs:
                 "available": true,
                 "filename": "DigitalBreakdown-Android.apk",
                 "variant": "${ANDROID_VARIANT}",
+                "stableSigning": $([[ "$ANDROID_VARIANT" == "release" ]] && echo true || echo false),
+                "architectures": ["armeabi-v7a", "arm64-v8a"],
                 "sha256": "${ANDROID_SHA}",
                 "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk"
               },
@@ -410,7 +426,9 @@ jobs:
             "android": {
               "available": true,
               "architecture": "armeabi-v7a",
+              "architectures": ["armeabi-v7a", "arm64-v8a"],
               "configuration": "${ANDROID_VARIANT}",
+              "stableSigning": $([[ "$ANDROID_VARIANT" == "release" ]] && echo true || echo false),
               "applicationId": "com.indrolend.digitalbreakdown.native",
               "url": "${RELEASE_BASE}/DigitalBreakdown-Android.apk",
               "sha256": "${ANDROID_SHA}"
@@ -425,7 +443,7 @@ jobs:
           EOF
 
       - name: Upload unified release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-release-bundle
           path: |
@@ -475,7 +493,7 @@ jobs:
 
       - name: Publish resolver metadata to public portal
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: indrolend/Digital-breakdown-dev
           token: ${{ secrets.DEV_PORTAL_TOKEN }}

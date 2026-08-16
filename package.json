@@ -10,7 +10,7 @@
     "android:build:mac": "./scripts/build-android.sh",
     "android:install:mac": "./scripts/install-android.sh",
     "android:run:mac": "./scripts/build-android.sh && ./scripts/install-android.sh",
-    "test": "echo \"No automated tests configured yet\" && exit 0",
+    "test": "node ./tools/run-native-tests.mjs",
     "repo:clean": "./scripts/clean.sh",
     "logs:janitor": "./scripts/clean.sh logs",
     "android:postboot": "./scripts/status-android.sh",
