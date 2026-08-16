@@ -334,7 +334,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: native-macos-universal
-          path: release
+          path: release/macos
+
+      - name: Normalize macOS release package
+        shell: bash
+        run: cp release/macos/dist/DigitalBreakdown-macOS-Universal.zip release/
 
       - name: Generate checksums and manifest
         shell: bash
