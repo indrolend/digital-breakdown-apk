@@ -446,11 +446,11 @@ int main() {
         "a lunge headshot releases the committed arc and opens a bounded player-owned rebound window");
     const float reboundBattery=game.state().player.battery;
     {GameState& setup=const_cast<GameState&>(game.state());setup.targets[0].alive=false;}
-    game.setKey(31,true);step(game);game.setKey(31,false);
+    game.setKey(34,true);step(game);game.setKey(34,false);
     ok &= expect(game.state().meleeVisual.airLungeLandingPending&&game.state().progression.run.lungeReboundTimer<=0.0f&&reboundBattery-game.state().player.battery<3.0f&&!game.state().camera.firstPerson,
-        "C retriggers the rebound lunge on demand and consumes the one-shot reduced battery cost");
-    game.setKey(50,true);step(game);game.setKey(50,false);
-    ok &= expect(game.state().camera.firstPerson,"V owns the remapped desktop first-person camera toggle");
+        "F retriggers the rebound lunge on demand and consumes the one-shot reduced battery cost");
+    game.setKey(31,true);step(game);game.setKey(31,false);
+    ok &= expect(game.state().camera.firstPerson,"C owns the remapped desktop first-person camera toggle");
 
     game.reset();
     { GameState& setup=const_cast<GameState&>(game.state()); for(auto& target:setup.targets)target.alive=false; }
