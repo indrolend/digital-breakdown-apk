@@ -51,6 +51,9 @@ jobs:
       - name: Build desktop release
         run: cmake --build build/desktop-release --config Release --parallel
 
+      - name: Run Windows regression tests
+        run: ctest --test-dir build/desktop-release -C Release --output-on-failure
+
       - name: Locate and smoke-test executable
         shell: pwsh
         run: |
