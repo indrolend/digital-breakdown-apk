@@ -243,7 +243,6 @@ constexpr int KEY_S = 47;
 constexpr int KEY_D = 32;
 constexpr int KEY_Q = 45;
 constexpr int KEY_C = 31;
-constexpr int KEY_V = 50;
 constexpr int KEY_F = 34;
 constexpr int KEY_SHIFT_LEFT = 59;
 constexpr int KEY_SHIFT_RIGHT = 60;
@@ -1115,8 +1114,7 @@ void Game::setKey(int keyCode, bool down) {
     }
     if (keyCode == KEY_F && down) input.meleePressed = true;
     if (keyCode == KEY_Q && down) input.shootPressed = true;
-    if (keyCode == KEY_C && down) input.meleePressed = true;
-    if (keyCode == KEY_V && down) input.cameraTogglePressed = true;
+    if (keyCode == KEY_C && down) input.cameraTogglePressed = true;
     if (down && keyCode >= KEY_1 && keyCode <= KEY_4) setCommSignal(keyCode - KEY_1 + 1);
 }
 

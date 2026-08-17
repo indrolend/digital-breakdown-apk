@@ -48,7 +48,6 @@ constexpr int KEY_S_ANDROID = 47;
 constexpr int KEY_D_ANDROID = 32;
 constexpr int KEY_Q_ANDROID = 45;
 constexpr int KEY_C_ANDROID = 31;
-constexpr int KEY_V_ANDROID = 50;
 constexpr int KEY_F_ANDROID = 34;
 constexpr int KEY_SHIFT_LEFT_ANDROID = 59;
 constexpr int KEY_SHIFT_RIGHT_ANDROID = 60;
@@ -300,7 +299,7 @@ int runSaveRoundtripTest(){
     const bool defaultActionsRouted=
         androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[6])==KEY_F_ANDROID&&
         androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[7])==KEY_Q_ANDROID&&
-        androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[8])==KEY_V_ANDROID;
+        androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[8])==KEY_C_ANDROID;
     {std::ofstream corrupt(path,std::ios::trunc);corrupt<<"DBPROG 4 999 5";}
     Game rejected;rejected.setPersistentProgression(11,1,1,1);
     const bool corruptRejected=!loadProgression(rejected,path)&&rejected.state().progression.permanent.tokens==11;
@@ -316,7 +315,7 @@ int runSaveRoundtripTest(){
 }
 
 int androidKeyForGlfw(const LocalSettingsState& settings,int key) {
-    const int semantic[9]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_F_ANDROID,KEY_Q_ANDROID,KEY_V_ANDROID};
+    const int semantic[9]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_F_ANDROID,KEY_Q_ANDROID,KEY_C_ANDROID};
     for(int i=0;i<9;++i)if(settings.keyboardBindings[i]==key)return semantic[i];
     return key==GLFW_KEY_RIGHT_SHIFT?KEY_SHIFT_RIGHT_ANDROID:-1;
 }
