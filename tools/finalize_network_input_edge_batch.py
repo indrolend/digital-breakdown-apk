@@ -39,8 +39,10 @@ PERMANENT_TEST = '''#include <cstdio>\n\n#include "Game.hpp"\n\nnamespace {\n\nb
 
 CMAKE_REPAIR_BLOCK = '''\nadd_executable(\n    NetworkInputEdgeRepairValidationTest\n    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/network_input_edge_repair_validation_test.cpp"\n    "${DB_SHARED_ROOT}/game/Game.cpp"\n)\ntarget_include_directories(NetworkInputEdgeRepairValidationTest PRIVATE "${DB_SHARED_ROOT}/game")\ntarget_compile_features(NetworkInputEdgeRepairValidationTest PRIVATE cxx_std_17)\n'''
 
+BASH_PLAN_LINE = "run_logged network-input-edge-latch-plan python3 tools/apply_network_input_edge_latching.py\n"
 BASH_REPAIR_BLOCK = '''\nrun_logged network-input-edge-repair-apply python3 tools/apply_network_input_edge_latching.py --apply\nrun_logged network-input-edge-repair-build cmake --build "$BUILD_DIR" --config Release --target \\\n  NetworkInputEdgeRepairValidationTest \\\n  MultiplayerDeterminismTest \\\n  HostRemotePeerSimulationIsolationTest \\\n  --parallel\nrun_logged network-input-edge-repair-contract "$BUILD_DIR/NetworkInputEdgeRepairValidationTest"\nrun_logged network-input-edge-repair-determinism "$BUILD_DIR/MultiplayerDeterminismTest"\nrun_logged network-input-edge-repair-peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"\nrun_logged network-input-edge-repair-restore git checkout -- "$GAME_CPP"\n'''
 
+PS_PLAN_BLOCK = '''python tools/apply_network_input_edge_latching.py\nif ($LASTEXITCODE -ne 0) { throw "Network input edge latch plan check failed with exit code $LASTEXITCODE" }\n\n'''
 PS_REPAIR_BLOCK = '''\npython tools/apply_network_input_edge_latching.py --apply\nif ($LASTEXITCODE -ne 0) { throw "Network input edge repair apply failed with exit code $LASTEXITCODE" }\n\ntry {\n    cmake --build $BuildDir --config Release --target NetworkInputEdgeRepairValidationTest MultiplayerDeterminismTest HostRemotePeerSimulationIsolationTest --parallel\n    if ($LASTEXITCODE -ne 0) { throw "Network input edge repair build failed with exit code $LASTEXITCODE" }\n\n    & (Join-Path $ReleaseDir "NetworkInputEdgeRepairValidationTest.exe")\n    if ($LASTEXITCODE -ne 0) { throw "NetworkInputEdgeRepairValidationTest failed with exit code $LASTEXITCODE" }\n\n    & (Join-Path $ReleaseDir "MultiplayerDeterminismTest.exe")\n    if ($LASTEXITCODE -ne 0) { throw "Patched MultiplayerDeterminismTest failed with exit code $LASTEXITCODE" }\n\n    & (Join-Path $ReleaseDir "HostRemotePeerSimulationIsolationTest.exe")\n    if ($LASTEXITCODE -ne 0) { throw "Patched HostRemotePeerSimulationIsolationTest failed with exit code $LASTEXITCODE" }\n}\nfinally {\n    git checkout -- $GameCpp\n    if ($LASTEXITCODE -ne 0) { throw "Failed to restore Game.cpp after repair validation with exit code $LASTEXITCODE" }\n}\n'''
 
 
@@ -61,10 +63,12 @@ def main() -> int:
         cmake = replace_once(cmake, CMAKE_REPAIR_BLOCK, "", "remove temporary repair target")
 
         bash = BASH.read_text(encoding="utf-8")
+        bash = replace_once(bash, BASH_PLAN_LINE, "", "remove obsolete Bash patch-plan check")
         bash = replace_once(bash, BASH_REPAIR_BLOCK, "", "remove Bash temporary repair phase")
         bash = bash.replace('GAME_CPP="native-android/app/src/main/cpp/game/Game.cpp"\n\n', '', 1)
 
         ps = PS.read_text(encoding="utf-8")
+        ps = replace_once(ps, PS_PLAN_BLOCK, "", "remove obsolete PowerShell patch-plan check")
         ps = replace_once(ps, PS_REPAIR_BLOCK, "", "remove PowerShell temporary repair phase")
         ps = ps.replace('$GameCpp = "native-android/app/src/main/cpp/game/Game.cpp"\n', '', 1)
 
