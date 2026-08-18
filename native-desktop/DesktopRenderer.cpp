@@ -38,6 +38,8 @@ constexpr float ROOM_DEPTH = 42.0f;
 constexpr int ROOM_VISUAL_HORIZON = 2;
 constexpr float ROOM_WALL_HEIGHT = 7.2f;
 constexpr float PI = 3.14159265358979323846f;
+const Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};
+constexpr float SHADOW_PROJECTION_SCALE = 0.5f;
 
 struct MenuFontAtlas {
     std::vector<unsigned char> bytes;
@@ -118,9 +120,15 @@ void cube() {
 
 void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha) {
     constexpr int segments = 8;
-    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
+    const float sunXOverY=SCENE_SUN_VECTOR.x/SCENE_SUN_VECTOR.y;
+    const float sunZOverY=SCENE_SUN_VECTOR.z/SCENE_SUN_VECTOR.y;
+    const Vec3 center{
+        caster.x-height*SHADOW_PROJECTION_SCALE*sunXOverY,
+        0.012f,
+        caster.z-height*SHADOW_PROJECTION_SCALE*sunZOverY
+    };
     const float stretch=height*0.16f;
-    const float angle=std::atan2(-0.5f,-25.0f/60.0f);
+    const float angle=std::atan2(-sunXOverY,-sunZOverY);
     const float c=std::cos(angle),s=std::sin(angle);
     glColor4f(0.012f,0.018f,0.022f,alpha);
     glBegin(GL_TRIANGLE_FAN);
@@ -1055,7 +1063,13 @@ void DesktopRenderer::draw(const GameState& state) const {
     glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
     const GLfloat ambient[]={0.32f,0.43f,0.34f,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
-    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};
+    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f};
+    const GLfloat sunPos[]={
+        SCENE_SUN_VECTOR.x,
+        SCENE_SUN_VECTOR.y,
+        SCENE_SUN_VECTOR.z,
+        0.0f
+    };
     glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
     const GLfloat fillDiffuse[]={0.20f,0.28f,0.35f,1.0f}, fillPos[]={-20.0f,25.0f,-30.0f,0.0f};
     glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
