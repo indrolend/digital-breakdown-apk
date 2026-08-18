@@ -1,10 +1,12 @@
-# Digital Breakdown Current-Main Ownership Contracts
+# Digital Breakdown Ownership Contracts
 
 Base audited: `main@14ba2e530ff6f7d66dde6ef01a6fb75a7688b674`
 
+Current hardening line: `agent/ownership-contracts-settings`
+
 ## Purpose
 
-This document is the current architecture contract for behavior-preserving cleanup. The goal is not to redesign the game or introduce a framework. The goal is to make future changes mechanically obvious: each piece of state has one canonical owner, mutation crosses named boundaries, update order remains explicit, and platform/render/network code cannot silently become gameplay authority.
+This document is the architecture contract for behavior-preserving cleanup. The goal is not to redesign the game or introduce a framework. The goal is to make future changes mechanically obvious: each piece of state has one canonical owner, mutation crosses named boundaries, update order remains explicit, and platform/render/network code cannot silently become gameplay authority.
 
 The runtime remains a direct bounded C++ simulation with fixed-capacity state, stable target indices, shared desktop/Android gameplay, and host-authoritative multiplayer.
 
@@ -19,7 +21,7 @@ one state value
 → explicit result/event when other systems must react
 ```
 
-Broad `GameState&` access is transitional infrastructure, not an ownership model.
+Broad `GameState&` access is transitional/internal infrastructure, not an ownership model.
 
 ## Runtime layers
 
@@ -51,13 +53,15 @@ Dependencies should normally flow downward. Presentation and platform adapters m
 
 ### Persistent
 
-Canonical owner: progression/settings persistence boundary.
+Canonical owner: progression and local-preference persistence boundaries.
 
 - `ProgressionState::permanent`
-- persistent `LocalSettingsState` fields
+- persisted audio/graphics/input preference fields
 - save revision / format data
 
-May survive process restart. Must not be reset by room or run transitions.
+`Game::applyLocalPreferences()` may update persisted local preferences without replacing menu/session state. `Game::setMobileFraming()` is separate because mobile framing/action assist participates in player behavior and multiplayer capability negotiation.
+
+Persistent state may survive process restart and must not be reset by room or run transitions.
 
 ### Run
 
@@ -73,15 +77,14 @@ Reset only when the run contract says a new run begins.
 
 Canonical owner: room/encounter lifecycle.
 
-- `targets`
-- respawn requests
+- targets and respawn requests
 - capture points
 - room colliders / topology
-- room heat / room elapsed
-- room clear and door transition state
+- room heat / elapsed time / captures
+- room-clear and door-transition state
 - room-local secret/special behavior
 
-Room transition code must explicitly preserve or reset fields according to this lifetime.
+Crossing the forward door after clearing a room is detected by `updateRoomTopology()` and committed by the named `advanceClearedRoom()` transaction. Detection and transition policy are intentionally separate.
 
 ### Player runtime
 
@@ -94,7 +97,7 @@ Canonical owner: player simulation plus named resource/ability owners.
 - melee runtime
 - downed / revive / grab / communication state
 
-Network peers must eventually use the same player-runtime contract rather than depending on whole-`GameState` context swapping.
+Remote authoritative simulation still uses player-context swapping internally. Isolation tests must remain green until that mechanism is replaced by a narrower per-player runtime context.
 
 ### Transient simulation
 
@@ -106,7 +109,7 @@ Canonical owner: the subsystem performing the current transaction.
 - collision query results
 - pending damage/hit decisions
 
-Transient state must not accidentally survive reset boundaries.
+Remote one-shot command edges are latched until host simulation consumes them. A later network command arriving in the same host frame must not erase an unconsumed jump/melee/shoot/camera-toggle edge.
 
 ### Presentation
 
@@ -133,24 +136,66 @@ Canonical owner: multiplayer transport/authority layer.
 - peer activity
 - command/snapshot sequence state
 - interpolation / prediction correction
+- per-player command capability bits
 
-Network code may apply explicit authoritative inputs/snapshots through `Game` APIs. It should not acquire generic simulation ownership merely because packets need to update state.
+Multiplayer protocol version 8 carries `PlayerCommand::capabilities`. `CommandMobileFraming` is a per-player capability: an Android host must not apply its own mobile action assist to a desktop guest.
 
-## Current canonical boundaries already present
+Platform networking adapters request authoritative snapshot application through `dbnet::applyWorld(Game&, ...)`. They do not receive generic mutable `GameState` access for snapshot replacement.
+
+## Current named boundaries
 
 ### Semantic player input
 
 `PlayerCommand` is the canonical semantic input boundary after platform input merging. Keyboard, controller, touch, network input, prediction, replay, and tests should converge on this shape rather than inventing parallel action semantics.
 
+The command contains movement/look values, action buttons, and per-player capabilities. One-shot edges remain pending until simulation consumes them.
+
+### Local preferences
+
+`Game::applyLocalPreferences()` owns persisted audio/graphics/input preference application. It intentionally does not replace:
+
+- menu page / scroll / history;
+- rebinding-session state;
+- `mobileFraming`.
+
+`Game::setMobileFraming()` is the explicit local platform/player capability boundary.
+
+### Authoritative snapshots
+
+`dbnet::applyWorld(Game&, const WorldSnapshot&, localPlayerId)` is the platform-facing authoritative snapshot transaction.
+
+The protocol implementation owns the internal mutable-state application. Desktop and Android network adapters read state before/after the transaction for metrics or presentation, but do not acquire generic mutation authority.
+
 ### Target identity and lifecycle
 
 `TargetState` remains pooled and fixed-size. Human/soul role is derived from existing target state. `TargetState::pos` remains canonical simulation position. Human-to-soul conversion occurs in place; do not introduce parallel entity identity.
 
-Use the focused helpers under `game/gameplay/` for role and lifecycle semantics.
+Use focused helpers under `game/gameplay/` for role and lifecycle semantics.
 
 ### Capture transaction
 
 `captureSoul()` remains the inventory-awarding capture transaction. Capture commitment and inventory award must remain atomic with respect to frame order.
+
+### Cleared-room advancement
+
+`updateRoomTopology()` owns detection of a legal door crossing.
+
+`advanceClearedRoom()` owns the current cleared-room transition policy, preserving the existing order for:
+
+- door-transition publication;
+- room index and deterministic seed evolution;
+- run-rule advancement;
+- room-clear reset and +18 next-room battery reward;
+- solo soul-reboot allowance reset;
+- stored-soul inventory clear;
+- required/deposited soul reset;
+- room heat/elapsed/capture counters;
+- vacuum, melee, and discharge runtime clearing;
+- capture-point reconstruction;
+- bullets, pending shots, flowers, respawn queue, colliders, and target population;
+- upgrade-menu activation, pause, and input clear.
+
+The 256-room progression probe behavior-locks this transition. Moving the policy into the named function does not authorize reordering or changing any value.
 
 ### Multiplayer authority
 
@@ -158,71 +203,69 @@ Multiplayer remains host authoritative. Guests may predict presentation/locomoti
 
 ### Renderer ownership
 
-Renderers consume simulation/presentation state. Lighting/shadow ownership is now canonical on desktop; renderer state must not feed back into simulation authority.
+Renderers consume simulation/presentation state. Lighting/shadow ownership is canonical on desktop; renderer state must not feed back into simulation authority.
 
 ## Ownership ledger
 
 | State / operation | Canonical owner | Allowed external interaction | Current debt |
 |---|---|---|---|
-| `player.pos`, velocity, grounding, ledge state | player movement/traversal | semantic command + collision queries | peer simulation still depends on context swapping |
-| `player.battery` + supplemental energy | energy/survival transaction | spend/damage/reward request | mutation currently fans into survival, HUD and audio |
-| `player.souls`, stored soul metadata | inventory/capture/discharge transactions | capture result / shot request | must keep capture award atomic |
-| `targets[]` identity and phase | target lifecycle | combat/vacuum requests | living/soul/presentation fields share one struct by design |
-| target damage/armor | combat resolution | damage request/result | feedback side effects remain coupled |
-| `captures[]`, deposited progress | room progression | projectile deposit transaction | deposit and room-clear timing must stay deterministic |
-| `bullets[]`, pending shots | projectile/discharge owner | shot request/result | touches inventory, combat, room progression and feedback |
-| `progression.permanent` | progression | award/purchase API | persistence reads are explicit; derived reads remain distributed |
-| `progression.run` | progression/run owner | upgrade/synergy result | modifier formulas may still be read in multiple systems |
-| `localSettings` | local settings/persistence | explicit settings API | currently reachable via `networkMutableState()` |
-| camera / phone pose / phone transform | presentation | derived from simulation | local/peer derivation must remain consistent |
-| `audio.events` | feedback publisher | append event; adapters consume | gameplay should publish intent rather than platform audio calls |
-| HUD state | presentation/feedback | derive/publish | should not become gameplay input |
-| multiplayer peers / room code / status | multiplayer | named network APIs | broad mutable state escape hatch remains |
+| player movement / ledge state | player movement/traversal | semantic command + collision queries | remote simulation still swaps player contexts internally |
+| battery + supplemental energy | energy/survival transaction | spend/damage/reward request | survival branches and feedback remain coupled |
+| stored souls | inventory/capture/discharge | capture result / shot request | capture award must remain atomic |
+| `targets[]` identity and phase | target lifecycle | combat/vacuum requests | living/soul/presentation fields intentionally share one pooled struct |
+| target damage / armor | combat resolution | damage request/result | feedback side effects remain coupled |
+| `captures[]` / deposited progress | room progression | projectile deposit transaction | deposit and room-clear timing must remain deterministic |
+| cleared-room transition | room progression | `advanceClearedRoom()` | policy is named; values/order remain coupled by design |
+| bullets / pending shots | projectile/discharge | shot request/result | touches inventory, combat, room progression and feedback |
+| permanent progression | progression | award/purchase API | derived reads remain distributed |
+| run progression / rules | progression/run owner | upgrade/synergy result | modifier formulas remain read by several systems |
+| persisted local preferences | local preference owner | `applyLocalPreferences()` | menu/session state still shares the aggregate struct |
+| mobile framing/action assist | local player capability | `setMobileFraming()` + command capability | field still physically resides in `LocalSettingsState` |
+| camera / phone pose / transform | presentation | derived from simulation | local/peer derivation must remain consistent |
+| audio events | feedback publisher | append event; adapters consume | energy/combat transactions still publish feedback directly |
+| HUD | presentation/feedback | derive/publish | desktop menu code still mutates some HUD/session fields directly |
+| multiplayer peers / room/status | multiplayer | named network APIs | protocol owns snapshot mutation internally |
 
 ## Broad mutable escape hatch
 
-`Game::networkMutableState()` currently returns the entire mutable `GameState`. Current-main searches show consumers in desktop host code, desktop multiplayer, Android bridge code, and tests.
+`Game::networkMutableState()` still returns the entire mutable `GameState`. It must not spread.
 
-This function is transitional and must not gain new production call sites.
+`tools/check_ownership_boundaries.py` scans production source under:
 
-Every existing call site should be classified before migration:
+- `native-desktop/`;
+- `native-network/`;
+- `native-android/app/src/main/cpp/`.
 
-1. **test fixture mutation** — keep behind an explicitly named test/debug access contract;
-2. **authoritative network snapshot/application** — replace with named network APIs;
-3. **platform settings/lifecycle** — replace with settings/session APIs;
-4. **gameplay mutation** — move behind the owning gameplay transaction.
+The current production allowance is intentionally small and explicit:
 
-First confirmed ownership mismatch: persistence/platform code restores `LocalSettingsState` through `networkMutableState()`. Settings are not network-owned. The first code migration should introduce a named settings boundary and remove settings restoration from the network mutable escape hatch.
+- `native-desktop/main.cpp` — transitional desktop UI/session mutation and built-in stress fixtures;
+- `native-network/MultiplayerProtocol.cpp` — named authoritative snapshot transaction implementation;
+- `Game.hpp` — declaration of the escape hatch itself.
 
-## Transaction contracts to establish
+Desktop multiplayer and the Android bridge are no longer allowed generic mutable-state access.
+
+Test fixtures are outside this production ratchet and should be migrated only when doing so improves the test contract rather than hiding useful state setup.
+
+## Transaction contracts still to establish
 
 ### Energy / survival
 
-Target shape:
+Current `spendBattery()` behavior is characterized but the major survival branches are not yet independently proven by focused tests.
+
+Required order includes:
 
 ```text
-EnergyRequest
-+ player/energy/progression state
-→ EnergyResult
-→ authoritative mutation
-→ feedback publication
+request
+→ hit mitigation
+→ stored-soul drain multiplier
+→ supplemental absorption
+→ main battery subtraction
+→ feedback/audio
+→ last stand
+→ multiplayer downed OR solo soul reboot OR run death
 ```
 
-The transaction must preserve existing precedence for supplemental absorption, impact guard, last stand, downed state, solo reboot, death, and regeneration locks.
-
-### Capture / inventory
-
-Target shape:
-
-```text
-eligible target
-+ capture completion
-→ CaptureResult
-→ target phase commit + inventory award
-→ feedback
-```
-
-No presentation or networking adapter may award inventory independently.
+Before extracting an `EnergyResult` or separating feedback, add focused tests for supplemental-first behavior, mitigation, last stand, downed precedence, solo reboot, and non-hit exhaustion.
 
 ### Projectile deposit
 
@@ -232,15 +275,19 @@ Target shape:
 projectile collision
 → DepositResult
 → capture-point mutation
-→ room progression evaluation
+→ room-clear evaluation
 → feedback
 ```
 
 Preserve same-frame deposit versus room-clear order.
 
-### Room transition
+### Per-player simulation runtime
 
-Room transition is the primary lifetime boundary. Before restructuring it, tests must assert exactly which persistent/run/player/room/transient/presentation/network fields survive and which reset.
+Only after current peer-isolation tests cover the relevant behavior should remote simulation move away from whole-player context swapping toward an explicit per-player runtime context.
+
+### Desktop menu/session mutation
+
+`native-desktop/main.cpp` remains the largest production user of broad mutable state. Its uses mix legitimate UI/session behavior with built-in test/stress setup, so this must be classified before shrinking the allowance. Do not replace it with a differently named broad mutable handle.
 
 ## Update-order contract
 
@@ -253,7 +300,7 @@ Refactors must preserve current `Game::update` order unless a gameplay change ex
 - melee contact versus target movement;
 - upgrade acquisition versus derived-stat use.
 
-Moving code to another source file does not grant permission to reorder it.
+Moving code to another function or source file does not grant permission to reorder it.
 
 ## Extension rule
 
@@ -269,50 +316,35 @@ When adding a feature, answer these questions before editing:
 
 A feature should not introduce a new broad mutable path simply because the direct assignment is convenient.
 
-## Migration sequence from current main
+## Completed hardening on this line
 
-1. **Local-settings ownership**
-   - add explicit settings replacement/update API;
-   - migrate persistence/platform settings writes away from `networkMutableState()`;
-   - preserve byte-for-byte save behavior.
+- reset/restart/room lifetime characterization;
+- production mutable-state ratchet;
+- remote one-shot command-edge latching;
+- per-player mobile framing/action-assist capability and protocol v8;
+- persisted local-preference mutation boundary;
+- authoritative snapshot application boundary;
+- cleared-room advancement transaction extraction;
+- 256-room progression behavior lock.
 
-2. **State lifetime/reset characterization**
-   - add focused tests around reset/restart/room-transition preservation;
-   - document actual behavior before moving reset code.
+## Next evidence-first sequence
 
-3. **Classify remaining `networkMutableState()` production callers**
-   - snapshot application;
-   - multiplayer lifecycle;
-   - Android bridge lifecycle;
-   - remove one category at a time.
+1. Add focused energy/survival precedence tests through the least brittle authoritative hit path.
+2. Only then decide whether `spendBattery()` should expose an explicit result transaction.
+3. Characterize projectile-deposit ownership and same-frame room-clear behavior before extracting it.
+4. Classify desktop `main.cpp` mutable access into UI/session versus test-fixture responsibilities.
+5. Keep per-player context swapping until isolation evidence makes a narrower runtime boundary safe.
 
-4. **Energy transaction boundary**
-   - characterize precedence with tests first;
-   - separate authoritative result from HUD/audio publication without changing values.
+## Validation contract
 
-5. **Room/deposit transaction boundary**
-   - make projectile deposit and room progression ownership explicit;
-   - preserve update order.
+Every ownership change must report:
 
-6. **Per-player runtime boundary**
-   - only after isolation tests cover remote actions/shared-world mutation;
-   - migrate peer context swapping toward explicit per-player simulation context.
-
-7. **Simulation → presentation derivation**
-   - keep phone/camera/HUD/audio adapters read-oriented;
-   - share local/remote presentation evaluators where behavior is intended to match.
-
-## Validation contract for every ownership PR
-
-Every PR must report:
-
-- exact base commit;
-- exact files changed;
+- exact base/head commit;
 - ownership contract being narrowed;
-- observable behavior intentionally preserved;
+- observable behavior intentionally changed or preserved;
 - tests/builds executed;
-- tests unavailable in the environment;
+- unavailable checks, if any;
 - remaining broad mutation paths;
 - next dependency.
 
-Do not combine unrelated ownership migrations in one PR. A small contract with strong evidence is preferable to a large cleanup diff.
+A small contract with strong evidence is preferable to a broad cleanup diff.
