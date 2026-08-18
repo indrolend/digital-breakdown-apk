@@ -1,6 +1,6 @@
 # Digital Breakdown Ownership Contracts
 
-Current hardening line: `agent/ownership-contracts-settings`  
+Current hardening line: `agent/ownership-contracts-settings`
 Base lineage: `main@14ba2e530ff6f7d66dde6ef01a6fb75a7688b674`
 
 This is the current architecture contract for behavior-preserving work. Historical reasoning lives in commits, tests, and archival issue #50; this file represents the coherent current state.
