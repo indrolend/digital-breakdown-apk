@@ -1,4 +1,5 @@
 name: Finalize authoritative snapshot ownership
+# retry: scoped snapshot ownership after preserving desktop UI allowance
 
 on:
   push:
