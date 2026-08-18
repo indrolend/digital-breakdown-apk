@@ -15,15 +15,18 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "networkMutableState()"
 
-# Transitional production debt observed on main@14ba2e530ff6f7d66dde6ef01a6fb75a7688b674.
-# Entries should only be removed from this set as named ownership APIs replace them.
+# Transitional/owned production uses after the current ownership migrations.
+# Entries should only be removed when an even narrower named boundary replaces
+# them; new files must not be added merely to make this check pass.
 ALLOWED_PRODUCTION_FILES = {
-    Path("native-desktop/main.cpp"),
+    Path("native-desktop/main.cpp"),  # desktop UI/session + built-in stress fixtures
+    Path("native-network/MultiplayerProtocol.cpp"),  # authoritative snapshot transaction owner
     Path("native-android/app/src/main/cpp/game/Game.hpp"),  # declaration itself
 }
 
 PRODUCTION_ROOTS = (
     Path("native-desktop"),
+    Path("native-network"),
     Path("native-android/app/src/main/cpp"),
 )
 
