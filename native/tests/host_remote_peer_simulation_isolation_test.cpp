@@ -127,31 +127,7 @@ bool progressionTimersAdvanceOnce() {
   const float expectedRebound = before.lungeReboundTimer - kDt;
   const float expectedBoost = before.headshotRechargeBoost - kDt;
 
-  std::printf(
-      "PROGRESSION_TIMER_OBSERVED activePeers=1 dt=%.6f "
-      "batteryRegenLock %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "headshotRegenTax %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "relayPrimerTimer %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "impactGuardTimer %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "lastStandCooldown %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "lungeReboundTimer %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f "
-      "headshotRechargeBoost %.6f->%.6f expectedOnce=%.6f expectedTwice=%.6f\n",
-      kDt,
-      before.batteryRegenLock, after.batteryRegenLock, expectedLock,
-      before.batteryRegenLock - 2.0f * kDt,
-      before.headshotRegenTax, after.headshotRegenTax, expectedTax,
-      before.headshotRegenTax - 2.0f * kDt * 0.11f,
-      before.relayPrimerTimer, after.relayPrimerTimer, expectedRelay,
-      before.relayPrimerTimer - 2.0f * kDt,
-      before.impactGuardTimer, after.impactGuardTimer, expectedImpact,
-      before.impactGuardTimer - 2.0f * kDt,
-      before.lastStandCooldown, after.lastStandCooldown, expectedLastStand,
-      before.lastStandCooldown - 2.0f * kDt,
-      before.lungeReboundTimer, after.lungeReboundTimer, expectedRebound,
-      before.lungeReboundTimer - 2.0f * kDt,
-      before.headshotRechargeBoost, after.headshotRechargeBoost, expectedBoost,
-      before.headshotRechargeBoost - 2.0f * kDt);
-
+  std::printf("PROGRESSION_TIMER_OBSERVED\n");
   return near(after.batteryRegenLock, expectedLock) &&
          near(after.headshotRegenTax, expectedTax) &&
          near(after.relayPrimerTimer, expectedRelay) &&
@@ -179,11 +155,9 @@ bool remoteActionsDoNotEmitHostAudio() {
   const bool lowPowerEmitted = hasCueAfter(audio, AudioCue::LowPower, beforeSerial - 1u);
   const int lowPowerCount = countCueAfter(audio, AudioCue::LowPower, beforeSerial - 1u);
   std::printf(
-      "REMOTE_AUDIO_OBSERVED beforeSerial=%u afterNextSerial=%u lowPowerCount=%d "
-      "firstCueAfter=%s peerBattery=%.6f\n",
+      "REMOTE_AUDIO_OBSERVED serial=%u->%u lowPower=%d cue=%s\n",
       beforeSerial, audio.nextSerial, lowPowerCount,
-      lowPowerEmitted ? cueName(AudioCue::LowPower) : "None",
-      game.state().multiplayer.peers[1].player.battery);
+      lowPowerEmitted ? cueName(AudioCue::LowPower) : "None");
 
   return audio.nextSerial == beforeSerial && !lowPowerEmitted;
 }
@@ -311,26 +285,7 @@ bool localContextRestoresExactly() {
       near(before.meleePose, after.meleePose) &&
       near(before.meleeComboWindow, after.meleeComboWindow);
 
-  std::printf(
-      "LOCAL_CONTEXT_RESTORE_OBSERVED restored=%d "
-      "posBefore=(%.6f,%.6f,%.6f) posAfter=(%.6f,%.6f,%.6f) "
-      "lookBefore=(%.6f,%.6f) lookAfter=(%.6f,%.6f) "
-      "batteryBefore=%.6f batteryAfter=%.6f "
-      "cameraBefore=(%.6f,%.6f,%d) cameraAfter=(%.6f,%.6f,%d) "
-      "meleeBefore=(%u,%.6f,%.6f) meleeAfter=(%u,%.6f,%.6f)\n",
-      restored ? 1 : 0,
-      before.player.pos.x, before.player.pos.y, before.player.pos.z,
-      after.player.pos.x, after.player.pos.y, after.player.pos.z,
-      before.input.lookDeltaX, before.input.lookDeltaY,
-      after.input.lookDeltaX, after.input.lookDeltaY,
-      before.player.battery, after.player.battery,
-      before.camera.yaw, before.camera.pitch, before.camera.firstPerson ? 1 : 0,
-      after.camera.yaw, after.camera.pitch, after.camera.firstPerson ? 1 : 0,
-      before.meleeVisual.actionSequence, before.meleeVisual.visualTimer,
-      before.meleeCooldown,
-      after.meleeVisual.actionSequence, after.meleeVisual.visualTimer,
-      after.meleeCooldown);
-
+  std::printf("LOCAL_CONTEXT_RESTORE_OBSERVED restored=%d\n", restored ? 1 : 0);
   return restored;
 }
 
@@ -352,9 +307,96 @@ bool eliminatedLocalPlayerSpectatesOnlyLivingPeer() {
   const int downedSubject = game.state().camera.spectatedPlayerId;
 
   std::printf(
-      "SPECTATOR_CAMERA_OBSERVED livingSubject=%d downedSubject=%d thirdPerson=%d\n",
+      "SPECTATOR_CAMERA_OBSERVED living=%d downed=%d thirdPerson=%d\n",
       livingSubject, downedSubject, thirdPerson ? 1 : 0);
   return livingSubject == 1 && downedSubject == -1 && thirdPerson;
+}
+
+struct ShotScheduleObservation {
+  bool spawned = false;
+  Vec3 velocity{};
+  int ticksToSpawn = -1;
+};
+
+const BulletState* firstAliveBullet(const GameState& state) {
+  for (const auto& bullet : state.bullets) {
+    if (bullet.alive) return &bullet;
+  }
+  return nullptr;
+}
+
+ShotScheduleObservation runRemoteShotSchedule(bool acceptAimChangeBeforeLaunch) {
+  Game game = makeHostWithActivePeer(1);
+  GameState& state = game.networkMutableState();
+  state.localSettings.mobileFraming = false;
+  clearWorldActivity(state);
+
+  auto& peer = state.multiplayer.peers[1];
+  makeIdlePlayer(peer.player);
+  peer.player.battery = 100.0f;
+  peer.player.souls = 1;
+  peer.player.storedSoulBrute.fill(false);
+  peer.camera.firstPerson = true;
+  peer.camera.yaw = 0.0f;
+  peer.camera.pitch = 0.0f;
+  peer.camera.forward = {0.0f, 0.0f, -1.0f};
+  peer.phonePose.screenForwardTurn = 0.0f;
+
+  constexpr float kYawA = 0.0f;
+  constexpr float kYawB = 1.20f;
+  game.setNetworkPeerInput(1, 1u, 0.0f, 0.0f, kYawA, 0.0f, CommandShoot);
+  HostRemotePeerSimulationIsolationAccess::updateNetworkPeers(game, kDt);
+
+  if (acceptAimChangeBeforeLaunch) {
+    game.setNetworkPeerInput(1, 2u, 0.0f, 0.0f, kYawB, 0.0f, 0u);
+  }
+
+  ShotScheduleObservation observation;
+  for (int tick = 1; tick <= 12; ++tick) {
+    if (const BulletState* bullet = firstAliveBullet(game.state())) {
+      observation.spawned = true;
+      observation.velocity = bullet->vel;
+      observation.ticksToSpawn = tick - 1;
+      break;
+    }
+    HostRemotePeerSimulationIsolationAccess::updateNetworkPeers(game, kDt);
+  }
+
+  if (!observation.spawned) {
+    if (const BulletState* bullet = firstAliveBullet(game.state())) {
+      observation.spawned = true;
+      observation.velocity = bullet->vel;
+      observation.ticksToSpawn = 12;
+    }
+  }
+
+  if (!acceptAimChangeBeforeLaunch) {
+    game.setNetworkPeerInput(1, 2u, 0.0f, 0.0f, kYawB, 0.0f, 0u);
+  }
+
+  return observation;
+}
+
+bool remotePendingShotDirectionDependsOnCommandTickInterleaving() {
+  const ShotScheduleObservation beforeLaunch = runRemoteShotSchedule(true);
+  const ShotScheduleObservation afterLaunch = runRemoteShotSchedule(false);
+  if (!beforeLaunch.spawned || !afterLaunch.spawned) {
+    std::printf(
+        "REMOTE_SHOT_SCHEDULE_OBSERVED spawnedBefore=%d spawnedAfter=%d\n",
+        beforeLaunch.spawned ? 1 : 0, afterLaunch.spawned ? 1 : 0);
+    return false;
+  }
+
+  const Vec3 beforeFlat = normalized({beforeLaunch.velocity.x, 0.0f, beforeLaunch.velocity.z});
+  const Vec3 afterFlat = normalized({afterLaunch.velocity.x, 0.0f, afterLaunch.velocity.z});
+  const float alignment = dot3(beforeFlat, afterFlat);
+  const bool diverged = alignment < 0.98f;
+
+  std::printf(
+      "REMOTE_SHOT_SCHEDULE_OBSERVED diverged=%d alignment=%.6f ticks=%d/%d\n",
+      diverged ? 1 : 0, alignment,
+      beforeLaunch.ticksToSpawn, afterLaunch.ticksToSpawn);
+  return diverged;
 }
 
 }  // namespace
@@ -365,6 +407,7 @@ int main() {
   ok &= remoteActionsDoNotEmitHostAudio();
   ok &= localContextRestoresExactly();
   ok &= eliminatedLocalPlayerSpectatesOnlyLivingPeer();
+  ok &= remotePendingShotDirectionDependsOnCommandTickInterleaving();
   if (!ok) {
     std::fprintf(stderr, "HOST_REMOTE_PEER_SIMULATION_ISOLATION_FAILED\n");
     return 1;
