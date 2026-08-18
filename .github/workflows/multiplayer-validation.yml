@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  windows-abc-visual-proof:
-    runs-on: windows-latest
+  macos-abc-visual-proof:
+    runs-on: macos-14
     timeout-minutes: 30
     steps:
       - name: Check out verification branch
@@ -17,39 +17,39 @@ jobs:
           fetch-depth: 0
 
       - name: Capture A B C sequences
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $refs = @(
-            @{ Name = 'A-base'; Ref = '86066c3c20879d2b3cc2b84bfc536869d3dc9a99' },
-            @{ Name = 'B-sun-contract'; Ref = '4f6f9c0530b75407074e1b56851ef85e377789ef' },
-            @{ Name = 'C-current-camera'; Ref = 'b76953e4cf0efa5238a60d3dcace8aa71f16cdc8' }
-          )
-          New-Item -ItemType Directory -Force visual-proof | Out-Null
-          foreach ($item in $refs) {
-            Write-Host "=== $($item.Name) $($item.Ref) ==="
-            git checkout --force $item.Ref
-            cmake -S native-desktop -B build/visual-proof -A x64 `
-              -DDB_COMMIT_SHA="$($item.Ref)" `
-              -DDB_CHANNEL="visual-proof" `
-              -DDB_HUMAN_VERSION="visual-proof"
+          set -euo pipefail
+          mkdir -p visual-proof
+          while read -r label ref; do
+            echo "=== $label $ref ==="
+            git checkout --force "$ref"
+            cmake -S native-desktop -B build/visual-proof \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DDB_COMMIT_SHA="$ref" \
+              -DDB_CHANNEL=visual-proof \
+              -DDB_HUMAN_VERSION=visual-proof
             cmake --build build/visual-proof --config Release --parallel
-            $exe = Resolve-Path 'build/visual-proof/bin/Release/DigitalBreakdown.exe'
-            $out = Join-Path (Resolve-Path 'visual-proof') $item.Name
-            New-Item -ItemType Directory -Force $out | Out-Null
-            & $exe --capture-cinematic-demo $out --capture-width 320 --capture-height 180 --capture-hide-hud
-            if ($LASTEXITCODE -ne 0) { throw "capture failed for $($item.Name): exit $LASTEXITCODE" }
-            $frames = @(Get-ChildItem $out -Filter '*.ppm' | Sort-Object Name)
-            if ($frames.Count -lt 2) { throw "insufficient frames for $($item.Name): $($frames.Count)" }
-            Write-Host "CAPTURE_COUNT $($item.Name)=$($frames.Count)"
-          }
+            exe="$(find build/visual-proof -type f -name DigitalBreakdown -perm -111 | head -n 1)"
+            test -n "$exe"
+            out="$(pwd)/visual-proof/$label"
+            mkdir -p "$out"
+            "$exe" --capture-cinematic-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud
+            count="$(find "$out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
+            test "$count" -ge 2
+            echo "CAPTURE_COUNT $label=$count"
+          done <<'REFS'
+          A-base 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
+          B-sun-contract 4f6f9c0530b75407074e1b56851ef85e377789ef
+          C-current-camera b76953e4cf0efa5238a60d3dcace8aa71f16cdc8
+          REFS
 
       - name: Compare frame pixels
-        shell: pwsh
+        shell: bash
         run: |
-          @'
+          cat > compare_visuals.py <<'PY'
           from pathlib import Path
-          import hashlib, statistics
+          import statistics
 
           root = Path('visual-proof')
           labels = ['A-base', 'B-sun-contract', 'C-current-camera']
@@ -58,8 +58,7 @@ jobs:
               data = path.read_bytes()
               if not data.startswith(b'P6'):
                   raise RuntimeError(f'not P6: {path}')
-              pos = 2
-              tokens = []
+              pos = 2; tokens = []
               while len(tokens) < 3:
                   while pos < len(data) and data[pos] in b' \t\r\n': pos += 1
                   if data[pos:pos+1] == b'#':
@@ -82,8 +81,7 @@ jobs:
               raise SystemExit('frame-count mismatch')
 
           def compare(left, right):
-              maes=[]; changed=[]; maxima=[]; exact=0
-              rows=[]
+              maes=[]; changed=[]; maxima=[]; exact=0; rows=[]
               for lp, rp in zip(frames[left], frames[right]):
                   lw,lh,a=read_ppm(lp); rw,rh,b=read_ppm(rp)
                   if (lw,lh)!=(rw,rh): raise SystemExit('dimension mismatch')
@@ -108,22 +106,18 @@ jobs:
           print('A_VS_B', ab)
           print('B_VS_C', bc)
           print('A_VS_C', ac)
+          (root/'comparison.txt').write_text(
+              f'FRAME_COUNTS {counts}\nA_VS_B {ab}\nB_VS_C {bc}\nA_VS_C {ac}\n', encoding='utf-8')
 
-          summary = root/'comparison.txt'
-          summary.write_text(f'FRAME_COUNTS {counts}\nA_VS_B {ab}\nB_VS_C {bc}\nA_VS_C {ac}\n', encoding='utf-8')
-
-          # Preserve a compact set of diagnostic frames around the largest B/C deltas.
+          selected=root/'selected'; selected.mkdir(exist_ok=True)
           worst_names=[row[3] for row in bc['worst'][:6]]
-          selected=root/'selected'
-          selected.mkdir(exist_ok=True)
           for label in labels:
               for name in worst_names:
                   src=root/label/name
-                  if src.exists():
-                      (selected/f'{label}__{name}').write_bytes(src.read_bytes())
+                  if src.exists(): (selected/f'{label}__{name}').write_bytes(src.read_bytes())
           print('SELECTED_FRAMES', worst_names)
-          '@ | Set-Content -Encoding UTF8 compare_visuals.py
-          python compare_visuals.py
+          PY
+          python3 compare_visuals.py
 
       - name: Upload comparison
         if: always()
