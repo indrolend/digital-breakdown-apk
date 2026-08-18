@@ -37,6 +37,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   MultiplayerProtocolTest \
   MultiplayerDeterminismTest \
   HostRemotePeerSimulationIsolationTest \
+  NetworkInputEdgeCharacterizationTest \
   MultiplayerConnectionStateTest \
   GameplayFlowProbe \
   RoomProgressionProbe \
@@ -47,4 +48,5 @@ run_logged parity "$BUILD_DIR/Pass7ParityTest"
 run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
 run_logged determinism "$BUILD_DIR/MultiplayerDeterminismTest"
 run_logged peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
+run_logged network-input-edges "$BUILD_DIR/NetworkInputEdgeCharacterizationTest"
 run_logged diff-check git diff --check
