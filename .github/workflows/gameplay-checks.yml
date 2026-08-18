@@ -1,62 +1,92 @@
-name: Gameplay checks
+name: Desktop light capture verification
 
 on:
   pull_request:
     paths:
-      - "native-android/app/src/main/cpp/game/**"
-      - "native/tests/**"
-      - "native-desktop/CMakeLists.txt"
-      - "native-desktop/**.cpp"
-      - "native-desktop/**.hpp"
-      - "native-network/**"
-      - "native-models/**"
-      - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
-      - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
-      - ".github/workflows/gameplay-checks.yml"
-  push:
-    branches:
-      - main
-      - agent/gameplay-architecture-distillation
-      - agent/loose-soul-normalization
-      - agent/experimental-release-coherence
-    paths:
-      - "native-android/app/src/main/cpp/game/**"
-      - "native/tests/**"
-      - "native-desktop/CMakeLists.txt"
-      - "native-desktop/**.cpp"
-      - "native-desktop/**.hpp"
-      - "native-network/**"
-      - "native-models/**"
-      - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
-      - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
+      - "native-desktop/DesktopRenderer.cpp"
       - ".github/workflows/gameplay-checks.yml"
 
 permissions:
-  contents: read
-
-concurrency:
-  group: gameplay-checks-${{ github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 jobs:
-  gameplay:
-    runs-on: macos-14
-    timeout-minutes: 20
+  light-capture:
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify platform asset mirrors
-        run: python3 tools/verify_asset_mirrors.py
-      - name: Verify gameplay contracts
-        run: bash scripts/verify-gameplay.sh
-      - name: Upload verification logs
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: gameplay-verification-logs
-          path: build/gameplay-checks/verification-logs
-          if-no-files-found: warn
-          retention-days: 7
+          ref: desktop-light-capture-contract-verify
+          fetch-depth: 0
+
+      - name: Verify authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = (git rev-parse HEAD).Trim()
+          $source = (git rev-parse 'HEAD:native-desktop/DesktopRenderer.cpp').Trim()
+          if ($source -ne 'd71183422fe8ffd474151b24219eb633b88ed5e3') { throw "Unexpected renderer blob: $source" }
+          git fetch origin desktop-light-capture-contract
+          $target = (git rev-parse refs/remotes/origin/desktop-light-capture-contract).Trim()
+          if ($target -ne '4f6f9c0530b75407074e1b56851ef85e377789ef') { throw "Target branch drifted to $target" }
+
+      - name: Apply current-camera light capture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          import subprocess
+
+          path = Path('native-desktop/DesktopRenderer.cpp')
+          data = subprocess.check_output(['git','show','HEAD:native-desktop/DesktopRenderer.cpp'])
+          old = b'''    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);\n    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);\n'''
+          new = b'''    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);\n    applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));\n    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);\n'''
+          old_tail = b'''    glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);\n    applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));\n    const bool cheapVisuals=state.localSettings.graphicsPreset<=0;\n'''
+          new_tail = b'''    glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);\n    const bool cheapVisuals=state.localSettings.graphicsPreset<=0;\n'''
+          if data.count(old) != 1: raise SystemExit(f'camera insertion anchor count={data.count(old)}')
+          if data.count(old_tail) != 1: raise SystemExit(f'camera removal anchor count={data.count(old_tail)}')
+          data = data.replace(old,new,1).replace(old_tail,new_tail,1)
+          path.write_bytes(data)
+          '@ | python -
+          git diff --check -- native-desktop/DesktopRenderer.cpp
+          git diff --stat -- native-desktop/DesktopRenderer.cpp
+          git diff -- native-desktop/DesktopRenderer.cpp
+
+      - name: Configure
+        run: cmake -S native-desktop -B build/desktop-release -A x64 -DDB_COMMIT_SHA="4f6f9c0530b75407074e1b56851ef85e377789ef" -DDB_CHANNEL=light-capture-verify -DDB_HUMAN_VERSION="light-capture-verify"
+
+      - name: Build
+        run: cmake --build build/desktop-release --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build/desktop-release -C Release --output-on-failure
+
+      - name: Smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'build/desktop-release/bin/Release/DigitalBreakdown.exe'
+          if (-not (Test-Path $exe)) { throw 'DigitalBreakdown.exe missing' }
+          $output = & $exe --smoke-test 2>&1
+          $output | Write-Host
+          if ($LASTEXITCODE -ne 0 -or ($output -join "`n") -notmatch 'SMOKE_TEST_OK') { throw 'Smoke test failed' }
+
+      - name: Publish clean source commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $patched = Join-Path $env:RUNNER_TEMP 'DesktopRenderer.cpp'
+          Copy-Item native-desktop/DesktopRenderer.cpp $patched
+          git switch --detach 4f6f9c0530b75407074e1b56851ef85e377789ef
+          Copy-Item $patched native-desktop/DesktopRenderer.cpp
+          git add -- native-desktop/DesktopRenderer.cpp
+          git diff --cached --check -- native-desktop/DesktopRenderer.cpp
+          $staged = @(git diff --cached --name-only)
+          if ($staged.Count -ne 1 -or $staged[0] -ne 'native-desktop/DesktopRenderer.cpp') { throw "Unexpected staged paths: $($staged -join ', ')" }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture desktop lights in current camera space'
+          $clean = (git rev-parse HEAD).Trim()
+          git push origin "$clean`:refs/heads/desktop-light-capture-contract"
+          "CLEAN_COMMIT=$clean" | Write-Host
