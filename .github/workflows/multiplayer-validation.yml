@@ -94,7 +94,7 @@ jobs:
             mkdir -p "$out"
             echo "OUT=$out" | tee -a "visual-proof/$label-capture.log"
             LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 640x480x24' \
-              "$exe" --capture-cinematic-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud \
+              "$exe" --capture-cpu-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud \
               2>&1 | tee -a "visual-proof/$label-capture.log"
             count="$(find "$out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
             echo "CAPTURE_COUNT $label=$count" | tee -a "visual-proof/$label-capture.log"
