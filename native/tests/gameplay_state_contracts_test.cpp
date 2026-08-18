@@ -101,6 +101,39 @@ int main() {
     }
 
     {
+        Game game;
+        seedPersistentState(game);
+        game.configureNetworkHost();
+        game.setNetworkPeerActive(1, true);
+
+        auto& state = game.networkMutableState();
+        state.roomInspector = true;
+        state.progression.run.temporaryLevels = {4, 5, 6};
+        state.energy.supplementalActive = true;
+        state.energy.supplementalValue = 42.0f;
+        state.energy.flowerStacks = 2;
+        state.player.souls = 8;
+        state.player.battery = 17.0f;
+
+        game.debugStepRoomInspector(1, false);
+        const GameState& rebuilt = game.state();
+
+        if (!persistentSeedSurvived(rebuilt))
+            return fail("room_rebuild_preserves_persistent_state");
+        if (rebuilt.progression.run.temporaryLevels != std::array<int, 3>{4, 5, 6})
+            return fail("room_rebuild_preserves_run_progression");
+        if (!rebuilt.energy.supplementalActive ||
+            !near(rebuilt.energy.supplementalValue, 42.0f) ||
+            rebuilt.energy.flowerStacks != 2)
+            return fail("room_rebuild_preserves_supplemental_energy");
+        if (!rebuilt.multiplayer.enabled || !rebuilt.multiplayer.authoritativeHost ||
+            !rebuilt.multiplayer.peers[1].active)
+            return fail("room_rebuild_preserves_network_authority");
+        if (rebuilt.player.souls != 0)
+            return fail("room_rebuild_reconstructs_local_player_inventory");
+    }
+
+    {
         Game guest;
         guest.configureNetworkGuest(1);
         guest.networkMutableState().player.battery = 47.0f;
