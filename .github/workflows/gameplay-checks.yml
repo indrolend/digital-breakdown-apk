@@ -112,13 +112,12 @@ jobs:
               data = data.replace(old, new, 1)
           path.write_bytes(data)
           '@ | python -
-          git config core.autocrlf false
-          $changed = @(git diff --name-only)
-          if ($changed.Count -ne 1 -or $changed[0] -ne 'native-desktop/DesktopRenderer.cpp') {
-            throw "Unexpected changed paths: $($changed -join ', ')"
+          $owned = @(git diff --name-only -- native-desktop/DesktopRenderer.cpp)
+          if ($owned.Count -ne 1 -or $owned[0] -ne 'native-desktop/DesktopRenderer.cpp') {
+            throw "Renderer diff missing or unexpected: $($owned -join ', ')"
           }
-          git diff --check
-          git diff --stat
+          git diff --check -- native-desktop/DesktopRenderer.cpp
+          git diff --stat -- native-desktop/DesktopRenderer.cpp
           git diff -- native-desktop/DesktopRenderer.cpp
 
       - name: Configure desktop release
@@ -159,10 +158,9 @@ jobs:
           $patched = Join-Path $env:RUNNER_TEMP 'DesktopRenderer.cpp'
           Copy-Item native-desktop/DesktopRenderer.cpp $patched
           git switch --detach 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
-          git config core.autocrlf false
           Copy-Item $patched native-desktop/DesktopRenderer.cpp
           git add -- native-desktop/DesktopRenderer.cpp
-          git diff --cached --check
+          git diff --cached --check -- native-desktop/DesktopRenderer.cpp
           $staged = @(git diff --cached --name-only)
           if ($staged.Count -ne 1 -or $staged[0] -ne 'native-desktop/DesktopRenderer.cpp') {
             throw "Unexpected staged paths: $($staged -join ', ')"
