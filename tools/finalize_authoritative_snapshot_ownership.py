@@ -70,7 +70,6 @@ def main():
             "  applyWorld(completeGuest, roundtrip, 1);\n",
             "protocol Game overload contract")
 
-        ratchet=once(ratchet,'    Path("native-desktop/main.cpp"),\n',"","remove migrated desktop main allowance")
         ratchet=once(ratchet,'    Path("native-desktop/DesktopMultiplayer.cpp"),\n',"","remove migrated desktop multiplayer allowance")
         ratchet=once(ratchet,'    Path("native-android/app/src/main/cpp/native_bridge.cpp"),\n',"","remove migrated Android bridge allowance")
 
