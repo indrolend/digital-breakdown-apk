@@ -41,19 +41,32 @@ jobs:
           from pathlib import Path
           path = Path('native-desktop/main.cpp')
           text = path.read_text()
-          old = '''#elif defined(__APPLE__)
+          gl_old = '''#elif defined(__APPLE__)
           #define GL_SILENCE_DEPRECATION
           #include <OpenGL/gl.h>
           #endif'''
-          new = '''#elif defined(__APPLE__)
+          gl_new = '''#elif defined(__APPLE__)
           #define GL_SILENCE_DEPRECATION
           #include <OpenGL/gl.h>
           #else
           #include <GL/gl.h>
           #endif'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one main.cpp GL include anchor, got {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          if text.count(gl_old) != 1:
+              raise SystemExit(f'expected exactly one main.cpp GL include anchor, got {text.count(gl_old)}')
+          text = text.replace(gl_old, gl_new, 1)
+          glfw_anchor = '#include <GLFW/glfw3.h>\n'
+          linux_stubs = '''#include <GLFW/glfw3.h>
+
+          #if !defined(_WIN32) && !defined(__APPLE__)
+          extern "C" void controllerRumblePulse(float, float, int) {}
+          extern "C" void controllerRumbleUpdate() {}
+          extern "C" void controllerRumbleStop() {}
+          extern "C" void touchpadHapticPulse(TouchpadHapticEffect, int) {}
+          #endif
+          '''
+          if text.count(glfw_anchor) != 1:
+              raise SystemExit(f'expected exactly one GLFW include anchor, got {text.count(glfw_anchor)}')
+          path.write_text(text.replace(glfw_anchor, linux_stubs, 1))
           PY
             git diff --check -- native-desktop/main.cpp
             git diff -- native-desktop/main.cpp | tee "visual-proof/$label-linux-shim.log"
