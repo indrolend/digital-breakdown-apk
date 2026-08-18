@@ -18,6 +18,7 @@ run_logged() {
   echo "PASS: $name"
 }
 
+run_logged ownership-boundaries python3 tools/check_ownership_boundaries.py
 run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   DigitalBreakdown \
