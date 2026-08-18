@@ -32,6 +32,7 @@ jobs:
           git add native-network/MultiplayerProtocol.hpp \
                   native-network/MultiplayerProtocol.cpp \
                   native-desktop/DesktopMultiplayer.cpp \
+                  native-desktop/main.cpp \
                   native-android/app/src/main/cpp/native_bridge.cpp \
                   native/tests/multiplayer_protocol_test.cpp \
                   tools/check_ownership_boundaries.py
