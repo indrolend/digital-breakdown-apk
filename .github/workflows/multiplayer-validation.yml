@@ -37,6 +37,27 @@ jobs:
           while read -r label ref; do
             echo "=== $label $ref ==="
             git checkout --force "$ref"
+            python3 - <<'PY'
+          from pathlib import Path
+          path = Path('native-desktop/main.cpp')
+          text = path.read_text()
+          old = '''#elif defined(__APPLE__)
+          #define GL_SILENCE_DEPRECATION
+          #include <OpenGL/gl.h>
+          #endif'''
+          new = '''#elif defined(__APPLE__)
+          #define GL_SILENCE_DEPRECATION
+          #include <OpenGL/gl.h>
+          #else
+          #include <GL/gl.h>
+          #endif'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one main.cpp GL include anchor, got {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+            git diff --check -- native-desktop/main.cpp
+            git diff -- native-desktop/main.cpp | tee "visual-proof/$label-linux-shim.log"
+
             rm -rf build/visual-proof
             cmake -S native-desktop -B build/visual-proof \
               -DCMAKE_BUILD_TYPE=Release \
