@@ -83,6 +83,11 @@ struct PlayerCommand {
     float yaw = 0.0f;
     float pitch = 0.0f;
     std::uint16_t buttons = 0;
+    std::uint8_t capabilities = 0;
+};
+
+enum PlayerCommandCapability : std::uint8_t {
+    CommandMobileFraming = 1u << 0
 };
 
 struct PlayerState {
@@ -574,6 +579,7 @@ struct NetworkPeerState {
     int playerId = -1;
     unsigned int lastInputSequence = 0;
     unsigned short inputButtons = 0;
+    bool mobileFraming = false;
     InputState input;
     PlayerState player;
     EnergyState energy;
@@ -705,7 +711,7 @@ public:
     void setNetworkPeerActive(int playerId, bool active);
     PlayerCommand capturePlayerCommand(unsigned int sequence, unsigned int localTick) const;
     void setNetworkPeerCommand(int playerId, const PlayerCommand& command);
-    void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons);
+    void setNetworkPeerInput(int playerId, unsigned int sequence, float moveX, float moveZ, float yaw, float pitch, unsigned short buttons, unsigned char capabilities = 0);
     void applyNetworkPeerSnapshot(int playerId, const PlayerState& player, float pitch, float vacuumPower, float vacuumPose, int vacuumTarget, float meleeTimer, float dischargeAmount);
 
     const GameState& state() const { return state_; }
@@ -826,5 +832,6 @@ private:
     void clampRoom(Vec3& pos);
     Vec3 cameraForwardFlat() const;
     Vec3 cameraRightFlat() const;
+    bool mobileFramingEnabled() const;
     Vec3 assistedActionDirection(const Vec3& origin, const Vec3& direction, float maxDistance, float minDot, float maxBlend, bool preferHead) const;
 };

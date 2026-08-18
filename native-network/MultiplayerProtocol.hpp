@@ -10,7 +10,7 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 7;
+constexpr std::uint16_t PROTOCOL_VERSION = 8;
 constexpr std::uint16_t GAMEPLAY_VERSION = 5;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
