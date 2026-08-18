@@ -134,6 +134,40 @@ int main() {
     }
 
     {
+        Game game;
+        auto& current = game.networkMutableState().localSettings;
+        current.menuPage = LocalMenuPage::Controls;
+        current.menuScroll = 77.0f;
+        current.menuHistoryDepth = 2;
+        current.rebindingAction = 4;
+        current.mobileFraming = true;
+
+        LocalSettingsState incoming = current;
+        incoming.musicVolume = 0.22f;
+        incoming.graphicsPreset = 2;
+        incoming.keyboardBindings[0] = 73;
+        incoming.menuPage = LocalMenuPage::Graphics;
+        incoming.menuScroll = 9.0f;
+        incoming.menuHistoryDepth = 0;
+        incoming.rebindingAction = -1;
+        incoming.mobileFraming = false;
+
+        game.applyLocalPreferences(incoming);
+        const auto& applied = game.state().localSettings;
+        if (!near(applied.musicVolume, 0.22f) || applied.graphicsPreset != 2 ||
+            applied.keyboardBindings[0] != 73)
+            return fail("local_preferences_apply_persistent_fields");
+        if (applied.menuPage != LocalMenuPage::Controls || !near(applied.menuScroll, 77.0f) ||
+            applied.menuHistoryDepth != 2 || applied.rebindingAction != 4)
+            return fail("local_preferences_preserve_menu_session");
+        if (!applied.mobileFraming)
+            return fail("local_preferences_do_not_own_mobile_framing");
+        game.setMobileFraming(false);
+        if (game.state().localSettings.mobileFraming)
+            return fail("mobile_framing_has_explicit_owner_api");
+    }
+
+    {
         Game guest;
         guest.configureNetworkGuest(1);
         guest.networkMutableState().player.battery = 47.0f;

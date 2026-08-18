@@ -706,6 +706,25 @@ public:
     void disableNetwork();
     void setNetworkRoom(const char* code, const char* status, bool connected);
     void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);
+    void applyLocalPreferences(const LocalSettingsState& settings) {
+        auto& local=state_.localSettings;
+        local.musicVolume=settings.musicVolume;
+        local.sfxVolume=settings.sfxVolume;
+        local.musicMuted=settings.musicMuted;
+        local.sfxMuted=settings.sfxMuted;
+        local.graphicsPreset=settings.graphicsPreset;
+        local.shadows=settings.shadows;
+        local.portalWindow=settings.portalWindow;
+        local.particles=settings.particles;
+        local.fpsCounter=settings.fpsCounter;
+        local.mouseLookSensitivity=settings.mouseLookSensitivity;
+        local.touchLookSensitivity=settings.touchLookSensitivity;
+        local.controllerLookSensitivity=settings.controllerLookSensitivity;
+        local.controllerTriggerSensitivity=settings.controllerTriggerSensitivity;
+        local.controllerVibration=settings.controllerVibration;
+        local.keyboardBindings=settings.keyboardBindings;
+    }
+    void setMobileFraming(bool enabled) { state_.localSettings.mobileFraming=enabled; }
     bool chooseTemporaryUpgrade(int track);
     bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);

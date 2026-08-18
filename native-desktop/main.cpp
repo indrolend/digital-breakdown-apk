@@ -217,7 +217,7 @@ bool loadProgression(Game& game,const std::filesystem::path& path){
         settings.menuPage=LocalMenuPage::Main;settings.rebindingAction=-1;
     }
     game.setPersistentProgression(tokens,shot,lunge,attack);
-    if(version>=2)game.networkMutableState().localSettings=settings;
+    if(version>=2)game.applyLocalPreferences(settings);
     return true;
 }
 bool replaceProgressionFile(const std::filesystem::path& source,const std::filesystem::path& destination){
