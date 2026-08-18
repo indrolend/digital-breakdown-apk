@@ -21,6 +21,7 @@ on:
       - agent/gameplay-architecture-distillation
       - agent/loose-soul-normalization
       - agent/experimental-release-coherence
+      - desktop-lighting-contract-verify
     paths:
       - "native-android/app/src/main/cpp/game/**"
       - "native/tests/**"
@@ -36,7 +37,7 @@ on:
       - ".github/workflows/gameplay-checks.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: gameplay-checks-${{ github.ref }}
@@ -54,9 +55,106 @@ jobs:
         run: bash scripts/verify-gameplay.sh
       - name: Upload verification logs
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@b7c566a772e6b6f58ed0dc250532a479d7789f # v6
         with:
           name: gameplay-verification-logs
           path: build/gameplay-checks/verification-logs
           if-no-files-found: warn
           retention-days: 7
+
+  lighting-contract:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Run desktop lighting contract verification'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: desktop-lighting-contract-verify
+
+      - name: Restore exact source bytes and verify authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git -c core.autocrlf=false checkout HEAD -- native-desktop/DesktopRenderer.cpp
+          $blob = (git hash-object --no-filters native-desktop/DesktopRenderer.cpp).Trim()
+          if ($blob -ne 'f67a9e68806f8ef3a2c16cd4ce7924dae0f7de51') {
+            throw "Unexpected DesktopRenderer.cpp blob: $blob"
+          }
+
+      - name: Apply canonical scene sun contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          path = Path('native-desktop/DesktopRenderer.cpp')
+          data = path.read_bytes()
+          replacements = [
+              (b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\n",
+               b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\nconstexpr Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};\nconstexpr float SHADOW_PROJECTION_SCALE = 0.5f;\n"),
+              (b"    constexpr int segments = 8;\n    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};\n    const float stretch=height*0.16f;\n    const float angle=std::atan2(-0.5f,-25.0f/60.0f);\n",
+               b"    constexpr int segments = 8;\n    const float sunXOverY=SCENE_SUN_VECTOR.x/SCENE_SUN_VECTOR.y;\n    const float sunZOverY=SCENE_SUN_VECTOR.z/SCENE_SUN_VECTOR.y;\n    const Vec3 center{\n        caster.x-height*SHADOW_PROJECTION_SCALE*sunXOverY,\n        0.012f,\n        caster.z-height*SHADOW_PROJECTION_SCALE*sunZOverY\n    };\n    const float stretch=height*0.16f;\n    const float angle=std::atan2(-sunXOverY,-sunZOverY);\n"),
+              (b"    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};\n    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);\n",
+               b"    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f};\n    const GLfloat sunPos[]={\n        SCENE_SUN_VECTOR.x,\n        SCENE_SUN_VECTOR.y,\n        SCENE_SUN_VECTOR.z,\n        0.0f\n    };\n    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);\n"),
+          ]
+          for old, new in replacements:
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}')
+              data = data.replace(old, new, 1)
+          path.write_bytes(data)
+          '@ | python -
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'native-desktop/DesktopRenderer.cpp') {
+            throw "Unexpected changed paths: $($changed -join ', ')"
+          }
+          git diff --check
+          git diff --stat
+          git diff -- native-desktop/DesktopRenderer.cpp
+
+      - name: Configure desktop release
+        run: >-
+          cmake -S native-desktop -B build/desktop-release -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DDB_COMMIT_SHA="${{ github.sha }}"
+          -DDB_CHANNEL=lighting-contract-verify
+          -DDB_HUMAN_VERSION="lighting-contract-verify-${{ github.sha }}"
+
+      - name: Build desktop release
+        run: cmake --build build/desktop-release --config Release --parallel
+
+      - name: Run Windows regression tests
+        run: ctest --test-dir build/desktop-release -C Release --output-on-failure
+
+      - name: Smoke-test executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            'build/desktop-release/bin/Release/DigitalBreakdown.exe',
+            'build/desktop-release/bin/DigitalBreakdown.exe'
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw 'DigitalBreakdown.exe was not produced.' }
+          $output = & $exe --smoke-test 2>&1
+          $output | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "Desktop smoke test exited with $LASTEXITCODE." }
+          if (($output -join "`n") -notmatch 'SMOKE_TEST_OK') {
+            throw 'Desktop smoke test did not produce its success marker.'
+          }
+
+      - name: Commit verified renderer blob
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- native-desktop/DesktopRenderer.cpp
+          git diff --cached --check
+          $staged = @(git diff --cached --name-only)
+          if ($staged.Count -ne 1 -or $staged[0] -ne 'native-desktop/DesktopRenderer.cpp') {
+            throw "Unexpected staged paths: $($staged -join ', ')"
+          }
+          git commit -m 'Verify desktop sun and shadow direction'
+          git push origin HEAD:desktop-lighting-contract-verify
