@@ -1,0 +1,51 @@
+name: Ownership Migration Preview
+
+on:
+  push:
+    branches:
+      - agent/ownership-contracts-settings
+    paths:
+      - ".github/workflows/ownership-migration-preview.yml"
+      - "tools/apply_local_settings_ownership.py"
+      - "native-android/app/src/main/cpp/game/Game.hpp"
+      - "native-android/app/src/main/cpp/native_bridge.cpp"
+      - "native-desktop/main.cpp"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: macos-14
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Apply local settings ownership migration
+        run: python3 tools/apply_local_settings_ownership.py --apply
+
+      - name: Verify mutable-state surface shrinks cleanly
+        run: python3 tools/check_ownership_boundaries.py
+
+      - name: Configure native desktop
+        run: cmake -S native-desktop -B build/ownership-preview -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build native targets
+        run: cmake --build build/ownership-preview --config Release --parallel
+
+      - name: Run native tests
+        run: ctest --test-dir build/ownership-preview -C Release --output-on-failure
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Capture migration patch
+        run: git diff -- native-android/app/src/main/cpp/game/Game.hpp native-android/app/src/main/cpp/native_bridge.cpp native-desktop/main.cpp > ownership-migration.patch
+
+      - name: Upload migration patch
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ownership-migration-preview
+          path: ownership-migration.patch
+          if-no-files-found: error
+          retention-days: 3
