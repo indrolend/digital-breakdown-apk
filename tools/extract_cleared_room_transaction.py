@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Extract cleared-room advancement policy into one named Game transaction.
 
-This is a mechanical extraction. The existing transition body is lifted byte-for-byte
-from updateRoomTopology() after validating the policy anchors that matter to its
-characterized behavior.
+This is a mechanical extraction. The existing transition body is lifted from
+updateRoomTopology() after validating the policy anchors that matter to its
+characterized behavior. Only the old enclosing block's closing indentation is
+removed when the body becomes its own function.
 """
 from pathlib import Path
 import sys
@@ -36,6 +37,9 @@ POLICY_ANCHORS = (
     "buildRoomColliders();",
     "for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};",
     "respawnTarget(i)",
+    "state_.upgradeMenu.active=true;",
+    "state_.uiPaused=true;",
+    "clearInputState();",
 )
 
 
@@ -86,7 +90,6 @@ def main() -> int:
         marker_at = cpp.index(IF_MARKER, function_at)
         open_brace = cpp.index("{", marker_at + len(IF_MARKER) - 1)
         close_brace = matching_brace(cpp, open_brace)
-        block = cpp[marker_at:close_brace + 1]
         body = cpp[open_brace + 1:close_brace]
 
         for anchor in POLICY_ANCHORS:
@@ -96,6 +99,13 @@ def main() -> int:
 
         if "currentTile" in body or "previousTile" in body:
             raise RuntimeError("transition body unexpectedly depends on topology detector locals")
+        if not body.endswith("\n    "):
+            raise RuntimeError("cleared-room block closing indentation drifted")
+
+        # The final four spaces belong to updateRoomTopology()'s closing brace,
+        # not to the policy body itself. Remove that indentation plus its line
+        # break, then add the new function's closing line normally.
+        body = body[:-5]
 
         replacement = IF_MARKER + "\n        advanceClearedRoom();\n    }"
         cpp = cpp[:marker_at] + replacement + cpp[close_brace + 1:]
