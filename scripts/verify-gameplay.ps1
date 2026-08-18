@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) { throw "Ownership boundary check failed with exit code
 cmake -S native-desktop -B $BuildDir -DCMAKE_BUILD_TYPE=Release
 if ($LASTEXITCODE -ne 0) { throw "Gameplay configure failed with exit code $LASTEXITCODE" }
 
-cmake --build $BuildDir --config Release --target DigitalBreakdown GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest MenuNavigationTest PhoneDisplayStateTest EarlyBrowserVisualsTest TraversalCalibrationTest Pass7ParityTest MultiplayerProtocolTest MultiplayerDeterminismTest HostRemotePeerSimulationIsolationTest NetworkInputEdgeCharacterizationTest MultiplayerConnectionStateTest GameplayFlowProbe RoomProgressionProbe DeterministicInputSoak --parallel
+cmake --build $BuildDir --config Release --target DigitalBreakdown GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest MenuNavigationTest PhoneDisplayStateTest EarlyBrowserVisualsTest TraversalCalibrationTest Pass7ParityTest MultiplayerProtocolTest MultiplayerDeterminismTest HostRemotePeerSimulationIsolationTest NetworkInputEdgeCharacterizationTest MobileFramingRemoteAuthorityTest MultiplayerConnectionStateTest GameplayFlowProbe RoomProgressionProbe DeterministicInputSoak --parallel
 if ($LASTEXITCODE -ne 0) { throw "Gameplay build failed with exit code $LASTEXITCODE" }
 
 ctest --test-dir $BuildDir -C Release --output-on-failure
@@ -38,6 +38,9 @@ if ($LASTEXITCODE -ne 0) { throw "HostRemotePeerSimulationIsolationTest failed w
 
 & (Join-Path $ReleaseDir "NetworkInputEdgeCharacterizationTest.exe")
 if ($LASTEXITCODE -ne 0) { throw "NetworkInputEdgeCharacterizationTest failed with exit code $LASTEXITCODE" }
+
+& (Join-Path $ReleaseDir "MobileFramingRemoteAuthorityTest.exe")
+if ($LASTEXITCODE -ne 0) { throw "MobileFramingRemoteAuthorityTest failed with exit code $LASTEXITCODE" }
 
 python tools/apply_network_input_edge_latching.py --apply
 if ($LASTEXITCODE -ne 0) { throw "Network input edge repair apply failed with exit code $LASTEXITCODE" }
