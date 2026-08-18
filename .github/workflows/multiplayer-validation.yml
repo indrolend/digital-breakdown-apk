@@ -28,8 +28,10 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release \
               -DDB_COMMIT_SHA="$ref" \
               -DDB_CHANNEL=visual-proof \
-              -DDB_HUMAN_VERSION=visual-proof
-            cmake --build build/visual-proof --config Release --parallel
+              -DDB_HUMAN_VERSION=visual-proof \
+              2>&1 | tee "visual-proof/$label-configure.log"
+            cmake --build build/visual-proof --config Release --parallel \
+              2>&1 | tee "visual-proof/$label-build.log"
             exe="$(find build/visual-proof -type f -name DigitalBreakdown -perm -111 | head -n 1)"
             test -n "$exe"
             out="$(pwd)/visual-proof/$label"
@@ -119,12 +121,13 @@ jobs:
           PY
           python3 compare_visuals.py
 
-      - name: Upload comparison
+      - name: Upload comparison and build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-lighting-abc-visual-proof
           path: |
+            visual-proof/*.log
             visual-proof/comparison.txt
             visual-proof/selected/*.ppm
           if-no-files-found: warn
