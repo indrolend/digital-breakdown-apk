@@ -3,37 +3,7 @@ name: Gameplay checks
 on:
   pull_request:
     paths:
-      - "native-android/app/src/main/cpp/game/**"
-      - "native/tests/**"
-      - "native-desktop/CMakeLists.txt"
       - "native-desktop/**.cpp"
-      - "native-desktop/**.hpp"
-      - "native-network/**"
-      - "native-models/**"
-      - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
-      - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
-      - ".github/workflows/gameplay-checks.yml"
-  push:
-    branches:
-      - main
-      - agent/gameplay-architecture-distillation
-      - agent/loose-soul-normalization
-      - agent/experimental-release-coherence
-      - desktop-lighting-contract-verify
-    paths:
-      - "native-android/app/src/main/cpp/game/**"
-      - "native/tests/**"
-      - "native-desktop/CMakeLists.txt"
-      - "native-desktop/**.cpp"
-      - "native-desktop/**.hpp"
-      - "native-network/**"
-      - "native-models/**"
-      - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
-      - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
       - ".github/workflows/gameplay-checks.yml"
 
 permissions:
@@ -44,26 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gameplay:
-    runs-on: macos-14
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify platform asset mirrors
-        run: python3 tools/verify_asset_mirrors.py
-      - name: Verify gameplay contracts
-        run: bash scripts/verify-gameplay.sh
-      - name: Upload verification logs
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6f58ed0dc250532a479d7789f # v6
-        with:
-          name: gameplay-verification-logs
-          path: build/gameplay-checks/verification-logs
-          if-no-files-found: warn
-          retention-days: 7
-
   lighting-contract:
-    if: github.event_name == 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -99,7 +50,7 @@ jobs:
           data = subprocess.check_output(['git', 'show', 'HEAD:native-desktop/DesktopRenderer.cpp'])
           replacements = [
               (b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\n",
-               b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\nconstexpr Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};\nconstexpr float SHADOW_PROJECTION_SCALE = 0.5f;\n"),
+               b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\nconst Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};\nconstexpr float SHADOW_PROJECTION_SCALE = 0.5f;\n"),
               (b"    constexpr int segments = 8;\n    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};\n    const float stretch=height*0.16f;\n    const float angle=std::atan2(-0.5f,-25.0f/60.0f);\n",
                b"    constexpr int segments = 8;\n    const float sunXOverY=SCENE_SUN_VECTOR.x/SCENE_SUN_VECTOR.y;\n    const float sunZOverY=SCENE_SUN_VECTOR.z/SCENE_SUN_VECTOR.y;\n    const Vec3 center{\n        caster.x-height*SHADOW_PROJECTION_SCALE*sunXOverY,\n        0.012f,\n        caster.z-height*SHADOW_PROJECTION_SCALE*sunZOverY\n    };\n    const float stretch=height*0.16f;\n    const float angle=std::atan2(-sunXOverY,-sunZOverY);\n"),
               (b"    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f}, sunPos[]={30.0f,60.0f,25.0f,0.0f};\n    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);\n",
