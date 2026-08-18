@@ -73,12 +73,11 @@ jobs:
           ref: desktop-lighting-contract-verify
           fetch-depth: 0
 
-      - name: Restore exact source bytes and verify authority
+      - name: Verify source and branch authority
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          git -c core.autocrlf=false checkout HEAD -- native-desktop/DesktopRenderer.cpp
-          $blob = (git hash-object --no-filters native-desktop/DesktopRenderer.cpp).Trim()
+          $blob = (git rev-parse 'HEAD:native-desktop/DesktopRenderer.cpp').Trim()
           if ($blob -ne 'f67a9e68806f8ef3a2c16cd4ce7924dae0f7de51') {
             throw "Unexpected DesktopRenderer.cpp blob: $blob"
           }
@@ -94,8 +93,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           @'
           from pathlib import Path
+          import subprocess
+
           path = Path('native-desktop/DesktopRenderer.cpp')
-          data = path.read_bytes()
+          data = subprocess.check_output(['git', 'show', 'HEAD:native-desktop/DesktopRenderer.cpp'])
           replacements = [
               (b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\n",
                b"constexpr float ROOM_WALL_HEIGHT = 7.2f;\nconstexpr float PI = 3.14159265358979323846f;\nconstexpr Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};\nconstexpr float SHADOW_PROJECTION_SCALE = 0.5f;\n"),
@@ -111,6 +112,7 @@ jobs:
               data = data.replace(old, new, 1)
           path.write_bytes(data)
           '@ | python -
+          git config core.autocrlf false
           $changed = @(git diff --name-only)
           if ($changed.Count -ne 1 -or $changed[0] -ne 'native-desktop/DesktopRenderer.cpp') {
             throw "Unexpected changed paths: $($changed -join ', ')"
@@ -157,6 +159,7 @@ jobs:
           $patched = Join-Path $env:RUNNER_TEMP 'DesktopRenderer.cpp'
           Copy-Item native-desktop/DesktopRenderer.cpp $patched
           git switch --detach 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
+          git config core.autocrlf false
           Copy-Item $patched native-desktop/DesktopRenderer.cpp
           git add -- native-desktop/DesktopRenderer.cpp
           git diff --cached --check
