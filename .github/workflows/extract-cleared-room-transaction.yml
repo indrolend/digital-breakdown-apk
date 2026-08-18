@@ -1,5 +1,5 @@
 name: Extract cleared-room transaction
-# retry: report the exact failed stage if the verified extraction cannot commit
+# retry: closing indentation is normalized before verification
 
 on:
   push:
@@ -57,7 +57,9 @@ jobs:
           cat /tmp/room-extract.log
           tail -n 80 /tmp/room-verify.log
           git diff --check
+          rm -f .github/ROOM_EXTRACTION_FAILURE.txt
           git add native-android/app/src/main/cpp/game/Game.cpp \
-                  native-android/app/src/main/cpp/game/Game.hpp
+                  native-android/app/src/main/cpp/game/Game.hpp \
+                  .github/ROOM_EXTRACTION_FAILURE.txt
           git commit -m "Name cleared-room advancement transaction"
           git push origin HEAD:agent/ownership-contracts-settings
