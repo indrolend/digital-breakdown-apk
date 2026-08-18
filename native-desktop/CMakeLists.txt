@@ -209,6 +209,7 @@ target_compile_features(TargetLifecycleTest PRIVATE cxx_std_17)
 add_executable(
     GameplayStateContractsTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_state_contracts_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
 )
 target_include_directories(GameplayStateContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(GameplayStateContractsTest PRIVATE cxx_std_17)
