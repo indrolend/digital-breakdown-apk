@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+python tools/apply_local_settings_ownership.py
+if ($LASTEXITCODE -ne 0) { throw "Local settings ownership plan check failed with exit code $LASTEXITCODE" }
+
 python tools/check_ownership_boundaries.py
 if ($LASTEXITCODE -ne 0) { throw "Ownership boundary check failed with exit code $LASTEXITCODE" }
 
