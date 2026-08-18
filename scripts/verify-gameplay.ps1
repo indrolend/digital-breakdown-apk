@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+python tools/check_ownership_boundaries.py
+if ($LASTEXITCODE -ne 0) { throw "Ownership boundary check failed with exit code $LASTEXITCODE" }
+
 cmake -S native-desktop -B $BuildDir -DCMAKE_BUILD_TYPE=Release
 if ($LASTEXITCODE -ne 0) { throw "Gameplay configure failed with exit code $LASTEXITCODE" }
 
