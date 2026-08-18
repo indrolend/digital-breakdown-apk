@@ -1,0 +1,37 @@
+name: Finalize network input batch
+
+on:
+  push:
+    branches:
+      - agent/ownership-contracts-settings
+    paths:
+      - .github/workflows/finalize-network-input-batch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ownership-contracts-settings
+          fetch-depth: 0
+      - name: Apply deterministic batch
+        run: python3 tools/finalize_network_input_edge_batch.py
+      - name: Verify finalized gameplay contracts
+        run: bash scripts/verify-gameplay.sh
+      - name: Commit finalized batch
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native-android/app/src/main/cpp/game/Game.cpp \
+                  native/tests/network_input_edge_characterization_test.cpp \
+                  native/tests/network_input_edge_repair_validation_test.cpp \
+                  native-desktop/CMakeLists.txt \
+                  scripts/verify-gameplay.sh \
+                  scripts/verify-gameplay.ps1
+          git commit -m "Latch network input edges until simulation"
+          git push origin HEAD:agent/ownership-contracts-settings
