@@ -154,10 +154,16 @@ int main() {
             std::any_of(advanced.player.storedSoulBrute.begin(), advanced.player.storedSoulBrute.end(), [](bool brute){ return brute; })) {
             return fail(iteration, "room_advance_clears_stored_souls", advanced);
         }
-        if (advanced.progression.run.roomHeat != 0.0f ||
-            advanced.progression.run.roomElapsed != 0.0f ||
-            advanced.progression.run.roomCaptures != 0) {
-            return fail(iteration, "room_advance_clears_room_run_counters", advanced);
+        // resetRoom() clears room-lifetime counters at the transition boundary,
+        // then the same Game::update() continues into updateRoomPopulation(dt).
+        // Assert the externally observable end-of-update contract: stale-room
+        // counters are gone, captures remain reset, and the new room has advanced
+        // by exactly this frame rather than remaining at the internal reset snapshot.
+        if (advanced.progression.run.roomCaptures != 0 ||
+            std::abs(advanced.progression.run.roomElapsed - kDt) > 1.0e-6f ||
+            advanced.progression.run.roomHeat <= 0.0f ||
+            advanced.progression.run.roomHeat >= 0.01f) {
+            return fail(iteration, "room_advance_reinitializes_room_run_counters", advanced);
         }
         if (advanced.vacuum.active || advanced.vacuum.power != 0.0f ||
             advanced.meleeVisual.visualTimer != 0.0f ||
