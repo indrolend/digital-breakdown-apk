@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Apply the first narrow ownership migration: LocalSettingsState.
+"""Guard the pending LocalSettingsState ownership migration.
 
-Default mode is a dry-run contract check. Pass --apply to rewrite the three
-known production seams. Every replacement is exact and count-checked so this
-script refuses to operate if the source has drifted.
+The original migration proposed whole-LocalSettingsState replacement through a
+named Game API. Characterization has since proven that this aggregate mixes
+persistent preferences, menu/session transients, and `mobileFraming`, which
+materially changes authoritative remote-player combat direction.
+
+Default mode verifies that the known ownership seams have not drifted and
+reports the migration as intentionally blocked. `--apply` refuses to write
+until `mobileFraming` receives an explicit gameplay/network ownership policy.
 """
 
 from __future__ import annotations
@@ -18,63 +23,76 @@ GAME_HPP = ROOT / "native-android/app/src/main/cpp/game/Game.hpp"
 DESKTOP_MAIN = ROOT / "native-desktop/main.cpp"
 ANDROID_BRIDGE = ROOT / "native-android/app/src/main/cpp/native_bridge.cpp"
 
-REPLACEMENTS = {
+EXPECTED = {
     GAME_HPP: [
         (
             "    void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);\n",
-            "    void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);\n"
-            "    void setLocalSettings(const LocalSettingsState& settings) { state_.localSettings = settings; }\n",
-            "declare explicit local-settings owner API",
+            "Game owner API insertion point",
+        ),
+        (
+            "    GameState& networkMutableState() { return state_; }\n",
+            "broad mutable escape hatch still present",
         ),
     ],
     DESKTOP_MAIN: [
         (
             "    if(version>=2)game.networkMutableState().localSettings=settings;\n",
-            "    if(version>=2)game.setLocalSettings(settings);\n",
-            "route desktop persistence through settings API",
+            "desktop persistence still uses broad mutable state",
         ),
     ],
     ANDROID_BRIDGE: [
         (
-            "extern \"C\" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_setLocalSettings(JNIEnv*,jclass,jfloat music,jfloat sfx,jboolean musicMuted,jboolean sfxMuted,jint preset,jboolean shadows,jboolean portal,jboolean particles,jboolean fps){auto& settings=gGame.networkMutableState().localSettings;settings.musicVolume=clampf(music,0,1);settings.sfxVolume=clampf(sfx,0,1);settings.musicMuted=musicMuted==JNI_TRUE;settings.sfxMuted=sfxMuted==JNI_TRUE;settings.graphicsPreset=std::max(0,std::min(2,static_cast<int>(preset)));settings.shadows=shadows==JNI_TRUE;settings.portalWindow=portal==JNI_TRUE;settings.particles=particles==JNI_TRUE;settings.fpsCounter=fps==JNI_TRUE;settings.mobileFraming=true;}\n",
-            "extern \"C\" JNIEXPORT void JNICALL Java_com_indrolend_digitalbreakdown_NativeBridge_setLocalSettings(JNIEnv*,jclass,jfloat music,jfloat sfx,jboolean musicMuted,jboolean sfxMuted,jint preset,jboolean shadows,jboolean portal,jboolean particles,jboolean fps){LocalSettingsState settings=gGame.state().localSettings;settings.musicVolume=clampf(music,0,1);settings.sfxVolume=clampf(sfx,0,1);settings.musicMuted=musicMuted==JNI_TRUE;settings.sfxMuted=sfxMuted==JNI_TRUE;settings.graphicsPreset=std::max(0,std::min(2,static_cast<int>(preset)));settings.shadows=shadows==JNI_TRUE;settings.portalWindow=portal==JNI_TRUE;settings.particles=particles==JNI_TRUE;settings.fpsCounter=fps==JNI_TRUE;settings.mobileFraming=true;gGame.setLocalSettings(settings);}\n",
-            "route Android JNI settings through settings API",
+            "auto& settings=gGame.networkMutableState().localSettings;",
+            "Android settings still use broad mutable state",
+        ),
+        (
+            "settings.mobileFraming=true;",
+            "Android still forces the gameplay-coupled mobileFraming policy",
         ),
     ],
 }
 
 
-def apply_exact(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
+def require_exact(text: str, needle: str, label: str) -> None:
+    count = text.count(needle)
     if count != 1:
         raise RuntimeError(f"{label}: expected exactly one source match, found {count}")
-    return text.replace(old, new, 1)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true", help="write the ownership migration")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="reserved for a future evidence-backed settings ownership migration",
+    )
     args = parser.parse_args()
 
-    proposed: dict[Path, str] = {}
     try:
-        for path, replacements in REPLACEMENTS.items():
+        for path, expectations in EXPECTED.items():
             text = path.read_text(encoding="utf-8")
-            for old, new, label in replacements:
-                text = apply_exact(text, old, new, label)
-                print(f"LOCAL_SETTINGS_OWNERSHIP_READY {path.relative_to(ROOT)} {label}")
-            proposed[path] = text
+            for needle, label in expectations:
+                require_exact(text, needle, label)
+                print(f"LOCAL_SETTINGS_OWNERSHIP_OBSERVED {path.relative_to(ROOT)} {label}")
     except (OSError, RuntimeError) as exc:
         print(f"LOCAL_SETTINGS_OWNERSHIP_FAIL {exc}", file=sys.stderr)
         return 1
 
-    if not args.apply:
-        print("LOCAL_SETTINGS_OWNERSHIP_CHECK=PASS")
-        return 0
+    print(
+        "LOCAL_SETTINGS_OWNERSHIP_BLOCKED "
+        "whole LocalSettingsState replacement is not a valid settled boundary; "
+        "mobileFraming materially affects authoritative remote combat"
+    )
 
-    for path, text in proposed.items():
-        path.write_text(text, encoding="utf-8")
-    print("LOCAL_SETTINGS_OWNERSHIP_APPLIED=PASS")
+    if args.apply:
+        print(
+            "LOCAL_SETTINGS_OWNERSHIP_APPLY_REFUSED "
+            "define mobileFraming gameplay/network ownership before migrating production callers",
+            file=sys.stderr,
+        )
+        return 2
+
+    print("LOCAL_SETTINGS_OWNERSHIP_CHECK=PASS")
     return 0
 
 
