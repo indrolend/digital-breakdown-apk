@@ -842,6 +842,7 @@ private:
     void resolvePlayerObstacleCollisions();
     void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);
+    void advanceClearedRoom();
     void updateRoomTopology(float previousZ, float currentZ);
     void chargeClosedDoorLoop();
     void awardGoalToken(CapturePointState& capture);

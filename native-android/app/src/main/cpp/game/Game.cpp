@@ -1669,16 +1669,7 @@ bool Game::isInsideDoorAperture(const Vec3& position, float pad) const {
     return std::abs(position.x) <= 2.1f + pad && position.y >= GROUND_Y - 0.12f && position.y <= 3.72f + 0.22f;
 }
 
-void Game::updateRoomTopology(float previousZ, float currentZ) {
-    const int previousTile = getRoomTileIndex(previousZ);
-    const int currentTile = getRoomTileIndex(currentZ);
-    state_.topology.previousTileIndex = previousTile;
-    state_.topology.currentTileIndex = currentTile;
-    state_.topology.advancing = false;
-    if (previousTile == currentTile) return;
-    Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
-    if (!isInsideDoorAperture(local, 0.04f)) return;
-    if (state_.roomClear && currentTile < previousTile) {
+void Game::advanceClearedRoom() {
         state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
         state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
         if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
@@ -1711,6 +1702,19 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.upgradeMenu.active=true;
         state_.uiPaused=true;
         clearInputState();
+}
+
+void Game::updateRoomTopology(float previousZ, float currentZ) {
+    const int previousTile = getRoomTileIndex(previousZ);
+    const int currentTile = getRoomTileIndex(currentZ);
+    state_.topology.previousTileIndex = previousTile;
+    state_.topology.currentTileIndex = currentTile;
+    state_.topology.advancing = false;
+    if (previousTile == currentTile) return;
+    Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
+    if (!isInsideDoorAperture(local, 0.04f)) return;
+    if (state_.roomClear && currentTile < previousTile) {
+        advanceClearedRoom();
     } else if(!state_.roomClear) {
         chargeClosedDoorLoop();
     }
