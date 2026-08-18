@@ -4,52 +4,58 @@
 
 namespace {
 
-bool batchedCommandsOverwriteUnconsumedEdges() {
+bool edgesLatchUntilSimulationConsumesThem() {
     Game game;
     game.reset();
     game.configureNetworkHost();
     game.setNetworkPeerActive(1, true);
 
+    auto& peer = game.networkMutableState().multiplayer.peers[1];
+    peer.player.alive = true;
+    peer.player.downed = false;
+    peer.player.battery = 100.0f;
+    peer.player.grounded = true;
+    peer.player.grabbedByTarget = -1;
+
     constexpr unsigned short kOneShotButtons =
         CommandJump | CommandMelee | CommandShoot | CommandCameraToggle | CommandCommHelp;
 
     game.setNetworkPeerInput(1, 1u, 0.0f, 0.0f, 0.0f, 0.0f, kOneShotButtons);
-    const InputState afterPress = game.state().multiplayer.peers[1].input;
-
     game.setNetworkPeerInput(1, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0u);
-    const InputState afterRelease = game.state().multiplayer.peers[1].input;
 
-    const bool pressEdgesObserved =
-        afterPress.jumpPressed &&
-        afterPress.meleePressed &&
-        afterPress.shootPressed &&
-        afterPress.cameraTogglePressed &&
-        afterPress.commSignalPressed == 1;
+    const InputState beforeSimulation = game.state().multiplayer.peers[1].input;
+    const bool latchedBeforeSimulation =
+        beforeSimulation.jumpPressed &&
+        beforeSimulation.meleePressed &&
+        beforeSimulation.shootPressed &&
+        beforeSimulation.cameraTogglePressed &&
+        beforeSimulation.commSignalPressed == 1;
 
-    const bool booleanEdgesOverwritten =
-        !afterRelease.jumpPressed &&
-        !afterRelease.meleePressed &&
-        !afterRelease.shootPressed &&
-        !afterRelease.cameraTogglePressed;
+    game.update(1.0f / 60.0f);
 
-    const bool commSignalRemainsLatched = afterRelease.commSignalPressed == 1;
+    const InputState afterSimulation = game.state().multiplayer.peers[1].input;
+    const bool consumedBySimulation =
+        !afterSimulation.jumpPressed &&
+        !afterSimulation.meleePressed &&
+        !afterSimulation.shootPressed &&
+        !afterSimulation.cameraTogglePressed &&
+        afterSimulation.commSignalPressed == 0;
 
     std::printf(
-        "NETWORK_INPUT_EDGE_OVERWRITE_OBSERVED initial=%d overwritten=%d commLatched=%d\n",
-        pressEdgesObserved ? 1 : 0,
-        booleanEdgesOverwritten ? 1 : 0,
-        commSignalRemainsLatched ? 1 : 0);
+        "NETWORK_INPUT_EDGE_CONTRACT latched=%d consumed=%d\n",
+        latchedBeforeSimulation ? 1 : 0,
+        consumedBySimulation ? 1 : 0);
 
-    return pressEdgesObserved && booleanEdgesOverwritten && commSignalRemainsLatched;
+    return latchedBeforeSimulation && consumedBySimulation;
 }
 
 }  // namespace
 
 int main() {
-    if (!batchedCommandsOverwriteUnconsumedEdges()) {
-        std::fprintf(stderr, "NETWORK_INPUT_EDGE_CHARACTERIZATION_FAILED\n");
+    if (!edgesLatchUntilSimulationConsumesThem()) {
+        std::fprintf(stderr, "NETWORK_INPUT_EDGE_CONTRACT_FAILED\n");
         return 1;
     }
-    std::printf("NETWORK_INPUT_EDGE_CHARACTERIZATION_OK\n");
+    std::printf("NETWORK_INPUT_EDGE_CONTRACT_OK\n");
     return 0;
 }

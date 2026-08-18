@@ -18,10 +18,7 @@ run_logged() {
   echo "PASS: $name"
 }
 
-GAME_CPP="native-android/app/src/main/cpp/game/Game.cpp"
-
 run_logged local-settings-ownership-plan python3 tools/apply_local_settings_ownership.py
-run_logged network-input-edge-latch-plan python3 tools/apply_network_input_edge_latching.py
 run_logged ownership-boundaries python3 tools/check_ownership_boundaries.py
 run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 run_logged build cmake --build "$BUILD_DIR" --config Release --target \
@@ -54,16 +51,5 @@ run_logged determinism "$BUILD_DIR/MultiplayerDeterminismTest"
 run_logged peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
 run_logged network-input-edges "$BUILD_DIR/NetworkInputEdgeCharacterizationTest"
 run_logged mobile-framing-remote-authority "$BUILD_DIR/MobileFramingRemoteAuthorityTest"
-
-run_logged network-input-edge-repair-apply python3 tools/apply_network_input_edge_latching.py --apply
-run_logged network-input-edge-repair-build cmake --build "$BUILD_DIR" --config Release --target \
-  NetworkInputEdgeRepairValidationTest \
-  MultiplayerDeterminismTest \
-  HostRemotePeerSimulationIsolationTest \
-  --parallel
-run_logged network-input-edge-repair-contract "$BUILD_DIR/NetworkInputEdgeRepairValidationTest"
-run_logged network-input-edge-repair-determinism "$BUILD_DIR/MultiplayerDeterminismTest"
-run_logged network-input-edge-repair-peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
-run_logged network-input-edge-repair-restore git checkout -- "$GAME_CPP"
 
 run_logged diff-check git diff --check

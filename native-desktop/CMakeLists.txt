@@ -187,14 +187,6 @@ target_include_directories(NetworkInputEdgeCharacterizationTest PRIVATE "${DB_SH
 target_compile_features(NetworkInputEdgeCharacterizationTest PRIVATE cxx_std_17)
 
 add_executable(
-    NetworkInputEdgeRepairValidationTest
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/network_input_edge_repair_validation_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
-)
-target_include_directories(NetworkInputEdgeRepairValidationTest PRIVATE "${DB_SHARED_ROOT}/game")
-target_compile_features(NetworkInputEdgeRepairValidationTest PRIVATE cxx_std_17)
-
-add_executable(
     MobileFramingRemoteAuthorityTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/mobile_framing_remote_authority_test.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
