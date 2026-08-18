@@ -63,7 +63,7 @@ jobs:
           retention-days: 7
 
   lighting-contract:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Run desktop lighting contract verification'
+    if: github.event_name == 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -71,6 +71,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: desktop-lighting-contract-verify
+          fetch-depth: 0
 
       - name: Restore exact source bytes and verify authority
         shell: pwsh
@@ -80,6 +81,11 @@ jobs:
           $blob = (git hash-object --no-filters native-desktop/DesktopRenderer.cpp).Trim()
           if ($blob -ne 'f67a9e68806f8ef3a2c16cd4ce7924dae0f7de51') {
             throw "Unexpected DesktopRenderer.cpp blob: $blob"
+          }
+          git fetch origin desktop-lighting-contract
+          $target = (git rev-parse refs/remotes/origin/desktop-lighting-contract).Trim()
+          if ($target -ne '86066c3c20879d2b3cc2b84bfc536869d3dc9a99') {
+            throw "desktop-lighting-contract drifted to $target"
           }
 
       - name: Apply canonical scene sun contract
@@ -117,9 +123,9 @@ jobs:
         run: >-
           cmake -S native-desktop -B build/desktop-release -A x64
           -DCMAKE_BUILD_TYPE=Release
-          -DDB_COMMIT_SHA="${{ github.sha }}"
+          -DDB_COMMIT_SHA="86066c3c20879d2b3cc2b84bfc536869d3dc9a99"
           -DDB_CHANNEL=lighting-contract-verify
-          -DDB_HUMAN_VERSION="lighting-contract-verify-${{ github.sha }}"
+          -DDB_HUMAN_VERSION="lighting-contract-verify"
 
       - name: Build desktop release
         run: cmake --build build/desktop-release --config Release --parallel
@@ -144,17 +150,23 @@ jobs:
             throw 'Desktop smoke test did not produce its success marker.'
           }
 
-      - name: Commit verified renderer blob
+      - name: Publish one clean renderer commit
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $patched = Join-Path $env:RUNNER_TEMP 'DesktopRenderer.cpp'
+          Copy-Item native-desktop/DesktopRenderer.cpp $patched
+          git switch --detach 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
+          Copy-Item $patched native-desktop/DesktopRenderer.cpp
           git add -- native-desktop/DesktopRenderer.cpp
           git diff --cached --check
           $staged = @(git diff --cached --name-only)
           if ($staged.Count -ne 1 -or $staged[0] -ne 'native-desktop/DesktopRenderer.cpp') {
             throw "Unexpected staged paths: $($staged -join ', ')"
           }
-          git commit -m 'Verify desktop sun and shadow direction'
-          git push origin HEAD:desktop-lighting-contract-verify
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Unify desktop sun and shadow direction'
+          $clean = (git rev-parse HEAD).Trim()
+          git push origin "$clean`:refs/heads/desktop-lighting-contract"
+          "CLEAN_COMMIT=$clean" | Write-Host
