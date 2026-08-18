@@ -29,6 +29,35 @@ int filledGoals(const GameState& state) {
     return count;
 }
 
+bool isCaptureCue(AudioCue cue) {
+    switch (cue) {
+        case AudioCue::Capture1:
+        case AudioCue::Capture2:
+        case AudioCue::Capture3:
+        case AudioCue::Capture4:
+        case AudioCue::Capture5:
+            return true;
+        default:
+            return false;
+    }
+}
+
+int captureCuesSince(const GameState& state, unsigned int firstSerial) {
+    int count = 0;
+    for (const auto& event : state.audio.events) {
+        if (event.serial >= firstSerial && isCaptureCue(event.cue)) ++count;
+    }
+    return count;
+}
+
+int cueCountSince(const GameState& state, AudioCue cue, unsigned int firstSerial) {
+    int count = 0;
+    for (const auto& event : state.audio.events) {
+        if (event.serial >= firstSerial && event.cue == cue) ++count;
+    }
+    return count;
+}
+
 int activeHumans(const GameState& state) {
     return static_cast<int>(std::count_if(
         state.targets.begin(), state.targets.end(),
@@ -92,6 +121,8 @@ int main() {
         const int required = roomStart.requiredSouls;
         const int rulesBefore = ruleStacks(roomStart);
         const std::int64_t tokensBefore = roomStart.progression.permanent.tokens;
+        const std::uint64_t revisionBefore = roomStart.progression.permanent.revision;
+        const unsigned int audioSerialBefore = roomStart.audio.nextSerial;
         maximumRequired = std::max(maximumRequired, required);
         maximumHumans = std::max(maximumHumans, activeHumans(roomStart));
 
@@ -105,23 +136,39 @@ int main() {
             bullet.pos = state.captures[shot].pos + Vec3{0, 0, tileOrigin + 1.9f};
             bullet.vel = {0, 0, -25.0f};
             step(game);
-            if (filledGoals(game.state()) != shot + 1) {
-                return fail(iteration, "goal_not_filled_once", game.state());
+            const GameState& afterDeposit = game.state();
+            if (filledGoals(afterDeposit) != shot + 1) {
+                return fail(iteration, "goal_not_filled_once", afterDeposit);
+            }
+            if (afterDeposit.progression.permanent.tokens != tokensBefore + shot + 1 ||
+                afterDeposit.progression.permanent.revision != revisionBefore + static_cast<std::uint64_t>(shot + 1)) {
+                return fail(iteration, "goal_reward_not_exactly_once", afterDeposit);
             }
         }
 
         const GameState& cleared = game.state();
         if (!cleared.roomClear || filledGoals(cleared) != required ||
-            cleared.progression.permanent.tokens != tokensBefore + required) {
+            cleared.progression.permanent.tokens != tokensBefore + required ||
+            cleared.progression.permanent.revision != revisionBefore + static_cast<std::uint64_t>(required)) {
             return fail(iteration, "room_not_cleared", cleared);
+        }
+        if (captureCuesSince(cleared, audioSerialBefore) != required ||
+            cueCountSince(cleared, AudioCue::PaymentSuccess, audioSerialBefore) != 1) {
+            return fail(iteration, "deposit_feedback_not_exactly_once", cleared);
         }
         if (room == 10) {
             if (cleared.secretTv.knockCueTimer <= 0.0f) return fail(iteration, "secret_not_woken", cleared);
             ++secretWakeCount;
         }
         const std::int64_t stableTokens = cleared.progression.permanent.tokens;
+        const std::uint64_t stableRevision = cleared.progression.permanent.revision;
+        const int stableCaptureCues = captureCuesSince(cleared, audioSerialBefore);
+        const int stableClearCues = cueCountSince(cleared, AudioCue::PaymentSuccess, audioSerialBefore);
         step(game);
-        if (game.state().progression.permanent.tokens != stableTokens) {
+        if (game.state().progression.permanent.tokens != stableTokens ||
+            game.state().progression.permanent.revision != stableRevision ||
+            captureCuesSince(game.state(), audioSerialBefore) != stableCaptureCues ||
+            cueCountSince(game.state(), AudioCue::PaymentSuccess, audioSerialBefore) != stableClearCues) {
             return fail(iteration, "duplicate_goal_reward", game.state());
         }
 
