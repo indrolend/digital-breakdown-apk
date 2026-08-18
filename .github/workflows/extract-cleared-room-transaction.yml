@@ -1,4 +1,5 @@
 name: Extract cleared-room transaction
+# retry: report the exact failed stage if the verified extraction cannot commit
 
 on:
   push:
@@ -18,15 +19,44 @@ jobs:
         with:
           ref: agent/ownership-contracts-settings
           fetch-depth: 0
-      - name: Extract characterized transition policy
-        run: python3 tools/extract_cleared_room_transaction.py
-      - name: Verify gameplay and room progression
-        run: bash scripts/verify-gameplay.sh
-      - name: Commit extracted transaction
+      - name: Apply, verify, and commit transaction
+        shell: bash
         run: |
-          git diff --check
+          set +e
+          python3 tools/extract_cleared_room_transaction.py > /tmp/room-extract.log 2>&1
+          extract_status=$?
+          if [ "$extract_status" -eq 0 ]; then
+            bash scripts/verify-gameplay.sh > /tmp/room-verify.log 2>&1
+            verify_status=$?
+          else
+            verify_status=0
+          fi
+          set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$extract_status" -ne 0 ] || [ "$verify_status" -ne 0 ]; then
+            {
+              echo "ROOM_EXTRACTION_DIAGNOSTIC"
+              echo "extract_status=$extract_status"
+              echo "verify_status=$verify_status"
+              echo
+              echo "== extractor =="
+              tail -n 80 /tmp/room-extract.log 2>/dev/null || true
+              echo
+              echo "== verification =="
+              tail -n 120 /tmp/room-verify.log 2>/dev/null || true
+            } > .github/ROOM_EXTRACTION_FAILURE.txt
+            git add .github/ROOM_EXTRACTION_FAILURE.txt
+            git commit -m "Record cleared-room extraction failure"
+            git push origin HEAD:agent/ownership-contracts-settings
+            exit 1
+          fi
+
+          cat /tmp/room-extract.log
+          tail -n 80 /tmp/room-verify.log
+          git diff --check
           git add native-android/app/src/main/cpp/game/Game.cpp \
                   native-android/app/src/main/cpp/game/Game.hpp
           git commit -m "Name cleared-room advancement transaction"
