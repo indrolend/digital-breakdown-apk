@@ -1,0 +1,32 @@
+ROOM_EXTRACTION_DIAGNOSTIC
+extract_status=0
+verify_status=1
+
+== extractor ==
+CLEARED_ROOM_TRANSACTION_APPLIED=PASS
+
+== verification ==
+==> ownership-boundaries
+PASS: ownership-boundaries
+==> configure
+PASS: configure
+==> build
+PASS: build
+==> ctest
+PASS: ctest
+==> parity
+PASS: parity
+==> multiplayer
+PASS: multiplayer
+==> determinism
+PASS: determinism
+==> peer-isolation
+PASS: peer-isolation
+==> network-input-edges
+PASS: network-input-edges
+==> mobile-framing-remote-authority
+PASS: mobile-framing-remote-authority
+==> diff-check
+FAILED: diff-check
+native-android/app/src/main/cpp/game/Game.cpp:1705: trailing whitespace.
++    
