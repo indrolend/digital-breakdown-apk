@@ -62,6 +62,34 @@ At the start of each run, reconstruct only this working set:
 
 Do not reread every contract document, PR comment, or old log by default. Read only the smallest relevant section needed for the current seam. If evidence is already encoded by a passing focused test or ratchet, prefer that over reopening the entire historical discussion.
 
+## Bout execution discipline
+
+Longer interactive or unattended work bouts must optimize for engineering evidence, not for keeping the agent busy.
+
+Before doing work, state internally:
+
+```text
+CLAIM=<one unresolved engineering claim>
+EVIDENCE_TARGET=<one test/runtime/source fact that can resolve it>
+MUTATION_BOUNDARY=<at most one coherent code/contract boundary>
+STOP_WHEN=<specific evidence or blocker>
+```
+
+Rules:
+
+1. One bout should normally resolve one claim. Do not chain into a second subsystem merely because the first finished early.
+2. Prefer an existing test target, CI path, source owner, or connector operation over creating new execution infrastructure.
+3. Temporary workflows/helpers are justified only when the same execution problem is likely to recur or no existing path can safely perform the change. One awkward edit is not infrastructure demand.
+4. Tool friction must not decide architecture. Reuse execution infrastructure, but do not put a contract in the wrong conceptual owner merely to avoid a build-file edit.
+5. Poll CI only when the answer changes the next action. While CI runs, do static review or stop; repeated unchanged status reads are waste.
+6. Update PR/public prose once after the engineering truth settles, not after every intermediate checkpoint.
+7. Do not add another production mutation while a previous mutation's verification is unresolved.
+8. A green characterization test is evidence, not automatic permission to refactor the characterized subsystem immediately.
+9. Prefer high evidence-per-mutation work: a small runtime test proving several precedence branches is better than a larger extraction that merely makes the code look organized.
+10. Stop when the declared stopping condition is met. Restraint is part of the workflow.
+
+The target is not maximum commits per hour. It is maximum reduction in uncertainty and ownership ambiguity per mutation.
+
 ## Hourly loop
 
 1. Reconstruct the compact working set above.
@@ -69,17 +97,18 @@ Do not reread every contract document, PR comment, or old log by default. Read o
 3. Compare against the last meaningful checkpoint when available; inspect only deltas unless broader evidence is required.
 4. Check the `networkMutableState()` ownership surface and classify any new production call site as a regression.
 5. Select the highest-priority unresolved seam from the migration order below.
-6. Retrieve only the evidence required for that seam.
-7. Prefer evidence in this order:
+6. Define the bout claim/evidence/mutation/stop condition before editing.
+7. Retrieve only the evidence required for that seam.
+8. Prefer evidence in this order:
    - actual runtime/CI result;
    - focused tests/probes;
    - exact source behavior/call sites;
    - documented intent;
    - inference.
-8. Label uncertain claims explicitly: `PROVEN`, `OBSERVED`, `HYPOTHESIS`, `UNCHARACTERIZED`, `DISPROVEN`.
-9. Do at most one meaningful ownership/contract action per run.
-10. Compress the result back into a small checkpoint with durable pointers to larger evidence.
-11. Do not merge PR #49 or any successor PR without explicit user approval.
+9. Label uncertain claims explicitly: `PROVEN`, `OBSERVED`, `HYPOTHESIS`, `UNCHARACTERIZED`, `DISPROVEN`.
+10. Do at most one meaningful ownership/contract action per run.
+11. Compress the result back into a small checkpoint with durable pointers to larger evidence.
+12. Do not merge PR #49 or any successor PR without explicit user approval.
 
 ## Commit threshold
 
@@ -119,7 +148,7 @@ Allowed when evidence is exact and the action clears the commit threshold:
 - add or tighten characterization tests that assert already-observed behavior;
 - add narrow documentation only when the contract is not already represented elsewhere;
 - add read-only/static ratchets that prevent known debt from spreading;
-- prepare exact drift-checked migration scripts or patch handoffs;
+- prepare exact drift-checked migration scripts or patch handoffs when an existing execution path genuinely cannot perform the change safely;
 - produce compact architecture checkpoints with durable evidence pointers.
 
 ## Actions requiring the user or an interactive implementation pass
@@ -136,13 +165,16 @@ Do not perform these merely because an hourly run has time:
 
 ## Current migration order
 
-1. Local settings ownership: replace settings writes through `networkMutableState()` with a named `Game` settings API. Current exact migration helper: `tools/apply_local_settings_ownership.py`.
-2. Authoritative snapshot application: replace generic mutable-state access for true network snapshot application with a named API.
-3. Continue lifetime contracts around room/player/run boundaries.
-4. Energy/survival transaction: characterize precedence before decomposition.
-5. Room/deposit transaction.
-6. Per-player runtime/network peer isolation.
-7. Simulation -> presentation derivation.
+Completed/narrowed work remains evidence, not a reason to repeat discovery:
+
+1. **Local settings ownership — narrowed.** Persisted preferences use `applyLocalPreferences`; mobile framing has an explicit owner API rather than being restored as a generic local preference.
+2. **Authoritative snapshot application — narrowed.** Desktop/Android adapters call the protocol-owned `applyWorld(Game&, ...)` boundary instead of taking generic mutable state.
+3. **Room advancement lifetime policy — named.** `updateRoomTopology()` detects crossing and `advanceClearedRoom()` owns the characterized cleared-room transition/upgrade handoff.
+4. **Energy/survival transaction — core precedence PROVEN.** Focused runtime contracts now cover supplemental-first loss, survival/impact mitigation, last stand, multiplayer downed, solo soul reboot, and non-hit exhaustion death. Remaining question: feedback publication/order and the smallest result boundary before any extraction.
+5. **Projectile deposit / room-clear transaction.** Make deposit and room-clear ownership explicit while preserving same-frame order.
+6. **Per-player runtime/network peer isolation.** Continue reducing whole-player context swapping only behind existing isolation evidence.
+7. **Desktop UI/session mutable-state debt.** `native-desktop/main.cpp` remains a broad mutable-state production caller for menu/session handling and built-in stress fixtures; separate this by conceptual owner rather than treating zero mutable-call count as the goal.
+8. **Simulation -> presentation derivation.** Keep presentation adapters read-oriented and share evaluators only where behavior is intentionally common.
 
 Do not skip ahead merely because a later refactor looks more interesting.
 
@@ -153,7 +185,7 @@ Large/raw evidence should remain where it naturally lives:
 - source truth -> repository path + commit SHA;
 - CI truth -> workflow/run/job identifier;
 - architecture decisions -> focused contract docs/tests;
-- exact proposed edits -> drift-checked scripts/patch handoffs;
+- exact proposed edits -> drift-checked scripts/patch handoffs only when needed;
 - chronological state -> hourly checkpoints.
 
 Do not copy large source excerpts or logs into checkpoints when a durable pointer plus one-line conclusion is enough.
@@ -169,9 +201,9 @@ BASE=<sha>
 CI=<PROVEN_GREEN|FAIL|RUNNING|UNKNOWN>
 FOCUS=<single ownership/contract seam>
 NEW_EVIDENCE=<one sentence or NONE>
-EVIDENCE_PTR=<path/commit/run/test pointer or NONE>
+EVIDENCE_PTR=<commit/file/test/workflow pointer or NONE>
 OWNERSHIP_SURFACE=<same|shrunk|expanded>
-STATE=<smallest sufficient current truth>
+STATE=<smallest sufficient current conclusion>
 SAFE_NEXT=<one concrete next action>
 BLOCKER=<concrete blocker or NONE>
 ```
