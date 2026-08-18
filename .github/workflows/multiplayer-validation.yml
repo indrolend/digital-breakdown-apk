@@ -24,6 +24,7 @@ jobs:
           while read -r label ref; do
             echo "=== $label $ref ==="
             git checkout --force "$ref"
+            rm -rf build/visual-proof
             cmake -S native-desktop -B build/visual-proof \
               -DCMAKE_BUILD_TYPE=Release \
               -DDB_COMMIT_SHA="$ref" \
@@ -32,14 +33,24 @@ jobs:
               2>&1 | tee "visual-proof/$label-configure.log"
             cmake --build build/visual-proof --config Release --parallel \
               2>&1 | tee "visual-proof/$label-build.log"
-            exe="$(find build/visual-proof -type f -name DigitalBreakdown -perm -111 | head -n 1)"
-            test -n "$exe"
+
+            echo "=== EXECUTABLE DIAGNOSTIC $label ===" | tee "visual-proof/$label-capture.log"
+            find build/visual-proof -type f -name 'DigitalBreakdown*' -print \
+              2>&1 | tee -a "visual-proof/$label-capture.log"
+            exe="build/visual-proof/bin/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown"
+            echo "EXE=$exe" | tee -a "visual-proof/$label-capture.log"
+            ls -l "$exe" 2>&1 | tee -a "visual-proof/$label-capture.log"
+            file "$exe" 2>&1 | tee -a "visual-proof/$label-capture.log"
+            test -x "$exe"
+
             out="$(pwd)/visual-proof/$label"
             mkdir -p "$out"
-            "$exe" --capture-cinematic-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud
+            echo "OUT=$out" | tee -a "visual-proof/$label-capture.log"
+            "$exe" --capture-cinematic-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud \
+              2>&1 | tee -a "visual-proof/$label-capture.log"
             count="$(find "$out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
+            echo "CAPTURE_COUNT $label=$count" | tee -a "visual-proof/$label-capture.log"
             test "$count" -ge 2
-            echo "CAPTURE_COUNT $label=$count"
           done <<'REFS'
           A-base 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
           B-sun-contract 4f6f9c0530b75407074e1b56851ef85e377789ef
@@ -121,7 +132,7 @@ jobs:
           PY
           python3 compare_visuals.py
 
-      - name: Upload comparison and build logs
+      - name: Upload comparison and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
