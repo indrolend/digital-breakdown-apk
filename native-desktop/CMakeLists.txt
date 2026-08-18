@@ -195,6 +195,14 @@ target_include_directories(NetworkInputEdgeRepairValidationTest PRIVATE "${DB_SH
 target_compile_features(NetworkInputEdgeRepairValidationTest PRIVATE cxx_std_17)
 
 add_executable(
+    MobileFramingRemoteAuthorityTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/mobile_framing_remote_authority_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(MobileFramingRemoteAuthorityTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(MobileFramingRemoteAuthorityTest PRIVATE cxx_std_17)
+
+add_executable(
     MultiplayerConnectionStateTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_connection_state_test.cpp"
 )
@@ -300,6 +308,7 @@ add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
 add_test(NAME HostRemotePeerSimulationIsolationTest COMMAND HostRemotePeerSimulationIsolationTest)
 add_test(NAME NetworkInputEdgeCharacterizationTest COMMAND NetworkInputEdgeCharacterizationTest)
+add_test(NAME MobileFramingRemoteAuthorityTest COMMAND MobileFramingRemoteAuthorityTest)
 add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)
