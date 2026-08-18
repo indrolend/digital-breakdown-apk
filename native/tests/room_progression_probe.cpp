@@ -127,6 +127,16 @@ int main() {
 
         GameState& crossing = game.networkMutableState();
         const float tileOrigin = static_cast<float>(crossing.topology.currentTileIndex) * kRoomDepth;
+        crossing.player.souls = 3;
+        crossing.player.storedSoulBrute[0] = true;
+        crossing.progression.run.roomHeat = 0.75f;
+        crossing.progression.run.roomElapsed = 12.0f;
+        crossing.progression.run.roomCaptures = 4;
+        crossing.vacuum.active = true;
+        crossing.vacuum.power = 0.8f;
+        crossing.meleeVisual.visualTimer = 0.25f;
+        crossing.energy.dischargeTimer = 0.40f;
+        crossing.energy.dischargePositionAmount = 0.65f;
         crossing.player.pos = {0, PHONE_MODEL_HEIGHT * 0.5f, tileOrigin - 20.8f};
         crossing.player.vel = {0, 0, -20.0f};
         crossing.player.grounded = true;
@@ -139,6 +149,21 @@ int main() {
             !advanced.upgradeMenu.active || !advanced.uiPaused ||
             ruleStacks(advanced) != expectedRules || !finiteState(advanced)) {
             return fail(iteration, "invalid_room_advance", advanced);
+        }
+        if (advanced.player.souls != 0 ||
+            std::any_of(advanced.player.storedSoulBrute.begin(), advanced.player.storedSoulBrute.end(), [](bool brute){ return brute; })) {
+            return fail(iteration, "room_advance_clears_stored_souls", advanced);
+        }
+        if (advanced.progression.run.roomHeat != 0.0f ||
+            advanced.progression.run.roomElapsed != 0.0f ||
+            advanced.progression.run.roomCaptures != 0) {
+            return fail(iteration, "room_advance_clears_room_run_counters", advanced);
+        }
+        if (advanced.vacuum.active || advanced.vacuum.power != 0.0f ||
+            advanced.meleeVisual.visualTimer != 0.0f ||
+            advanced.energy.dischargeTimer != 0.0f ||
+            advanced.energy.dischargePositionAmount != 0.0f) {
+            return fail(iteration, "room_advance_clears_action_runtime", advanced);
         }
 
         if (!game.chooseTemporaryUpgrade((iteration - 1) % 3)) {
