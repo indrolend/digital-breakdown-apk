@@ -19,8 +19,6 @@ TOKEN = "networkMutableState()"
 # Entries should only be removed from this set as named ownership APIs replace them.
 ALLOWED_PRODUCTION_FILES = {
     Path("native-desktop/main.cpp"),
-    Path("native-desktop/DesktopMultiplayer.cpp"),
-    Path("native-android/app/src/main/cpp/native_bridge.cpp"),
     Path("native-android/app/src/main/cpp/game/Game.hpp"),  # declaration itself
 }
 

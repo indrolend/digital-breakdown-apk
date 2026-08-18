@@ -253,7 +253,7 @@ int runSaveRoundtripTest(){
     const std::filesystem::path path=root/"progression.v1";
     Game source;
     source.setPersistentProgression(37,2,4,5);
-    auto& settings=source.networkMutableState().localSettings;
+    LocalSettingsState settings=source.state().localSettings;
     settings.musicVolume=0.31f;settings.sfxVolume=0.82f;settings.musicMuted=true;settings.sfxMuted=false;
     settings.graphicsPreset=2;settings.shadows=true;settings.portalWindow=false;settings.particles=true;settings.fpsCounter=true;
     settings.mouseLookSensitivity=1.30f;settings.touchLookSensitivity=0.80f;settings.controllerLookSensitivity=1.45f;

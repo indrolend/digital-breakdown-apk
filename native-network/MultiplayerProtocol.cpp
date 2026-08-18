@@ -778,6 +778,10 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   }
 }
 
+void applyWorld(Game& game,const WorldSnapshot& snapshot,std::uint8_t localPlayerId){
+  applyWorld(game.networkMutableState(),snapshot,localPlayerId);
+}
+
 void prepareForAuthoritativeWorldReplacement(GameState& state){
   state.multiplayer.localPredictionCorrection={};
   state.multiplayer.hasWorldSnapshot=false;

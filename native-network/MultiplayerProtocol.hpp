@@ -281,6 +281,7 @@ std::vector<GameplayEvent> deriveGameplayEvents(
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
 void applyWorld(GameState& state, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
+void applyWorld(Game& game, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
 void prepareForAuthoritativeWorldReplacement(GameState& state);
 
 struct DurableSectionHashes {

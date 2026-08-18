@@ -215,7 +215,7 @@ int main() {
   Game completeGuest;
   completeGuest.reset();
   completeGuest.configureNetworkGuest(1);
-  applyWorld(completeGuest.networkMutableState(), roundtrip, 1);
+  applyWorld(completeGuest, roundtrip, 1);
   ok &= completeGuest.state().player.ledgeHanging &&
         completeGuest.state().player.storedSoulBrute[0] &&
         completeGuest.state().energy.supplementalActive &&
