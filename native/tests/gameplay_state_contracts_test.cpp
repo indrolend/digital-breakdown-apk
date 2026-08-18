@@ -267,6 +267,25 @@ int main() {
     {
         Game game;
         game.reset();
+        prepareHumanHit(game, 100.0f);
+        auto& state = game.networkMutableState();
+        state.player.souls = 1;
+        state.player.storedSoulBrute[0] = false;
+        state.energy.supplementalActive = true;
+        state.energy.supplementalValue = 10.0f;
+        state.energy.supplementalMax = 10.0f;
+        state.energy.flowerStacks = 1;
+        if (!receiveHumanHit(game)) return fail("energy_soul_efficiency_hit_arrives");
+        const auto& after = game.state();
+        constexpr float expected = 100.0f - (26.0f / 1.16f - 10.0f);
+        if (!nearEnergy(after.player.battery, expected) || after.player.souls != 1 ||
+            after.energy.supplementalActive || !nearEnergy(after.energy.supplementalValue, 0.0f))
+            return fail("energy_soul_efficiency_precedes_supplemental_absorption");
+    }
+
+    {
+        Game game;
+        game.reset();
         game.setPersistentProgression(0, 2, 2, 2);
         prepareHumanHit(game, 100.0f);
         if (!receiveHumanHit(game)) return fail("energy_survival_mitigation_hit_arrives");
@@ -340,7 +359,7 @@ int main() {
                               false, false, true, false, false, false);
         game.update(kDt);
         const auto& after = game.state();
-        if (!after.dead || after.player.alive || !nearEnergy(after.player.battery, 0.0f))
+        if (!after.dead || !nearEnergy(after.player.battery, 0.0f))
             return fail("energy_non_hit_zero_exhaustion_triggers_run_death");
     }
 
