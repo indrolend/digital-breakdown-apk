@@ -359,7 +359,7 @@ int main() {
                               false, false, true, false, false, false);
         game.update(kDt);
         const auto& after = game.state();
-        if (!after.dead || !nearEnergy(after.player.battery, 0.0f))
+        if (!after.dead || after.player.alive || !nearEnergy(after.player.battery, 0.0f))
             return fail("energy_non_hit_zero_exhaustion_triggers_run_death");
     }
 
