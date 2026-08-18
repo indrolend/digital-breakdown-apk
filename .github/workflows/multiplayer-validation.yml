@@ -30,11 +30,11 @@ jobs:
         run: |
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 640x480x24' glxinfo -B
 
-      - name: Capture A B C sequences
+      - name: Capture isolated A B C sequences
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p visual-proof
+          mkdir -p visual-proof/cpu visual-proof/cinematic visual-proof/data
           while read -r label ref; do
             echo "=== $label $ref ==="
             git checkout --force "$ref"
@@ -84,28 +84,41 @@ jobs:
               2>&1 | tee "visual-proof/$label-build.log"
 
             exe="build/visual-proof/bin/DigitalBreakdown"
-            echo "=== EXECUTABLE DIAGNOSTIC $label ===" | tee "visual-proof/$label-capture.log"
-            echo "EXE=$exe" | tee -a "visual-proof/$label-capture.log"
-            ls -l "$exe" 2>&1 | tee -a "visual-proof/$label-capture.log"
-            file "$exe" 2>&1 | tee -a "visual-proof/$label-capture.log"
             test -x "$exe"
 
-            out="$(pwd)/visual-proof/$label"
-            mkdir -p "$out"
-            echo "OUT=$out" | tee -a "visual-proof/$label-capture.log"
-            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 640x480x24' \
-              "$exe" --capture-cpu-demo "$out" --capture-width 320 --capture-height 180 --capture-hide-hud \
-              2>&1 | tee -a "visual-proof/$label-capture.log"
-            count="$(find "$out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
-            echo "CAPTURE_COUNT $label=$count" | tee -a "visual-proof/$label-capture.log"
-            test "$count" -ge 2
+            cpu_out="$(pwd)/visual-proof/cpu/$label"
+            cpu_data="$(pwd)/visual-proof/data/$label-cpu"
+            mkdir -p "$cpu_out" "$cpu_data"
+            XDG_DATA_HOME="$cpu_data" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 640x480x24' \
+              "$exe" --capture-cpu-demo "$cpu_out" --capture-width 320 --capture-height 180 --capture-hide-hud \
+              2>&1 | tee "visual-proof/$label-cpu.log"
+            cpu_count="$(find "$cpu_out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
+            echo "CPU_CAPTURE_COUNT $label=$cpu_count" | tee -a "visual-proof/$label-cpu.log"
+            test "$cpu_count" -eq 150
+
+            cine_out="$(pwd)/visual-proof/cinematic/$label"
+            cine_data="$(pwd)/visual-proof/data/$label-cinematic"
+            mkdir -p "$cine_out" "$cine_data"
+            set +e
+            XDG_DATA_HOME="$cine_data" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 640x480x24' \
+              "$exe" --capture-cinematic-demo "$cine_out" --capture-width 320 --capture-height 180 --capture-hide-hud \
+              2>&1 | tee "visual-proof/$label-cinematic.log"
+            cine_status=${PIPESTATUS[0]}
+            set -e
+            echo "CINEMATIC_EXIT $label=$cine_status" | tee -a "visual-proof/$label-cinematic.log"
+            if [[ "$cine_status" -ne 0 && "$cine_status" -ne 1 ]]; then
+              exit "$cine_status"
+            fi
+            cine_count="$(find "$cine_out" -maxdepth 1 -name '*.ppm' | wc -l | tr -d ' ')"
+            echo "CINEMATIC_CAPTURE_COUNT $label=$cine_count" | tee -a "visual-proof/$label-cinematic.log"
+            test "$cine_count" -eq 90
           done <<'REFS'
           A-base 86066c3c20879d2b3cc2b84bfc536869d3dc9a99
           B-sun-contract 4f6f9c0530b75407074e1b56851ef85e377789ef
           C-current-camera b76953e4cf0efa5238a60d3dcace8aa71f16cdc8
           REFS
 
-      - name: Compare frame pixels
+      - name: Compare CPU and cinematic pixels
         shell: bash
         run: |
           cat > compare_visuals.py <<'PY'
@@ -135,48 +148,56 @@ jobs:
                   raise RuntimeError(f'bad ppm payload: {path} {w}x{h} {len(pixels)}')
               return w, h, pixels
 
-          frames = {label: sorted((root/label).glob('*.ppm')) for label in labels}
-          counts = {k: len(v) for k,v in frames.items()}
-          print('FRAME_COUNTS', counts)
-          if len(set(counts.values())) != 1:
-              raise SystemExit('frame-count mismatch')
+          def compare_set(kind):
+              base = root / kind
+              frames = {label: sorted((base/label).glob('*.ppm')) for label in labels}
+              counts = {k: len(v) for k,v in frames.items()}
+              if len(set(counts.values())) != 1:
+                  raise SystemExit(f'{kind} frame-count mismatch: {counts}')
 
-          def compare(left, right):
-              maes=[]; changed=[]; maxima=[]; exact=0; rows=[]
-              for lp, rp in zip(frames[left], frames[right]):
-                  lw,lh,a=read_ppm(lp); rw,rh,b=read_ppm(rp)
-                  if (lw,lh)!=(rw,rh): raise SystemExit('dimension mismatch')
-                  diffs=[abs(x-y) for x,y in zip(a,b)]
-                  mae=sum(diffs)/len(diffs)
-                  ch=sum(d != 0 for d in diffs)
-                  mx=max(diffs) if diffs else 0
-                  if ch==0: exact += 1
-                  maes.append(mae); changed.append(ch); maxima.append(mx)
-                  rows.append((mae, ch, mx, lp.name))
-              rows.sort(reverse=True)
-              return {
-                  'frames': len(maes), 'exact_frames': exact,
-                  'mean_mae': statistics.fmean(maes), 'max_frame_mae': max(maes),
-                  'mean_changed_channels': statistics.fmean(changed),
-                  'max_channel_delta': max(maxima), 'worst': rows[:10]
-              }
+              def compare(left, right):
+                  maes=[]; changed=[]; maxima=[]; exact=0; rows=[]
+                  for lp, rp in zip(frames[left], frames[right]):
+                      lw,lh,a=read_ppm(lp); rw,rh,b=read_ppm(rp)
+                      if (lw,lh)!=(rw,rh): raise SystemExit(f'{kind} dimension mismatch')
+                      diffs=[abs(x-y) for x,y in zip(a,b)]
+                      mae=sum(diffs)/len(diffs)
+                      ch=sum(d != 0 for d in diffs)
+                      mx=max(diffs) if diffs else 0
+                      if ch==0: exact += 1
+                      maes.append(mae); changed.append(ch); maxima.append(mx)
+                      rows.append((mae, ch, mx, lp.name))
+                  rows.sort(reverse=True)
+                  return {
+                      'frames': len(maes), 'exact_frames': exact,
+                      'mean_mae': statistics.fmean(maes), 'max_frame_mae': max(maes),
+                      'mean_changed_channels': statistics.fmean(changed),
+                      'max_channel_delta': max(maxima), 'worst': rows[:10]
+                  }
 
-          ab=compare('A-base','B-sun-contract')
-          bc=compare('B-sun-contract','C-current-camera')
-          ac=compare('A-base','C-current-camera')
-          print('A_VS_B', ab)
-          print('B_VS_C', bc)
-          print('A_VS_C', ac)
-          (root/'comparison.txt').write_text(
-              f'FRAME_COUNTS {counts}\nA_VS_B {ab}\nB_VS_C {bc}\nA_VS_C {ac}\n', encoding='utf-8')
+              return counts, {
+                  'A_VS_B': compare('A-base','B-sun-contract'),
+                  'B_VS_C': compare('B-sun-contract','C-current-camera'),
+                  'A_VS_C': compare('A-base','C-current-camera'),
+              }, frames
+
+          cpu_counts, cpu_results, _ = compare_set('cpu')
+          cine_counts, cine_results, cine_frames = compare_set('cinematic')
+          lines = [f'CPU_FRAME_COUNTS {cpu_counts}']
+          for name, result in cpu_results.items(): lines.append(f'CPU_{name} {result}')
+          lines.append(f'CINEMATIC_FRAME_COUNTS {cine_counts}')
+          for name, result in cine_results.items(): lines.append(f'CINEMATIC_{name} {result}')
+          text='\n'.join(lines)+'\n'
+          print(text, end='')
+          (root/'comparison.txt').write_text(text, encoding='utf-8')
 
           selected=root/'selected'; selected.mkdir(exist_ok=True)
-          worst_names=[row[3] for row in bc['worst'][:6]]
+          worst_names=[row[3] for row in cine_results['B_VS_C']['worst'][:6]]
           for label in labels:
               for name in worst_names:
-                  src=root/label/name
+                  src=root/'cinematic'/label/name
                   if src.exists(): (selected/f'{label}__{name}').write_bytes(src.read_bytes())
-          print('SELECTED_FRAMES', worst_names)
+          print('CINEMATIC_SELECTED_FRAMES', worst_names)
           PY
           python3 compare_visuals.py
 
