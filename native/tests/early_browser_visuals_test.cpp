@@ -7,16 +7,31 @@ int main(){
     const auto first=roomPlan(12345,1);
     assert(first.setting==RoomSetting::Field&&first.form==RoomForm::Open&&first.grass&&!first.sidewalks);
     assert(first.obstacleCount==3&&!first.recovery());
+    assert(first.playstyle==RoomPlaystyle::Playground);
     assert(requiredRouteIsTraversable(first,12345,1));
 
     bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
+    bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
-        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.obstacleCount==b.obstacleCount);
+        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.playstyle==b.playstyle&&a.obstacleCount==b.obstacleCount);
         assert(gameplay::validTraversalGraphTopology(a.traversal));
         assert(a.traversal.surfaceCount==b.traversal.surfaceCount&&a.traversal.edgeCount==b.traversal.edgeCount);
         assert(requiredRouteIsTraversable(a,seed,room));
+        int requiredEdges=0,optionalEdges=0,nonWalkOptionalEdges=0;
+        for(int edge=0;edge<a.traversal.edgeCount;++edge){
+            const auto& traversalEdge=a.traversal.edges[edge];
+            if(gameplay::isRequired(traversalEdge)){++requiredEdges;assert(traversalEdge.action==gameplay::TraversalAction::Walk);assert(traversalEdge.difficulty==gameplay::TraversalDifficulty::Automatic);}
+            else {++optionalEdges;if(traversalEdge.action!=gameplay::TraversalAction::Walk)++nonWalkOptionalEdges;}
+        }
+        assert(requiredEdges==3);
+        if(a.recovery()){assert(a.playstyle==RoomPlaystyle::Recovery);assert(optionalEdges==0);}
+        else {assert(optionalEdges>=2);assert(nonWalkOptionalEdges==optionalEdges);}
+        sawPlayground|=a.playstyle==RoomPlaystyle::Playground;
+        sawFunnel|=a.playstyle==RoomPlaystyle::Funnel;
+        sawOrbit|=a.playstyle==RoomPlaystyle::Orbit;
+        sawVertical|=a.playstyle==RoomPlaystyle::Vertical;
         sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawCoastal|=a.setting==RoomSetting::Coastal;sawRecovery|=a.recovery();
         if(a.setting==RoomSetting::Field){assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks);assert(a.obstacleCount==1||a.obstacleCount==3);}
         if(a.setting==RoomSetting::City){assert(!a.grass&&a.sidewalks&&a.obstacleCount==10);}
@@ -39,6 +54,7 @@ int main(){
     }
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
+    assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
 
     const auto capabilities=gameplay::TRAVERSAL_CAPABILITIES;
     assert(std::abs(capabilities.maximumGroundJumpHeight()-0.7232142f)<0.0001f);
