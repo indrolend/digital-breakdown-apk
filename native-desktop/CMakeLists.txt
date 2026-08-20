@@ -179,6 +179,22 @@ target_include_directories(HostRemotePeerSimulationIsolationTest PRIVATE "${DB_S
 target_compile_features(HostRemotePeerSimulationIsolationTest PRIVATE cxx_std_17)
 
 add_executable(
+    NetworkInputEdgeCharacterizationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/network_input_edge_characterization_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(NetworkInputEdgeCharacterizationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(NetworkInputEdgeCharacterizationTest PRIVATE cxx_std_17)
+
+add_executable(
+    MobileFramingRemoteAuthorityTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/mobile_framing_remote_authority_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(MobileFramingRemoteAuthorityTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(MobileFramingRemoteAuthorityTest PRIVATE cxx_std_17)
+
+add_executable(
     MultiplayerConnectionStateTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_connection_state_test.cpp"
 )
@@ -209,6 +225,7 @@ target_compile_features(TargetLifecycleTest PRIVATE cxx_std_17)
 add_executable(
     GameplayStateContractsTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_state_contracts_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
 )
 target_include_directories(GameplayStateContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(GameplayStateContractsTest PRIVATE cxx_std_17)
@@ -282,6 +299,8 @@ add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTes
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
 add_test(NAME HostRemotePeerSimulationIsolationTest COMMAND HostRemotePeerSimulationIsolationTest)
+add_test(NAME NetworkInputEdgeCharacterizationTest COMMAND NetworkInputEdgeCharacterizationTest)
+add_test(NAME MobileFramingRemoteAuthorityTest COMMAND MobileFramingRemoteAuthorityTest)
 add_test(NAME MultiplayerConnectionStateTest COMMAND MultiplayerConnectionStateTest)
 add_test(NAME GameplayGeometryAndConfigTest COMMAND GameplayGeometryAndConfigTest)
 add_test(NAME TargetLifecycleTest COMMAND TargetLifecycleTest)

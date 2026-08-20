@@ -16,6 +16,7 @@ int main() {
   input.yaw = 1.25f;
   input.pitch = -0.4f;
   input.buttons = Vacuum | Sprint;
+  input.capabilities = CommandMobileFraming;
   const NetworkWorldContext inputWorld{17,2,4,3};
   auto bytes = encodeInput(2, inputWorld, input);
   PacketHeader h;
@@ -26,6 +27,7 @@ int main() {
          decoded.localTick == 99 &&
          decodedWorld == inputWorld &&
          decoded.buttons == (Vacuum | Sprint) &&
+         decoded.capabilities == CommandMobileFraming &&
          std::abs(decoded.moveZ - 0.75f) < 0.0001f;
   ok &= compareWorldContext({17,2,3,2},inputWorld)==WorldContextCompatibility::Older &&
         compareWorldContext({17,2,5,4},inputWorld)==WorldContextCompatibility::NewerRoom &&
@@ -71,6 +73,7 @@ int main() {
         !eventTracker.accept(decodedVacuumEvent);
   Game commandGame;
   commandGame.reset();
+  commandGame.networkMutableState().localSettings.mobileFraming = true;
   commandGame.setTouchControls(0.25f, 1.0f, 0.0f, 0.0f, true, true,
                                true, true, false, false);
   const PlayerCommand canonical = commandGame.capturePlayerCommand(41, 73);
@@ -79,7 +82,8 @@ int main() {
         (canonical.buttons & CommandSprint) != 0 &&
         (canonical.buttons & CommandJump) != 0 &&
         (canonical.buttons & CommandVacuum) != 0 &&
-        (canonical.buttons & CommandMelee) != 0;
+        (canonical.buttons & CommandMelee) != 0 &&
+        (canonical.capabilities & CommandMobileFraming) != 0;
   Game game;
   game.reset();
   std::array<PlayerSnapshot, MAX_PLAYERS> players{};
@@ -211,7 +215,7 @@ int main() {
   Game completeGuest;
   completeGuest.reset();
   completeGuest.configureNetworkGuest(1);
-  applyWorld(completeGuest.networkMutableState(), roundtrip, 1);
+  applyWorld(completeGuest, roundtrip, 1);
   ok &= completeGuest.state().player.ledgeHanging &&
         completeGuest.state().player.storedSoulBrute[0] &&
         completeGuest.state().energy.supplementalActive &&

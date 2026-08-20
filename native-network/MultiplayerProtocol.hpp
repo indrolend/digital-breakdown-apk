@@ -10,7 +10,7 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 7;
+constexpr std::uint16_t PROTOCOL_VERSION = 8;
 constexpr std::uint16_t GAMEPLAY_VERSION = 5;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
@@ -281,6 +281,7 @@ std::vector<GameplayEvent> deriveGameplayEvents(
 WorldSnapshot captureWorld(const GameState& state, const std::array<PlayerSnapshot, MAX_PLAYERS>& players, std::uint32_t tick);
 std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState& state);
 void applyWorld(GameState& state, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
+void applyWorld(Game& game, const WorldSnapshot& snapshot, std::uint8_t localPlayerId);
 void prepareForAuthoritativeWorldReplacement(GameState& state);
 
 struct DurableSectionHashes {

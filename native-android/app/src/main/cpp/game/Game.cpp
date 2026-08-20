@@ -1340,12 +1340,13 @@ PlayerCommand Game::capturePlayerCommand(unsigned int sequence,unsigned int loca
     else if(input.commSignalPressed==2)command.buttons|=CommandCommPing;
     else if(input.commSignalPressed==3)command.buttons|=CommandCommGroup;
     else if(input.commSignalPressed==4)command.buttons|=CommandCommOk;
+    if(state_.localSettings.mobileFraming)command.capabilities|=CommandMobileFraming;
     return command;
 }
 void Game::setNetworkPeerCommand(int playerId,const PlayerCommand& command){
-    setNetworkPeerInput(playerId,command.sequence,command.moveX,command.moveZ,command.yaw,command.pitch,command.buttons);
+    setNetworkPeerInput(playerId,command.sequence,command.moveX,command.moveZ,command.yaw,command.pitch,command.buttons,command.capabilities);
 }
-void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=(buttons&(1u<<5))!=0&&(previous&(1u<<5))==0;peer.input.meleePressed=(buttons&(1u<<7))!=0&&(previous&(1u<<7))==0;peer.input.shootPressed=(buttons&(1u<<8))!=0&&(previous&(1u<<8))==0;peer.input.cameraTogglePressed=(buttons&(1u<<9))!=0&&(previous&(1u<<9))==0;if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;for(int signal=1;signal<=4;++signal){const unsigned short bit=static_cast<unsigned short>(1u<<(11+signal));if((buttons&bit)!=0&&(previous&bit)==0)peer.input.commSignalPressed=signal;}peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
+void Game::setNetworkPeerInput(int playerId,unsigned int sequence,float moveX,float moveZ,float yaw,float pitch,unsigned short buttons,unsigned char capabilities){if(playerId<=0||playerId>=NETWORK_PLAYER_COUNT||!state_.multiplayer.authoritativeHost)return;setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];if(sequence<=peer.lastInputSequence)return;const unsigned short previous=peer.inputButtons;peer.lastInputSequence=sequence;peer.inputButtons=buttons;peer.mobileFraming=(capabilities&CommandMobileFraming)!=0;peer.input.touchMoveX=clampf(moveX,-1,1);peer.input.touchMoveZ=clampf(moveZ,-1,1);peer.input.touchSprint=(buttons&(1u<<4))!=0;peer.input.touchPrimaryHeld=(buttons&(1u<<6))!=0;peer.input.jumpPressed=peer.input.jumpPressed||((buttons&(1u<<5))!=0&&(previous&(1u<<5))==0);peer.input.meleePressed=peer.input.meleePressed||((buttons&(1u<<7))!=0&&(previous&(1u<<7))==0);peer.input.shootPressed=peer.input.shootPressed||((buttons&(1u<<8))!=0&&(previous&(1u<<8))==0);peer.input.cameraTogglePressed=peer.input.cameraTogglePressed||((buttons&(1u<<9))!=0&&(previous&(1u<<9))==0);if((buttons&(1u<<10))!=0)peer.input.wiggleAxis=-1.0f;else if((buttons&(1u<<11))!=0)peer.input.wiggleAxis=1.0f;for(int signal=1;signal<=4;++signal){const unsigned short bit=static_cast<unsigned short>(1u<<(11+signal));if((buttons&bit)!=0&&(previous&bit)==0)peer.input.commSignalPressed=signal;}peer.camera.yaw=yaw;peer.camera.pitch=clampf(pitch,-DB_PI*0.48f,DB_PI*0.48f);}
 void Game::applyNetworkPeerSnapshot(int playerId,const PlayerState& player,float pitch,float vacuumPower,float vacuumPose,int vacuumTarget,float meleeTimer,float dischargeAmount){if(playerId<0||playerId>=NETWORK_PLAYER_COUNT)return;if(playerId==state_.multiplayer.localPlayerId){state_.player=player;state_.camera.pitch=pitch;state_.vacuum.power=vacuumPower;state_.vacuum.pose=vacuumPose;state_.vacuum.target=vacuumTarget;state_.meleeVisual.visualTimer=meleeTimer;state_.energy.dischargePositionAmount=dischargeAmount;updatePhoneTransform();return;}setNetworkPeerActive(playerId,true);auto& peer=state_.multiplayer.peers[playerId];peer.player=player;peer.camera.pitch=pitch;peer.vacuum.power=vacuumPower;peer.vacuum.pose=vacuumPose;peer.vacuum.target=vacuumTarget;peer.meleeVisual.visualTimer=meleeTimer;peer.energy.dischargePositionAmount=dischargeAmount;peer.phoneVisual=makePhoneVisualState(vacuumPose,vacuumPower,0,state_.time,false);peer.phoneTransform.position=player.pos+Vec3{0,0.54f,0};peer.phoneTransform.orientation=quatAxisAngle({0,1,0},player.yaw);peer.phoneTransform.screenRight=rotate(peer.phoneTransform.orientation,{1,0,0});peer.phoneTransform.screenUp=rotate(peer.phoneTransform.orientation,{0,1,0});peer.phoneTransform.screenNormal=rotate(peer.phoneTransform.orientation,{0,0,1});peer.phoneTransform.screenCenter=peer.phoneTransform.position+peer.phoneTransform.screenNormal*PHONE_SCREEN_Z_OFFSET;peer.phoneTransform.vacuumPullPoint=peer.phoneTransform.screenCenter+peer.phoneTransform.screenNormal*0.24f;}
 
 void Game::savePlayerContext(NetworkPeerState& c) const{c.input=state_.input;c.player=state_.player;c.energy=state_.energy;c.camera=state_.camera;c.vacuum=state_.vacuum;c.pendingShots=state_.pendingShots;c.phonePose=state_.phonePose;c.phoneTransform=state_.phoneTransform;c.phoneVisual=state_.phoneVisual;c.hud=state_.hud;c.meleeVisual=state_.meleeVisual;c.meleeCooldown=state_.meleeCooldown;c.meleePose=state_.meleePose;c.meleeComboWindow=state_.meleeComboWindow;}
@@ -1572,6 +1573,11 @@ Vec3 Game::cameraForwardFlat() const {
 Vec3 Game::cameraRightFlat() const {
     return normalized({std::cos(state_.camera.yaw), 0.0f, -std::sin(state_.camera.yaw)});
 }
+bool Game::mobileFramingEnabled() const {
+    if(simulationPlayerId_>0&&state_.multiplayer.enabled&&state_.multiplayer.authoritativeHost)
+        return state_.multiplayer.peers[simulationPlayerId_].mobileFraming;
+    return state_.localSettings.mobileFraming;
+}
 
 float Game::getPlayerCeilingLimit() const {
     return ROOM_WALL_HEIGHT - GROUND_Y - CEILING_CLEARANCE - PLAYER_CEILING_BODY_CLEARANCE;
@@ -1663,16 +1669,7 @@ bool Game::isInsideDoorAperture(const Vec3& position, float pad) const {
     return std::abs(position.x) <= 2.1f + pad && position.y >= GROUND_Y - 0.12f && position.y <= 3.72f + 0.22f;
 }
 
-void Game::updateRoomTopology(float previousZ, float currentZ) {
-    const int previousTile = getRoomTileIndex(previousZ);
-    const int currentTile = getRoomTileIndex(currentZ);
-    state_.topology.previousTileIndex = previousTile;
-    state_.topology.currentTileIndex = currentTile;
-    state_.topology.advancing = false;
-    if (previousTile == currentTile) return;
-    Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
-    if (!isInsideDoorAperture(local, 0.04f)) return;
-    if (state_.roomClear && currentTile < previousTile) {
+void Game::advanceClearedRoom() {
         state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
         state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
         if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
@@ -1705,6 +1702,19 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.upgradeMenu.active=true;
         state_.uiPaused=true;
         clearInputState();
+}
+
+void Game::updateRoomTopology(float previousZ, float currentZ) {
+    const int previousTile = getRoomTileIndex(previousZ);
+    const int currentTile = getRoomTileIndex(currentZ);
+    state_.topology.previousTileIndex = previousTile;
+    state_.topology.currentTileIndex = currentTile;
+    state_.topology.advancing = false;
+    if (previousTile == currentTile) return;
+    Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
+    if (!isInsideDoorAperture(local, 0.04f)) return;
+    if (state_.roomClear && currentTile < previousTile) {
+        advanceClearedRoom();
     } else if(!state_.roomClear) {
         chargeClosedDoorLoop();
     }
@@ -2330,7 +2340,7 @@ void Game::updateCamera(float dt) {
     const Vec3 aimForward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
     const float horizontalSpeed=std::sqrt(player.vel.x*player.vel.x+player.vel.z*player.vel.z);
     const float motionFov=clampf((horizontalSpeed-2.5f)*1.05f,0.0f,9.0f)+(!player.grounded?2.2f:0.0f)+(state_.meleeVisual.airLungeLandingPending?4.8f:0.0f);
-    const bool mobile = state_.localSettings.mobileFraming;
+    const bool mobile = mobileFramingEnabled();
     const float targetFov=camera.firstPerson?(mobile?60.0f:64.0f):(mobile?56.0f:60.0f)+motionFov*(mobile?0.72f:1.0f);
     if(dt>0.0f)camera.verticalFovDegrees+=(targetFov-camera.verticalFovDegrees)*(1.0f-std::exp(-(targetFov>camera.verticalFovDegrees?5.2f:2.8f)*dt));else camera.verticalFovDegrees=targetFov;
     if (player.inSecretRoom) {
@@ -2689,7 +2699,7 @@ float Game::headshotDamage(const TargetState& target) const {
 
 Vec3 Game::assistedActionDirection(const Vec3& origin, const Vec3& direction, float maxDistance, float minDot, float maxBlend, bool preferHead) const {
     Vec3 base=normalized(direction);
-    if(!state_.localSettings.mobileFraming || lengthSq(base)<0.0001f) return base;
+    if(!mobileFramingEnabled() || lengthSq(base)<0.0001f) return base;
     int best=-1;
     float bestScore=0.0f;
     Vec3 bestDirection=base;
