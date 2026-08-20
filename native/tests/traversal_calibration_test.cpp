@@ -118,11 +118,12 @@ int main(){
         const GameState& state=inspector.state();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
         const auto premise=static_cast<early_browser_visuals::RoomPremise>(premiseIndex);const auto& report=state.roomInspectorReport;
         int solidProps=0;for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++solidProps;
+        int expectedRequiredEdges=0;for(int i=0;i<plan.traversal.edgeCount;++i)if(gameplay::isRequired(plan.traversal.edges[i]))++expectedRequiredEdges;
         const int expectedProps=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
         const int expectedColliders=plan.obstacleCount+(expectedProps?solidProps:0);
         if(!state.roomInspector||state.roomInspectorPremise!=premise||!early_browser_visuals::matchesInspectorPremise(plan,premise)||!state.roomClear||state.requiredSouls!=0||!report.seedSelectionValid||
            report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||
-           !report.requiredRouteValid||report.traversalSurfaceCount!=plan.traversal.surfaceCount||report.traversalEdgeCount!=plan.traversal.edgeCount||report.requiredEdgeCount!=plan.traversal.edgeCount||
+           !report.requiredRouteValid||report.traversalSurfaceCount!=plan.traversal.surfaceCount||report.traversalEdgeCount!=plan.traversal.edgeCount||report.requiredEdgeCount!=expectedRequiredEdges||
            report.colliderCount!=state.debug.colliderCount||report.colliderCount!=expectedColliders||report.presentationPropCount!=expectedProps||report.enemyCount!=0||report.requiredBand!=gameplay::TraversalDifficulty::Automatic){
             std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s report does not match production state\n",early_browser_visuals::premiseName(premise));return 1;
         }

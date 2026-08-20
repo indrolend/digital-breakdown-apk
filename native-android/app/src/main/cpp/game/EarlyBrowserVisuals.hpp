@@ -14,12 +14,14 @@ enum class RoomSetting : unsigned char { Field, City, Sterile, Coastal };
 enum class RoomForm : unsigned char { Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber };
 enum class RoomScale : unsigned char { Compact, Standard, Large, Arena };
 enum class RoomCondition : unsigned char { Normal, Recovery };
+enum class RoomPlaystyle : unsigned char { Playground, Funnel, Orbit, Vertical, Recovery };
 enum class RoomPremise : unsigned char { FieldOpen, CityCorridor, CityCourtyard, CityCanyon, CitySkyline, SterileCorridor, SterileChamber, CoastalShore, Count };
 
 inline const char* settingName(RoomSetting setting){switch(setting){case RoomSetting::Field:return "FIELD";case RoomSetting::City:return "CITY";case RoomSetting::Sterile:return "STERILE";case RoomSetting::Coastal:return "COASTAL";}return "UNKNOWN";}
 inline const char* formName(RoomForm form){switch(form){case RoomForm::Open:return "OPEN";case RoomForm::Corridor:return "CORRIDOR";case RoomForm::Courtyard:return "COURTYARD";case RoomForm::Canyon:return "CANYON";case RoomForm::Skyline:return "SKYLINE";case RoomForm::Shore:return "SHORE";case RoomForm::Chamber:return "CHAMBER";}return "UNKNOWN";}
 inline const char* scaleName(RoomScale scale){switch(scale){case RoomScale::Compact:return "COMPACT";case RoomScale::Standard:return "STANDARD";case RoomScale::Large:return "LARGE";case RoomScale::Arena:return "ARENA";}return "UNKNOWN";}
 inline const char* conditionName(RoomCondition condition){switch(condition){case RoomCondition::Normal:return "NORMAL";case RoomCondition::Recovery:return "RECOVERY";}return "UNKNOWN";}
+inline const char* playstyleName(RoomPlaystyle playstyle){switch(playstyle){case RoomPlaystyle::Playground:return "PLAYGROUND";case RoomPlaystyle::Funnel:return "FUNNEL";case RoomPlaystyle::Orbit:return "ORBIT";case RoomPlaystyle::Vertical:return "VERTICAL";case RoomPlaystyle::Recovery:return "RECOVERY";}return "UNKNOWN";}
 inline const char* premiseName(RoomPremise premise){switch(premise){case RoomPremise::FieldOpen:return "FIELD_OPEN";case RoomPremise::CityCorridor:return "CITY_CORRIDOR";case RoomPremise::CityCourtyard:return "CITY_COURTYARD";case RoomPremise::CityCanyon:return "CITY_CANYON";case RoomPremise::CitySkyline:return "CITY_SKYLINE";case RoomPremise::SterileCorridor:return "STERILE_CORRIDOR";case RoomPremise::SterileChamber:return "STERILE_CHAMBER";case RoomPremise::CoastalShore:return "COASTAL_SHORE";case RoomPremise::Count:break;}return "UNKNOWN";}
 
 struct RoomEnvironmentPlan {
@@ -27,6 +29,7 @@ struct RoomEnvironmentPlan {
     RoomForm form = RoomForm::Open;
     RoomScale scale = RoomScale::Standard;
     RoomCondition condition = RoomCondition::Normal;
+    RoomPlaystyle playstyle = RoomPlaystyle::Playground;
     int obstacleCount = 0;
     bool grass = true;
     bool sidewalks = false;
@@ -60,11 +63,62 @@ inline std::uint32_t roomKey(int roomSeed,int roomIndex) {
     return mix(static_cast<std::uint32_t>(roomSeed)^static_cast<std::uint32_t>(roomIndex)*0x9e3779b9u);
 }
 
+inline RoomPlaystyle rawPlaystyle(std::uint32_t key) {
+    const float roll=unit(key+211u);
+    return roll<0.31f?RoomPlaystyle::Playground:(roll<0.55f?RoomPlaystyle::Funnel:(roll<0.78f?RoomPlaystyle::Orbit:RoomPlaystyle::Vertical));
+}
+
+inline RoomPlaystyle roomPlaystyle(int roomSeed,int roomIndex,bool recovery) {
+    if(recovery)return RoomPlaystyle::Recovery;
+    if(roomIndex<=1)return RoomPlaystyle::Playground;
+    RoomPlaystyle previous=RoomPlaystyle::Playground;
+    for(int index=2;index<=roomIndex;++index){
+        RoomPlaystyle selected=rawPlaystyle(roomKey(roomSeed,index));
+        if(selected==previous)selected=static_cast<RoomPlaystyle>((static_cast<unsigned char>(selected)+1u)%4u);
+        previous=selected;
+    }
+    return previous;
+}
+
+inline void appendOptionalTraversal(RoomEnvironmentPlan& plan,std::uint32_t key) {
+    if(plan.playstyle==RoomPlaystyle::Recovery)return;
+    const int surfacesNeeded=plan.playstyle==RoomPlaystyle::Playground||plan.playstyle==RoomPlaystyle::Funnel?1:2;
+    const int edgesNeeded=surfacesNeeded+1;
+    if(plan.traversal.surfaceCount<0||plan.traversal.edgeCount<0||
+       plan.traversal.surfaceCount>gameplay::TraversalGraph::SurfaceCapacity-surfacesNeeded||
+       plan.traversal.edgeCount>gameplay::TraversalGraph::EdgeCapacity-edgesNeeded)return;
+    const float side=unit(key+229u)<0.5f?-1.0f:1.0f;
+    auto addSurface=[&](Vec3 center,Vec3 halfSize){const int index=plan.traversal.surfaceCount++;plan.traversal.surfaces[index]={center,halfSize,false};return index;};
+    auto addEdge=[&](int from,int to,gameplay::TraversalAction action,gameplay::TraversalDifficulty difficulty,gameplay::TraversalRole role){plan.traversal.edges[plan.traversal.edgeCount++]={from,to,action,difficulty,role};};
+    if(plan.playstyle==RoomPlaystyle::Playground){
+        const int perch=addSurface({side*4.0f,0.55f,2.0f},{1.2f,0.20f,1.5f});
+        addEdge(1,perch,gameplay::TraversalAction::Jump,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::CombatPerch);
+        addEdge(perch,2,gameplay::TraversalAction::Drop,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Shortcut);
+    } else if(plan.playstyle==RoomPlaystyle::Funnel){
+        const int cut=addSurface({side*3.8f,0.35f,-3.0f},{1.1f,0.18f,1.35f});
+        addEdge(1,cut,gameplay::TraversalAction::Jump,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Shortcut);
+        addEdge(cut,2,gameplay::TraversalAction::Lunge,gameplay::TraversalDifficulty::Engaged,gameplay::TraversalRole::Shortcut);
+    } else if(plan.playstyle==RoomPlaystyle::Orbit){
+        const int first=addSurface({side*4.0f,0.35f,3.0f},{1.15f,0.18f,1.25f});
+        const int second=addSurface({-side*4.0f,0.65f,-4.0f},{1.15f,0.18f,1.25f});
+        addEdge(1,first,gameplay::TraversalAction::Jump,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Shortcut);
+        addEdge(first,second,gameplay::TraversalAction::Lunge,gameplay::TraversalDifficulty::Engaged,gameplay::TraversalRole::CombatPerch);
+        addEdge(second,2,gameplay::TraversalAction::Drop,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Shortcut);
+    } else if(plan.playstyle==RoomPlaystyle::Vertical){
+        const int low=addSurface({side*3.9f,0.45f,2.0f},{1.2f,0.20f,1.2f});
+        const int high=addSurface({side*3.9f,1.25f,-3.0f},{1.2f,0.20f,1.2f});
+        addEdge(1,low,gameplay::TraversalAction::Jump,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::CombatPerch);
+        addEdge(low,high,gameplay::TraversalAction::JumpLunge,gameplay::TraversalDifficulty::Engaged,gameplay::TraversalRole::CombatPerch);
+        addEdge(high,2,gameplay::TraversalAction::Drop,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Shortcut);
+    }
+}
+
 inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     RoomEnvironmentPlan plan;
     const std::uint32_t key=roomKey(roomSeed,roomIndex);
     const float recoveryChance=std::min(0.22f,0.10f+std::max(0,roomIndex-4)*0.004f);
     plan.condition=roomIndex>=4&&unit(key+91u)<recoveryChance?RoomCondition::Recovery:RoomCondition::Normal;
+    plan.playstyle=roomPlaystyle(roomSeed,roomIndex,plan.recovery());
     const float roll=unit(key+17u);
     if(roomIndex==1||plan.recovery()) plan.setting=RoomSetting::Field;
     else if(roomIndex<8) plan.setting=roll<0.42f?RoomSetting::Field:(roll<0.74f?RoomSetting::City:(roll<0.91f?RoomSetting::Sterile:RoomSetting::Coastal));
@@ -92,6 +146,7 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     for(int edge=0;edge<plan.traversal.edgeCount;++edge){
         plan.traversal.edges[edge]={edge,edge+1,gameplay::TraversalAction::Walk,gameplay::TraversalDifficulty::Automatic,gameplay::TraversalRole::Required};
     }
+    appendOptionalTraversal(plan,key);
     return plan;
 }
 
