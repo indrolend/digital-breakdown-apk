@@ -71,16 +71,22 @@ inline RoomPlaystyle rawPlaystyle(std::uint32_t key) {
 inline RoomPlaystyle roomPlaystyle(int roomSeed,int roomIndex,bool recovery) {
     if(recovery)return RoomPlaystyle::Recovery;
     if(roomIndex<=1)return RoomPlaystyle::Playground;
-    RoomPlaystyle selected=rawPlaystyle(roomKey(roomSeed,roomIndex));
-    const RoomPlaystyle previous=rawPlaystyle(roomKey(roomSeed,roomIndex-1));
-    if(roomIndex>2&&selected==previous){
-        selected=static_cast<RoomPlaystyle>((static_cast<unsigned char>(selected)+1u)%4u);
+    RoomPlaystyle previous=RoomPlaystyle::Playground;
+    for(int index=2;index<=roomIndex;++index){
+        RoomPlaystyle selected=rawPlaystyle(roomKey(roomSeed,index));
+        if(selected==previous)selected=static_cast<RoomPlaystyle>((static_cast<unsigned char>(selected)+1u)%4u);
+        previous=selected;
     }
-    return selected;
+    return previous;
 }
 
 inline void appendOptionalTraversal(RoomEnvironmentPlan& plan,std::uint32_t key) {
     if(plan.playstyle==RoomPlaystyle::Recovery)return;
+    const int surfacesNeeded=plan.playstyle==RoomPlaystyle::Playground||plan.playstyle==RoomPlaystyle::Funnel?1:2;
+    const int edgesNeeded=surfacesNeeded+1;
+    if(plan.traversal.surfaceCount<0||plan.traversal.edgeCount<0||
+       plan.traversal.surfaceCount>gameplay::TraversalGraph::SurfaceCapacity-surfacesNeeded||
+       plan.traversal.edgeCount>gameplay::TraversalGraph::EdgeCapacity-edgesNeeded)return;
     const float side=unit(key+229u)<0.5f?-1.0f:1.0f;
     auto addSurface=[&](Vec3 center,Vec3 halfSize){const int index=plan.traversal.surfaceCount++;plan.traversal.surfaces[index]={center,halfSize,false};return index;};
     auto addEdge=[&](int from,int to,gameplay::TraversalAction action,gameplay::TraversalDifficulty difficulty,gameplay::TraversalRole role){plan.traversal.edges[plan.traversal.edgeCount++]={from,to,action,difficulty,role};};
