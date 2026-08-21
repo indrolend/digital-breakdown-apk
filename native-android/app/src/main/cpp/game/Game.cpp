@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "SoulEconomy.hpp"
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
@@ -115,7 +116,6 @@ constexpr float BATTERY_JUMP_COST = 3.0f;
 constexpr float BATTERY_DOUBLE_JUMP_COST = 6.0f;
 constexpr float BATTERY_SHOOT_COST = 7.0f;
 constexpr float BATTERY_CAPTURE_GAIN = 10.0f;
-constexpr float BATTERY_SOUL_EFFICIENCY = 0.16f;
 constexpr float BATTERY_MELEE_HIT_GAIN = 2.0f;
 constexpr float BATTERY_COMBO_GROWTH = 1.22f;
 constexpr float BATTERY_COMBO_TIMEOUT = 1.8f;
@@ -583,7 +583,7 @@ bool Game::purchasePermanentUpgrade(int track){
 }
 
 float Game::batteryDrainMultiplier() const {
-    return 1.0f / (1.0f + static_cast<float>(state_.player.souls) * BATTERY_SOUL_EFFICIENCY);
+    return 1.0f;
 }
 
 int Game::upgradeLevel(UpgradeTrack track) const {
@@ -915,7 +915,7 @@ void Game::updateBattery(float dt) {
         const float survivalRegen=(survivalSynergyTier()>0&&state_.player.battery<24.0f)?1.0f+0.10f*survivalSynergyTier():1.0f;
         const float precisionWindow=state_.progression.run.headshotRechargeBoost>0.0f?1.35f:1.0f;
         const float tvSignal=1.0f+std::min(0.45f,0.06f*std::sqrt(static_cast<float>(std::max(0,state_.secretTv.signal))));
-        gainBattery(BATTERY_IDLE_REGEN * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
+        gainBattery(BATTERY_IDLE_REGEN * soul_economy::passiveRegenMultiplier(state_.player.souls) * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
     }
 }
 
