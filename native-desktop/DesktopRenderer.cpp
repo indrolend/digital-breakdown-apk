@@ -3,6 +3,7 @@
 #include "BitmapFont.hpp"
 #include "EarlyBrowserVisuals.hpp"
 #include "PhoneDisplayLayout.hpp"
+#include "RenderContracts.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -38,7 +39,6 @@ constexpr float ROOM_DEPTH = 42.0f;
 constexpr int ROOM_VISUAL_HORIZON = 2;
 constexpr float ROOM_WALL_HEIGHT = 7.2f;
 constexpr float PI = 3.14159265358979323846f;
-const Vec3 SCENE_SUN_VECTOR{30.0f, 60.0f, 25.0f};
 constexpr float SHADOW_PROJECTION_SCALE = 0.5f;
 
 struct MenuFontAtlas {
@@ -120,8 +120,9 @@ void cube() {
 
 void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha) {
     constexpr int segments = 8;
-    const float sunXOverY=SCENE_SUN_VECTOR.x/SCENE_SUN_VECTOR.y;
-    const float sunZOverY=SCENE_SUN_VECTOR.z/SCENE_SUN_VECTOR.y;
+    const Vec3& sunDirection=render_contract::DesktopSceneLighting.sun.direction;
+    const float sunXOverY=sunDirection.x/sunDirection.y;
+    const float sunZOverY=sunDirection.z/sunDirection.y;
     const Vec3 center{
         caster.x-height*SHADOW_PROJECTION_SCALE*sunXOverY,
         0.012f,
@@ -1063,22 +1064,23 @@ void DesktopRenderer::draw(const GameState& state) const {
     glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
-    const GLfloat ambient[]={0.32f,0.43f,0.34f,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
-    const GLfloat sunDiffuse[]={1.0f,1.0f,1.0f,1.0f};
+    const auto& lighting=render_contract::DesktopSceneLighting;
+    const GLfloat ambient[]={lighting.ambient.r,lighting.ambient.g,lighting.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
+    const GLfloat sunDiffuse[]={lighting.sun.color.r*lighting.sun.intensity,lighting.sun.color.g*lighting.sun.intensity,lighting.sun.color.b*lighting.sun.intensity,1.0f};
     const GLfloat sunPos[]={
-        SCENE_SUN_VECTOR.x,
-        SCENE_SUN_VECTOR.y,
-        SCENE_SUN_VECTOR.z,
+        lighting.sun.direction.x,
+        lighting.sun.direction.y,
+        lighting.sun.direction.z,
         0.0f
     };
     glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
-    const GLfloat fillDiffuse[]={0.20f,0.28f,0.35f,1.0f}, fillPos[]={-20.0f,25.0f,-30.0f,0.0f};
+    const GLfloat fillDiffuse[]={lighting.fill.color.r*lighting.fill.intensity,lighting.fill.color.g*lighting.fill.intensity,lighting.fill.color.b*lighting.fill.intensity,1.0f}, fillPos[]={lighting.fill.direction.x,lighting.fill.direction.y,lighting.fill.direction.z,0.0f};
     glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
     const float phonePulse=clampf(state.vacuum.power*0.62f+state.energy.dischargePositionAmount,0.0f,1.0f);
     const GLfloat phoneDiffuse[]={0.12f*phonePulse,0.74f*phonePulse,0.92f*phonePulse,1.0f};
     const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
-    glEnable(GL_FOG);const GLfloat fogColor[]={Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,0.018f);
+    glEnable(GL_FOG);const GLfloat fogColor[]={lighting.fog.color.r,lighting.fog.color.g,lighting.fog.color.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,lighting.fog.density);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
     const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;const float maxDist=cheapVisuals?38.0f:55.0f;return lengthSq(delta)<maxDist*maxDist&&dot3(delta,state.camera.forward)>-8.0f;};
