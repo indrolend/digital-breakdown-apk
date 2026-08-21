@@ -113,6 +113,17 @@ inline void appendOptionalTraversal(RoomEnvironmentPlan& plan,std::uint32_t key)
     }
 }
 
+// Physicalization is intentionally staged one playstyle at a time. Playground
+// proves the graph -> collider -> renderer path without changing the required
+// center route; the other optional grammars remain descriptive for now.
+inline bool physicalTraversalSurface(const RoomEnvironmentPlan& plan,const gameplay::TraversalSurface& surface){
+    return plan.playstyle==RoomPlaystyle::Playground&&!surface.required;
+}
+
+inline int physicalTraversalSurfaceCount(const RoomEnvironmentPlan& plan){
+    int count=0;for(int i=0;i<plan.traversal.surfaceCount;++i)if(physicalTraversalSurface(plan,plan.traversal.surfaces[i]))++count;return count;
+}
+
 inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     RoomEnvironmentPlan plan;
     const std::uint32_t key=roomKey(roomSeed,roomIndex);
