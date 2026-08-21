@@ -259,6 +259,14 @@ target_include_directories(SoulEconomyTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(SoulEconomyTest PRIVATE cxx_std_17)
 
 add_executable(
+    SoulProjectileLifecycleTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_projectile_lifecycle_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(SoulProjectileLifecycleTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(SoulProjectileLifecycleTest PRIVATE cxx_std_17)
+
+add_executable(
     TraversalCalibrationTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/traversal_calibration_test.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
@@ -305,6 +313,7 @@ add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
+add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
 add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)

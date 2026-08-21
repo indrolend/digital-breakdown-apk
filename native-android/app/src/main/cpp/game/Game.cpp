@@ -210,6 +210,16 @@ constexpr float BULLET_GRAVITY = 11.5f;
 constexpr float BULLET_LIFE = 3.25f;
 constexpr float BULLET_VERTICAL_LIFT = 1.15f;
 constexpr float BULLET_AIR_DRAG_PER_SECOND = 0.72f;
+constexpr float BULLET_WALL_RETENTION = 0.84f;
+constexpr float BULLET_ENEMY_RETENTION = 0.72f;
+constexpr float BULLET_RADIUS = 0.22f;
+constexpr float BULLET_DROP_Y = GROUND_Y + BULLET_RADIUS;
+constexpr float BULLET_CONTACT_COOLDOWN = 0.12f;
+constexpr float BULLET_MELEE_SPEED = 16.0f;
+constexpr float BULLET_LUNGE_SPEED = 29.0f;
+constexpr float BULLET_VACUUM_RADIUS = 0.62f;
+constexpr float BULLET_VACUUM_RANGE = 8.5f;
+constexpr float BULLET_VACUUM_ACCELERATION = 34.0f;
 constexpr float BULLET_MAX_UP_AIM = 0.30f;
 constexpr float BULLET_MAX_DOWN_AIM = -0.10f;
 constexpr float ROOM_DEPOSIT_HIT_RADIUS = 1.65f;
@@ -586,6 +596,24 @@ float Game::batteryDrainMultiplier() const {
     return 1.0f;
 }
 
+SoulRecord Game::makeSoulRecord(bool brute, int originRoom) {
+    SoulRecord soul;
+    soul.id = state_.nextSoulId++;
+    soul.brute = brute;
+    soul.originRoom = originRoom;
+    return soul;
+}
+
+bool Game::storeSoul(PlayerState& player, const SoulRecord& source) {
+    if (player.souls >= MAX_STORED_SOULS) return false;
+    SoulRecord soul = source;
+    if (soul.id == 0) soul = makeSoulRecord(source.brute, source.originRoom > 0 ? source.originRoom : state_.roomIndex);
+    player.storedSouls[player.souls] = soul;
+    player.storedSoulBrute[player.souls] = soul.brute;
+    ++player.souls;
+    return true;
+}
+
 int Game::upgradeLevel(UpgradeTrack track) const {
     const int i=static_cast<int>(track);
     const int permanent=(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)
@@ -817,7 +845,7 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
     if (player.battery <= 0.0f) {
         player.battery = 0.0f;
         if(reason==BatteryReason::Hit&&state_.multiplayer.enabled){player.downed=true;player.bleedoutTimer=15.0f;player.reviveCharge=0.0f;player.vel={};player.jumpVel=0.0f;clearPlayerLifecycleActions();setEnergyTicker("SIGNAL DOWN",1);return false;}
-        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
+        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.storedSoulBrute[player.souls]=false;player.storedSouls[player.souls]=SoulRecord{};player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
         triggerRunDeath();
         return false;
     }
@@ -1080,6 +1108,7 @@ void Game::resetRoom() {
         target.pos = {-8.0f + static_cast<float>(i % 5) * 4.0f, GROUND_Y, -12.0f + static_cast<float>(i / 5) * 4.5f};
         target.alive = i < activeHumanTarget();
         target.brute = seededRoomValue(420 + i) < 0.18f;
+        target.soul = makeSoulRecord(target.brute, state_.roomIndex);
         target.armor = target.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
         target.health = 1.0f;
         target.scale = target.brute ? HUMAN_SCALE_BRUTE : 1.0f;
@@ -1427,6 +1456,8 @@ void Game::updateSecretTv(float dt) {
         if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
             inputs[id]->shootPressed = false;
             --player.souls;
+            player.storedSoulBrute[player.souls]=false;
+            player.storedSouls[player.souls]=SoulRecord{};
             ++tv.signal;
             tv.donationCooldown = 0.70f;
             const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
@@ -1692,6 +1723,7 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.player.soloSoulRebootUsed=false;
         state_.player.souls=0;
         state_.player.storedSoulBrute.fill(false);
+        state_.player.storedSouls.fill(SoulRecord{});
         state_.requiredSouls=std::min(9,5+state_.runRules.requiredSlotStacks);
         state_.depositedSouls=0;
         state_.progression.run.roomHeat=0.0f;
@@ -2634,6 +2666,28 @@ int Game::applyMeleeHits() {
     const Vec3 phonePrevious=visual.contactPositionValid?visual.previousContactPosition:phoneCurrent;
     visual.previousContactPosition=phoneCurrent;visual.contactPositionValid=true;
     int newHits=0; int totalHits=0; int headshots=0; std::array<Vec3,TARGET_COUNT> headshotPositions{}; std::array<bool,TARGET_COUNT> headshotCritical{};std::array<float,TARGET_COUNT> headshotAttackProgress{},headshotKillCharge{};
+    bool redirectedSoul=false;
+    for(auto& bullet:state_.bullets){
+        if(!bullet.alive||bullet.dropped||bullet.contactCooldown>0.0f)continue;
+        bool contact=false;
+        if(visual.locomotionLunge){
+            contact=pointSegmentDistanceSq(bullet.pos,phonePrevious,phoneCurrent)<=0.58f*0.58f;
+        }else{
+            const Vec3 start=state_.player.pos+Vec3{0,0.45f,0};
+            const Vec3 end=start+visual.direction*visual.range;
+            contact=pointSegmentDistanceSq(bullet.pos,start,end)<=visual.hitRadius*visual.hitRadius;
+        }
+        if(!contact)continue;
+        Vec3 direction=visual.direction+Vec3{0,visual.locomotionLunge?0.24f:0.12f,0};
+        direction=normalized(direction);
+        bullet.vel=direction*(visual.locomotionLunge?BULLET_LUNGE_SPEED:BULLET_MELEE_SPEED);
+        bullet.contactCooldown=BULLET_CONTACT_COOLDOWN;
+        bullet.life=BULLET_LIFE;
+        visual.visualHit=true;visual.impact=bullet.pos;redirectedSoul=true;
+        spawnFlameBurst(bullet.pos,visual.locomotionLunge?1.35f:0.72f);
+        emitAudio(visual.locomotionLunge?AudioCue::HeadshotCritical:AudioCue::PhoneAttack,visual.locomotionLunge?0.78f:0.42f);
+        if(visual.locomotionLunge){state_.hud.criticalHitPulse=1.0f;continueLungeFromHeadshot();}
+    }
     for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
     for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!gameplay::isCombatTarget(t) || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
@@ -2679,7 +2733,7 @@ int Game::applyMeleeHits() {
         if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();
         if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
     }
-    return newHits;
+    return newHits+(redirectedSoul?1:0);
 }
 
 Vec3 Game::targetHeadCenter(const TargetState& target) const {
@@ -2834,7 +2888,10 @@ void Game::shootStoredSoul() {
         if (!spendBattery(BATTERY_SHOOT_COST,BatteryReason::Shoot)) return;
         const int storedIndex=state_.player.souls-1;
         pending=PendingShotState{}; pending.active=true; pending.brute=state_.player.storedSoulBrute[storedIndex];
+        pending.soul=state_.player.storedSouls[storedIndex];
+        if(pending.soul.id==0) pending.soul=makeSoulRecord(pending.brute,state_.roomIndex);
         state_.player.storedSoulBrute[storedIndex]=false;
+        state_.player.storedSouls[storedIndex]=SoulRecord{};
         state_.player.souls--;
         state_.hud.shootJoinTimer=0.18f;
         state_.energy.dischargeTimer=0.34f;
@@ -2851,8 +2908,7 @@ void Game::processPendingShots(float dt) {
         for(auto& bullet:state_.bullets) if(!bullet.alive){slot=&bullet;break;}
         if(!slot) {
             if(pending.age>0.75f && state_.player.souls<MAX_STORED_SOULS) {
-                state_.player.storedSoulBrute[state_.player.souls]=pending.brute;
-                state_.player.souls++;
+                storeSoul(state_.player,pending.soul);
                 pending=PendingShotState{};
             }
             continue;
@@ -2870,7 +2926,7 @@ void Game::processPendingShots(float dt) {
         );
         direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
         direction=normalized(direction);
-        *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute;
+        *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute; slot->soul=pending.soul;
         slot->pos=state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f);
         slot->pos.y=std::max(slot->pos.y,0.95f);
         state_.environmentVisual.latestShotOrigin=slot->pos;
@@ -2931,8 +2987,8 @@ void Game::captureSoul(int index) {
     t.soulCubeAmount = 0.0f;
     syncTargetReactionVisual(t);
     const Vec3 capturedAt=t.pos;
-    state_.player.storedSoulBrute[state_.player.souls]=t.brute;
-    state_.player.souls++;
+    if(t.soul.id==0)t.soul=makeSoulRecord(t.brute,state_.roomIndex);
+    storeSoul(state_.player,t.soul);
     ++state_.progression.run.roomCaptures;
     state_.progression.run.roomHeat=clampf(state_.progression.run.roomHeat+0.045f,0.0f,1.0f);
     gainBattery(BATTERY_CAPTURE_GAIN,BatteryReason::Ingest);
@@ -2978,6 +3034,7 @@ void Game::updateRoomPopulation(float dt) {
 void Game::respawnTarget(int index) {
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
     t.brute = seededRoomValue(520 + index) < 0.18f;
+    t.soul = makeSoulRecord(t.brute,state_.roomIndex);
     t.armor = t.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
     t.scale = t.brute ? HUMAN_SCALE_BRUTE : 1.0f;
     t.health = 1.0f;
@@ -3046,7 +3103,7 @@ void Game::chooseHumanWalkTarget(int index) {
 
 void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TARGET_COUNT)return;TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;if(id==0){state_.player.grabbedByTarget=-1;state_.player.grabEscape=0;state_.player.grabLastDirection=0;clearInputState();}else if(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active){auto& player=state_.multiplayer.peers[id].player;player.grabbedByTarget=-1;player.grabEscape=0;player.grabLastDirection=0;state_.multiplayer.peers[id].input=InputState{};}target.grabbedPlayerId=-1;target.grabCooldown=18.0f;target.attackTimer=0;target.attackCooldown=1.15f;}
 
-void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
+void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->storedSoulBrute[player->souls]=false;player->storedSouls[player->souls]=SoulRecord{};player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
 
 void Game::updateTargets(float dt) {
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
@@ -3350,6 +3407,25 @@ void Game::updateCrosshair(float dt) {
 void Game::updateBullets(float dt) {
     for (auto& b : state_.bullets) if (b.alive) {
         const Vec3 previous=b.pos;
+        b.contactCooldown=std::max(0.0f,b.contactCooldown-dt);
+        if(state_.vacuum.active&&state_.player.souls<MAX_STORED_SOULS){
+            const Vec3 pullPoint=state_.phoneTransform.vacuumPullPoint;
+            const Vec3 toPhone=pullPoint-b.pos;
+            const float distance=length(toPhone);
+            const Vec3 fromPhone=distance>0.001f?toPhone*(-1.0f/distance):Vec3{};
+            const float facing=dot3(fromPhone,state_.phoneTransform.screenNormal);
+            if(distance<BULLET_VACUUM_RANGE&&(b.dropped||facing>0.35f)){
+                if(distance<=BULLET_VACUUM_RADIUS){
+                    storeSoul(state_.player,b.soul);
+                    b=BulletState{};
+                    emitAudio(AudioCue::ReceivedMessage,0.48f);
+                    continue;
+                }
+                b.dropped=false;
+                b.vel+=toPhone*(BULLET_VACUUM_ACCELERATION/std::max(distance,0.2f)*dt);
+            }
+        }
+        if(b.dropped){b.pos.y=BULLET_DROP_Y;b.vel={};b.spin+=dt*1.8f;continue;}
         b.life-=dt;
         b.vel.y-=BULLET_GRAVITY*dt;
         const float drag=std::pow(BULLET_AIR_DRAG_PER_SECOND,dt);
@@ -3423,9 +3499,28 @@ void Game::updateBullets(float dt) {
             }
             target.vel+=b.vel*(0.08f+0.004f*static_cast<float>(shotLevel));
             target.vel.y=std::max(target.vel.y,1.0f);
-            b.alive=false;
+            Vec3 normal=normalized(b.pos-shellCenter);
+            if(lengthSq(normal)<0.001f)normal=normalized(b.vel)*-1.0f;
+            const float retained=std::max(7.0f,length(b.vel)*BULLET_ENEMY_RETENTION);
+            b.vel=normal*retained+Vec3{0,1.2f,0};
+            b.pos=shellCenter+normal*(hitRadius+BULLET_RADIUS+0.04f);
+            b.contactCooldown=BULLET_CONTACT_COOLDOWN;
+            break;
         }
-        if(b.life<=0.0f || b.pos.y<-3.5f || std::abs(b.pos.x)>ROOM_WIDTH*1.25f || std::abs(wrapZ(b.pos.z))>ROOM_DEPTH*1.25f) b.alive=false;
+        if(!b.alive)continue;
+        if(b.pos.y<=BULLET_DROP_Y){b.pos.y=BULLET_DROP_Y;b.vel={};b.dropped=true;b.life=BULLET_LIFE;continue;}
+        const float minX=-ROOM_WIDTH*0.5f+BULLET_RADIUS,maxX=ROOM_WIDTH*0.5f-BULLET_RADIUS;
+        if(b.pos.x<minX){b.pos.x=minX;b.vel.x=std::abs(b.vel.x)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        else if(b.pos.x>maxX){b.pos.x=maxX;b.vel.x=-std::abs(b.vel.x)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(b.pos.z));
+        const float minZ=tileOrigin-ROOM_DEPTH*0.5f+BULLET_RADIUS,maxZ=tileOrigin+ROOM_DEPTH*0.5f-BULLET_RADIUS;
+        if(b.pos.z<minZ){b.pos.z=minZ;b.vel.z=std::abs(b.vel.z)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        else if(b.pos.z>maxZ){b.pos.z=maxZ;b.vel.z=-std::abs(b.vel.z)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        const float ceiling=ROOM_WALL_HEIGHT-BULLET_RADIUS;
+        if(b.pos.y>ceiling){b.pos.y=ceiling;b.vel.y=-std::abs(b.vel.y)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        // Life is retained as a presentation timer, but a live resource is no
+        // longer deleted by time or by leaving a loose legacy kill volume.
+        if(b.life<=0.0f)b.life=BULLET_LIFE;
     }
 }
 void Game::updateCaptures(float dt) {

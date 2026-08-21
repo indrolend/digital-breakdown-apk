@@ -748,7 +748,7 @@ bool verifyVacuumDischarge(const NetworkProfile& profile){
     hasEvent(first.events,dbnet::GameplayEventType::SoulIngestionStarted)&&
     hasEvent(first.events,dbnet::GameplayEventType::SoulCaptureCompleted);
   const bool discharge=first.guestDischargePredicted&&first.hostConsumed&&
-    first.projectileSpawned&&first.projectileOwnedByGuest&&first.projectileTerminal&&
+    first.projectileSpawned&&first.projectileOwnedByGuest&&!first.projectileTerminal&&
     hasEvent(first.events,dbnet::GameplayEventType::DischargeStarted)&&
     first.events.duplicateRejected>0&&first.events.staleRejected>0&&
     first.events.wrongWorldRejected>0;

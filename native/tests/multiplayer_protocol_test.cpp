@@ -95,6 +95,7 @@ int main() {
   players[1].jumpVel = 4.5f;
   players[1].airJumpsRemaining = 0;
   players[1].storedSoulBruteMask = 1;
+  players[1].storedSouls[0]={7001,true,3};
   players[1].actionFlags = 1 | 2 | 4 | 16 | 32 | 64;
   players[1].locomotion = NetLocomotionState::Airborne;
   players[1].action = NetActionState::AirLunge;
@@ -156,6 +157,8 @@ int main() {
   worldState.bullets[0].pos = {2,1,-4};
   worldState.bullets[0].vel = {0,0,-9};
   worldState.bullets[0].life = 1.2f;
+  worldState.bullets[0].dropped=true;
+  worldState.bullets[0].soul={7001,true,3};
   world = captureWorld(game.state(), players, 123);
   world.world=inputWorld;
   auto snapshotBytes = encodeSnapshot(0, world, 8);
@@ -190,6 +193,8 @@ int main() {
         roundtrip.players[1].actionPhase == NetActionPhase::Contact &&
         roundtrip.players[1].actionSequence == 12 &&
         roundtrip.players[1].actionTargetId == 3 &&
+        roundtrip.players[1].storedSouls[0].id == 7001 &&
+        roundtrip.players[1].storedSouls[0].originRoom == 3 &&
         std::abs(roundtrip.players[1].actionProgress - 0.65f) < 0.0001f &&
         std::abs(roundtrip.targets[0].animationTime - 4.25f) < 0.0001f &&
         roundtrip.targets[0].attackVariant == 3 &&
@@ -205,6 +210,7 @@ int main() {
         std::abs(roundtrip.roomColliders[0].center.x - 2.0f) < 0.0001f &&
         std::abs(roundtrip.capturePositions[0].x + 1.25f) < 0.0001f &&
         roundtrip.bullets[0].active && roundtrip.bullets[0].brute &&
+        roundtrip.bullets[0].dropped && roundtrip.bullets[0].soul.id == 7001 &&
         std::abs(roundtrip.bullets[0].pos.z + 4.0f) < 0.0001f &&
         roundtrip.tvAvailable &&
         snapshotBytes.size() <= MAX_SNAPSHOT_BYTES;
@@ -416,7 +422,7 @@ int main() {
   if (!snapshotBytes.empty()) {
     const auto validSnapshot = snapshotBytes;
     auto unknownAction=validSnapshot;
-    constexpr std::size_t firstPlayerActionOffset=20+14+153+15*48+50;
+    constexpr std::size_t firstPlayerActionOffset=20+14+8+153+15*48+50;
     unknownAction[firstPlayerActionOffset]=0xff;
     WorldSnapshot unknownActionWorld;
     ok &= !decodeSnapshot(unknownAction.data(),unknownAction.size(),h,unknownActionWorld);

@@ -85,6 +85,12 @@ struct PlayerCommand {
     std::uint16_t buttons = 0;
 };
 
+struct SoulRecord {
+    std::uint64_t id = 0;
+    bool brute = false;
+    int originRoom = 0;
+};
+
 struct PlayerState {
     Vec3 pos {0.0f, 0.08f, 0.0f};
     Vec3 vel {0.0f, 0.0f, 0.0f};
@@ -95,6 +101,7 @@ struct PlayerState {
     float battery = 100.0f;
     int souls = 0;
     std::array<bool, PHONE_CAPACITY> storedSoulBrute{};
+    std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
     int airJumpsRemaining = 1;
     float coyoteTimer = 0.12f;
     float jumpBufferTimer = 0.0f;
@@ -259,6 +266,7 @@ struct TargetState {
     float tetherWidth = 0.0f;
     bool tetherVisible = false;
     int networkOwnerPlayerId = -1;
+    SoulRecord soul;
 };
 
 struct CapturePointState {
@@ -275,12 +283,16 @@ struct BulletState {
     float spin = 0.0f;
     bool brute = false;
     bool depositNearMissPlayed = false;
+    bool dropped = false;
+    float contactCooldown = 0.0f;
+    SoulRecord soul;
 };
 
 struct PendingShotState {
     bool active = false;
     bool brute = false;
     float age = 0.0f;
+    SoulRecord soul;
 };
 
 struct FlowerPowerupState {
@@ -617,6 +629,7 @@ struct GameState {
     std::array<FlowerPowerupState, FLOWER_POWERUP_COUNT> flowers;
     std::array<ParticleState, PARTICLE_COUNT> particles;
     int nextParticle = 0;
+    std::uint64_t nextSoulId = 1;
     AudioState audio;
     std::array<int, 5> captureSoundSlots{{0,1,2,3,4}};
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
@@ -662,6 +675,7 @@ struct GameState {
 };
 
 struct HostRemotePeerSimulationIsolationAccess;
+struct SoulProjectileLifecycleAccess;
 
 class Game {
 public:
@@ -714,6 +728,7 @@ public:
 
 private:
     friend struct HostRemotePeerSimulationIsolationAccess;
+    friend struct SoulProjectileLifecycleAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
     int simulationPlayerId_ = 0;
@@ -769,6 +784,9 @@ private:
     void spawnParticleBurst(const Vec3& position);
     void spawnFlameBurst(const Vec3& position, float strength);
     void spawnShellShatter(const TargetState& target);
+
+    SoulRecord makeSoulRecord(bool brute, int originRoom);
+    bool storeSoul(PlayerState& player, const SoulRecord& soul);
 
     float batteryDrainMultiplier() const;
     int upgradeLevel(UpgradeTrack track) const;
