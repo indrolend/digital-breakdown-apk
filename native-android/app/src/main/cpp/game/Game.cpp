@@ -470,7 +470,7 @@ void Game::debugToggleRoomInspectorEnemies(){
 void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     if(!state_.roomInspector)return;
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
-    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
+    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.playstyle=plan.playstyle;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
     report.requiredRouteValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
     report.traversalSurfaceCount=plan.traversal.surfaceCount;report.traversalEdgeCount=plan.traversal.edgeCount;
     bool uncalibrated=false;gameplay::TraversalDifficulty band=gameplay::TraversalDifficulty::Automatic;
@@ -491,7 +491,7 @@ std::string Game::debugRoomReviewLine(RoomReviewRating rating) const{
     const auto& r=state_.roomInspectorReport;std::ostringstream out;
     out<<"ROOM_REVIEW premise="<<early_browser_visuals::premiseName(r.premise)<<" seed="<<r.seed<<" room="<<r.roomIndex<<" rating="<<ratingName
        <<" setting="<<early_browser_visuals::settingName(r.setting)<<" form="<<early_browser_visuals::formName(r.form)<<" scale="<<early_browser_visuals::scaleName(r.scale)
-       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
+       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" playstyle="<<early_browser_visuals::playstyleName(r.playstyle)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
     return out.str();
 }
 

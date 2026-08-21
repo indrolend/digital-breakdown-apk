@@ -522,6 +522,7 @@ struct RoomInspectorReport {
     early_browser_visuals::RoomForm form=early_browser_visuals::RoomForm::Open;
     early_browser_visuals::RoomScale scale=early_browser_visuals::RoomScale::Standard;
     early_browser_visuals::RoomCondition condition=early_browser_visuals::RoomCondition::Normal;
+    early_browser_visuals::RoomPlaystyle playstyle=early_browser_visuals::RoomPlaystyle::Playground;
     gameplay::TraversalDifficulty requiredBand=gameplay::TraversalDifficulty::Unknown;
     int seed=0;
     int roomIndex=0;
