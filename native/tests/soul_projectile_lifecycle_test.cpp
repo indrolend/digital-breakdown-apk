@@ -25,6 +25,14 @@ void isolate(Game& game) {
     state.player.storedSoulBrute.fill(false);
     state.player.storedSouls.fill(SoulRecord{});
     state.vacuum=VacuumState{};
+    state.debug.colliderCount=0;
+    for(auto& collider:state.roomColliders)collider=RoomCollider{};
+}
+
+void box(Game& game,int index,Vec3 center,Vec3 size){
+    auto& state=game.networkMutableState();state.debug.colliderCount=std::max(state.debug.colliderCount,index+1);
+    auto& c=state.roomColliders[index];c.center=center;c.width=size.x;c.height=size.y;c.depth=size.z;
+    c.minX=center.x-size.x*0.5f;c.maxX=center.x+size.x*0.5f;c.bottomY=center.y-size.y*0.5f;c.topY=center.y+size.y*0.5f;c.minZ=center.z-size.z*0.5f;c.maxZ=center.z+size.z*0.5f;
 }
 
 BulletState& soul(Game& game,std::uint64_t id=77) {
@@ -73,7 +81,22 @@ int main(){
     for(int i=0;i<90;++i){SoulProjectileLifecycleAccess::bullets(replayA,kDt);SoulProjectileLifecycleAccess::bullets(replayB,kDt);}
     ok&=a.alive==b.alive&&a.dropped==b.dropped&&a.soul.id==b.soul.id&&near(a.pos.x,b.pos.x)&&near(a.pos.y,b.pos.y)&&near(a.pos.z,b.pos.z)&&near(a.vel.x,b.vel.x)&&near(a.vel.y,b.vel.y)&&near(a.vel.z,b.vel.z);
 
+    Game xFace;isolate(xFace);box(xFace,0,{0,1,0},{2,2,2});auto& xb=soul(xFace,481);xb.pos={-2,1,0};xb.vel={90,0,0};SoulProjectileLifecycleAccess::bullets(xFace,1.0f/30.0f);
+    ok&=xb.alive&&!xb.dropped&&xb.vel.x<0&&xb.soul.id==481;
+    const float xAfter=xb.pos.x;for(int i=0;i<4;++i)SoulProjectileLifecycleAccess::bullets(xFace,kDt);
+    ok&=xb.vel.x<0&&xb.pos.x<xAfter;
+
+    Game zFace;isolate(zFace);box(zFace,0,{0,1,0},{2,2,2});auto& zb=soul(zFace,482);zb.pos={0,1,-2};zb.vel={0,0,90};SoulProjectileLifecycleAccess::bullets(zFace,1.0f/30.0f);
+    ok&=zb.alive&&!zb.dropped&&zb.vel.z<0&&zb.soul.id==482;
+
+    Game top;isolate(top);box(top,0,{0,1,0},{2,2,2});auto& tb=soul(top,483);tb.pos={0,3,0};tb.vel={0,-90,0};SoulProjectileLifecycleAccess::bullets(top,1.0f/30.0f);
+    ok&=tb.alive&&tb.dropped&&tb.soul.id==483&&near(speed(tb.vel),0.0f);
+
+    Game playground;isolate(playground);box(playground,0,{2,1,0},{0.5f,2,4});auto& pb=soul(playground,484);pb.pos={0,1,0};pb.vel={90,0,0};SoulProjectileLifecycleAccess::bullets(playground,1.0f/30.0f);
+    ok&=pb.alive&&!pb.dropped&&pb.vel.x<0&&pb.soul.id==484;
+
     if(!ok){std::fprintf(stderr,"SOUL_PROJECTILE_LIFECYCLE_FAILED wall=%.2f ceiling=%.2f melee=%.2f lunge=%.2f recovered=%d replay=%llu/%llu\n",wb.vel.x,cb.vel.y,speed(mb.vel),speed(lb.vel),rs.player.souls,static_cast<unsigned long long>(a.soul.id),static_cast<unsigned long long>(b.soul.id));return 1;}
     std::printf("SOUL_PROJECTILE_LIFECYCLE_OK wall=REFLECT ceiling=REFLECT floor=DROP melee=%.2f lunge=%.2f recovery_id=%llu deterministic=MATCH\n",speed(mb.vel),speed(lb.vel),static_cast<unsigned long long>(rs.player.storedSouls[0].id));
+    std::printf("SOUL_ROOM_COLLISION_OK X_FACE Z_FACE TOP_DROP PLAYGROUND NO_TUNNEL NO_REHIT IDENTITY DETERMINISM\n");
     return 0;
 }

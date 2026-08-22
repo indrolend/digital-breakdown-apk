@@ -215,6 +215,9 @@ constexpr float BULLET_ENEMY_RETENTION = 0.72f;
 constexpr float BULLET_RADIUS = 0.22f;
 constexpr float BULLET_DROP_Y = GROUND_Y + BULLET_RADIUS;
 constexpr float BULLET_CONTACT_COOLDOWN = 0.12f;
+constexpr float BULLET_ROOM_CONTACT_COOLDOWN = 0.045f;
+constexpr float BULLET_CONTACT_EPSILON = 0.002f;
+constexpr int BULLET_MAX_CONTACTS_PER_STEP = 3;
 constexpr float BULLET_MELEE_SPEED = 16.0f;
 constexpr float BULLET_LUNGE_SPEED = 29.0f;
 constexpr float BULLET_VACUUM_RADIUS = 0.62f;
@@ -2288,6 +2291,31 @@ float Game::getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomColli
     return clampf(tMin, 0.0f, 1.0f);
 }
 
+SoulColliderHit Game::sweepSoulAgainstRoomColliders(const Vec3& start, const Vec3& end, float radius, int ignoredCollider) const {
+    SoulColliderHit best{};
+    const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(start.z));
+    const float origin[3]={start.x,start.y,start.z};
+    const float delta[3]={end.x-start.x,end.y-start.y,end.z-start.z};
+    for(int index=0;index<state_.debug.colliderCount;++index){
+        if(index==ignoredCollider)continue;
+        const RoomCollider& collider=state_.roomColliders[index];
+        const float mins[3]={collider.minX-radius,collider.bottomY-radius,tileOrigin+collider.minZ-radius};
+        const float maxs[3]={collider.maxX+radius,collider.topY+radius,tileOrigin+collider.maxZ+radius};
+        float entry=0.0f,exit=1.0f;int entryAxis=-1;float entrySign=0.0f;bool valid=true;
+        for(int axis=0;axis<3;++axis){
+            if(std::abs(delta[axis])<0.00001f){if(origin[axis]<mins[axis]||origin[axis]>maxs[axis]){valid=false;break;}continue;}
+            const float inv=1.0f/delta[axis];float nearT=(mins[axis]-origin[axis])*inv,farT=(maxs[axis]-origin[axis])*inv;
+            float normalSign=-1.0f;if(nearT>farT){std::swap(nearT,farT);normalSign=1.0f;}
+            if(nearT>entry){entry=nearT;entryAxis=axis;entrySign=normalSign;}
+            exit=std::min(exit,farT);if(entry>exit){valid=false;break;}
+        }
+        if(!valid||entryAxis<0||entry<0.0f||entry>1.0f||entry>=best.t)continue;
+        best.hit=true;best.colliderIndex=index;best.t=entry;best.position=start+(end-start)*entry;best.normal={};
+        if(entryAxis==0)best.normal.x=entrySign;else if(entryAxis==1)best.normal.y=entrySign;else best.normal.z=entrySign;
+    }
+    return best;
+}
+
 void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const {
     Vec3 start = lookBase;
     start.y += 0.58f;
@@ -3410,6 +3438,8 @@ void Game::updateBullets(float dt) {
     for (auto& b : state_.bullets) if (b.alive) {
         const Vec3 previous=b.pos;
         b.contactCooldown=std::max(0.0f,b.contactCooldown-dt);
+        b.roomColliderContactCooldown=std::max(0.0f,b.roomColliderContactCooldown-dt);
+        if(b.roomColliderContactCooldown<=0.0f)b.lastRoomColliderIndex=-1;
         if(state_.vacuum.active&&state_.player.souls<MAX_STORED_SOULS){
             const Vec3 pullPoint=state_.phoneTransform.vacuumPullPoint;
             const Vec3 toPhone=pullPoint-b.pos;
@@ -3432,8 +3462,36 @@ void Game::updateBullets(float dt) {
         b.vel.y-=BULLET_GRAVITY*dt;
         const float drag=std::pow(BULLET_AIR_DRAG_PER_SECOND,dt);
         b.vel*=drag;
-        b.pos+=b.vel*dt;
+        float remainingDt=dt;
+        for(int contact=0;contact<BULLET_MAX_CONTACTS_PER_STEP&&remainingDt>0.00001f&&!b.dropped;++contact){
+            const Vec3 start=b.pos,end=start+b.vel*remainingDt;
+            SoulColliderHit best=sweepSoulAgainstRoomColliders(start,end,BULLET_RADIUS,b.roomColliderContactCooldown>0.0f?b.lastRoomColliderIndex:-1);
+            const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(start.z));
+            const float minX=-ROOM_WIDTH*0.5f+BULLET_RADIUS,maxX=ROOM_WIDTH*0.5f-BULLET_RADIUS;
+            const float minZ=tileOrigin-ROOM_DEPTH*0.5f+BULLET_RADIUS,maxZ=tileOrigin+ROOM_DEPTH*0.5f-BULLET_RADIUS;
+            const float floorY=BULLET_DROP_Y,ceiling=ROOM_WALL_HEIGHT-BULLET_RADIUS;
+            const auto planeHit=[&](float startValue,float endValue,float plane,const Vec3& normal){
+                const bool startsOutside=(normal.x+normal.y+normal.z)>0.0f?startValue<plane:startValue>plane;
+                const float span=endValue-startValue;
+                const float t=startsOutside?0.0f:(std::abs(span)<0.00001f?-1.0f:(plane-startValue)/span);
+                if(t<0.0f||t>1.0f||t>=best.t)return;
+                best.hit=true;best.colliderIndex=-1;best.t=t;best.normal=normal;best.position=start+(end-start)*t;
+            };
+            if(end.x<minX)planeHit(start.x,end.x,minX,{1,0,0});else if(end.x>maxX)planeHit(start.x,end.x,maxX,{-1,0,0});
+            if(end.z<minZ)planeHit(start.z,end.z,minZ,{0,0,1});else if(end.z>maxZ)planeHit(start.z,end.z,maxZ,{0,0,-1});
+            if(end.y<floorY)planeHit(start.y,end.y,floorY,{0,1,0});else if(end.y>ceiling)planeHit(start.y,end.y,ceiling,{0,-1,0});
+            if(!best.hit){b.pos=end;break;}
+            b.pos=best.position;
+            if(best.normal.y>0.5f){b.pos.y=best.position.y;b.vel={};b.dropped=true;b.life=BULLET_LIFE;break;}
+            b.vel=(b.vel-best.normal*(2.0f*dot3(b.vel,best.normal)))*BULLET_WALL_RETENTION;
+            b.pos+=best.normal*BULLET_CONTACT_EPSILON;
+            b.contactCooldown=BULLET_CONTACT_COOLDOWN;
+            b.lastRoomColliderIndex=best.colliderIndex;
+            b.roomColliderContactCooldown=best.colliderIndex>=0?BULLET_ROOM_CONTACT_COOLDOWN:0.0f;
+            remainingDt*=1.0f-best.t;
+        }
         b.spin+=dt*10.0f;
+        if(b.dropped)continue;
 
         bool deposited=false;
         if(!state_.roomClear){
@@ -3510,16 +3568,7 @@ void Game::updateBullets(float dt) {
             break;
         }
         if(!b.alive)continue;
-        if(b.pos.y<=BULLET_DROP_Y){b.pos.y=BULLET_DROP_Y;b.vel={};b.dropped=true;b.life=BULLET_LIFE;continue;}
-        const float minX=-ROOM_WIDTH*0.5f+BULLET_RADIUS,maxX=ROOM_WIDTH*0.5f-BULLET_RADIUS;
-        if(b.pos.x<minX){b.pos.x=minX;b.vel.x=std::abs(b.vel.x)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
-        else if(b.pos.x>maxX){b.pos.x=maxX;b.vel.x=-std::abs(b.vel.x)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
-        const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(b.pos.z));
-        const float minZ=tileOrigin-ROOM_DEPTH*0.5f+BULLET_RADIUS,maxZ=tileOrigin+ROOM_DEPTH*0.5f-BULLET_RADIUS;
-        if(b.pos.z<minZ){b.pos.z=minZ;b.vel.z=std::abs(b.vel.z)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
-        else if(b.pos.z>maxZ){b.pos.z=maxZ;b.vel.z=-std::abs(b.vel.z)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
-        const float ceiling=ROOM_WALL_HEIGHT-BULLET_RADIUS;
-        if(b.pos.y>ceiling){b.pos.y=ceiling;b.vel.y=-std::abs(b.vel.y)*BULLET_WALL_RETENTION;b.contactCooldown=BULLET_CONTACT_COOLDOWN;}
+        if(b.dropped)continue;
         // Life is retained as a presentation timer, but a live resource is no
         // longer deleted by time or by leaving a loose legacy kill volume.
         if(b.life<=0.0f)b.life=BULLET_LIFE;

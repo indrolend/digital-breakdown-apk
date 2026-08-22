@@ -285,6 +285,8 @@ struct BulletState {
     bool depositNearMissPlayed = false;
     bool dropped = false;
     float contactCooldown = 0.0f;
+    int lastRoomColliderIndex = -1;
+    float roomColliderContactCooldown = 0.0f;
     SoulRecord soul;
 };
 
@@ -325,6 +327,14 @@ struct RoomCollider {
     float depth = 0.0f;
     float height = 0.0f;
     Vec3 center;
+};
+
+struct SoulColliderHit {
+    bool hit = false;
+    int colliderIndex = -1;
+    float t = 1.0f;
+    Vec3 normal;
+    Vec3 position;
 };
 
 struct RoomTopologyState {
@@ -841,6 +851,7 @@ private:
     void chargeClosedDoorLoop();
     void awardGoalToken(CapturePointState& capture);
     float getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const;
+    SoulColliderHit sweepSoulAgainstRoomColliders(const Vec3& start, const Vec3& end, float radius, int ignoredCollider) const;
     void constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const;
     bool isInsideDoorAperture(const Vec3& position, float pad = 0.0f) const;
     void clampRoom(Vec3& pos);
