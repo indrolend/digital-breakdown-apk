@@ -332,8 +332,10 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
 
 void Renderer::drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha){
     constexpr int segments=8;std::array<float,(segments+2)*3> vertices{};int out=0;
-    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
-    const float stretch=height*0.16f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);
+    const Vec3& sun=render_contract::AndroidSceneLighting.sun.direction;constexpr float projectionScale=0.5f;
+    const float sunXOverY=sun.x/sun.y,sunZOverY=sun.z/sun.y;
+    const Vec3 center{caster.x-height*projectionScale*sunXOverY,0.012f,caster.z-height*projectionScale*sunZOverY};
+    const float stretch=height*0.16f,angle=std::atan2(-sunXOverY,-sunZOverY),c=std::cos(angle),s=std::sin(angle);
     const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=center.y;vertices[out++]=z;};emit(center.x,center.z);
     for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*(halfWidth+stretch*0.35f),localZ=std::sin(a)*(halfDepth+stretch);emit(center.x+localX*c-localZ*s,center.z+localX*s+localZ*c);}
     float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
@@ -644,9 +646,10 @@ void Renderer::draw(const GameState& state) {
 
     // One bounded footprint per dynamic caster avoids projected mesh triangles
     // repeatedly darkening the same pixels on low-end tile GPUs.
-    if(state.localSettings.shadows){
+    const auto shadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,false);
+    if(shadowQuality==render_contract::ShadowQuality::Cheap){
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.phoneTransform.position,0.25f,0.18f,0.95f,0.20f);
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(viewProj,peer.player.pos,0.25f,0.18f,0.95f,0.20f);
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(viewProj,target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(viewProj,target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}

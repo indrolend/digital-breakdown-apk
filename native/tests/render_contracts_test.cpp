@@ -16,6 +16,10 @@ int main(){
     static_assert(glass.opacity==0.25f&&glass.fog&&glass.shading==ShadingModel::ColorGraded);
     constexpr auto fx=unlit(Pass7Visual::ElectricCyan,0.5f);
     static_assert(!fx.fog&&fx.shading==ShadingModel::Unlit);
-    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3");
+    static_assert(shadowQualityFor(0,false,true)==ShadowQuality::Off);
+    static_assert(shadowQualityFor(1,true,true)==ShadowQuality::Cheap);
+    static_assert(shadowQualityFor(2,true,true)==ShadowQuality::Directional);
+    static_assert(shadowQualityFor(2,true,false)==ShadowQuality::Cheap);
+    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3 shadow_qualities=3");
     return 0;
 }

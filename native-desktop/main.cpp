@@ -385,7 +385,12 @@ struct TargetPresentationSample {
 
 struct FramePresentationSample {
     float time=0.0f;
+    Vec3 playerPos;
     std::array<TargetPresentationSample,TARGET_COUNT> targets{};
+    std::array<Vec3,BULLET_COUNT> bulletPositions{};
+    std::array<bool,BULLET_COUNT> bulletActive{};
+    std::array<Vec3,FLOWER_POWERUP_COUNT> flowerPositions{};
+    std::array<bool,FLOWER_POWERUP_COUNT> flowerActive{};
     float crosshairRotationDegrees=0.0f;
     float crosshairSpreadPixels=8.0f;
     float crosshairOpacity=0.0f;
@@ -395,12 +400,15 @@ struct FramePresentationSample {
 FramePresentationSample capturePresentation(const GameState& state){
     FramePresentationSample sample;
     sample.time=state.time;
+    sample.playerPos=state.player.pos;
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetState& target=state.targets[i];
         sample.targets[i]={target.alive,target.slurpable,target.pos,target.visualYaw,
             target.visualWalkPhase,target.humanAnimationTime,target.attackTimer,
             target.locomotionAmount,target.visualReaction,target.hitFlash};
     }
+    for(int i=0;i<BULLET_COUNT;++i){sample.bulletPositions[i]=state.bullets[i].pos;sample.bulletActive[i]=state.bullets[i].alive;}
+    for(int i=0;i<FLOWER_POWERUP_COUNT;++i){sample.flowerPositions[i]=state.flowers[i].pos;sample.flowerActive[i]=state.flowers[i].active;}
     sample.crosshairRotationDegrees=state.hud.crosshairRotationDegrees;
     sample.crosshairSpreadPixels=state.hud.crosshairSpreadPixels;
     sample.crosshairOpacity=state.hud.crosshairOpacity;
@@ -415,6 +423,7 @@ float interpolateWrappedAngle(float previous,float current,float alpha){
 
 void interpolatePresentation(GameState& renderState,const FramePresentationSample& previous,const GameState& current,float alpha){
     renderState.time=previous.time+(current.time-previous.time)*alpha;
+    if(lengthSq(previous.playerPos-current.player.pos)<16.0f)renderState.player.pos=previous.playerPos+(current.player.pos-previous.playerPos)*alpha;
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetPresentationSample& before=previous.targets[i];
         const TargetState& now=current.targets[i];
@@ -448,6 +457,8 @@ void interpolatePresentation(GameState& renderState,const FramePresentationSampl
             (now.visualReaction.attackTimer-before.visualReaction.attackTimer)*alpha;
         target.hitFlash=before.hitFlash+(now.hitFlash-before.hitFlash)*alpha;
     }
+    for(int i=0;i<BULLET_COUNT;++i)if(previous.bulletActive[i]&&current.bullets[i].alive&&lengthSq(previous.bulletPositions[i]-current.bullets[i].pos)<64.0f)renderState.bullets[i].pos=previous.bulletPositions[i]+(current.bullets[i].pos-previous.bulletPositions[i])*alpha;
+    for(int i=0;i<FLOWER_POWERUP_COUNT;++i)if(previous.flowerActive[i]&&current.flowers[i].active&&lengthSq(previous.flowerPositions[i]-current.flowers[i].pos)<16.0f)renderState.flowers[i].pos=previous.flowerPositions[i]+(current.flowers[i].pos-previous.flowerPositions[i])*alpha;
     renderState.hud.crosshairRotationDegrees=interpolateWrappedAngle(
         previous.crosshairRotationDegrees*DB_PI/180.0f,
         current.hud.crosshairRotationDegrees*DB_PI/180.0f,alpha)*180.0f/DB_PI;
@@ -1578,6 +1589,7 @@ int main(int argc, char** argv) {
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_STENCIL_BITS, 8);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.

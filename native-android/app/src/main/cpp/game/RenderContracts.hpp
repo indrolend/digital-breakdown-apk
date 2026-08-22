@@ -6,6 +6,12 @@
 namespace render_contract {
 
 enum class ShadingModel : unsigned char { Unlit, ColorGraded, NormalLit };
+enum class ShadowQuality : unsigned char { Off, Cheap, Directional };
+
+constexpr ShadowQuality shadowQualityFor(int graphicsPreset,bool shadowsEnabled,bool directionalSupported){
+    if(!shadowsEnabled)return ShadowQuality::Off;
+    return graphicsPreset>=2&&directionalSupported?ShadowQuality::Directional:ShadowQuality::Cheap;
+}
 
 struct MaterialDefinition {
     VisualColor baseColor{1.0f,1.0f,1.0f};
