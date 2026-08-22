@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 8;
-constexpr std::uint16_t GAMEPLAY_VERSION = 6;
+constexpr std::uint16_t PROTOCOL_VERSION = 9;
+constexpr std::uint16_t GAMEPLAY_VERSION = 7;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr std::size_t MAX_SNAPSHOT_BYTES = 12u * 1024u;
@@ -174,6 +174,8 @@ struct BulletSnapshot {
     float spin = 0.0f;
     bool dropped = false;
     float contactCooldown = 0.0f;
+    std::int8_t lastRoomColliderIndex = -1;
+    float roomColliderContactCooldown = 0.0f;
     SoulRecord soul;
 };
 

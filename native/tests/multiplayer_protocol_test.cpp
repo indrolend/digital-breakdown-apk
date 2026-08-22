@@ -158,6 +158,8 @@ int main() {
   worldState.bullets[0].vel = {0,0,-9};
   worldState.bullets[0].life = 1.2f;
   worldState.bullets[0].dropped=true;
+  worldState.bullets[0].lastRoomColliderIndex=4;
+  worldState.bullets[0].roomColliderContactCooldown=0.031f;
   worldState.bullets[0].soul={7001,true,3};
   world = captureWorld(game.state(), players, 123);
   world.world=inputWorld;
@@ -210,7 +212,8 @@ int main() {
         std::abs(roundtrip.roomColliders[0].center.x - 2.0f) < 0.0001f &&
         std::abs(roundtrip.capturePositions[0].x + 1.25f) < 0.0001f &&
         roundtrip.bullets[0].active && roundtrip.bullets[0].brute &&
-        roundtrip.bullets[0].dropped && roundtrip.bullets[0].soul.id == 7001 &&
+        roundtrip.bullets[0].dropped && roundtrip.bullets[0].lastRoomColliderIndex==4 &&
+        std::abs(roundtrip.bullets[0].roomColliderContactCooldown-0.031f)<0.0001f && roundtrip.bullets[0].soul.id == 7001 &&
         std::abs(roundtrip.bullets[0].pos.z + 4.0f) < 0.0001f &&
         roundtrip.tvAvailable &&
         snapshotBytes.size() <= MAX_SNAPSHOT_BYTES;
