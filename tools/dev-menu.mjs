@@ -8,9 +8,7 @@ const ROOT = resolve(import.meta.dirname, '..');
 const WINDOWS = platform() === 'win32';
 const POWERSHELL = WINDOWS ? 'powershell.exe' : 'pwsh';
 const DBDEV = join(ROOT, 'tools', 'dbdev.ps1');
-const DESKTOP = join(ROOT, 'tools', 'desktop', 'run-desktop.ps1');
 const ADB_DOCTOR = join(ROOT, 'scripts', 'adb-doctor.ps1');
-const VERIFY_GAMEPLAY = join(ROOT, 'scripts', 'verify-gameplay.ps1');
 const rl = readline.createInterface({ input, output });
 
 function run(command, args = []) {
@@ -29,11 +27,14 @@ const sections = [
     ['Repair development environment', () => ps(DBDEV, ['repair'])],
   ]],
   ['Desktop', [
-    ['Build Release', () => ps(DESKTOP, ['-Configuration', 'Release', '-BuildOnly'])],
-    ['Build and launch Release', () => ps(DESKTOP, ['-Configuration', 'Release'])],
-    ['Clean configure, build, and launch Release', () => ps(DESKTOP, ['-Configuration', 'Release', '-Reconfigure'])],
-    ['Run desktop tests', () => ps(VERIFY_GAMEPLAY)],
-    ['Smoke test Release', () => ps(DESKTOP, ['-Configuration', 'Release', '-SmokeTest'])],
+    ['Build Release', () => ps(DBDEV, ['desktop-build'])],
+    ['Build and launch Release', () => ps(DBDEV, ['desktop-run'])],
+    ['Clean configure, build, and launch Release', () => ps(DBDEV, ['desktop-run', '-Reconfigure'])],
+    ['Run desktop tests', () => ps(DBDEV, ['desktop-test'])],
+    ['Smoke test Release', () => ps(DBDEV, ['desktop-smoke'])],
+    ['Rally playtest', () => ps(DBDEV, ['playtest', '-Mode', 'rally'])],
+    ['Traversal playtest', () => ps(DBDEV, ['playtest', '-Mode', 'traversal'])],
+    ['Room inspector', () => ps(DBDEV, ['playtest', '-Mode', 'rooms'])],
   ]],
   ['Android', [
     ['Build native APK', () => ps(DBDEV, ['android-build'])],

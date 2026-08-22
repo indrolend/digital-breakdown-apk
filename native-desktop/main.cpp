@@ -106,6 +106,7 @@ struct HostState {
     // Explicit local-only dev policy. This never opens an input endpoint; it
     // only prevents automation/screenshot focus changes from pausing play.
     DesktopPlaytestPolicy playtestPolicy{};
+    int automationCaptureDelayFrames = 0;
     std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> previousGamepadButtons{};
     bool previousGamepadLeftTrigger = false;
     bool previousGamepadRightTrigger = false;
@@ -196,6 +197,16 @@ std::filesystem::path progressionSavePath(){
     const char* home=std::getenv("HOME");
     const std::filesystem::path root=home&&*home?std::filesystem::path(home)/".local"/"share":std::filesystem::temp_directory_path();
     return root/"DigitalBreakdown"/"progression.v1";
+#endif
+}
+
+std::filesystem::path automationPlaytestCapturePath(){
+#ifdef _WIN32
+    const char* local=std::getenv("LOCALAPPDATA");
+    const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();
+    return root/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
+#else
+    return std::filesystem::temp_directory_path()/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
 #endif
 }
 std::filesystem::path legacyTemporaryProgressionSavePath(){return std::filesystem::temp_directory_path()/"DigitalBreakdown"/"progression.v1";}
@@ -866,6 +877,7 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
 void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
+    if(action==GLFW_PRESS&&host->playtestPolicy.automation)host->automationCaptureDelayFrames=8;
     if(action==GLFW_PRESS&&host->game.state().attractMode){host->game.dismissAttractMode();setMouseCaptured(window,*host,false);return;}
 
     if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<9;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=-1;host->audio.playMenuCue(true);return;}
@@ -1017,6 +1029,7 @@ void windowFocusCallback(GLFWwindow* window, int focused) {
     if (!host->focused) {
         if(!host->playtestPolicy.releaseCaptureOnFocusLoss()){
             host->restoreCaptureOnFocus=false;
+            host->automationCaptureDelayFrames=std::max(host->automationCaptureDelayFrames,2);
             return;
         }
         const GameState& state = host->game.state();
@@ -1626,6 +1639,7 @@ int main(int argc, char** argv) {
 
     HostState host;
     host.playtestPolicy=playtestPolicy;
+    if(automationPlaytest)host.automationCaptureDelayFrames=1;
     host.progressionPath=progressionSavePath();
     bool recoveredPersistentSave=false;
     bool loadedPersistentSave=loadProgressionWithBackup(host.game,host.progressionPath,&recoveredPersistentSave);
@@ -2148,6 +2162,13 @@ int main(int argc, char** argv) {
         }
         const auto renderBegin=std::chrono::steady_clock::now();
         host.renderer.draw(renderState);
+        if(host.automationCaptureDelayFrames>0&&--host.automationCaptureDelayFrames==0){
+            glFinish();
+            const auto path=automationPlaytestCapturePath();
+            const bool captured=captureFramebuffer(path,framebufferWidth,framebufferHeight);
+            std::printf("AUTOMATION_PLAYTEST_FRAME_%s path=%s frame=%d\n",captured?"OK":"FAILED",path.string().c_str(),host.game.state().frame);
+            std::fflush(stdout);
+        }
         const auto renderEnd=std::chrono::steady_clock::now();
         if(captureDemo){
             const auto swapBegin=std::chrono::steady_clock::now();
