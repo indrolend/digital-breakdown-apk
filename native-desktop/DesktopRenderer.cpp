@@ -1123,7 +1123,9 @@ void DesktopRenderer::draw(const GameState& state) const {
         drawBox({41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},0,-0.22f,0,Pass7Visual::SecretCable.r,Pass7Visual::SecretCable.g,Pass7Visual::SecretCable.b);
     }
 
-    const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
+    // A pause menu overlays the live world, so its frozen actors still own their
+    // shadows. Only presentations that replace gameplay suppress world shadows.
+    const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
     const auto shadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,true);
     if(shadowQuality==render_contract::ShadowQuality::Cheap){
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
