@@ -60,16 +60,27 @@ int main(){
 
     Game melee;isolate(melee);auto& mb=soul(melee);mb.pos={0,0.45f,-1.0f};mb.vel={0,0,1};
     auto& ms=melee.networkMutableState();ms.player.pos={0,0.08f,0};ms.phoneTransform.position={0,0.45f,0};
+    ms.camera.forward=normalized(Vec3{0,0.25f,-1});
     ms.meleeVisual=MeleeVisualState{};ms.meleeVisual.direction={0,0,-1};ms.meleeVisual.range=2.0f;ms.meleeVisual.hitRadius=0.6f;
     const int meleeHits=SoulProjectileLifecycleAccess::melee(melee);
-    ok&=meleeHits==1&&mb.vel.z<0&&speed(mb.vel)>14.0f&&speed(mb.vel)<20.0f&&mb.contactCooldown>0;
+    ok&=meleeHits==1&&mb.vel.z<0&&mb.vel.y>0&&speed(mb.vel)>22.0f&&speed(mb.vel)<26.0f&&mb.contactCooldown>0;
 
     Game lunge;isolate(lunge);auto& lb=soul(lunge);lb.pos={0,0.45f,-0.2f};lb.vel={0,0,1};
     auto& ls=lunge.networkMutableState();ls.player.pos={0,0.08f,0};ls.phoneTransform.position={0,0.45f,-0.4f};
+    ls.camera.forward=normalized(Vec3{0,0.35f,-1});
     ls.meleeVisual=MeleeVisualState{};ls.meleeVisual.direction={0,0,-1};ls.meleeVisual.locomotionLunge=true;
     ls.meleeVisual.contactPositionValid=true;ls.meleeVisual.previousContactPosition={0,0.45f,0.2f};
     const int lungeHits=SoulProjectileLifecycleAccess::melee(lunge);
-    ok&=lungeHits==1&&lb.vel.z<0&&speed(lb.vel)>25.0f&&ls.hud.criticalHitPulse>0.9f;
+    ok&=lungeHits==1&&lb.vel.z<0&&lb.vel.y>0&&speed(lb.vel)>33.0f&&ls.hud.criticalHitPulse>0.9f;
+
+    Game forgiving;isolate(forgiving);auto& forgivingBullet=soul(forgiving,992);forgivingBullet.pos={0.88f,0.45f,-1.0f};forgivingBullet.vel={0,0,1};
+    auto& forgivingState=forgiving.networkMutableState();forgivingState.player.pos={0,0.08f,0};forgivingState.phoneTransform.position={0,0.45f,0};forgivingState.camera.forward={0,0,-1};
+    forgivingState.meleeVisual=MeleeVisualState{};forgivingState.meleeVisual.direction={0,0,-1};forgivingState.meleeVisual.range=2.0f;forgivingState.meleeVisual.hitRadius=0.6f;
+    ok&=SoulProjectileLifecycleAccess::melee(forgiving)==1&&forgivingBullet.vel.z<0;
+
+    Game flight;isolate(flight);auto& flightBullet=soul(flight,993);flightBullet.pos={0,0.95f,0};flightBullet.vel={0,2.0f,-25.0f};
+    int airborneFrames=0;while(airborneFrames<180&&flightBullet.alive&&!flightBullet.dropped){SoulProjectileLifecycleAccess::bullets(flight,kDt);++airborneFrames;}
+    ok&=flightBullet.dropped&&airborneFrames>=45;
 
     Game recovery;isolate(recovery);auto& rb=soul(recovery,991);rb.pos={0,1.0f,0.35f};rb.dropped=true;
     auto& rs=recovery.networkMutableState();rs.vacuum.active=true;rs.phoneTransform.vacuumPullPoint={0,1.0f,0};rs.phoneTransform.screenNormal={0,0,1};

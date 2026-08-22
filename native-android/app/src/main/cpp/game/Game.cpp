@@ -206,9 +206,9 @@ constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
 constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
 constexpr float BULLET_BRUTE_SPEED = 20.0f;
-constexpr float BULLET_GRAVITY = 11.5f;
+constexpr float BULLET_GRAVITY = 6.5f;
 constexpr float BULLET_LIFE = 3.25f;
-constexpr float BULLET_VERTICAL_LIFT = 1.15f;
+constexpr float BULLET_VERTICAL_LIFT = 2.0f;
 constexpr float BULLET_AIR_DRAG_PER_SECOND = 0.72f;
 constexpr float BULLET_WALL_RETENTION = 0.84f;
 constexpr float BULLET_ENEMY_RETENTION = 0.72f;
@@ -218,8 +218,11 @@ constexpr float BULLET_CONTACT_COOLDOWN = 0.12f;
 constexpr float BULLET_ROOM_CONTACT_COOLDOWN = 0.045f;
 constexpr float BULLET_CONTACT_EPSILON = 0.002f;
 constexpr int BULLET_MAX_CONTACTS_PER_STEP = 3;
-constexpr float BULLET_MELEE_SPEED = 16.0f;
-constexpr float BULLET_LUNGE_SPEED = 29.0f;
+constexpr float BULLET_MELEE_SPEED = 23.0f;
+constexpr float BULLET_LUNGE_SPEED = 34.0f;
+constexpr float BULLET_MELEE_CONTACT_FORGIVENESS = 0.30f;
+constexpr float BULLET_LUNGE_CONTACT_RADIUS = 0.82f;
+constexpr float BULLET_REDIRECT_MAX_SPEED = 42.0f;
 constexpr float BULLET_VACUUM_RADIUS = 0.62f;
 constexpr float BULLET_VACUUM_RANGE = 8.5f;
 constexpr float BULLET_VACUUM_ACCELERATION = 34.0f;
@@ -2701,16 +2704,23 @@ int Game::applyMeleeHits() {
         if(!bullet.alive||bullet.dropped||bullet.contactCooldown>0.0f)continue;
         bool contact=false;
         if(visual.locomotionLunge){
-            contact=pointSegmentDistanceSq(bullet.pos,phonePrevious,phoneCurrent)<=0.58f*0.58f;
+            contact=pointSegmentDistanceSq(bullet.pos,phonePrevious,phoneCurrent)<=BULLET_LUNGE_CONTACT_RADIUS*BULLET_LUNGE_CONTACT_RADIUS;
         }else{
             const Vec3 start=state_.player.pos+Vec3{0,0.45f,0};
             const Vec3 end=start+visual.direction*visual.range;
-            contact=pointSegmentDistanceSq(bullet.pos,start,end)<=visual.hitRadius*visual.hitRadius;
+            const float soulHitRadius=visual.hitRadius+BULLET_MELEE_CONTACT_FORGIVENESS;
+            contact=pointSegmentDistanceSq(bullet.pos,start,end)<=soulHitRadius*soulHitRadius;
         }
         if(!contact)continue;
-        Vec3 direction=visual.direction+Vec3{0,visual.locomotionLunge?0.24f:0.12f,0};
+        Vec3 direction=state_.camera.forward;
+        direction.y=clampf(direction.y,-0.10f,0.42f);
+        if(lengthSq(direction)<0.0001f)direction=visual.direction;
         direction=normalized(direction);
-        bullet.vel=direction*(visual.locomotionLunge?BULLET_LUNGE_SPEED:BULLET_MELEE_SPEED);
+        const float incomingSpeed=length(bullet.vel);
+        const float redirectSpeed=visual.locomotionLunge
+            ? std::max(BULLET_LUNGE_SPEED,incomingSpeed*1.08f)
+            : std::max(BULLET_MELEE_SPEED,incomingSpeed*0.96f);
+        bullet.vel=direction*std::min(BULLET_REDIRECT_MAX_SPEED,redirectSpeed);
         bullet.contactCooldown=BULLET_CONTACT_COOLDOWN;
         bullet.life=BULLET_LIFE;
         visual.visualHit=true;visual.impact=bullet.pos;redirectedSoul=true;
