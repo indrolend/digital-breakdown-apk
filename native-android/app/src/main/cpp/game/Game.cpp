@@ -487,7 +487,9 @@ void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
     report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
     report.colliderCount=state_.debug.colliderCount;
-    report.presentationPropCount=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
+    const bool propsValid=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
+    report.presentationPropCount=propsValid?early_browser_visuals::environmentPropCount(plan):0;
+    for(int role=0;role<static_cast<int>(early_browser_visuals::EnvironmentRole::Count);++role)report.environmentRoleCounts[role]=early_browser_visuals::environmentRoleCount(plan,state_.roomSeed,state_.roomIndex,static_cast<early_browser_visuals::EnvironmentRole>(role),propsValid);
     report.enemyBudget=activeHumanTarget();
     for(const auto& target:state_.targets){if(gameplay::isActiveHuman(target))++report.enemyCount;if(target.alive&&target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f)++report.transparentPrimitiveCount;}
     report.visiblePrimitiveEstimate=report.colliderCount+report.presentationPropCount+report.enemyCount+report.transparentPrimitiveCount+(plan.grass?1:0)+2;

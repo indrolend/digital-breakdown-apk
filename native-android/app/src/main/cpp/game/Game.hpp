@@ -19,7 +19,7 @@ constexpr int AUDIO_EVENT_COUNT = 64;
 constexpr int ROOM_COLLIDER_COUNT = 15;
 constexpr int PHONE_CAPACITY = 30;
 constexpr int SOUL_LATTICE_NODE_COUNT = 27;
-constexpr float PHONE_MODEL_HEIGHT = 0.16f;
+constexpr float PHONE_MODEL_HEIGHT = gameplay::WORLD_SCALE.phoneHeight;
 constexpr float PHONE_BODY_WIDTH = 0.08f;
 constexpr float PHONE_BODY_HEIGHT = PHONE_MODEL_HEIGHT;
 constexpr float PHONE_BODY_DEPTH = 0.012f;
@@ -543,6 +543,7 @@ struct RoomInspectorReport {
     int requiredEdgeCount=0;
     int colliderCount=0;
     int presentationPropCount=0;
+    std::array<int,static_cast<int>(early_browser_visuals::EnvironmentRole::Count)> environmentRoleCounts{};
     int enemyBudget=0;
     int enemyCount=0;
     int transparentPrimitiveCount=0;
