@@ -1,6 +1,7 @@
 #include "EarlyBrowserVisuals.hpp"
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 
 int main(){
     using namespace early_browser_visuals;
@@ -73,6 +74,11 @@ int main(){
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
+    const auto cityTraversal=traversalPresentationFor(RoomSetting::City,false);
+    const auto sterileTraversal=traversalPresentationFor(RoomSetting::Sterile,false);
+    const auto debugTraversal=traversalPresentationFor(RoomSetting::City,true);
+    assert(!cityTraversal.debug&&!sterileTraversal.debug&&debugTraversal.debug);
+    assert(cityTraversal.color.x!=debugTraversal.color.x&&sterileTraversal.color.x!=cityTraversal.color.x);
 
     RoomEnvironmentPlan full;
     full.playstyle=RoomPlaystyle::Orbit;
@@ -103,4 +109,5 @@ int main(){
     GrassReactionInputs translatedInput=vacuumInput;translatedInput.player.z+=36.0f;translatedInput.vacuumOrigin.z+=36.0f;translatedInput.shotOrigin.z+=36.0f;
     const Vec3 translated=grassTip(translatedBlade,0.5f,translatedInput);
     assert(std::abs((translated.x-translatedBlade.root.x)-(vacuum.x-blade.root.x))<0.0001f);
+    std::printf("ROOM_GRAMMAR_SCALE_ROLES_OK seeds=4096 city_corridor=SIDE_BANDS story_bands=2-5 landmark=1 props=0 traversal_presentation=SETTING_DEBUG_CYAN\n");
 }

@@ -818,9 +818,14 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) {
     for (int i=0;i<authoredObstacleCount;++i) {
         const RoomCollider& c=state.roomColliders[i];
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
+        if(plan.setting==early_browser_visuals::RoomSetting::City&&plan.form==early_browser_visuals::RoomForm::Corridor&&early_browser_visuals::obstacleRole(plan,state.roomSeed,state.roomIndex,i)==early_browser_visuals::EnvironmentRole::Landmark){
+            const float tierH=gameplay::WORLD_SCALE.storyHeight*0.34f;
+            drawBox({c.center.x,c.topY+tierH*0.5f,z0+c.center.z},{c.width*0.58f,tierH,c.depth*0.62f},0,0,0,0.34f,0.40f,0.44f);
+        }
     }
+    const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
     for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;
-        drawBox(surface.center+Vec3{0,0,z0},surface.halfSize*2.0f,0,0,0,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b);
+        drawBox(surface.center+Vec3{0,0,z0},surface.halfSize*2.0f,0,0,0,traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z);
     }
     if(plan.sidewalks){
         const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;

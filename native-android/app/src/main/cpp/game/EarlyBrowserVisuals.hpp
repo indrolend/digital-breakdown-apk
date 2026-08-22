@@ -49,6 +49,17 @@ enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, Mar
 enum class EnvironmentRole : unsigned char { Boundary, Mass, Landmark, Traversal, Detail, Count };
 inline const char* environmentRoleName(EnvironmentRole role){switch(role){case EnvironmentRole::Boundary:return "BOUNDARY";case EnvironmentRole::Mass:return "MASS";case EnvironmentRole::Landmark:return "LANDMARK";case EnvironmentRole::Traversal:return "TRAVERSAL";case EnvironmentRole::Detail:return "DETAIL";case EnvironmentRole::Count:break;}return "UNKNOWN";}
 struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;EnvironmentRole role=EnvironmentRole::Detail;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
+struct TraversalPresentation { Vec3 color; bool debug = false; };
+inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting setting,bool inspectorDebug){
+    if(inspectorDebug)return {{0x78/255.0f,0xd5/255.0f,0xe1/255.0f},true};
+    switch(setting){
+        case RoomSetting::City:return {{0.49f,0.54f,0.57f},false};
+        case RoomSetting::Sterile:return {{0.67f,0.70f,0.72f},false};
+        case RoomSetting::Field:return {{0.39f,0.42f,0.36f},false};
+        case RoomSetting::Coastal:return {{0.43f,0.41f,0.35f},false};
+    }
+    return {{0.49f,0.54f,0.57f},false};
+}
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
 struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
 
