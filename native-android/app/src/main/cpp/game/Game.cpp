@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "SoulEconomy.hpp"
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
@@ -115,7 +116,6 @@ constexpr float BATTERY_JUMP_COST = 3.0f;
 constexpr float BATTERY_DOUBLE_JUMP_COST = 6.0f;
 constexpr float BATTERY_SHOOT_COST = 7.0f;
 constexpr float BATTERY_CAPTURE_GAIN = 10.0f;
-constexpr float BATTERY_SOUL_EFFICIENCY = 0.16f;
 constexpr float BATTERY_MELEE_HIT_GAIN = 2.0f;
 constexpr float BATTERY_COMBO_GROWTH = 1.22f;
 constexpr float BATTERY_COMBO_TIMEOUT = 1.8f;
@@ -206,10 +206,26 @@ constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
 constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
 constexpr float BULLET_BRUTE_SPEED = 20.0f;
-constexpr float BULLET_GRAVITY = 11.5f;
+constexpr float BULLET_GRAVITY = 6.5f;
 constexpr float BULLET_LIFE = 3.25f;
-constexpr float BULLET_VERTICAL_LIFT = 1.15f;
+constexpr float BULLET_VERTICAL_LIFT = 2.0f;
 constexpr float BULLET_AIR_DRAG_PER_SECOND = 0.72f;
+constexpr float BULLET_WALL_RETENTION = 0.84f;
+constexpr float BULLET_ENEMY_RETENTION = 0.72f;
+constexpr float BULLET_RADIUS = 0.22f;
+constexpr float BULLET_DROP_Y = GROUND_Y + BULLET_RADIUS;
+constexpr float BULLET_CONTACT_COOLDOWN = 0.12f;
+constexpr float BULLET_ROOM_CONTACT_COOLDOWN = 0.045f;
+constexpr float BULLET_CONTACT_EPSILON = 0.002f;
+constexpr int BULLET_MAX_CONTACTS_PER_STEP = 3;
+constexpr float BULLET_MELEE_SPEED = 23.0f;
+constexpr float BULLET_LUNGE_SPEED = 34.0f;
+constexpr float BULLET_MELEE_CONTACT_FORGIVENESS = 0.30f;
+constexpr float BULLET_LUNGE_CONTACT_RADIUS = 0.82f;
+constexpr float BULLET_REDIRECT_MAX_SPEED = 42.0f;
+constexpr float BULLET_VACUUM_RADIUS = 0.62f;
+constexpr float BULLET_VACUUM_RANGE = 8.5f;
+constexpr float BULLET_VACUUM_ACCELERATION = 34.0f;
 constexpr float BULLET_MAX_UP_AIM = 0.30f;
 constexpr float BULLET_MAX_DOWN_AIM = -0.10f;
 constexpr float ROOM_DEPOSIT_HIT_RADIUS = 1.65f;
@@ -470,14 +486,16 @@ void Game::debugToggleRoomInspectorEnemies(){
 void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     if(!state_.roomInspector)return;
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
-    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
+    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.playstyle=plan.playstyle;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
     report.requiredRouteValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
     report.traversalSurfaceCount=plan.traversal.surfaceCount;report.traversalEdgeCount=plan.traversal.edgeCount;
     bool uncalibrated=false;gameplay::TraversalDifficulty band=gameplay::TraversalDifficulty::Automatic;
     for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
     report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
     report.colliderCount=state_.debug.colliderCount;
-    report.presentationPropCount=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
+    const bool propsValid=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
+    report.presentationPropCount=propsValid?early_browser_visuals::environmentPropCount(plan):0;
+    for(int role=0;role<static_cast<int>(early_browser_visuals::EnvironmentRole::Count);++role)report.environmentRoleCounts[role]=early_browser_visuals::environmentRoleCount(plan,state_.roomSeed,state_.roomIndex,static_cast<early_browser_visuals::EnvironmentRole>(role),propsValid);
     report.enemyBudget=activeHumanTarget();
     for(const auto& target:state_.targets){if(gameplay::isActiveHuman(target))++report.enemyCount;if(target.alive&&target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f)++report.transparentPrimitiveCount;}
     report.visiblePrimitiveEstimate=report.colliderCount+report.presentationPropCount+report.enemyCount+report.transparentPrimitiveCount+(plan.grass?1:0)+2;
@@ -491,7 +509,7 @@ std::string Game::debugRoomReviewLine(RoomReviewRating rating) const{
     const auto& r=state_.roomInspectorReport;std::ostringstream out;
     out<<"ROOM_REVIEW premise="<<early_browser_visuals::premiseName(r.premise)<<" seed="<<r.seed<<" room="<<r.roomIndex<<" rating="<<ratingName
        <<" setting="<<early_browser_visuals::settingName(r.setting)<<" form="<<early_browser_visuals::formName(r.form)<<" scale="<<early_browser_visuals::scaleName(r.scale)
-       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
+       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" playstyle="<<early_browser_visuals::playstyleName(r.playstyle)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
     return out.str();
 }
 
@@ -583,7 +601,25 @@ bool Game::purchasePermanentUpgrade(int track){
 }
 
 float Game::batteryDrainMultiplier() const {
-    return 1.0f / (1.0f + static_cast<float>(state_.player.souls) * BATTERY_SOUL_EFFICIENCY);
+    return 1.0f;
+}
+
+SoulRecord Game::makeSoulRecord(bool brute, int originRoom) {
+    SoulRecord soul;
+    soul.id = state_.nextSoulId++;
+    soul.brute = brute;
+    soul.originRoom = originRoom;
+    return soul;
+}
+
+bool Game::storeSoul(PlayerState& player, const SoulRecord& source) {
+    if (player.souls >= MAX_STORED_SOULS) return false;
+    SoulRecord soul = source;
+    if (soul.id == 0) soul = makeSoulRecord(source.brute, source.originRoom > 0 ? source.originRoom : state_.roomIndex);
+    player.storedSouls[player.souls] = soul;
+    player.storedSoulBrute[player.souls] = soul.brute;
+    ++player.souls;
+    return true;
 }
 
 int Game::upgradeLevel(UpgradeTrack track) const {
@@ -817,7 +853,7 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
     if (player.battery <= 0.0f) {
         player.battery = 0.0f;
         if(reason==BatteryReason::Hit&&state_.multiplayer.enabled){player.downed=true;player.bleedoutTimer=15.0f;player.reviveCharge=0.0f;player.vel={};player.jumpVel=0.0f;clearPlayerLifecycleActions();setEnergyTicker("SIGNAL DOWN",1);return false;}
-        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
+        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.storedSoulBrute[player.souls]=false;player.storedSouls[player.souls]=SoulRecord{};player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
         triggerRunDeath();
         return false;
     }
@@ -915,7 +951,7 @@ void Game::updateBattery(float dt) {
         const float survivalRegen=(survivalSynergyTier()>0&&state_.player.battery<24.0f)?1.0f+0.10f*survivalSynergyTier():1.0f;
         const float precisionWindow=state_.progression.run.headshotRechargeBoost>0.0f?1.35f:1.0f;
         const float tvSignal=1.0f+std::min(0.45f,0.06f*std::sqrt(static_cast<float>(std::max(0,state_.secretTv.signal))));
-        gainBattery(BATTERY_IDLE_REGEN * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
+        gainBattery(BATTERY_IDLE_REGEN * soul_economy::passiveRegenMultiplier(state_.player.souls) * tvSignal * precisionWindow * survivalRegen * (1.0f-state_.progression.run.headshotRegenTax) * dt);
     }
 }
 
@@ -1004,6 +1040,14 @@ void Game::buildRoomColliders() {
         c.bottomY = 0.0f; c.topY = h;
         c.width = w; c.depth = d; c.height = h; c.center = {px, h * 0.5f, pz};
     }
+    if(routeValid)for(int i=0;i<plan.traversal.surfaceCount&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
+        const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;
+        RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
+        c.minX=surface.center.x-surface.halfSize.x;c.maxX=surface.center.x+surface.halfSize.x;
+        c.minZ=surface.center.z-surface.halfSize.z;c.maxZ=surface.center.z+surface.halfSize.z;
+        c.bottomY=surface.center.y-surface.halfSize.y;c.topY=surface.center.y+surface.halfSize.y;
+        c.width=surface.halfSize.x*2.0f;c.depth=surface.halfSize.z*2.0f;c.height=surface.halfSize.y*2.0f;c.center=surface.center;
+    }
     const bool propsValid=routeValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
     if(propsValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!early_browser_visuals::environmentPropSolid(prop))continue;
@@ -1072,6 +1116,7 @@ void Game::resetRoom() {
         target.pos = {-8.0f + static_cast<float>(i % 5) * 4.0f, GROUND_Y, -12.0f + static_cast<float>(i / 5) * 4.5f};
         target.alive = i < activeHumanTarget();
         target.brute = seededRoomValue(420 + i) < 0.18f;
+        target.soul = makeSoulRecord(target.brute, state_.roomIndex);
         target.armor = target.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
         target.health = 1.0f;
         target.scale = target.brute ? HUMAN_SCALE_BRUTE : 1.0f;
@@ -1419,6 +1464,8 @@ void Game::updateSecretTv(float dt) {
         if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
             inputs[id]->shootPressed = false;
             --player.souls;
+            player.storedSoulBrute[player.souls]=false;
+            player.storedSouls[player.souls]=SoulRecord{};
             ++tv.signal;
             tv.donationCooldown = 0.70f;
             const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
@@ -1684,6 +1731,7 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.player.soloSoulRebootUsed=false;
         state_.player.souls=0;
         state_.player.storedSoulBrute.fill(false);
+        state_.player.storedSouls.fill(SoulRecord{});
         state_.requiredSouls=std::min(9,5+state_.runRules.requiredSlotStacks);
         state_.depositedSouls=0;
         state_.progression.run.roomHeat=0.0f;
@@ -2246,6 +2294,31 @@ float Game::getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomColli
     return clampf(tMin, 0.0f, 1.0f);
 }
 
+SoulColliderHit Game::sweepSoulAgainstRoomColliders(const Vec3& start, const Vec3& end, float radius, int ignoredCollider) const {
+    SoulColliderHit best{};
+    const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(start.z));
+    const float origin[3]={start.x,start.y,start.z};
+    const float delta[3]={end.x-start.x,end.y-start.y,end.z-start.z};
+    for(int index=0;index<state_.debug.colliderCount;++index){
+        if(index==ignoredCollider)continue;
+        const RoomCollider& collider=state_.roomColliders[index];
+        const float mins[3]={collider.minX-radius,collider.bottomY-radius,tileOrigin+collider.minZ-radius};
+        const float maxs[3]={collider.maxX+radius,collider.topY+radius,tileOrigin+collider.maxZ+radius};
+        float entry=0.0f,exit=1.0f;int entryAxis=-1;float entrySign=0.0f;bool valid=true;
+        for(int axis=0;axis<3;++axis){
+            if(std::abs(delta[axis])<0.00001f){if(origin[axis]<mins[axis]||origin[axis]>maxs[axis]){valid=false;break;}continue;}
+            const float inv=1.0f/delta[axis];float nearT=(mins[axis]-origin[axis])*inv,farT=(maxs[axis]-origin[axis])*inv;
+            float normalSign=-1.0f;if(nearT>farT){std::swap(nearT,farT);normalSign=1.0f;}
+            if(nearT>entry){entry=nearT;entryAxis=axis;entrySign=normalSign;}
+            exit=std::min(exit,farT);if(entry>exit){valid=false;break;}
+        }
+        if(!valid||entryAxis<0||entry<0.0f||entry>1.0f||entry>=best.t)continue;
+        best.hit=true;best.colliderIndex=index;best.t=entry;best.position=start+(end-start)*entry;best.normal={};
+        if(entryAxis==0)best.normal.x=entrySign;else if(entryAxis==1)best.normal.y=entrySign;else best.normal.z=entrySign;
+    }
+    return best;
+}
+
 void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const {
     Vec3 start = lookBase;
     start.y += 0.58f;
@@ -2626,6 +2699,35 @@ int Game::applyMeleeHits() {
     const Vec3 phonePrevious=visual.contactPositionValid?visual.previousContactPosition:phoneCurrent;
     visual.previousContactPosition=phoneCurrent;visual.contactPositionValid=true;
     int newHits=0; int totalHits=0; int headshots=0; std::array<Vec3,TARGET_COUNT> headshotPositions{}; std::array<bool,TARGET_COUNT> headshotCritical{};std::array<float,TARGET_COUNT> headshotAttackProgress{},headshotKillCharge{};
+    bool redirectedSoul=false;
+    for(auto& bullet:state_.bullets){
+        if(!bullet.alive||bullet.dropped||bullet.contactCooldown>0.0f)continue;
+        bool contact=false;
+        if(visual.locomotionLunge){
+            contact=pointSegmentDistanceSq(bullet.pos,phonePrevious,phoneCurrent)<=BULLET_LUNGE_CONTACT_RADIUS*BULLET_LUNGE_CONTACT_RADIUS;
+        }else{
+            const Vec3 start=state_.player.pos+Vec3{0,0.45f,0};
+            const Vec3 end=start+visual.direction*visual.range;
+            const float soulHitRadius=visual.hitRadius+BULLET_MELEE_CONTACT_FORGIVENESS;
+            contact=pointSegmentDistanceSq(bullet.pos,start,end)<=soulHitRadius*soulHitRadius;
+        }
+        if(!contact)continue;
+        Vec3 direction=state_.camera.forward;
+        direction.y=clampf(direction.y,-0.10f,0.42f);
+        if(lengthSq(direction)<0.0001f)direction=visual.direction;
+        direction=normalized(direction);
+        const float incomingSpeed=length(bullet.vel);
+        const float redirectSpeed=visual.locomotionLunge
+            ? std::max(BULLET_LUNGE_SPEED,incomingSpeed*1.08f)
+            : std::max(BULLET_MELEE_SPEED,incomingSpeed*0.96f);
+        bullet.vel=direction*std::min(BULLET_REDIRECT_MAX_SPEED,redirectSpeed);
+        bullet.contactCooldown=BULLET_CONTACT_COOLDOWN;
+        bullet.life=BULLET_LIFE;
+        visual.visualHit=true;visual.impact=bullet.pos;redirectedSoul=true;
+        spawnFlameBurst(bullet.pos,visual.locomotionLunge?1.35f:0.72f);
+        emitAudio(visual.locomotionLunge?AudioCue::HeadshotCritical:AudioCue::PhoneAttack,visual.locomotionLunge?0.78f:0.42f);
+        if(visual.locomotionLunge){state_.hud.criticalHitPulse=1.0f;continueLungeFromHeadshot();}
+    }
     for(int i=0;i<TARGET_COUNT;++i) if((visual.hitMask&(1u<<i))!=0) ++totalHits;
     for (int i=0;i<TARGET_COUNT;++i) { TargetState& t=state_.targets[i]; if (!gameplay::isCombatTarget(t) || (visual.hitMask&(1u<<i))!=0) continue;
         const Vec3 delta{t.pos.x-state_.player.pos.x,0,t.pos.z-state_.player.pos.z};
@@ -2671,7 +2773,7 @@ int Game::applyMeleeHits() {
         if(headshots>0&&visual.locomotionLunge)continueLungeFromHeadshot();
         if(!visual.locomotionLunge){const float recoilScale=totalHits>1?0.35f:1.0f;state_.player.pos-=visual.direction*(visual.recoilDistance*recoilScale);state_.player.vel-=visual.direction*(visual.recoilSpeed*recoilScale);visual.dashTimer=totalHits>1?visual.dashTimer*0.35f:0.0f;}
     }
-    return newHits;
+    return newHits+(redirectedSoul?1:0);
 }
 
 Vec3 Game::targetHeadCenter(const TargetState& target) const {
@@ -2826,7 +2928,10 @@ void Game::shootStoredSoul() {
         if (!spendBattery(BATTERY_SHOOT_COST,BatteryReason::Shoot)) return;
         const int storedIndex=state_.player.souls-1;
         pending=PendingShotState{}; pending.active=true; pending.brute=state_.player.storedSoulBrute[storedIndex];
+        pending.soul=state_.player.storedSouls[storedIndex];
+        if(pending.soul.id==0) pending.soul=makeSoulRecord(pending.brute,state_.roomIndex);
         state_.player.storedSoulBrute[storedIndex]=false;
+        state_.player.storedSouls[storedIndex]=SoulRecord{};
         state_.player.souls--;
         state_.hud.shootJoinTimer=0.18f;
         state_.energy.dischargeTimer=0.34f;
@@ -2843,8 +2948,7 @@ void Game::processPendingShots(float dt) {
         for(auto& bullet:state_.bullets) if(!bullet.alive){slot=&bullet;break;}
         if(!slot) {
             if(pending.age>0.75f && state_.player.souls<MAX_STORED_SOULS) {
-                state_.player.storedSoulBrute[state_.player.souls]=pending.brute;
-                state_.player.souls++;
+                storeSoul(state_.player,pending.soul);
                 pending=PendingShotState{};
             }
             continue;
@@ -2862,7 +2966,7 @@ void Game::processPendingShots(float dt) {
         );
         direction.y=clampf(direction.y,BULLET_MAX_DOWN_AIM,BULLET_MAX_UP_AIM);
         direction=normalized(direction);
-        *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute;
+        *slot=BulletState{}; slot->alive=true; slot->life=BULLET_LIFE; slot->brute=pending.brute; slot->soul=pending.soul;
         slot->pos=state_.phoneTransform.screenCenter+state_.phoneTransform.screenNormal*(SCREEN_FRONT_OFFSET+0.28f);
         slot->pos.y=std::max(slot->pos.y,0.95f);
         state_.environmentVisual.latestShotOrigin=slot->pos;
@@ -2923,8 +3027,8 @@ void Game::captureSoul(int index) {
     t.soulCubeAmount = 0.0f;
     syncTargetReactionVisual(t);
     const Vec3 capturedAt=t.pos;
-    state_.player.storedSoulBrute[state_.player.souls]=t.brute;
-    state_.player.souls++;
+    if(t.soul.id==0)t.soul=makeSoulRecord(t.brute,state_.roomIndex);
+    storeSoul(state_.player,t.soul);
     ++state_.progression.run.roomCaptures;
     state_.progression.run.roomHeat=clampf(state_.progression.run.roomHeat+0.045f,0.0f,1.0f);
     gainBattery(BATTERY_CAPTURE_GAIN,BatteryReason::Ingest);
@@ -2970,6 +3074,7 @@ void Game::updateRoomPopulation(float dt) {
 void Game::respawnTarget(int index) {
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
     t.brute = seededRoomValue(520 + index) < 0.18f;
+    t.soul = makeSoulRecord(t.brute,state_.roomIndex);
     t.armor = t.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
     t.scale = t.brute ? HUMAN_SCALE_BRUTE : 1.0f;
     t.health = 1.0f;
@@ -3038,7 +3143,7 @@ void Game::chooseHumanWalkTarget(int index) {
 
 void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TARGET_COUNT)return;TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;if(id==0){state_.player.grabbedByTarget=-1;state_.player.grabEscape=0;state_.player.grabLastDirection=0;clearInputState();}else if(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active){auto& player=state_.multiplayer.peers[id].player;player.grabbedByTarget=-1;player.grabEscape=0;player.grabLastDirection=0;state_.multiplayer.peers[id].input=InputState{};}target.grabbedPlayerId=-1;target.grabCooldown=18.0f;target.attackTimer=0;target.attackCooldown=1.15f;}
 
-void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
+void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->storedSoulBrute[player->souls]=false;player->storedSouls[player->souls]=SoulRecord{};player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
 
 void Game::updateTargets(float dt) {
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
@@ -3342,12 +3447,61 @@ void Game::updateCrosshair(float dt) {
 void Game::updateBullets(float dt) {
     for (auto& b : state_.bullets) if (b.alive) {
         const Vec3 previous=b.pos;
+        b.contactCooldown=std::max(0.0f,b.contactCooldown-dt);
+        b.roomColliderContactCooldown=std::max(0.0f,b.roomColliderContactCooldown-dt);
+        if(b.roomColliderContactCooldown<=0.0f)b.lastRoomColliderIndex=-1;
+        if(state_.vacuum.active&&state_.player.souls<MAX_STORED_SOULS){
+            const Vec3 pullPoint=state_.phoneTransform.vacuumPullPoint;
+            const Vec3 toPhone=pullPoint-b.pos;
+            const float distance=length(toPhone);
+            const Vec3 fromPhone=distance>0.001f?toPhone*(-1.0f/distance):Vec3{};
+            const float facing=dot3(fromPhone,state_.phoneTransform.screenNormal);
+            if(distance<BULLET_VACUUM_RANGE&&(b.dropped||facing>0.35f)){
+                if(distance<=BULLET_VACUUM_RADIUS){
+                    storeSoul(state_.player,b.soul);
+                    b=BulletState{};
+                    emitAudio(AudioCue::ReceivedMessage,0.48f);
+                    continue;
+                }
+                b.dropped=false;
+                b.vel+=toPhone*(BULLET_VACUUM_ACCELERATION/std::max(distance,0.2f)*dt);
+            }
+        }
+        if(b.dropped){b.pos.y=BULLET_DROP_Y;b.vel={};b.spin+=dt*1.8f;continue;}
         b.life-=dt;
         b.vel.y-=BULLET_GRAVITY*dt;
         const float drag=std::pow(BULLET_AIR_DRAG_PER_SECOND,dt);
         b.vel*=drag;
-        b.pos+=b.vel*dt;
+        float remainingDt=dt;
+        for(int contact=0;contact<BULLET_MAX_CONTACTS_PER_STEP&&remainingDt>0.00001f&&!b.dropped;++contact){
+            const Vec3 start=b.pos,end=start+b.vel*remainingDt;
+            SoulColliderHit best=sweepSoulAgainstRoomColliders(start,end,BULLET_RADIUS,b.roomColliderContactCooldown>0.0f?b.lastRoomColliderIndex:-1);
+            const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(start.z));
+            const float minX=-ROOM_WIDTH*0.5f+BULLET_RADIUS,maxX=ROOM_WIDTH*0.5f-BULLET_RADIUS;
+            const float minZ=tileOrigin-ROOM_DEPTH*0.5f+BULLET_RADIUS,maxZ=tileOrigin+ROOM_DEPTH*0.5f-BULLET_RADIUS;
+            const float floorY=BULLET_DROP_Y,ceiling=ROOM_WALL_HEIGHT-BULLET_RADIUS;
+            const auto planeHit=[&](float startValue,float endValue,float plane,const Vec3& normal){
+                const bool startsOutside=(normal.x+normal.y+normal.z)>0.0f?startValue<plane:startValue>plane;
+                const float span=endValue-startValue;
+                const float t=startsOutside?0.0f:(std::abs(span)<0.00001f?-1.0f:(plane-startValue)/span);
+                if(t<0.0f||t>1.0f||t>=best.t)return;
+                best.hit=true;best.colliderIndex=-1;best.t=t;best.normal=normal;best.position=start+(end-start)*t;
+            };
+            if(end.x<minX)planeHit(start.x,end.x,minX,{1,0,0});else if(end.x>maxX)planeHit(start.x,end.x,maxX,{-1,0,0});
+            if(end.z<minZ)planeHit(start.z,end.z,minZ,{0,0,1});else if(end.z>maxZ)planeHit(start.z,end.z,maxZ,{0,0,-1});
+            if(end.y<floorY)planeHit(start.y,end.y,floorY,{0,1,0});else if(end.y>ceiling)planeHit(start.y,end.y,ceiling,{0,-1,0});
+            if(!best.hit){b.pos=end;break;}
+            b.pos=best.position;
+            if(best.normal.y>0.5f){b.pos.y=best.position.y;b.vel={};b.dropped=true;b.life=BULLET_LIFE;break;}
+            b.vel=(b.vel-best.normal*(2.0f*dot3(b.vel,best.normal)))*BULLET_WALL_RETENTION;
+            b.pos+=best.normal*BULLET_CONTACT_EPSILON;
+            b.contactCooldown=BULLET_CONTACT_COOLDOWN;
+            b.lastRoomColliderIndex=best.colliderIndex;
+            b.roomColliderContactCooldown=best.colliderIndex>=0?BULLET_ROOM_CONTACT_COOLDOWN:0.0f;
+            remainingDt*=1.0f-best.t;
+        }
         b.spin+=dt*10.0f;
+        if(b.dropped)continue;
 
         bool deposited=false;
         if(!state_.roomClear){
@@ -3415,9 +3569,19 @@ void Game::updateBullets(float dt) {
             }
             target.vel+=b.vel*(0.08f+0.004f*static_cast<float>(shotLevel));
             target.vel.y=std::max(target.vel.y,1.0f);
-            b.alive=false;
+            Vec3 normal=normalized(b.pos-shellCenter);
+            if(lengthSq(normal)<0.001f)normal=normalized(b.vel)*-1.0f;
+            const float retained=std::max(7.0f,length(b.vel)*BULLET_ENEMY_RETENTION);
+            b.vel=normal*retained+Vec3{0,1.2f,0};
+            b.pos=shellCenter+normal*(hitRadius+BULLET_RADIUS+0.04f);
+            b.contactCooldown=BULLET_CONTACT_COOLDOWN;
+            break;
         }
-        if(b.life<=0.0f || b.pos.y<-3.5f || std::abs(b.pos.x)>ROOM_WIDTH*1.25f || std::abs(wrapZ(b.pos.z))>ROOM_DEPTH*1.25f) b.alive=false;
+        if(!b.alive)continue;
+        if(b.dropped)continue;
+        // Life is retained as a presentation timer, but a live resource is no
+        // longer deleted by time or by leaving a loose legacy kill volume.
+        if(b.life<=0.0f)b.life=BULLET_LIFE;
     }
 }
 void Game::updateCaptures(float dt) {

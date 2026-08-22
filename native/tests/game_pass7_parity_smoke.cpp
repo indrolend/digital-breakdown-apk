@@ -950,9 +950,10 @@ int main() {
     }
     step(game);
     ok &= expect(near(game.state().targets[0].armor,3.1f,0.001f) &&
-        near(game.state().targets[1].armor,4.0f,0.001f) && !game.state().bullets[0].alive &&
+        near(game.state().targets[1].armor,4.0f,0.001f) && game.state().bullets[0].alive &&
+        game.state().bullets[0].contactCooldown>0.0f &&
         std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")==nullptr,
-        "normal fired cube damages only the first living shell on its swept path and is consumed");
+        "normal fired cube damages only the first living shell on its swept path and remains live");
 
     game.reset();
     {
@@ -964,8 +965,8 @@ int main() {
         bullet.pos={setup.player.pos.x,0.65f,target.pos.z+0.50f}; bullet.vel={0,0,-20.0f};
     }
     step(game);
-    ok &= expect(near(game.state().targets[0].armor,2.35f,0.001f) && !game.state().bullets[0].alive,
-        "brute fired cube uses the browser's wider 0.95 shell radius and 1.65 damage");
+    ok &= expect(near(game.state().targets[0].armor,2.35f,0.001f) && game.state().bullets[0].alive,
+        "brute fired cube uses the wider 0.95 shell radius and remains live after 1.65 damage");
 
     game.reset();
     {
@@ -979,7 +980,7 @@ int main() {
     }
     step(game);
     ok &= expect(std::strstr(game.state().hud.energyTicker.data(),"HEADSHOT")!=nullptr &&
-                 game.state().progression.run.headshotRechargeBoost>1.0f && !game.state().bullets[0].alive &&
+                 game.state().progression.run.headshotRechargeBoost>1.0f && game.state().bullets[0].alive &&
                  hasAudioCue(game.state(),AudioCue::HeadshotCritical) && hasAudioCue(game.state(),AudioCue::RewardWoah),
         "a final-hit-band soul headshot opens recharge and selects the two-step critical jingle");
 
@@ -1081,8 +1082,8 @@ int main() {
     }
     game.setTouchControls(0,0,0,0,false,false,false,false,true,false);
     step(game);
-    ok &= expect(near(game.state().energy.supplementalValue,85.0f-7.0f/1.8f,0.0002f),
-        "stored-soul efficiency is applied before native supplemental discharge cost");
+    ok &= expect(near(game.state().energy.supplementalValue,85.0f-7.0f,0.0002f),
+        "stored souls no longer discount native supplemental discharge cost");
 
     game.reset();
     {

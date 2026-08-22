@@ -14,6 +14,7 @@ public:
     void u8(std::uint8_t v){data.push_back(v);} void i8(std::int8_t v){u8(static_cast<std::uint8_t>(v));}
     void u16(std::uint16_t v){u8(static_cast<std::uint8_t>(v));u8(static_cast<std::uint8_t>(v>>8));}
     void u32(std::uint32_t v){for(int i=0;i<4;++i)u8(static_cast<std::uint8_t>(v>>(i*8)));}
+    void u64(std::uint64_t v){for(int i=0;i<8;++i)u8(static_cast<std::uint8_t>(v>>(i*8)));}
     void i32(std::int32_t v){u32(static_cast<std::uint32_t>(v));}
     void f32(float v){std::uint32_t bits=0;static_assert(sizeof(bits)==sizeof(v));std::memcpy(&bits,&v,sizeof(v));u32(bits);}
     void vec(const Vec3& v){f32(v.x);f32(v.y);f32(v.z);}
@@ -27,6 +28,7 @@ public:
     bool i8(std::int8_t& v){std::uint8_t x=0;if(!u8(x))return false;v=static_cast<std::int8_t>(x);return true;}
     bool u16(std::uint16_t& v){std::uint8_t a=0,b=0;if(!u8(a)||!u8(b))return false;v=static_cast<std::uint16_t>(a|(b<<8));return true;}
     bool u32(std::uint32_t& v){v=0;for(int i=0;i<4;++i){std::uint8_t x=0;if(!u8(x))return false;v|=static_cast<std::uint32_t>(x)<<(i*8);}return true;}
+    bool u64(std::uint64_t& v){v=0;for(int i=0;i<8;++i){std::uint8_t x=0;if(!u8(x))return false;v|=static_cast<std::uint64_t>(x)<<(i*8);}return true;}
     bool i32(std::int32_t& v){std::uint32_t x=0;if(!u32(x))return false;v=static_cast<std::int32_t>(x);return true;}
     bool f32(float& v){std::uint32_t bits=0;if(!u32(bits))return false;std::memcpy(&v,&bits,sizeof(v));return true;}
     bool vec(Vec3& v){return f32(v.x)&&f32(v.y)&&f32(v.z);}
@@ -46,7 +48,7 @@ void writePlayer(Writer& w,const PlayerSnapshot& p){
   w.u8(static_cast<std::uint8_t>(p.locomotion));w.u8(static_cast<std::uint8_t>(p.action));
   w.u8(static_cast<std::uint8_t>(p.actionPhase));w.u16(p.actionSequence);
   w.u16(p.actionTargetId);w.f32(p.actionProgress);
-  w.u8(p.storedSoulBruteMask);w.i8(p.airJumpsRemaining);w.i8(p.ledgeCollider);
+  w.u8(p.storedSoulBruteMask);for(const auto& soul:p.storedSouls){w.u64(soul.id);w.u8(soul.brute?1:0);w.i32(soul.originRoom);}w.i8(p.airJumpsRemaining);w.i8(p.ledgeCollider);
   w.vec(p.ledgeNormal);w.f32(p.ledgeHangTime);w.f32(p.ledgeMantleTimer);
   w.f32(p.vacuumPower);w.f32(p.vacuumPose);w.f32(p.vacuumFieldStrength);
   w.f32(p.vacuumConeTightness);w.f32(p.vacuumLockStrength);w.i8(p.vacuumTarget);
@@ -70,7 +72,7 @@ bool readPlayer(Reader& r,PlayerSnapshot& p){
     r.u8(action)&&action<=static_cast<std::uint8_t>(NetActionState::Revive)&&((p.action=static_cast<NetActionState>(action)),true)&&
     r.u8(phase)&&phase<=static_cast<std::uint8_t>(NetActionPhase::Recovery)&&((p.actionPhase=static_cast<NetActionPhase>(phase)),true)&&
     r.u16(p.actionSequence)&&r.u16(p.actionTargetId)&&r.f32(p.actionProgress)&&
-    r.u8(p.storedSoulBruteMask)&&r.i8(p.airJumpsRemaining)&&r.i8(p.ledgeCollider)&&
+    r.u8(p.storedSoulBruteMask)&&[&](){for(auto& soul:p.storedSouls){std::uint8_t brute=0;if(!r.u64(soul.id)||!r.u8(brute)||!r.i32(soul.originRoom))return false;soul.brute=brute!=0;}return true;}()&&r.i8(p.airJumpsRemaining)&&r.i8(p.ledgeCollider)&&
     r.vec(p.ledgeNormal)&&r.f32(p.ledgeHangTime)&&r.f32(p.ledgeMantleTimer)&&
     r.f32(p.vacuumPower)&&r.f32(p.vacuumPose)&&r.f32(p.vacuumFieldStrength)&&
     r.f32(p.vacuumConeTightness)&&r.f32(p.vacuumLockStrength)&&r.i8(p.vacuumTarget)&&
@@ -85,12 +87,12 @@ bool readPlayer(Reader& r,PlayerSnapshot& p){
     r.i8(p.grabbedByTarget)&&r.i32(p.secretVisitRoom)&&r.f32(p.secretVisitTimer)&&
     r.u8(p.commSignal)&&r.f32(p.commSignalTimer);
 }
-void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.f32(t.animationTime);w.f32(t.visualWalkPhase);w.f32(t.locomotionAmount);w.vec(t.attackDirection);w.u8(t.attackVariant);w.u8(t.visualFlags);w.f32(t.hitFlash);w.f32(t.phase);w.f32(t.floatOffset);w.f32(t.spinSpeed);w.f32(t.hitDirectionLocal);w.f32(t.vacuumPullAmount);w.f32(t.captureCollapseAmount);w.f32(t.visibility);w.f32(t.armorRegenDelay);w.f32(t.respawnTimer);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);}
-bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.f32(t.animationTime)&&r.f32(t.visualWalkPhase)&&r.f32(t.locomotionAmount)&&r.vec(t.attackDirection)&&r.u8(t.attackVariant)&&r.u8(t.visualFlags)&&r.f32(t.hitFlash)&&r.f32(t.phase)&&r.f32(t.floatOffset)&&r.f32(t.spinSpeed)&&r.f32(t.hitDirectionLocal)&&r.f32(t.vacuumPullAmount)&&r.f32(t.captureCollapseAmount)&&r.f32(t.visibility)&&r.f32(t.armorRegenDelay)&&r.f32(t.respawnTimer)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown);}
+void writeTarget(Writer& w,const TargetSnapshot& t){w.u8(t.flags);w.u8(static_cast<std::uint8_t>(t.soulState));w.vec(t.pos);w.vec(t.vel);w.f32(t.armor);w.f32(t.health);w.f32(t.capture);w.f32(t.ingest);w.f32(t.recoil);w.f32(t.scale);w.f32(t.visualYaw);w.f32(t.soulMorph);w.f32(t.attackTimer);w.f32(t.attackCooldown);w.f32(t.animationTime);w.f32(t.visualWalkPhase);w.f32(t.locomotionAmount);w.vec(t.attackDirection);w.u8(t.attackVariant);w.u8(t.visualFlags);w.f32(t.hitFlash);w.f32(t.phase);w.f32(t.floatOffset);w.f32(t.spinSpeed);w.f32(t.hitDirectionLocal);w.f32(t.vacuumPullAmount);w.f32(t.captureCollapseAmount);w.f32(t.visibility);w.f32(t.armorRegenDelay);w.f32(t.respawnTimer);w.i8(t.ownerPlayerId);w.i8(t.grabbedPlayerId);w.f32(t.grabCooldown);w.u64(t.soul.id);w.u8(t.soul.brute?1:0);w.i32(t.soul.originRoom);}
+bool readTarget(Reader& r,TargetSnapshot& t){std::uint8_t soul=0,soulBrute=0;if(!r.u8(t.flags)||!r.u8(soul)||soul>static_cast<std::uint8_t>(SoulState::Revolving))return false;t.soulState=static_cast<SoulState>(soul);return r.vec(t.pos)&&r.vec(t.vel)&&r.f32(t.armor)&&r.f32(t.health)&&r.f32(t.capture)&&r.f32(t.ingest)&&r.f32(t.recoil)&&r.f32(t.scale)&&r.f32(t.visualYaw)&&r.f32(t.soulMorph)&&r.f32(t.attackTimer)&&r.f32(t.attackCooldown)&&r.f32(t.animationTime)&&r.f32(t.visualWalkPhase)&&r.f32(t.locomotionAmount)&&r.vec(t.attackDirection)&&r.u8(t.attackVariant)&&r.u8(t.visualFlags)&&r.f32(t.hitFlash)&&r.f32(t.phase)&&r.f32(t.floatOffset)&&r.f32(t.spinSpeed)&&r.f32(t.hitDirectionLocal)&&r.f32(t.vacuumPullAmount)&&r.f32(t.captureCollapseAmount)&&r.f32(t.visibility)&&r.f32(t.armorRegenDelay)&&r.f32(t.respawnTimer)&&r.i8(t.ownerPlayerId)&&r.i8(t.grabbedPlayerId)&&r.f32(t.grabCooldown)&&r.u64(t.soul.id)&&r.u8(soulBrute)&&((t.soul.brute=soulBrute!=0),true)&&r.i32(t.soul.originRoom);}
 void writeCollider(Writer& w,const RoomCollider& c){w.f32(c.minX);w.f32(c.maxX);w.f32(c.minZ);w.f32(c.maxZ);w.f32(c.bottomY);w.f32(c.topY);w.f32(c.width);w.f32(c.depth);w.f32(c.height);w.vec(c.center);}
 bool readCollider(Reader& r,RoomCollider& c){return r.f32(c.minX)&&r.f32(c.maxX)&&r.f32(c.minZ)&&r.f32(c.maxZ)&&r.f32(c.bottomY)&&r.f32(c.topY)&&r.f32(c.width)&&r.f32(c.depth)&&r.f32(c.height)&&r.vec(c.center);}
-void writeBullet(Writer& w,const BulletSnapshot& b){w.u8(b.active?1:0);w.u8(b.brute?1:0);w.vec(b.pos);w.vec(b.vel);w.f32(b.life);w.f32(b.spin);}
-bool readBullet(Reader& r,BulletSnapshot& b){std::uint8_t active=0,brute=0;return r.u8(active)&&r.u8(brute)&&((b.active=active!=0),(b.brute=brute!=0),true)&&r.vec(b.pos)&&r.vec(b.vel)&&r.f32(b.life)&&r.f32(b.spin);}
+void writeBullet(Writer& w,const BulletSnapshot& b){w.u8(b.active?1:0);w.u8(b.brute?1:0);w.vec(b.pos);w.vec(b.vel);w.f32(b.life);w.f32(b.spin);w.u8(b.dropped?1:0);w.f32(b.contactCooldown);w.i8(b.lastRoomColliderIndex);w.f32(b.roomColliderContactCooldown);w.u64(b.soul.id);w.u8(b.soul.brute?1:0);w.i32(b.soul.originRoom);}
+bool readBullet(Reader& r,BulletSnapshot& b){std::uint8_t active=0,brute=0,dropped=0,soulBrute=0;return r.u8(active)&&r.u8(brute)&&((b.active=active!=0),(b.brute=brute!=0),true)&&r.vec(b.pos)&&r.vec(b.vel)&&r.f32(b.life)&&r.f32(b.spin)&&r.u8(dropped)&&((b.dropped=dropped!=0),true)&&r.f32(b.contactCooldown)&&r.i8(b.lastRoomColliderIndex)&&r.f32(b.roomColliderContactCooldown)&&r.u64(b.soul.id)&&r.u8(soulBrute)&&((b.soul.brute=soulBrute!=0),true)&&r.i32(b.soul.originRoom);}
 void writeFlower(Writer& w,const FlowerSnapshot& f){w.u8(f.active?1:0);w.vec(f.pos);w.f32(f.age);w.f32(f.rotation);}
 bool readFlower(Reader& r,FlowerSnapshot& f){std::uint8_t active=0;return r.u8(active)&&((f.active=active!=0),true)&&r.vec(f.pos)&&r.f32(f.age)&&r.f32(f.rotation);}
 
@@ -279,6 +281,7 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
   p.u8(s.roomClear ? 1 : 0);
   p.u8(s.started ? 1 : 0);
   p.u8(s.dead ? 1 : 0);
+  p.u64(s.nextSoulId);
   p.i32(s.runRules.requiredSlotStacks);
   p.i32(s.runRules.crowdedRoomStacks);
   p.i32(s.runRules.fasterSlurpStacks);
@@ -326,7 +329,7 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
   std::uint8_t clear = 0, started = 0, dead = 0, upgradeMenu = 0;
   if (!readWorldContext(r,s.world) || !r.f32(s.time) || !r.i32(s.roomIndex) || !r.i32(s.roomSeed) ||
       !r.i32(s.requiredSouls) || !r.i32(s.depositedSouls) || !r.u8(clear) ||
-      !r.u8(started) || !r.u8(dead))
+      !r.u8(started) || !r.u8(dead) || !r.u64(s.nextSoulId))
     return false;
   s.roomClear = clear != 0;
   s.started = started != 0;
@@ -420,6 +423,7 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
     out.actionProgress=melee.visualDuration>0?clampf(1.0f-melee.visualTimer/melee.visualDuration,0.0f,1.0f):
       std::max(vacuum.pose,energy.dischargePositionAmount);
     for(int i=0;i<PHONE_CAPACITY;++i)if(player.storedSoulBrute[i])out.storedSoulBruteMask|=static_cast<std::uint8_t>(1u<<i);
+    out.storedSouls=player.storedSouls;
     out.airJumpsRemaining=static_cast<std::int8_t>(player.airJumpsRemaining);
     out.ledgeCollider=static_cast<std::int8_t>(player.ledgeCollider);
     out.ledgeNormal=player.ledgeNormal;out.ledgeHangTime=player.ledgeHangTime;out.ledgeMantleTimer=player.ledgeMantleTimer;
@@ -469,6 +473,7 @@ captureWorld(const GameState &state,
   s.roomClear = state.roomClear;
   s.started = state.started;
   s.dead = state.dead;
+  s.nextSoulId=state.nextSoulId;
   s.runRules = state.runRules;
   s.upgradeMenuActive = state.upgradeMenu.active;
   for (int i = 0; i < 3; ++i)
@@ -513,6 +518,7 @@ captureWorld(const GameState &state,
     b.armorRegenDelay=a.armorRegenDelay;b.respawnTimer=a.respawnTimer;
     b.ownerPlayerId = static_cast<std::int8_t>(a.networkOwnerPlayerId);
     b.grabbedPlayerId=static_cast<std::int8_t>(a.grabbedPlayerId);b.grabCooldown=a.grabCooldown;
+    b.soul=a.soul;
   }
   for (int i = 0; i < CAPTURE_COUNT; ++i){
     s.captures[i] = state.captures[i].filled;
@@ -527,6 +533,7 @@ captureWorld(const GameState &state,
     b.vel = a.vel;
     b.life = a.life;
     b.spin = a.spin;
+    b.dropped=a.dropped;b.contactCooldown=a.contactCooldown;b.lastRoomColliderIndex=static_cast<std::int8_t>(a.lastRoomColliderIndex);b.roomColliderContactCooldown=a.roomColliderContactCooldown;b.soul=a.soul;
   }
   for (int i = 0; i < FLOWER_POWERUP_COUNT; ++i) {
     const auto &a = state.flowers[i];
@@ -558,6 +565,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   state.roomClear = s.roomClear;
   state.started = s.started;
   state.dead = s.dead;
+  state.nextSoulId=s.nextSoulId;
   state.runRules = s.runRules;
   state.upgradeMenu.active = s.upgradeMenuActive;
   for (int i = 0; i < 3; ++i)
@@ -591,7 +599,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.player.yaw = p.yaw;
         state.player.targetYaw=p.targetYaw;
         if(hardCorrection){state.player.jumpVel=p.jumpVel;state.player.airJumpsRemaining=p.airJumpsRemaining;}
-        for(int i=0;i<PHONE_CAPACITY;++i)state.player.storedSoulBrute[i]=(p.storedSoulBruteMask&(1u<<i))!=0;
+        state.player.storedSouls=p.storedSouls;for(int i=0;i<PHONE_CAPACITY;++i)state.player.storedSoulBrute[i]=p.storedSouls[i].id!=0?p.storedSouls[i].brute:(p.storedSoulBruteMask&(1u<<i))!=0;
         state.player.ledgeHanging=(p.actionFlags&1)!=0;state.player.ledgeCollider=p.ledgeCollider;
         state.player.ledgeNormal=p.ledgeNormal;state.player.ledgeHangTime=p.ledgeHangTime;state.player.ledgeMantleTimer=p.ledgeMantleTimer;
         state.player.battery = p.battery;
@@ -633,7 +641,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.player.vel = p.vel;
         peer.player.yaw = p.yaw;
         peer.player.targetYaw=p.targetYaw;peer.player.jumpVel=p.jumpVel;peer.player.airJumpsRemaining=p.airJumpsRemaining;
-        for(int i=0;i<PHONE_CAPACITY;++i)peer.player.storedSoulBrute[i]=(p.storedSoulBruteMask&(1u<<i))!=0;
+        peer.player.storedSouls=p.storedSouls;for(int i=0;i<PHONE_CAPACITY;++i)peer.player.storedSoulBrute[i]=p.storedSouls[i].id!=0?p.storedSouls[i].brute:(p.storedSoulBruteMask&(1u<<i))!=0;
         peer.player.ledgeHanging=(p.actionFlags&1)!=0;peer.player.ledgeCollider=p.ledgeCollider;
         peer.player.ledgeNormal=p.ledgeNormal;peer.player.ledgeHangTime=p.ledgeHangTime;peer.player.ledgeMantleTimer=p.ledgeMantleTimer;
         peer.player.battery = p.battery;
@@ -741,6 +749,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
       b.attackTimer,b.attackVariant);
     b.networkOwnerPlayerId = a.ownerPlayerId;
     b.grabbedPlayerId=a.grabbedPlayerId;b.grabCooldown=a.grabCooldown;
+    b.soul=a.soul;
   }
   const bool initialSnapshot = !state.multiplayer.hasWorldSnapshot;
   for (int i = 0; i < CAPTURE_COUNT; ++i) {
@@ -767,6 +776,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     b.vel = a.vel;
     b.life = a.life;
     b.spin = a.spin;
+    b.dropped=a.dropped;b.contactCooldown=a.contactCooldown;b.lastRoomColliderIndex=a.lastRoomColliderIndex;b.roomColliderContactCooldown=a.roomColliderContactCooldown;b.soul=a.soul;
   }
   for (int i = 0; i < FLOWER_POWERUP_COUNT; ++i) {
     const auto &a = s.flowers[i];
@@ -793,6 +803,7 @@ namespace {
 struct StableHash {
   std::uint64_t value=1469598103934665603ull;
   void byte(std::uint8_t v){value^=v;value*=1099511628211ull;}
+  void u64(std::uint64_t v){for(int i=0;i<8;++i)byte(static_cast<std::uint8_t>(v>>(i*8)));}
   void u32(std::uint32_t v){for(int i=0;i<4;++i)byte(static_cast<std::uint8_t>(v>>(i*8)));}
   void i32(std::int32_t v){u32(static_cast<std::uint32_t>(v));}
   void boolean(bool v){byte(v?1:0);}
@@ -803,6 +814,7 @@ void hashPlayerGameplay(StableHash& h,const PlayerSnapshot& p){
   h.boolean(p.active);h.byte(p.id);h.vec(p.pos);h.vec(p.vel);h.scalar(p.yaw);
   h.scalar(p.jumpVel);h.scalar(p.battery);h.byte(p.souls);h.byte(p.flags);
   h.byte(p.actionFlags);h.byte(p.storedSoulBruteMask);h.byte(static_cast<std::uint8_t>(p.airJumpsRemaining));
+  for(const auto& soul:p.storedSouls){h.u64(soul.id);h.boolean(soul.brute);h.i32(soul.originRoom);}
   h.byte(static_cast<std::uint8_t>(p.ledgeCollider));h.vec(p.ledgeNormal);
   h.scalar(p.ledgeHangTime);h.scalar(p.ledgeMantleTimer);h.byte(static_cast<std::uint8_t>(p.vacuumTarget));
   h.scalar(p.meleeTimer);h.scalar(p.dischargeTimer);h.scalar(p.bleedoutTimer);
@@ -816,6 +828,7 @@ void hashTargetGameplay(StableHash& h,const TargetSnapshot& t){
   h.vec(t.attackDirection);h.byte(t.attackVariant);h.byte(t.visualFlags);
   h.scalar(t.armorRegenDelay);h.scalar(t.respawnTimer);
   h.byte(static_cast<std::uint8_t>(t.ownerPlayerId));h.byte(static_cast<std::uint8_t>(t.grabbedPlayerId));
+  h.u64(t.soul.id);h.boolean(t.soul.brute);h.i32(t.soul.originRoom);
 }
 float angleDelta(float from,float to){
   float d=std::fmod(to-from+DB_PI,DB_PI*2.0f);
@@ -852,7 +865,7 @@ DurableSectionHashes durableSectionHashes(const WorldSnapshot& s){
   DurableSectionHashes result;
   StableHash world;
   world.i32(s.roomIndex);world.i32(s.roomSeed);world.boolean(s.started);
-  world.boolean(s.dead);world.scalar(s.roomHeat);
+  world.boolean(s.dead);world.u64(s.nextSoulId);world.scalar(s.roomHeat);
   world.i32(s.tvSignal);world.i32(s.tvDamage);world.i32(s.tvTolerance);
   world.boolean(s.tvBroken);world.boolean(s.tvAvailable);
   world.vec(s.tvEntrancePos);world.vec(s.tvEntranceNormal);
@@ -884,7 +897,9 @@ DurableSectionHashes durableSectionHashes(const WorldSnapshot& s){
   for(const auto& bullet:s.bullets){
     projectiles.boolean(bullet.active);projectiles.boolean(bullet.brute);
     projectiles.vec(bullet.pos);projectiles.vec(bullet.vel);
-    projectiles.scalar(bullet.life);
+    projectiles.scalar(bullet.life);projectiles.boolean(bullet.dropped);
+    projectiles.scalar(bullet.contactCooldown);projectiles.u64(bullet.soul.id);
+    projectiles.boolean(bullet.soul.brute);projectiles.i32(bullet.soul.originRoom);
   }
   result.projectiles=projectiles.value;
 
@@ -909,6 +924,7 @@ std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
   StableHash h;
   h.i32(s.roomIndex);h.i32(s.roomSeed);h.i32(s.requiredSouls);h.i32(s.depositedSouls);
   h.boolean(s.roomClear);h.boolean(s.started);h.boolean(s.dead);
+  h.u64(s.nextSoulId);
   h.i32(s.runRules.requiredSlotStacks);h.i32(s.runRules.crowdedRoomStacks);
   h.i32(s.runRules.fasterSlurpStacks);h.i32(s.runRules.nextId);h.i32(s.runRules.lastAdded);
   h.boolean(s.upgradeMenuActive);
@@ -921,7 +937,7 @@ std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
   for(const auto& p:s.players)hashPlayerGameplay(h,p);
   for(const auto& t:s.targets)hashTargetGameplay(h,t);
   for(std::size_t i=0;i<s.captures.size();++i){h.boolean(s.captures[i]);h.vec(s.capturePositions[i]);}
-  for(const auto& b:s.bullets){h.boolean(b.active);h.boolean(b.brute);h.vec(b.pos);h.vec(b.vel);h.scalar(b.life);}
+  for(const auto& b:s.bullets){h.boolean(b.active);h.boolean(b.brute);h.vec(b.pos);h.vec(b.vel);h.scalar(b.life);h.boolean(b.dropped);h.scalar(b.contactCooldown);h.i32(b.lastRoomColliderIndex);h.scalar(b.roomColliderContactCooldown);h.u64(b.soul.id);h.boolean(b.soul.brute);h.i32(b.soul.originRoom);}
   for(const auto& f:s.flowers){h.boolean(f.active);h.vec(f.pos);h.scalar(f.age);}
   return h.value;
 }

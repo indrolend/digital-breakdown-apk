@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 7;
-constexpr std::uint16_t GAMEPLAY_VERSION = 5;
+constexpr std::uint16_t PROTOCOL_VERSION = 9;
+constexpr std::uint16_t GAMEPLAY_VERSION = 7;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr std::size_t MAX_SNAPSHOT_BYTES = 12u * 1024u;
@@ -84,6 +84,7 @@ struct PlayerSnapshot {
     std::uint16_t actionTargetId = 0xffffu;
     float actionProgress = 0.0f;
     std::uint8_t storedSoulBruteMask = 0;
+    std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
     std::int8_t airJumpsRemaining = 0;
     std::int8_t ledgeCollider = -1;
     Vec3 ledgeNormal;
@@ -161,6 +162,7 @@ struct TargetSnapshot {
     std::int8_t ownerPlayerId = -1;
     std::int8_t grabbedPlayerId = -1;
     float grabCooldown = 0.0f;
+    SoulRecord soul;
 };
 
 struct BulletSnapshot {
@@ -170,6 +172,11 @@ struct BulletSnapshot {
     Vec3 vel;
     float life = 0.0f;
     float spin = 0.0f;
+    bool dropped = false;
+    float contactCooldown = 0.0f;
+    std::int8_t lastRoomColliderIndex = -1;
+    float roomColliderContactCooldown = 0.0f;
+    SoulRecord soul;
 };
 
 struct FlowerSnapshot {
@@ -190,6 +197,7 @@ struct WorldSnapshot {
     bool roomClear = false;
     bool started = false;
     bool dead = false;
+    std::uint64_t nextSoulId = 1;
     RunRuleState runRules;
     bool upgradeMenuActive = false;
     std::array<std::int32_t,3> temporaryUpgradeLevels{};

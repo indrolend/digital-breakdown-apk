@@ -19,7 +19,7 @@ constexpr int AUDIO_EVENT_COUNT = 64;
 constexpr int ROOM_COLLIDER_COUNT = 15;
 constexpr int PHONE_CAPACITY = 30;
 constexpr int SOUL_LATTICE_NODE_COUNT = 27;
-constexpr float PHONE_MODEL_HEIGHT = 0.16f;
+constexpr float PHONE_MODEL_HEIGHT = gameplay::WORLD_SCALE.phoneHeight;
 constexpr float PHONE_BODY_WIDTH = 0.08f;
 constexpr float PHONE_BODY_HEIGHT = PHONE_MODEL_HEIGHT;
 constexpr float PHONE_BODY_DEPTH = 0.012f;
@@ -85,6 +85,12 @@ struct PlayerCommand {
     std::uint16_t buttons = 0;
 };
 
+struct SoulRecord {
+    std::uint64_t id = 0;
+    bool brute = false;
+    int originRoom = 0;
+};
+
 struct PlayerState {
     Vec3 pos {0.0f, 0.08f, 0.0f};
     Vec3 vel {0.0f, 0.0f, 0.0f};
@@ -95,6 +101,7 @@ struct PlayerState {
     float battery = 100.0f;
     int souls = 0;
     std::array<bool, PHONE_CAPACITY> storedSoulBrute{};
+    std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
     int airJumpsRemaining = 1;
     float coyoteTimer = 0.12f;
     float jumpBufferTimer = 0.0f;
@@ -259,6 +266,7 @@ struct TargetState {
     float tetherWidth = 0.0f;
     bool tetherVisible = false;
     int networkOwnerPlayerId = -1;
+    SoulRecord soul;
 };
 
 struct CapturePointState {
@@ -275,12 +283,18 @@ struct BulletState {
     float spin = 0.0f;
     bool brute = false;
     bool depositNearMissPlayed = false;
+    bool dropped = false;
+    float contactCooldown = 0.0f;
+    int lastRoomColliderIndex = -1;
+    float roomColliderContactCooldown = 0.0f;
+    SoulRecord soul;
 };
 
 struct PendingShotState {
     bool active = false;
     bool brute = false;
     float age = 0.0f;
+    SoulRecord soul;
 };
 
 struct FlowerPowerupState {
@@ -313,6 +327,14 @@ struct RoomCollider {
     float depth = 0.0f;
     float height = 0.0f;
     Vec3 center;
+};
+
+struct SoulColliderHit {
+    bool hit = false;
+    int colliderIndex = -1;
+    float t = 1.0f;
+    Vec3 normal;
+    Vec3 position;
 };
 
 struct RoomTopologyState {
@@ -522,6 +544,7 @@ struct RoomInspectorReport {
     early_browser_visuals::RoomForm form=early_browser_visuals::RoomForm::Open;
     early_browser_visuals::RoomScale scale=early_browser_visuals::RoomScale::Standard;
     early_browser_visuals::RoomCondition condition=early_browser_visuals::RoomCondition::Normal;
+    early_browser_visuals::RoomPlaystyle playstyle=early_browser_visuals::RoomPlaystyle::Playground;
     gameplay::TraversalDifficulty requiredBand=gameplay::TraversalDifficulty::Unknown;
     int seed=0;
     int roomIndex=0;
@@ -530,6 +553,7 @@ struct RoomInspectorReport {
     int requiredEdgeCount=0;
     int colliderCount=0;
     int presentationPropCount=0;
+    std::array<int,static_cast<int>(early_browser_visuals::EnvironmentRole::Count)> environmentRoleCounts{};
     int enemyBudget=0;
     int enemyCount=0;
     int transparentPrimitiveCount=0;
@@ -616,6 +640,7 @@ struct GameState {
     std::array<FlowerPowerupState, FLOWER_POWERUP_COUNT> flowers;
     std::array<ParticleState, PARTICLE_COUNT> particles;
     int nextParticle = 0;
+    std::uint64_t nextSoulId = 1;
     AudioState audio;
     std::array<int, 5> captureSoundSlots{{0,1,2,3,4}};
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
@@ -661,6 +686,7 @@ struct GameState {
 };
 
 struct HostRemotePeerSimulationIsolationAccess;
+struct SoulProjectileLifecycleAccess;
 
 class Game {
 public:
@@ -713,6 +739,7 @@ public:
 
 private:
     friend struct HostRemotePeerSimulationIsolationAccess;
+    friend struct SoulProjectileLifecycleAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
     int simulationPlayerId_ = 0;
@@ -769,6 +796,9 @@ private:
     void spawnFlameBurst(const Vec3& position, float strength);
     void spawnShellShatter(const TargetState& target);
 
+    SoulRecord makeSoulRecord(bool brute, int originRoom);
+    bool storeSoul(PlayerState& player, const SoulRecord& soul);
+
     float batteryDrainMultiplier() const;
     int upgradeLevel(UpgradeTrack track) const;
     int pairSynergyTier(UpgradeTrack a, UpgradeTrack b) const;
@@ -821,6 +851,7 @@ private:
     void chargeClosedDoorLoop();
     void awardGoalToken(CapturePointState& capture);
     float getSegmentAabbHitT(const Vec3& from, const Vec3& to, const RoomCollider& box, float pad) const;
+    SoulColliderHit sweepSoulAgainstRoomColliders(const Vec3& start, const Vec3& end, float radius, int ignoredCollider) const;
     void constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const;
     bool isInsideDoorAperture(const Vec3& position, float pad = 0.0f) const;
     void clampRoom(Vec3& pos);
