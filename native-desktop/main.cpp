@@ -2,6 +2,7 @@
 #include "DesktopAudio.hpp"
 #include "DesktopMultiplayer.hpp"
 #include "DesktopUpdateService.hpp"
+#include "DesktopPlaytestPolicy.hpp"
 #include "BuildIdentity.hpp"
 #include "MenuNavigation.hpp"
 #include "ControllerRumble.hpp"
@@ -102,6 +103,9 @@ struct HostState {
     int gamepadId = -1;
     bool gamepadMapped = false;
     bool restoreCaptureOnFocus = false;
+    // Explicit local-only dev policy. This never opens an input endpoint; it
+    // only prevents automation/screenshot focus changes from pausing play.
+    DesktopPlaytestPolicy playtestPolicy{};
     std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> previousGamepadButtons{};
     bool previousGamepadLeftTrigger = false;
     bool previousGamepadRightTrigger = false;
@@ -1011,6 +1015,10 @@ void windowFocusCallback(GLFWwindow* window, int focused) {
     host->game.clearInputState();
     resetGamepadHistory(*host);
     if (!host->focused) {
+        if(!host->playtestPolicy.releaseCaptureOnFocusLoss()){
+            host->restoreCaptureOnFocus=false;
+            return;
+        }
         const GameState& state = host->game.state();
         host->restoreCaptureOnFocus = host->mouseCaptured && state.started && state.multiplayer.enabled && !state.dead && !state.upgradeMenu.active;
         setMouseCaptured(window, *host, false);
@@ -1243,6 +1251,7 @@ void printUsage() {
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
+    std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --room-inspector-smoke  Sweep every inspector premise and three reproducible seeds.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
@@ -1544,10 +1553,14 @@ int main(int argc, char** argv) {
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
     const bool rallyLab=hasArg(argc,argv,"--rally-lab");
+    const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
     const bool roomInspector=hasArg(argc,argv,"--room-inspector")||roomInspectorSmoke;
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
+    const bool automationNetworkRequested=multiplayerTest||hasArg(argc,argv,"--host-room")||argValue(argc,argv,"--join-room")||hasArg(argc,argv,"--auto-start-multiplayer");
+    const DesktopPlaytestPolicy playtestPolicy{automationPlaytest};
+    if(!playtestPolicy.allowsNetworkMode(automationNetworkRequested)){std::fprintf(stderr,"AUTOMATION_PLAYTEST_REFUSED reason=network_mode_not_local\n");return 2;}
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
@@ -1612,6 +1625,7 @@ int main(int argc, char** argv) {
     }
 
     HostState host;
+    host.playtestPolicy=playtestPolicy;
     host.progressionPath=progressionSavePath();
     bool recoveredPersistentSave=false;
     bool loadedPersistentSave=loadProgressionWithBackup(host.game,host.progressionPath,&recoveredPersistentSave);
@@ -1672,6 +1686,7 @@ int main(int argc, char** argv) {
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
     }
     if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
+    if(automationPlaytest)std::printf("AUTOMATION_PLAYTEST_READY local_only=YES focus_pause=OFF input_clearing=ON\n");
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     host.savedSettings=host.game.state().localSettings;
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;

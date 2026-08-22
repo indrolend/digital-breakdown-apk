@@ -250,6 +250,10 @@ add_executable(RenderContractsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/
 target_include_directories(RenderContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(RenderContractsTest PRIVATE cxx_std_17)
 
+add_executable(DesktopPlaytestPolicyTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/desktop_playtest_policy_test.cpp")
+target_include_directories(DesktopPlaytestPolicyTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(DesktopPlaytestPolicyTest PRIVATE cxx_std_17)
+
 add_executable(
     SoulEconomyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
@@ -312,6 +316,7 @@ add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
+add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
 add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
 add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
