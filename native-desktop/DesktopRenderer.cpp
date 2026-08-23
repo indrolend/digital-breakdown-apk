@@ -842,8 +842,8 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         }
     }
     const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
-    for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;
-        drawBox(surface.center+Vec3{0,0,z0},surface.halfSize*2.0f,0,0,0,traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z);
+    for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);
+        drawBox(spec.center+Vec3{0,0,z0},spec.size,0,0,0,traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z);
     }
     if(plan.sidewalks){
         const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;

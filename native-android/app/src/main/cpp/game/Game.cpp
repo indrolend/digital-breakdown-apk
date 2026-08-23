@@ -1076,11 +1076,11 @@ void Game::buildRoomColliders() {
     }
     if(routeValid)for(int i=0;i<plan.traversal.surfaceCount&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;
-        RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
-        c.minX=surface.center.x-surface.halfSize.x;c.maxX=surface.center.x+surface.halfSize.x;
-        c.minZ=surface.center.z-surface.halfSize.z;c.maxZ=surface.center.z+surface.halfSize.z;
-        c.bottomY=surface.center.y-surface.halfSize.y;c.topY=surface.center.y+surface.halfSize.y;
-        c.width=surface.halfSize.x*2.0f;c.depth=surface.halfSize.z*2.0f;c.height=surface.halfSize.y*2.0f;c.center=surface.center;
+        const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
+        c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;
+        c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
+        c.bottomY=0.0f;c.topY=spec.size.y;
+        c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
     }
     const bool propsValid=routeValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
     if(propsValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){

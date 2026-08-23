@@ -163,6 +163,11 @@ inline int physicalTraversalSurfaceCount(const RoomEnvironmentPlan& plan){
     int count=0;for(int i=0;i<plan.traversal.surfaceCount;++i)if(physicalTraversalSurface(plan,plan.traversal.surfaces[i]))++count;return count;
 }
 
+inline ObstacleSpec physicalTraversalObstacle(const gameplay::TraversalSurface& surface){
+    const float top=std::max(0.0f,surface.center.y+surface.halfSize.y);
+    return {{surface.center.x,top*0.5f,surface.center.z},{surface.halfSize.x*2.0f,top,surface.halfSize.z*2.0f}};
+}
+
 inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     RoomEnvironmentPlan plan;
     const std::uint32_t key=roomKey(roomSeed,roomIndex);
