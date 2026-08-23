@@ -20,6 +20,7 @@ int main(){
     static_assert(shadowQualityFor(1,true,true)==ShadowQuality::Cheap);
     static_assert(shadowQualityFor(2,true,true)==ShadowQuality::Directional);
     static_assert(shadowQualityFor(2,true,false)==ShadowQuality::Cheap);
-    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3 shadow_qualities=3");
+    static_assert(FieldOpenGround.texture==TextureId::FieldGrass&&FieldOpenGround.textureWorldScale==2.4f);
+    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3 shadow_qualities=3 field_grass=TEXTURED");
     return 0;
 }
