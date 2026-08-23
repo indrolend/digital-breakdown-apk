@@ -52,9 +52,11 @@ and `scripts/` remain implementation adapters. Common commands:
 .\tools\dbdev.ps1 android-stream
 ```
 
-`-Automation` is local-only, clears held input whenever focus changes, and refuses
+`-Automation` is local-only, clears held input on focus loss, and refuses
 host/join/multiplayer modes. It is safe for Codex or another desktop automation
-client; it does not expose a command server or remote input endpoint.
+client; it does not expose a command server or remote input endpoint. Relative
+mouse look is suppressed because window-capture clients reposition the system
+pointer; use keyboard/gamepad actions against the lab's deterministic starting aim.
 
 ## Windows desktop
 

@@ -961,6 +961,15 @@ void cursorCallback(GLFWwindow* window, double x, double y) {
         return;
     }
 
+    // Desktop automation activates and captures windows by moving the system
+    // pointer. Those synthetic absolute moves must not become gameplay camera
+    // deltas. Human play retains normal relative mouse look.
+    if(!host->playtestPolicy.acceptsRelativeMouseLook()){
+        host->lastMouseX=x;
+        host->lastMouseY=y;
+        return;
+    }
+
     if(host->game.state().player.grabbedByTarget>=0){const double delta=x-host->lastMouseX;host->lastMouseX=x;host->lastMouseY=y;if(std::abs(delta)>=1.0)host->game.setWiggle(static_cast<float>(delta));return;}
 
     host->lookX += x - host->lastMouseX;
@@ -1024,8 +1033,10 @@ void windowFocusCallback(GLFWwindow* window, int focused) {
     if (!host) return;
     const bool wasFocused = host->focused;
     host->focused = focused == GLFW_TRUE;
-    host->game.clearInputState();
-    resetGamepadHistory(*host);
+    if(host->playtestPolicy.clearInputOnFocusChange(host->focused)){
+        host->game.clearInputState();
+        resetGamepadHistory(*host);
+    }
     if (!host->focused) {
         if(!host->playtestPolicy.releaseCaptureOnFocusLoss()){
             host->restoreCaptureOnFocus=false;
