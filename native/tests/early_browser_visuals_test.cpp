@@ -7,16 +7,17 @@ int main(){
     using namespace early_browser_visuals;
     const auto first=roomPlan(12345,1);
     assert(first.setting==RoomSetting::Field&&first.form==RoomForm::Open&&first.grass&&!first.sidewalks);
-    assert(first.obstacleCount==3&&!first.recovery());
+    assert(first.obstacleCount==0&&!first.recovery());
     assert(first.playstyle==RoomPlaystyle::Playground);
     assert(requiredRouteIsTraversable(first,12345,1));
 
     bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
+    bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
-        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.playstyle==b.playstyle&&a.obstacleCount==b.obstacleCount);
+        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.playstyle==b.playstyle&&a.obstacleCount==b.obstacleCount&&a.composition==b.composition);
         assert(validFormForSetting(a.setting,a.form));
         assert(gameplay::validTraversalGraphTopology(a.traversal));
         assert(a.traversal.surfaceCount==b.traversal.surfaceCount&&a.traversal.edgeCount==b.traversal.edgeCount);
@@ -38,11 +39,24 @@ int main(){
         sawOrbit|=a.playstyle==RoomPlaystyle::Orbit;
         sawVertical|=a.playstyle==RoomPlaystyle::Vertical;
         sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawCoastal|=a.setting==RoomSetting::Coastal;sawRecovery|=a.recovery();
-        if(a.setting==RoomSetting::Field){assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks);assert(a.obstacleCount==1||a.obstacleCount==3);}
+        if(a.setting==RoomSetting::Field){
+            assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks&&a.obstacleCount==0&&a.composition<3);
+            const int landmarks=environmentRoleCount(a,seed,room,EnvironmentRole::Landmark);
+            const int masses=environmentRoleCount(a,seed,room,EnvironmentRole::Mass);
+            const int details=environmentRoleCount(a,seed,room,EnvironmentRole::Detail);
+            assert(landmarks<=1&&masses<=2&&details<=2);
+            if(a.recovery())assert(landmarks==0&&masses==0&&details==1);
+            else {
+                sawFieldTree|=a.composition==0;sawFieldHouse|=a.composition==1;sawFieldRuins|=a.composition==2;
+                assert(landmarks==(a.composition==2?0:1));
+                assert(masses==(a.composition==0?1:(a.composition==1?0:2)));
+                assert(details==1);
+            }
+        }
         if(a.setting==RoomSetting::City){assert(!a.grass&&a.sidewalks&&a.obstacleCount==10);}
         if(a.setting==RoomSetting::Sterile){assert((a.form==RoomForm::Corridor||a.form==RoomForm::Chamber)&&!a.grass&&!a.sidewalks&&a.obstacleCount==6);}
         if(a.setting==RoomSetting::Coastal){assert(a.form==RoomForm::Shore&&!a.grass&&!a.sidewalks&&a.obstacleCount==5);}
-        if(a.recovery()){assert(a.setting==RoomSetting::Field&&a.enemyAdjustment==-2&&a.obstacleCount==1);}
+        if(a.recovery()){assert(a.setting==RoomSetting::Field&&a.enemyAdjustment==-2&&a.obstacleCount==0);}
         if(a.form==RoomForm::Courtyard){
             assert(a.setting==RoomSetting::City);sawCourtyard=true;
             sawCompactCourtyard|=a.scale==RoomScale::Compact;
@@ -68,12 +82,13 @@ int main(){
         int solidProps=0;for(int i=0;i<propCount;++i)solidProps+=environmentPropSolid(environmentProp(a,seed,room,i))?1:0;
         assert(propsValid==(a.obstacleCount+solidProps+physicalTraversalSurfaceCount(a)<=15));
         int landmarks=0;
-        for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.role==propB.role&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(settingAllowsPrimitive(a.setting,propA.primitive));assert(std::abs(propA.center.x)>7.0f);landmarks+=propA.role==EnvironmentRole::Landmark?1:0;}
+        for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.role==propB.role&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(settingAllowsPrimitive(a.setting,propA.primitive));assert(std::abs(propA.center.x)>7.0f);if(a.setting==RoomSetting::Field)assert(propA.primitive!=EnvironmentPrimitive::MarkerPillar&&std::abs(propA.center.x)>8.4f);landmarks+=propA.role==EnvironmentRole::Landmark?1:0;}
         assert(landmarks<=1);
     }
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
+    assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins);
     const auto cityTraversal=traversalPresentationFor(RoomSetting::City,false);
     const auto sterileTraversal=traversalPresentationFor(RoomSetting::Sterile,false);
     const auto debugTraversal=traversalPresentationFor(RoomSetting::City,true);
@@ -109,5 +124,5 @@ int main(){
     GrassReactionInputs translatedInput=vacuumInput;translatedInput.player.z+=36.0f;translatedInput.vacuumOrigin.z+=36.0f;translatedInput.shotOrigin.z+=36.0f;
     const Vec3 translated=grassTip(translatedBlade,0.5f,translatedInput);
     assert(std::abs((translated.x-translatedBlade.root.x)-(vacuum.x-blade.root.x))<0.0001f);
-    std::printf("ROOM_GRAMMAR_SCALE_ROLES_OK seeds=4096 city_corridor=SIDE_BANDS story_bands=2-5 landmark=1 props=0 traversal_presentation=SETTING_DEBUG_CYAN\n");
+    std::printf("ROOM_GRAMMAR_SCALE_ROLES_OK seeds=4096 city_corridor=SIDE_BANDS field_open=NEGATIVE_SPACE field_compositions=3 field_landmarks=0-1 field_masses=0-2 traversal_presentation=SETTING_DEBUG_CYAN\n");
 }

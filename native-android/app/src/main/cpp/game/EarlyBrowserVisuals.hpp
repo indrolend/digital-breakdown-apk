@@ -39,6 +39,8 @@ struct RoomEnvironmentPlan {
     bool sidewalks = false;
     float grassAmount = 1.0f;
     int enemyAdjustment = 0;
+    // A bounded local composition roll, not a second scene taxonomy.
+    unsigned char composition = 0;
     gameplay::TraversalGraph traversal{};
 
     constexpr bool recovery() const { return condition == RoomCondition::Recovery; }
@@ -173,7 +175,7 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     else plan.setting=roll<0.27f?RoomSetting::Field:(roll<0.60f?RoomSetting::City:(roll<0.82f?RoomSetting::Sterile:RoomSetting::Coastal));
 
     plan.scale=unit(key+143u)<0.18f?RoomScale::Compact:(unit(key+143u)<0.82f?RoomScale::Standard:RoomScale::Large);
-    if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.obstacleCount=plan.recovery()?1:3;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
+    if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.composition=static_cast<unsigned char>(mix(key+197u)%3u);plan.obstacleCount=0;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
     else if(plan.setting==RoomSetting::City){
         const float formRoll=unit(key+151u);
         plan.form=roomIndex<4?RoomForm::Corridor:
@@ -265,7 +267,7 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
 }
 
 inline int environmentPropCount(const RoomEnvironmentPlan& plan){
-    if(plan.setting==RoomSetting::Field)return 3;
+    if(plan.setting==RoomSetting::Field)return plan.recovery()?1:(plan.composition==1?2:3);
     if(plan.setting==RoomSetting::City)return plan.form==RoomForm::Corridor?0:(plan.form==RoomForm::Courtyard?5:4);
     if(plan.setting==RoomSetting::Coastal)return 4;
     return 4;
@@ -282,8 +284,18 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
     const std::uint32_t key=roomKey(roomSeed,roomIndex)+0x51f15e5du+static_cast<std::uint32_t>(index)*313u;
     const float side=(index&1)?1.0f:-1.0f;
     if(plan.setting==RoomSetting::Field){
-        const float x=side*(9.2f+unit(key+1u)*2.4f),z=-12.0f+static_cast<float>(index)*11.0f+unit(key+2u)*1.2f;
-        return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{x,0.035f,z},{3.0f+unit(key+3u)*1.8f,0.07f,4.0f+unit(key+4u)*2.2f},unit(key+5u)*0.08f,static_cast<unsigned char>(index%3)};
+        const float human=gameplay::WORLD_SCALE.humanHeight;
+        const float landmarkSide=unit(roomKey(roomSeed,roomIndex)+331u)<0.5f?-1.0f:1.0f;
+        if(plan.recovery())return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{landmarkSide*10.8f,0.035f,8.5f},{human*2.8f,0.07f,human*3.8f},landmarkSide*0.05f,0};
+        if(plan.composition==0){
+            if(index==0)return {EnvironmentPrimitive::Tree,EnvironmentRole::Landmark,{landmarkSide*10.6f,0,4.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.5f,human*4.2f,human*2.5f},0,0};
+            if(index==1)return {EnvironmentPrimitive::Ruin,EnvironmentRole::Mass,{-landmarkSide*9.4f,0,-8.0f+(unit(key+2u)-0.5f)*1.5f},{human*2.2f,gameplay::WORLD_SCALE.highCoverHeight,human*1.8f},landmarkSide*0.18f,1};
+        } else if(plan.composition==1){
+            if(index==0)return {EnvironmentPrimitive::House,EnvironmentRole::Landmark,{landmarkSide*10.5f,0,-2.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.6f,gameplay::WORLD_SCALE.storyHeight,human*3.2f},landmarkSide*1.5707963f,static_cast<unsigned char>(roomKey(roomSeed,roomIndex)%3u)};
+        } else {
+            if(index<2){const float ruinSide=index==0?-1.0f:1.0f;return {EnvironmentPrimitive::Ruin,EnvironmentRole::Mass,{ruinSide*(9.0f+unit(key+1u)*0.7f),0,index==0?-7.5f:7.5f},{human*(1.8f+unit(key+3u)*0.5f),gameplay::WORLD_SCALE.lowCoverHeight+unit(key+4u)*(gameplay::WORLD_SCALE.highCoverHeight-gameplay::WORLD_SCALE.lowCoverHeight),human*(1.6f+unit(key+5u)*0.5f)},ruinSide*0.22f,static_cast<unsigned char>(index)};}
+        }
+        return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{-landmarkSide*10.8f,0.035f,12.0f},{human*2.8f,0.07f,human*4.0f},-landmarkSide*0.06f,2};
     }
     if(plan.setting==RoomSetting::City){
         const int row=index/2;const float x=side*(13.05f+unit(key+1u)*0.12f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*0.7f;
