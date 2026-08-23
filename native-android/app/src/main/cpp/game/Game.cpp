@@ -435,6 +435,40 @@ void Game::debugStartSecretTvTest(bool enterRoom) {
     updateCamera(0.0f);
 }
 
+void Game::debugStartRallyLab(){
+    restart();state_.rallyLab=true;state_.cinematic.introActive=false;
+    for(auto& target:state_.targets)target.alive=false;
+    for(auto& bullet:state_.bullets)bullet=BulletState{};
+    for(int i=0;i<state_.requiredSouls;++i)state_.captures[i].filled=true;
+    state_.depositedSouls=state_.requiredSouls;state_.roomClear=true;
+    state_.player.souls=0;state_.player.storedSoulBrute.fill(false);state_.player.storedSouls.fill(SoulRecord{});
+    debugSpawnStoredSoul();state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
+}
+
+bool Game::debugSpawnStoredSoul(){
+    if(state_.player.souls>=MAX_STORED_SOULS)return false;
+    return storeSoul(state_.player,makeSoulRecord(false,state_.roomIndex));
+}
+void Game::debugFillBattery(){state_.player.battery=100.0f;state_.hud.batteryFill=1.0f;}
+bool Game::debugSetEnemies(int mode){
+    bool any=false;for(const auto& target:state_.targets)if(gameplay::isActiveHuman(target)){any=true;break;}
+    const bool enabled=mode<0?!any:mode>0;
+    if(state_.roomInspector){state_.roomInspectorEnemies=enabled;debugStepRoomInspector(0,false);return enabled;}
+    if(!enabled){for(auto& target:state_.targets)target=TargetState{};return false;}
+    for(int i=0;i<activeHumanTarget();++i)if(!gameplay::isActiveHuman(state_.targets[i]))respawnTarget(i);
+    return true;
+}
+void Game::debugNextRoom(){
+    if(state_.roomInspector){debugStepRoomInspector(1,false);return;}
+    if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
+    state_.roomSeed=static_cast<int>(static_cast<std::uint32_t>(state_.roomSeed)+9973u);resetRoom();state_.cinematic.introActive=false;
+}
+void Game::debugRerollRoom(){
+    if(state_.roomInspector){debugStepRoomInspector(0,true);return;}
+    if(state_.roomSeed<std::numeric_limits<int>::max())++state_.roomSeed;else state_.roomSeed=1;
+    resetRoom();state_.cinematic.introActive=false;
+}
+
 void Game::debugStartTraversalLab() {
     reset();
     state_.traversalLab=true;

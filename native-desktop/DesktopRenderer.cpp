@@ -1068,7 +1068,7 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
     glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glDisable(GL_TEXTURE_2D);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
 }
 
-void DesktopRenderer::draw(const GameState& state) const {
+void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
     glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
@@ -1246,6 +1246,26 @@ void DesktopRenderer::draw(const GameState& state) const {
         else drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
     }
     if(state.localSettings.portalWindow)drawDoorDataMosh(state);
+    if(codec&&codec->showColliders){
+        glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);glLineWidth(2.0f);
+        const float z0=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+        for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::ElectricMagenta.r,Pass7Visual::ElectricMagenta.g,Pass7Visual::ElectricMagenta.b);}
+        glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);glEnable(GL_CULL_FACE);glEnable(GL_LIGHTING);
+    }
     if(hudVisible_)drawHud(state);
+    if(codec&&codec->open)drawDeveloperCodec(*codec);
     glFlush();
+}
+
+void DesktopRenderer::drawDeveloperCodec(const DeveloperCodecState& codec) const{
+    glDisable(GL_DEPTH_TEST);glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,width_,height_,0,-1,1);glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+    const auto quad=[](float x,float y,float w,float h,float r,float g,float b,float a){glColor4f(r,g,b,a);glBegin(GL_QUADS);glVertex2f(x,y);glVertex2f(x+w,y);glVertex2f(x+w,y+h);glVertex2f(x,y+h);glEnd();};
+    const auto text=[&](const std::string& value,float x,float y,float scale,float r,float g,float b,float a){float pen=x;for(char c:value){if(c==' '){pen+=6*scale;continue;}const auto rows=bitmapGlyph(c);for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col)))quad(pen+col*scale,y+row*scale,scale,scale,r,g,b,a);pen+=6*scale;}};
+    const float w=std::min(860.0f,static_cast<float>(width_)-32.0f),h=250.0f,x=(width_-w)*0.5f,y=height_-h-22.0f;
+    quad(x,y,w,h,0.005f,0.012f,0.016f,0.92f);quad(x,y,w,2,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.90f);
+    text("DEVELOPER CODEC  LOCAL / ALLOWLISTED",x+14,y+12,1.25f,0.72f,0.96f,1.0f,0.95f);
+    float lineY=y+38.0f;for(int i=0;i<codec.outputCount;++i,lineY+=17.0f)text(codec.output[i],x+14,lineY,1.05f,0.78f,0.90f,0.92f,0.92f);
+    quad(x+10,y+h-38,w-20,26,0.01f,0.02f,0.025f,0.96f);text("> "+codec.input+"_",x+18,y+h-31,1.18f,Pass7Visual::AcidChartreuse.r,Pass7Visual::AcidChartreuse.g,Pass7Visual::AcidChartreuse.b,1.0f);
+    glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
 }

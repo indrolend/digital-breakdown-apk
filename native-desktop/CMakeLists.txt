@@ -254,6 +254,10 @@ add_executable(DesktopPlaytestPolicyTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/
 target_include_directories(DesktopPlaytestPolicyTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(DesktopPlaytestPolicyTest PRIVATE cxx_std_17)
 
+add_executable(DeveloperCodecTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/developer_codec_test.cpp")
+target_include_directories(DeveloperCodecTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(DeveloperCodecTest PRIVATE cxx_std_17)
+
 add_executable(
     SoulEconomyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
@@ -317,6 +321,7 @@ add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
+add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)
 add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
 add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)

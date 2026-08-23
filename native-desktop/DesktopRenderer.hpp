@@ -3,6 +3,7 @@
 #include "Game.hpp"
 #include "ModelData.hpp"
 #include "HumanModelData.hpp"
+#include "DeveloperCodec.hpp"
 
 #include <filesystem>
 #include <vector>
@@ -15,7 +16,7 @@ public:
     void setAssetRoot(const std::filesystem::path& root);
     void resize(int width, int height);
     void setHudVisible(bool visible);
-    void draw(const GameState& state) const;
+    void draw(const GameState& state, const DeveloperCodecState* codec=nullptr) const;
 
 private:
     TvGifWall tvGifWall_;
@@ -43,5 +44,6 @@ private:
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
     void drawPhoneDisplayTexture(const GameState& state) const;
     void drawHud(const GameState& state) const;
+    void drawDeveloperCodec(const DeveloperCodecState& codec) const;
     void drawDoorDataMosh(const GameState& state) const;
 };

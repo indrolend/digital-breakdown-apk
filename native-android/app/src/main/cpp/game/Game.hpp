@@ -669,6 +669,7 @@ struct GameState {
     bool dead = false;
     bool uiPaused = false;
     bool attractMode = false;
+    bool rallyLab = false;
     bool traversalLab = false;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
@@ -697,8 +698,14 @@ public:
     void dismissAttractMode();
     // Local lab/exploit hook for desktop testing; not serialized into online snapshots.
     void debugStartSecretTvTest(bool enterRoom);
+    void debugStartRallyLab();
     void debugStartTraversalLab();
     void debugStartRoomInspector();
+    bool debugSpawnStoredSoul();
+    void debugFillBattery();
+    bool debugSetEnemies(int mode);
+    void debugNextRoom();
+    void debugRerollRoom();
     void debugStepRoomInspector(int delta,bool newSeed=false);
     void debugToggleRoomInspectorEnemies();
     std::string debugRoomReviewLine(RoomReviewRating rating) const;
