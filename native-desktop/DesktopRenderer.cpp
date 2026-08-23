@@ -5,6 +5,7 @@
 #include "PhoneDisplayLayout.hpp"
 #include "RenderContracts.hpp"
 #include "FieldGrassTexture.hpp"
+#include "CitySurfaceTexture.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -801,6 +802,13 @@ void DesktopRenderer::drawFieldGrass(int tileIndex) const{
     glTexCoord2f(0,0);glVertex3f(-ROOM_WIDTH*0.5f,0.003f,z0-ROOM_DEPTH*0.5f);glTexCoord2f(ROOM_WIDTH/scale,0);glVertex3f(ROOM_WIDTH*0.5f,0.003f,z0-ROOM_DEPTH*0.5f);glTexCoord2f(ROOM_WIDTH/scale,ROOM_DEPTH/scale);glVertex3f(ROOM_WIDTH*0.5f,0.003f,z0+ROOM_DEPTH*0.5f);glTexCoord2f(0,ROOM_DEPTH/scale);glVertex3f(-ROOM_WIDTH*0.5f,0.003f,z0+ROOM_DEPTH*0.5f);glEnd();glDisable(GL_TEXTURE_2D);
 }
 
+void DesktopRenderer::drawCityGround(int tileIndex) const{
+    if(!citySurfaceTexture_){const auto pixels=city_surface_texture::pixels();glGenTextures(1,&citySurfaceTexture_);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,city_surface_texture::Size,city_surface_texture::Size,0,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());}
+    const float z0=static_cast<float>(tileIndex)*ROOM_DEPTH,scale=render_contract::CityGround.textureWorldScale;
+    glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glColor3f(1,1,1);glNormal3f(0,1,0);glBegin(GL_QUADS);
+    glTexCoord2f(0,0);glVertex3f(-ROOM_WIDTH*0.5f,0.003f,z0-ROOM_DEPTH*0.5f);glTexCoord2f(ROOM_WIDTH/scale,0);glVertex3f(ROOM_WIDTH*0.5f,0.003f,z0-ROOM_DEPTH*0.5f);glTexCoord2f(ROOM_WIDTH/scale,ROOM_DEPTH/scale);glVertex3f(ROOM_WIDTH*0.5f,0.003f,z0+ROOM_DEPTH*0.5f);glTexCoord2f(0,ROOM_DEPTH/scale);glVertex3f(-ROOM_WIDTH*0.5f,0.003f,z0+ROOM_DEPTH*0.5f);glEnd();glDisable(GL_TEXTURE_2D);
+}
+
 void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const {
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
     const float z0 = static_cast<float>(tileIndex) * ROOM_DEPTH;
@@ -814,6 +822,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
     drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(tileIndex);
+    if(plan.setting==early_browser_visuals::RoomSetting::City)drawCityGround(tileIndex);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
     if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {

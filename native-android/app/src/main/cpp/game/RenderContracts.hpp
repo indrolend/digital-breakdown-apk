@@ -6,7 +6,7 @@
 namespace render_contract {
 
 enum class ShadingModel : unsigned char { Unlit, ColorGraded, NormalLit };
-enum class TextureId : unsigned char { None, FieldGrass };
+enum class TextureId : unsigned char { None, FieldGrass, CityAsphalt };
 enum class ShadowQuality : unsigned char { Off, Cheap, Directional };
 
 constexpr ShadowQuality shadowQualityFor(int graphicsPreset,bool shadowsEnabled,bool directionalSupported){
@@ -27,6 +27,7 @@ constexpr MaterialDefinition sceneMatte(VisualColor color,float opacity=1.0f){re
 constexpr MaterialDefinition normalLit(VisualColor color,float opacity=1.0f){return {color,ShadingModel::NormalLit,opacity,true,TextureId::None,1.0f};}
 constexpr MaterialDefinition unlit(VisualColor color,float opacity=1.0f){return {color,ShadingModel::Unlit,opacity,false,TextureId::None,1.0f};}
 inline constexpr MaterialDefinition FieldOpenGround{Pass7Visual::FieldGround,ShadingModel::ColorGraded,1.0f,true,TextureId::FieldGrass,2.4f};
+inline constexpr MaterialDefinition CityGround{{0.24f,0.26f,0.28f},ShadingModel::ColorGraded,1.0f,true,TextureId::CityAsphalt,3.2f};
 constexpr float androidShadingSelector(ShadingModel model){return model==ShadingModel::Unlit?-1.0f:(model==ShadingModel::NormalLit?1.0f:0.0f);}
 
 struct DirectionalLightDefinition { Vec3 direction{};VisualColor color{1,1,1};float intensity=1.0f; };

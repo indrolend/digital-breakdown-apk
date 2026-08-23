@@ -4,6 +4,7 @@
 #include "../game/EarlyBrowserVisuals.hpp"
 #include "../game/RenderContracts.hpp"
 #include "../game/FieldGrassTexture.hpp"
+#include "../game/CitySurfaceTexture.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
@@ -288,6 +289,7 @@ void Renderer::surfaceCreated() {
     initProgram();
     initDatamoshProgram();
     {const auto pixels=field_grass_texture::pixels();glGenTextures(1,&fieldGrassTexture_);glBindTexture(GL_TEXTURE_2D,fieldGrassTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,field_grass_texture::Size,field_grass_texture::Size,0,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());}
+    {const auto pixels=city_surface_texture::pixels();glGenTextures(1,&citySurfaceTexture_);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,city_surface_texture::Size,city_surface_texture::Size,0,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());}
     if(!assetRoot_.empty()) {
         phoneModel_.load(assetRoot_+"/phone.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
         if(phoneModel_.valid()){glGenBuffers(1,&phoneVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.vertices.size()*sizeof(float),phoneModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&phoneNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneNormalVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.normals.size()*sizeof(float),phoneModel_.normals.data(),GL_STATIC_DRAW);}
@@ -321,6 +323,11 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
 void Renderer::drawFieldGrass(const float* viewProj,int tileIndex,const float color[4]){
     if(!program_||!fieldGrassTexture_)return;float model[16],mvp[16];modelBox(model,{0,-0.035f,static_cast<float>(tileIndex)*ROOM_DEPTH},{ROOM_WIDTH,0.07f,ROOM_DEPTH},0);multiply(mvp,viewProj,model);
     glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,1.0f);glUniform1f(uTextureScale_,render_contract::FieldOpenGround.textureWorldScale);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,color);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,fieldGrassTexture_);glUniform1i(uTexture_,0);glBindBuffer(GL_ARRAY_BUFFER,vbo_);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glDrawArrays(GL_TRIANGLES,0,36);glUniform1f(uTextureEnabled_,0.0f);
+}
+
+void Renderer::drawCityGround(const float* viewProj,int tileIndex,const float color[4]){
+    if(!program_||!citySurfaceTexture_)return;float model[16],mvp[16];modelBox(model,{0,-0.035f,static_cast<float>(tileIndex)*ROOM_DEPTH},{ROOM_WIDTH,0.07f,ROOM_DEPTH},0);multiply(mvp,viewProj,model);
+    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,1.0f);glUniform1f(uTextureScale_,render_contract::CityGround.textureWorldScale);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,color);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glUniform1i(uTexture_,0);glBindBuffer(GL_ARRAY_BUFFER,vbo_);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glDrawArrays(GL_TRIANGLES,0,36);glUniform1f(uTextureEnabled_,0.0f);
 }
 
 void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& model,unsigned int vbo,unsigned int normalVbo,const Vec3& pos,const Vec3& scale,const Quat& orientation,bool shadow) {
@@ -465,6 +472,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const float groundColor[4] = {field?Pass7Visual::FieldGround.r:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(viewProj,tileIndex,groundColor);
+    if(plan.setting==early_browser_visuals::RoomSetting::City){const float asphalt[4]={render_contract::CityGround.baseColor.r,render_contract::CityGround.baseColor.g,render_contract::CityGround.baseColor.b,1.0f};drawCityGround(viewProj,tileIndex,asphalt);}
     if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.005f,z0},{23.5f,0.01f,35.5f},0,sand);}
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};

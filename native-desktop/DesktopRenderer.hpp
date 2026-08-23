@@ -30,6 +30,7 @@ private:
     mutable unsigned int tvScreenTexture_ = 0;
     mutable unsigned int phoneDisplayTexture_ = 0;
     mutable unsigned int fieldGrassTexture_ = 0;
+    mutable unsigned int citySurfaceTexture_ = 0;
     mutable std::vector<unsigned char> phoneDisplayPixels_;
     mutable unsigned long long phoneDisplayCacheKey_ = 0;
     mutable bool phoneDisplayCacheValid_ = false;
@@ -39,6 +40,7 @@ private:
 
     void drawRoomTile(const GameState& state, int tileIndex) const;
     void drawFieldGrass(int tileIndex) const;
+    void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
     void drawHumanModel(const TargetState& target, float time, bool shadow = false) const;
