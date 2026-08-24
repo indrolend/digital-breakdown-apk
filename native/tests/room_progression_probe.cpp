@@ -29,6 +29,35 @@ int filledGoals(const GameState& state) {
     return count;
 }
 
+bool isCaptureCue(AudioCue cue) {
+    switch (cue) {
+        case AudioCue::Capture1:
+        case AudioCue::Capture2:
+        case AudioCue::Capture3:
+        case AudioCue::Capture4:
+        case AudioCue::Capture5:
+            return true;
+        default:
+            return false;
+    }
+}
+
+int captureCuesSince(const GameState& state, unsigned int firstSerial) {
+    int count = 0;
+    for (const auto& event : state.audio.events) {
+        if (event.serial >= firstSerial && isCaptureCue(event.cue)) ++count;
+    }
+    return count;
+}
+
+int cueCountSince(const GameState& state, AudioCue cue, unsigned int firstSerial) {
+    int count = 0;
+    for (const auto& event : state.audio.events) {
+        if (event.serial >= firstSerial && event.cue == cue) ++count;
+    }
+    return count;
+}
+
 int activeHumans(const GameState& state) {
     return static_cast<int>(std::count_if(
         state.targets.begin(), state.targets.end(),
@@ -92,6 +121,8 @@ int main() {
         const int required = roomStart.requiredSouls;
         const int rulesBefore = ruleStacks(roomStart);
         const std::int64_t tokensBefore = roomStart.progression.permanent.tokens;
+        const std::uint64_t revisionBefore = roomStart.progression.permanent.revision;
+        const unsigned int audioSerialBefore = roomStart.audio.nextSerial;
         maximumRequired = std::max(maximumRequired, required);
         maximumHumans = std::max(maximumHumans, activeHumans(roomStart));
 
@@ -105,28 +136,54 @@ int main() {
             bullet.pos = state.captures[shot].pos + Vec3{0, 0, tileOrigin + 1.9f};
             bullet.vel = {0, 0, -25.0f};
             step(game);
-            if (filledGoals(game.state()) != shot + 1) {
-                return fail(iteration, "goal_not_filled_once", game.state());
+            const GameState& afterDeposit = game.state();
+            if (filledGoals(afterDeposit) != shot + 1) {
+                return fail(iteration, "goal_not_filled_once", afterDeposit);
+            }
+            if (afterDeposit.progression.permanent.tokens != tokensBefore + shot + 1 ||
+                afterDeposit.progression.permanent.revision != revisionBefore + static_cast<std::uint64_t>(shot + 1)) {
+                return fail(iteration, "goal_reward_not_exactly_once", afterDeposit);
             }
         }
 
         const GameState& cleared = game.state();
         if (!cleared.roomClear || filledGoals(cleared) != required ||
-            cleared.progression.permanent.tokens != tokensBefore + required) {
+            cleared.progression.permanent.tokens != tokensBefore + required ||
+            cleared.progression.permanent.revision != revisionBefore + static_cast<std::uint64_t>(required)) {
             return fail(iteration, "room_not_cleared", cleared);
+        }
+        if (captureCuesSince(cleared, audioSerialBefore) != required ||
+            cueCountSince(cleared, AudioCue::PaymentSuccess, audioSerialBefore) != 1) {
+            return fail(iteration, "deposit_feedback_not_exactly_once", cleared);
         }
         if (room == 10) {
             if (cleared.secretTv.knockCueTimer <= 0.0f) return fail(iteration, "secret_not_woken", cleared);
             ++secretWakeCount;
         }
         const std::int64_t stableTokens = cleared.progression.permanent.tokens;
+        const std::uint64_t stableRevision = cleared.progression.permanent.revision;
+        const int stableCaptureCues = captureCuesSince(cleared, audioSerialBefore);
+        const int stableClearCues = cueCountSince(cleared, AudioCue::PaymentSuccess, audioSerialBefore);
         step(game);
-        if (game.state().progression.permanent.tokens != stableTokens) {
+        if (game.state().progression.permanent.tokens != stableTokens ||
+            game.state().progression.permanent.revision != stableRevision ||
+            captureCuesSince(game.state(), audioSerialBefore) != stableCaptureCues ||
+            cueCountSince(game.state(), AudioCue::PaymentSuccess, audioSerialBefore) != stableClearCues) {
             return fail(iteration, "duplicate_goal_reward", game.state());
         }
 
         GameState& crossing = game.networkMutableState();
         const float tileOrigin = static_cast<float>(crossing.topology.currentTileIndex) * kRoomDepth;
+        crossing.player.souls = 3;
+        crossing.player.storedSoulBrute[0] = true;
+        crossing.progression.run.roomHeat = 0.75f;
+        crossing.progression.run.roomElapsed = 12.0f;
+        crossing.progression.run.roomCaptures = 4;
+        crossing.vacuum.active = true;
+        crossing.vacuum.power = 0.8f;
+        crossing.meleeVisual.visualTimer = 0.25f;
+        crossing.energy.dischargeTimer = 0.40f;
+        crossing.energy.dischargePositionAmount = 0.65f;
         crossing.player.pos = {0, PHONE_MODEL_HEIGHT * 0.5f, tileOrigin - 20.8f};
         crossing.player.vel = {0, 0, -20.0f};
         crossing.player.grounded = true;
@@ -139,6 +196,27 @@ int main() {
             !advanced.upgradeMenu.active || !advanced.uiPaused ||
             ruleStacks(advanced) != expectedRules || !finiteState(advanced)) {
             return fail(iteration, "invalid_room_advance", advanced);
+        }
+        if (advanced.player.souls != 0 ||
+            std::any_of(advanced.player.storedSoulBrute.begin(), advanced.player.storedSoulBrute.end(), [](bool brute){ return brute; })) {
+            return fail(iteration, "room_advance_clears_stored_souls", advanced);
+        }
+        // resetRoom() clears room-lifetime counters at the transition boundary,
+        // then the same Game::update() continues into updateRoomPopulation(dt).
+        // Assert the externally observable end-of-update contract: stale-room
+        // counters are gone, captures remain reset, and the new room has advanced
+        // by exactly this frame rather than remaining at the internal reset snapshot.
+        if (advanced.progression.run.roomCaptures != 0 ||
+            std::abs(advanced.progression.run.roomElapsed - kDt) > 1.0e-6f ||
+            advanced.progression.run.roomHeat <= 0.0f ||
+            advanced.progression.run.roomHeat >= 0.01f) {
+            return fail(iteration, "room_advance_reinitializes_room_run_counters", advanced);
+        }
+        if (advanced.vacuum.active || advanced.vacuum.power != 0.0f ||
+            advanced.meleeVisual.visualTimer != 0.0f ||
+            advanced.energy.dischargeTimer != 0.0f ||
+            advanced.energy.dischargePositionAmount != 0.0f) {
+            return fail(iteration, "room_advance_clears_action_runtime", advanced);
         }
 
         if (!game.chooseTemporaryUpgrade((iteration - 1) % 3)) {
