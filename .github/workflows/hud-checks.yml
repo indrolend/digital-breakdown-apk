@@ -1,16 +1,20 @@
-name: CommandHUD checks
+name: CommandHUD integration check
 
 on:
   pull_request:
     paths:
-      - "tools/hud/**"
+      - "distribution/project.json"
+      - "tools/commandhud-project.test.mjs"
+      - "CommandHUD*.cmd"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/hud-checks.yml"
   push:
     branches: [main]
     paths:
-      - "tools/hud/**"
+      - "distribution/project.json"
+      - "tools/commandhud-project.test.mjs"
+      - "CommandHUD*.cmd"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/hud-checks.yml"
@@ -42,11 +46,5 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Reject vulnerable dependencies
-        run: npm audit --audit-level=moderate
-
-      - name: Verify CommandHUD core
-        run: npm run hud:test
+      - name: Verify DATA CommandHUD integration
+        run: npm run hud:check

@@ -41,12 +41,12 @@ The terminal context-condensing shell is CommandHUD's primary product surface. T
 
 CommandHUD provides two local interfaces over the same repository, shell, Git, and immutable evidence state:
 
-- Double-click `CommandHUD.cmd` for the visual desktop application.
+- Install CommandHUD once from its [product repository](https://github.com/indrolend/hate.this.meaningless.life), then double-click `CommandHUD.cmd` for the visual desktop application.
 - Double-click `CommandHUD Shell.cmd`, or run `hud shell`, for the terminal-only interface with condensed output by default.
 
-The terminal interface accepts ordinary pasted PowerShell, Bash, or Command Prompt commands. After every command it displays the shortened ChatGPT-ready result and automatically copies that identical result to the clipboard. Complete stdout and stderr remain available through `/raw`; `/copy` copies the last result again. See [the CommandHUD guide](tools/hud/README.md) for the full command set and safety boundaries.
+The terminal interface accepts ordinary pasted PowerShell, Bash, or Command Prompt commands. After every command it displays the shortened ChatGPT-ready result and automatically copies that identical result to the clipboard. Complete stdout and stderr remain available through `/raw`; `/copy` copies the last result again. CommandHUD runtime and documentation are owned by `indrolend/hate.this.meaningless.life`; this repository owns only DATA identity and typed command declarations in `distribution/project.json`.
 
-`CommandHUD Shell.cmd` resolves CommandHUD relative to its own location, so it continues to work when the repository is cloned, moved, or checked out on another branch. The optional desktop shortcut is machine-specific and is not part of the repository: create a shortcut to the `.cmd` file inside your own clone if you want desktop access.
+Both launchers select this repository through an explicit root and delegate to the installed `hud` command. The optional desktop shortcut is machine-specific and is not part of the repository: create a shortcut to the `.cmd` file inside your own clone if you want desktop access.
 
 In an interactive terminal, the original CommandHUD face marks the prompt and a single status row animates factual `RUNNING` to `PASS`, `FAIL`, or `STOPPED` transitions. Motion is automatically disabled for redirected output and reduced-motion environments. Run `hud shell --no-animation` for an explicitly static interface.
 
