@@ -35,6 +35,17 @@ ctest --test-dir build/desktop-release -C Release --output-on-failure
 
 More detailed workflows are in [Development](docs/DEVELOPMENT.md).
 
+## CommandHUD
+
+CommandHUD provides two local interfaces over the same repository, shell, Git, and immutable evidence state:
+
+- Double-click `CommandHUD.cmd` for the visual desktop application.
+- Double-click `CommandHUD Shell.cmd`, or run `hud shell`, for the terminal-only interface with condensed output by default.
+
+The terminal interface accepts ordinary pasted PowerShell, Bash, or Command Prompt commands. After every command it displays the shortened ChatGPT-ready result and automatically copies that identical result to the clipboard. Complete stdout and stderr remain available through `/raw`; `/copy` copies the last result again. See [the CommandHUD guide](tools/hud/README.md) for the full command set and safety boundaries.
+
+`CommandHUD Shell.cmd` resolves CommandHUD relative to its own location, so it continues to work when the repository is cloned, moved, or checked out on another branch. The optional desktop shortcut is machine-specific and is not part of the repository: create a shortcut to the `.cmd` file inside your own clone if you want desktop access.
+
 ## Contributing
 
 Please keep gameplay deterministic, preserve multiplayer protocol compatibility,
