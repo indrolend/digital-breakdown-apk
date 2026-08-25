@@ -37,6 +37,8 @@ More detailed workflows are in [Development](docs/DEVELOPMENT.md).
 
 ## CommandHUD
 
+The terminal TUI is CommandHUD's primary product surface. The browser-connected renderer remains a secondary client over the same authoritative local runtime and semantic state.
+
 CommandHUD provides two local interfaces over the same repository, shell, Git, and immutable evidence state:
 
 - Double-click `CommandHUD.cmd` for the visual desktop application.
@@ -45,6 +47,10 @@ CommandHUD provides two local interfaces over the same repository, shell, Git, a
 The terminal interface accepts ordinary pasted PowerShell, Bash, or Command Prompt commands. After every command it displays the shortened ChatGPT-ready result and automatically copies that identical result to the clipboard. Complete stdout and stderr remain available through `/raw`; `/copy` copies the last result again. See [the CommandHUD guide](tools/hud/README.md) for the full command set and safety boundaries.
 
 `CommandHUD Shell.cmd` resolves CommandHUD relative to its own location, so it continues to work when the repository is cloned, moved, or checked out on another branch. The optional desktop shortcut is machine-specific and is not part of the repository: create a shortcut to the `.cmd` file inside your own clone if you want desktop access.
+
+In an interactive terminal, the original CommandHUD face marks the prompt and a single status row animates factual `RUNNING` to `PASS`, `FAIL`, or `STOPPED` transitions. Motion is automatically disabled for redirected output and reduced-motion environments. Run `hud shell --no-animation` for an explicitly static interface.
+
+The default interactive shell uses a fixed terminal layout: identity and status remain at the top, the latest shortened result stays in the center, and command input remains at the bottom. The footer provides real terminal mouse targets for Copy Output, Raw, Undo, Help, and Exit; each invokes the same inspectable slash command. The result is also copied automatically. Use `hud shell --plain` for a conventional scrolling terminal, including screen-reader workflows and inspection of long raw output.
 
 ## Contributing
 

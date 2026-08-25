@@ -20,7 +20,7 @@ if not exist "%~dp0tools\hud\cli.mjs" (
   exit /b 1
 )
 
-node "%~dp0tools\hud\cli.mjs" shell --root "%~dp0."
+node "%~dp0tools\hud\cli.mjs" shell --root "%~dp0." %*
 set "COMMANDHUD_EXIT=%ERRORLEVEL%"
 if not "%COMMANDHUD_EXIT%"=="0" (
   echo.
