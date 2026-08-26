@@ -25,6 +25,7 @@
         "command": "python tools/verify_asset_mirrors.py",
         "argv": ["python", "tools/verify_asset_mirrors.py"],
         "owner": "tools/verify_asset_mirrors.py",
+        "resultMarkers": true,
         "successMarkers": [
           {"contains": "ASSET_MIRRORS=PASS", "summary": "asset mirrors"}
         ]
