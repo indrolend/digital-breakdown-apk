@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 const windows = process.platform === "win32";
 const command = windows ? "powershell.exe" : "bash";
-const windowsBuildRoot = join(process.env.LOCALAPPDATA || tmpdir(), "CodexBuild", "digital-breakdown-gameplay-checks");
+const checkoutRoot = resolve(import.meta.dirname, "..");
+const checkoutKey = createHash("sha256").update(checkoutRoot.toLowerCase()).digest("hex").slice(0, 12);
+const windowsBuildRoot = join(process.env.LOCALAPPDATA || tmpdir(), "CodexBuild", `digital-breakdown-gameplay-checks-${checkoutKey}`);
 const args = windows
   ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify-gameplay.ps1", "-BuildDir", windowsBuildRoot]
   : ["scripts/verify-gameplay.sh"];

@@ -33,3 +33,15 @@ test('DATA launchers delegate to the installed product with an explicit root', (
   assert.match(desktop, /hud desktop --root "%~dp0\."/);
   assert.doesNotMatch(`${shell}\n${desktop}`, /tools[\\/]hud|node .*cli\.mjs/i);
 });
+
+test('native verification owns one cross-platform factual result marker and checkout-scoped build cache', () => {
+  const command = project.commandHud.commands.find(({ name }) => name === 'native-tests');
+  assert.equal(command.resultMarkers, true);
+  const windows = readFileSync(join(root, 'scripts', 'verify-gameplay.ps1'), 'utf8');
+  const unix = readFileSync(join(root, 'scripts', 'verify-gameplay.sh'), 'utf8');
+  const wrapper = readFileSync(join(root, 'tools', 'run-native-tests.mjs'), 'utf8');
+  assert.match(windows, /NATIVE_VERIFICATION=PASS suite=gameplay/);
+  assert.match(unix, /NATIVE_VERIFICATION=PASS suite=gameplay/);
+  assert.match(wrapper, /checkoutKey/);
+  assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
+});

@@ -27,3 +27,5 @@ if ($LASTEXITCODE -ne 0) { throw "HostRemotePeerSimulationIsolationTest failed w
 
 git diff --check
 if ($LASTEXITCODE -ne 0) { throw "git diff --check failed with exit code $LASTEXITCODE" }
+
+Write-Output "NATIVE_VERIFICATION=PASS suite=gameplay"

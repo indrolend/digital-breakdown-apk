@@ -46,3 +46,4 @@ run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
 run_logged determinism "$BUILD_DIR/MultiplayerDeterminismTest"
 run_logged peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
 run_logged diff-check git diff --check
+echo "NATIVE_VERIFICATION=PASS suite=gameplay"
