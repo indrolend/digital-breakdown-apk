@@ -45,3 +45,14 @@ test('native verification owns one cross-platform factual result marker and chec
   assert.match(wrapper, /checkoutKey/);
   assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
 });
+
+test('multiplayer verification emits one factual marker only after its complete check chain', () => {
+  const command = project.commandHud.commands.find(({ name }) => name === 'multiplayer');
+  assert.equal(command.resultMarkers, true);
+  assert.equal(command.kind, 'test');
+  const multiplayerPackage = JSON.parse(readFileSync(join(root, 'multiplayer-server', 'package.json'), 'utf8'));
+  assert.match(
+    multiplayerPackage.scripts.check,
+    /wrangler types --check && tsc --noEmit && vitest run && node -e .*MULTIPLAYER_CHECK=PASS suite=server/,
+  );
+});

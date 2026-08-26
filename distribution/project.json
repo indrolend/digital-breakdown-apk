@@ -43,9 +43,8 @@
         "command": "npm --prefix multiplayer-server run check",
         "argv": ["npm", "--prefix", "multiplayer-server", "run", "check"],
         "owner": "multiplayer-server/package.json",
-        "successMarkers": [
-          {"contains": "MULTIPLAYER_PROTOCOL_OK", "summary": "multiplayer protocol"}
-        ]
+        "kind": "test",
+        "resultMarkers": true
       },
       {
         "name": "multiplayer-dry-deploy",
