@@ -12,7 +12,7 @@ function run(command, args) {
   return result.status ?? 1;
 }
 
-const listed = spawnSync('git', ['ls-files', '-z', '--', '*.js', '*.mjs', '*.cjs'], { cwd: root, encoding: 'utf8', windowsHide: true });
+const listed = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '*.js', '*.mjs', '*.cjs'], { cwd: root, encoding: 'utf8', windowsHide: true });
 if ((listed.status ?? 1) !== 0) {
   if (listed.stderr) process.stderr.write(listed.stderr);
   console.log('LINT=FAIL check=javascript-inventory');

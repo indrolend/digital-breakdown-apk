@@ -21,6 +21,14 @@
   "commandHud": {
     "commands": [
       {
+        "name": "verify",
+        "command": "node tools/verify.mjs",
+        "argv": ["node", "tools/verify.mjs"],
+        "owner": "tools/verify.mjs",
+        "kind": "test",
+        "resultMarkers": true
+      },
+      {
         "name": "lint",
         "command": "node tools/lint.mjs",
         "argv": ["node", "tools/lint.mjs"],
