@@ -15,14 +15,17 @@ function runScript(name) {
   return result.status ?? 1;
 }
 
-export function verifyData({ execute = runScript, write = (value) => process.stdout.write(value) } = {}) {
+export function verifyData({ execute = runScript, write = (value) => process.stdout.write(value), now = Date.now } = {}) {
   for (const name of DATA_CHECKS) {
-    write(`DATA_VERIFY_CHECK=${name}\n`);
+    const startedAt = now();
     const status = execute(name);
+    const durationMs = Math.max(0, now() - startedAt);
     if (status !== 0) {
+      write(`DATA_VERIFY_STAGE=FAIL name=${name} exit=${status} durationMs=${durationMs}\n`);
       write(`DATA_VERIFY=FAIL check=${name} exit=${status}\n`);
       return status;
     }
+    write(`DATA_VERIFY_STAGE=PASS name=${name} durationMs=${durationMs}\n`);
   }
   write(`DATA_VERIFY=PASS checks=${DATA_CHECKS.length}\n`);
   return 0;
