@@ -30,6 +30,15 @@ test('DATA verification composes existing authorities without reimplementing the
   const command = project.commandHud.commands.find(({ name }) => name === 'verify');
   assert.equal(command.kind, 'test');
   assert.equal(command.resultMarkers, true);
+  assert.equal(command.stageMarker, 'DATA_VERIFY_STAGE');
+  assert.deepEqual(command.stages.map(({ name }) => name), ['hud:check', 'lint', 'assets', 'test', 'multiplayer']);
+  for (const stage of command.stages) {
+    assert.ok(Array.isArray(stage.paths) && stage.paths.length > 0, `${stage.name} paths`);
+    for (const path of stage.paths) {
+      assert.equal(path.includes('*'), false, `${stage.name} uses literal repository scopes`);
+      assert.equal(isAbsolute(path), false, `${stage.name} scope stays repository-relative`);
+    }
+  }
   const source = readFileSync(join(root, 'tools', 'verify.mjs'), 'utf8');
   assert.match(source, /DATA_CHECKS = \['hud:check', 'lint', 'assets', 'test', 'multiplayer'\]/);
   assert.match(source, /npm\.cmd run/);
