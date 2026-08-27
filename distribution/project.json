@@ -26,7 +26,71 @@
         "argv": ["node", "tools/verify.mjs"],
         "owner": "tools/verify.mjs",
         "kind": "test",
-        "resultMarkers": true
+        "resultMarkers": true,
+        "stageMarker": "DATA_VERIFY_STAGE",
+        "stages": [
+          {
+            "name": "hud:check",
+            "paths": [
+              "distribution/project.json",
+              "package.json",
+              "package-lock.json",
+              "CommandHUD.cmd",
+              "CommandHUD Shell.cmd",
+              "tools/commandhud-project.test.mjs",
+              "tools/verify.mjs",
+              "tools/verify.test.mjs",
+              "tools/lint.mjs",
+              "tools/run-native-tests.mjs",
+              "tools/verify_asset_mirrors.py",
+              "scripts/verify-gameplay.ps1",
+              "scripts/verify-gameplay.sh",
+              "multiplayer-server/package.json"
+            ]
+          },
+          {
+            "name": "lint",
+            "paths": ["."]
+          },
+          {
+            "name": "assets",
+            "paths": [
+              "distribution/project.json",
+              "package.json",
+              "tools/verify.mjs",
+              "tools/verify_asset_mirrors.py",
+              "native-models",
+              "native-desktop/audio",
+              "native-android/app/src/main/res/raw"
+            ]
+          },
+          {
+            "name": "test",
+            "paths": [
+              "distribution/project.json",
+              "package.json",
+              "tools/verify.mjs",
+              "tools/run-native-tests.mjs",
+              "scripts/verify-gameplay.ps1",
+              "scripts/verify-gameplay.sh",
+              "native",
+              "native-android/app/src/main/cpp",
+              "native-desktop",
+              "native-network",
+              "reference/browser-pass7"
+            ]
+          },
+          {
+            "name": "multiplayer",
+            "paths": [
+              "distribution/project.json",
+              "package.json",
+              "tools/verify.mjs",
+              "multiplayer-server",
+              "native-network"
+            ]
+          }
+        ]
       },
       {
         "name": "lint",
