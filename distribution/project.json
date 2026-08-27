@@ -21,6 +21,14 @@
   "commandHud": {
     "commands": [
       {
+        "name": "lint",
+        "command": "node tools/lint.mjs",
+        "argv": ["node", "tools/lint.mjs"],
+        "owner": "tools/lint.mjs",
+        "kind": "lint",
+        "resultMarkers": true
+      },
+      {
         "name": "assets",
         "command": "python tools/verify_asset_mirrors.py",
         "argv": ["python", "tools/verify_asset_mirrors.py"],

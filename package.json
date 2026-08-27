@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "hud:check": "node --test ./tools/commandhud-project.test.mjs",
+    "lint": "node ./tools/lint.mjs",
     "menu": "node ./tools/dev-menu.mjs",
     "build:web": "esbuild ./www/android-entry.mjs --bundle --platform=browser --format=iife --target=chrome61 --outfile=./www/android-bundle.js --log-level=info",
     "cap:sync": "cap sync android",

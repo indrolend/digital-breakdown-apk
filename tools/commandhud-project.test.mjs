@@ -11,7 +11,7 @@ test('DATA declares a valid owned CommandHUD integration', () => {
   const commands = project.commandHud?.commands;
   assert.ok(Array.isArray(commands));
   assert.deepEqual(commands.map(({ name }) => name), [
-    'assets', 'native-tests', 'multiplayer', 'multiplayer-dry-deploy',
+    'lint', 'assets', 'native-tests', 'multiplayer', 'multiplayer-dry-deploy',
   ]);
   assert.equal(new Set(commands.map(({ name }) => name)).size, commands.length);
 
@@ -24,6 +24,18 @@ test('DATA declares a valid owned CommandHUD integration', () => {
     assert.equal(isAbsolute(ownerRelative) || ownerRelative === '..' || ownerRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`), false);
     assert.equal(existsSync(owner), true, command.owner);
   }
+});
+
+test('DATA lint authority owns static JavaScript, TypeScript, and whitespace checks', () => {
+  const command = project.commandHud.commands.find(({ name }) => name === 'lint');
+  assert.equal(command.kind, 'lint');
+  assert.equal(command.resultMarkers, true);
+  const source = readFileSync(join(root, 'tools', 'lint.mjs'), 'utf8');
+  assert.match(source, /git.*ls-files/);
+  assert.match(source, /--check/);
+  assert.match(source, /tsc.*--noEmit/);
+  assert.match(source, /git'.*diff.*--check/);
+  assert.match(source, /LINT=PASS javascript=/);
 });
 
 test('DATA launchers delegate to the installed product with an explicit root', () => {
