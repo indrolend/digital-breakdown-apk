@@ -69,6 +69,10 @@ test('native verification owns one cross-platform factual result marker and chec
   assert.match(unix, /NATIVE_VERIFICATION=PASS suite=gameplay/);
   assert.match(wrapper, /checkoutKey/);
   assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
+  const targetPattern = /\b(?:DigitalBreakdown|[A-Za-z0-9]+(?:Test|Probe|Soak))\b/g;
+  const windowsTargets = [...new Set(windows.match(targetPattern) || [])].filter((name) => name !== 'CTest').sort();
+  const unixTargets = [...new Set(unix.match(targetPattern) || [])].filter((name) => name !== 'CTest').sort();
+  assert.deepEqual(unixTargets, windowsTargets);
 });
 
 test('multiplayer verification emits one factual marker only after its complete check chain', () => {

@@ -30,6 +30,11 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   MenuNavigationTest \
   PhoneDisplayStateTest \
   EarlyBrowserVisualsTest \
+  RenderContractsTest \
+  DesktopPlaytestPolicyTest \
+  DeveloperCodecTest \
+  SoulEconomyTest \
+  SoulProjectileLifecycleTest \
   TraversalCalibrationTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
