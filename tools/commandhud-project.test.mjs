@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -88,4 +89,18 @@ test('multiplayer verification emits one factual marker only after its complete 
     multiplayerPackage.scripts.check,
     /wrangler types --check && tsc --noEmit && vitest run && node -e .*MULTIPLAYER_CHECK=PASS suite=server/,
   );
+});
+test('Windows environment resolver treats an empty vswhere result as no compiler', () => {
+  const source = readFileSync(join(root, 'tools', 'environment', 'resolve-dev-environment.ps1'), 'utf8');
+  assert.match(source, /ConvertFrom-Json \| ForEach-Object \{ \$_ \}/);
+
+  if (process.platform !== 'win32') return;
+
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile',
+    '-Command',
+    `$json = '[]'; $items = @($json | ConvertFrom-Json | ForEach-Object { $_ }); if ($items.Count -ne 0) { exit 1 }`,
+  ], { encoding: 'utf8', windowsHide: true });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });

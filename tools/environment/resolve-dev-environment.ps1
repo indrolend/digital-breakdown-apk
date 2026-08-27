@@ -69,7 +69,7 @@ function Resolve-VisualStudio {
         return [pscustomobject]@{ available = $false; installationPath = $null; generator = $null; version = $null }
     }
 
-    $items = @($json | ConvertFrom-Json)
+    $items = @($json | ConvertFrom-Json | ForEach-Object { $_ })
     if ($items.Count -eq 0) {
         return [pscustomobject]@{ available = $false; installationPath = $null; generator = $null; version = $null }
     }
