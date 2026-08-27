@@ -9,6 +9,7 @@ run_logged() {
   local name="$1"
   shift
   local log="$LOG_DIR/$name.log"
+  local started_at=$SECONDS
   echo "==> $name"
   if ! "$@" >"$log" 2>&1; then
     echo "FAILED: $name"
@@ -16,9 +17,14 @@ run_logged() {
     return 1
   fi
   echo "PASS: $name"
+  echo "NATIVE_STAGE=PASS name=$name durationSeconds=$((SECONDS - started_at))"
 }
 
-run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+if [[ -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+  echo "NATIVE_STAGE=PASS name=configure durationSeconds=0 cached=true"
+else
+  run_logged configure cmake -S native-desktop -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+fi
 run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   DigitalBreakdown \
   GameplayRoleAndSoulMotionTest \

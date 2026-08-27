@@ -67,6 +67,10 @@ test('native verification owns one cross-platform factual result marker and chec
   const wrapper = readFileSync(join(root, 'tools', 'run-native-tests.mjs'), 'utf8');
   assert.match(windows, /NATIVE_VERIFICATION=PASS suite=gameplay/);
   assert.match(unix, /NATIVE_VERIFICATION=PASS suite=gameplay/);
+  assert.match(windows, /NATIVE_STAGE=PASS name=build durationSeconds=/);
+  assert.match(unix, /NATIVE_STAGE=PASS name=\$name durationSeconds=/);
+  assert.match(windows, /CMakeCache\.txt/);
+  assert.match(unix, /CMakeCache\.txt/);
   assert.match(wrapper, /checkoutKey/);
   assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
   const targetPattern = /\b(?:DigitalBreakdown|[A-Za-z0-9]+(?:Test|Probe|Soak))\b/g;
