@@ -20,10 +20,8 @@ private:
     TvGifWall tvGifWall_;
     mutable int width_ = 1280;
     mutable int height_ = 720;
-    unsigned int phoneModelList_ = 0;
-    unsigned int flowerModelList_ = 0;
-    unsigned int phoneShadowList_ = 0;
-    unsigned int flowerShadowList_ = 0;
+    StaticModelData phoneModel_;
+    StaticModelData flowerModel_;
     HumanModelData humanModel_;
     mutable std::vector<float> humanVertices_;
     mutable unsigned int datamoshTexture_ = 0;
@@ -37,7 +35,7 @@ private:
 
     static void drawRoomTile(const GameState& state, int tileIndex);
     static void applyCamera(const GameState& state, float aspect);
-    static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
+    static void drawStaticModel(const StaticModelData& model,const Vec3& position,const Vec3& scale,const Quat& orientation,bool shadow=false);
     void drawHumanModel(const TargetState& target, float time, bool shadow = false) const;
     static void drawSoulFlesh(const TargetState& target,const Vec3& center);
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;

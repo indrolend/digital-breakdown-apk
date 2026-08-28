@@ -29,6 +29,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   PhoneDisplayStateTest \
   Pass7ParityTest \
   MultiplayerProtocolTest \
+  MultiplayerConnectionStateTest \
   --parallel
 run_logged ctest ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
 run_logged parity "$BUILD_DIR/Pass7ParityTest"

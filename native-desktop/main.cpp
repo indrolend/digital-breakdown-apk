@@ -833,6 +833,7 @@ int runControllerLiveTest(){
 }
 
 int main(int argc, char** argv) {
+    const auto processStart = std::chrono::steady_clock::now();
     if (hasArg(argc, argv, "--help") || hasArg(argc, argv, "-h")) {
         printUsage();
         return 0;
@@ -945,7 +946,11 @@ int main(int argc, char** argv) {
     host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval(multiplayerTest?0:1);
+    // Hidden capture/profiling windows are not presented to a user. Some
+    // Windows compositors throttle their VSync to roughly one frame per second,
+    // which made a 30-frame verification capture take about 31 seconds and
+    // obscured actual renderer cost.
+    glfwSwapInterval((capturePath||multiplayerTest)?0:1);
     setMouseCaptured(window, host, host.game.state().started);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -967,6 +972,8 @@ int main(int argc, char** argv) {
     auto previousCamera = host.game.state().camera;
     auto previousPhoneTransform = host.game.state().phoneTransform;
     int captureFrames=0;
+    double captureRenderSeconds=0.0;
+    double capturePollSeconds=0.0;
     bool multiplayerAutoStartIssued=false;
     while (!glfwWindowShouldClose(window)) {
         if(multiplayerTest){
@@ -979,7 +986,9 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
+        const auto pollStart=std::chrono::steady_clock::now();
         glfwPollEvents();
+        capturePollSeconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-pollStart).count();
 
         const auto now = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(now - previous).count();
@@ -1100,9 +1109,19 @@ int main(int argc, char** argv) {
                     );
             }
         }
+        const auto renderStart=std::chrono::steady_clock::now();
         host.renderer.draw(renderState);
-        if(capturePath&&++captureFrames>=30){const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);glfwSetWindowShouldClose(window,GLFW_TRUE);}
-        glfwSwapBuffers(window);
+        captureRenderSeconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-renderStart).count();
+        if(capturePath&&++captureFrames>=30){
+            const bool captured=captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);
+            const double totalSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-processStart).count();
+            std::printf("CAPTURE_FRAME_%s %s poll_ms=%.2f render_ms=%.2f total_ms=%.2f\n",captured?"OK":"FAILED",capturePath,capturePollSeconds*1000.0,captureRenderSeconds*1000.0,totalSeconds*1000.0);
+            glfwSetWindowShouldClose(window,GLFW_TRUE);
+        }
+        // A hidden verification capture reads directly from the back buffer.
+        // Presenting that buffer is unnecessary and is severely throttled by
+        // DWM on hidden windows, independent of the requested swap interval.
+        if(!capturePath)glfwSwapBuffers(window);
     }
 
     glfwDestroyWindow(window);
