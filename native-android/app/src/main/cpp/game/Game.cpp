@@ -312,9 +312,29 @@ bool secretDoorKnockPhraseActive(float time) {
     constexpr float audibleSeconds = 5.4f;
     return std::fmod(std::max(0.0f, time), phraseSeconds) <= audibleSeconds;
 }
-Vec3 latticeRest(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return{static_cast<float>(x)*0.23f-0.23f,static_cast<float>(y)*0.23f-0.23f,static_cast<float>(z)*0.23f-0.23f};}
-float latticeSurface(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return(x==0||x==2||y==0||y==2||z==0||z==2)?1.0f:0.0f;}
-float latticeCorner(int index){const int z=index/9,y=(index-z*9)/3,x=index%3;return static_cast<float>((x==0||x==2)+(y==0||y==2)+(z==0||z==2))/3.0f;}
+struct SoulLatticeNode {
+    Vec3 rest;
+    float surface;
+    float corner;
+};
+
+const std::array<SoulLatticeNode, SOUL_LATTICE_NODE_COUNT> SOUL_LATTICE_NODES = [] {
+    std::array<SoulLatticeNode, SOUL_LATTICE_NODE_COUNT> nodes{};
+    for (int index = 0; index < SOUL_LATTICE_NODE_COUNT; ++index) {
+        const int z = index / 9;
+        const int y = (index - z * 9) / 3;
+        const int x = index % 3;
+        const int boundaryAxes = (x == 0 || x == 2) + (y == 0 || y == 2) + (z == 0 || z == 2);
+        nodes[index] = {
+            {static_cast<float>(x) * 0.23f - 0.23f,
+             static_cast<float>(y) * 0.23f - 0.23f,
+             static_cast<float>(z) * 0.23f - 0.23f},
+            boundaryAxes > 0 ? 1.0f : 0.0f,
+            static_cast<float>(boundaryAxes) / 3.0f,
+        };
+    }
+    return nodes;
+}();
 void springScalar(float value,float velocity,float target,float frequency,float damping,float dt,float& newValue,float& newVelocity){const float omega=frequency*DB_PI*2.0f,f=1+2*dt*damping*omega,oo=omega*omega,hoo=dt*oo,hhoo=dt*hoo,detInv=1/(f+hhoo);newValue=(f*value+dt*velocity+hhoo*target)*detInv;newVelocity=(velocity+hoo*(target-value))*detInv;}
 float pointSegmentDistanceSq(const Vec3& point, const Vec3& a, const Vec3& b) {
     const Vec3 ab=b-a, ap=point-a;
@@ -3401,13 +3421,14 @@ void Game::updateVacuum(float dt) {
 
 void Game::resetSoulLattice(TargetState& target) {
     target.latticeVisualPull=0;target.latticeVisualPullVelocity=0;target.tetherVisible=false;target.tetherWidth=0;
-    for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){target.latticePos[n]=latticeRest(n);target.latticeSurfacePos[n]=target.latticePos[n];target.latticeVel[n]={};}
+    for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){target.latticePos[n]=SOUL_LATTICE_NODES[n].rest;target.latticeSurfacePos[n]=target.latticePos[n];target.latticeVel[n]={};}
 }
 
 void Game::updateSoulLattices() {
     const Vec3 up{0,1,0};const float step=0.016f;
     for(int i=0;i<TARGET_COUNT;++i){TargetState& target=state_.targets[i];
         if(!target.alive){target.tetherVisible=false;continue;}
+        if(!target.slurpable&&target.soulMorph<=0.001f&&target.ingestProgress<=0.001f){target.tetherVisible=false;continue;}
         const int owner=target.networkOwnerPlayerId;
         const bool remoteOwner=owner>0&&owner<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[owner].active;
         const PhoneTransformState& ownerPhone=remoteOwner?state_.multiplayer.peers[owner].phoneTransform:state_.phoneTransform;
@@ -3429,7 +3450,7 @@ void Game::updateSoulLattices() {
         const bool tetherAllowed=livePin&&owned;const float tetherIn=tetherAllowed?std::max(smoothRange(visualPull,0.08f,0.38f),smoothRange(ingest,0.02f,0.22f)):0;
         const float readyPulse=slurpable?1+std::sin(state_.time*18.0f+i)*0.055f:1,hitPulse=1+hit*0.16f,idleBreath=(1+std::sin(state_.time*3.0f+i*1.7f)*0.035f)*readyPulse*hitPulse;
         Vec3 anchorSum{};float anchorWeight=0,bestScore=-1e9f;Vec3 bestTip=center;
-        for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){const Vec3 rest=latticeRest(n);const float restLen=std::max(length(rest),0.001f);const Vec3 outward=rest*(1/restLen);const float facing=clampf(dot3(outward,pullDir)*0.5f+0.5f,0,1),surface=latticeSurface(n),corner=latticeCorner(n);
+        for(int n=0;n<SOUL_LATTICE_NODE_COUNT;++n){const SoulLatticeNode& node=SOUL_LATTICE_NODES[n];const Vec3& rest=node.rest;const float restLen=std::max(length(rest),0.001f);const Vec3 outward=rest*(1/restLen);const float facing=clampf(dot3(outward,pullDir)*0.5f+0.5f,0,1),surface=node.surface,corner=node.corner;
             const float breathe=std::sin(state_.time*4.0f+i*1.31f+n*0.77f)*0.018f,stressWave=std::sin(state_.time*12.0f+i*2.17f+n*1.9f)*visualPull,direct=surface*visualPull*std::pow(facing,1.35f),faceCluster=std::max(surface*std::pow(facing,2.4f),direct);
             const float armPattern=surface*std::pow(facing,3.0f)*(0.5f+0.5f*std::sin(state_.time*7.0f+i*4.9f+n*2.2f)),cheek=surface*std::pow(facing,1.7f)*(1-corner*0.55f)*(0.65f+0.35f*std::sin(state_.time*11.0f+i+n));
             Vec3 desired=rest*(idleBreath+breathe);const float neck=surface*std::pow(facing,4.2f),shoulder=surface*std::pow(facing,1.8f)*(1-neck),rearLag=surface*std::pow(1-facing,1.4f),axisOffset=dot3(rest,pullDir);const Vec3 radial=desired-pullDir*axisOffset;const float taper=visualPull*(neck*0.72f+shoulder*0.28f+collapse*facing*0.55f);
