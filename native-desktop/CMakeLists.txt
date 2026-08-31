@@ -246,6 +246,34 @@ add_executable(EarlyBrowserVisualsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/te
 target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(EarlyBrowserVisualsTest PRIVATE cxx_std_17)
 
+add_executable(RenderContractsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/render_contracts_test.cpp")
+target_include_directories(RenderContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(RenderContractsTest PRIVATE cxx_std_17)
+
+add_executable(DesktopPlaytestPolicyTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/desktop_playtest_policy_test.cpp")
+target_include_directories(DesktopPlaytestPolicyTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(DesktopPlaytestPolicyTest PRIVATE cxx_std_17)
+
+add_executable(DeveloperCodecTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/developer_codec_test.cpp")
+target_include_directories(DeveloperCodecTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(DeveloperCodecTest PRIVATE cxx_std_17)
+
+add_executable(
+    SoulEconomyTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(SoulEconomyTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(SoulEconomyTest PRIVATE cxx_std_17)
+
+add_executable(
+    SoulProjectileLifecycleTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_projectile_lifecycle_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(SoulProjectileLifecycleTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(SoulProjectileLifecycleTest PRIVATE cxx_std_17)
+
 add_executable(
     TraversalCalibrationTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/traversal_calibration_test.cpp"
@@ -291,6 +319,11 @@ add_test(NAME PhoneMenuLayoutTest COMMAND PhoneMenuLayoutTest)
 add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
+add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
+add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
+add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)
+add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
+add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
 add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)

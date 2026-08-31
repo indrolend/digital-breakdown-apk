@@ -49,10 +49,11 @@ bool finiteState(const GameState& state) {
 
 bool freshRoomGeometryValid(const GameState& state){
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
-    if(!early_browser_visuals::requiredRouteIsTraversable(plan,state.roomSeed,state.roomIndex)||
-       !early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex))return false;
-    int expected=plan.obstacleCount;
-    for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++expected;
+    if(!early_browser_visuals::requiredRouteIsTraversable(plan,state.roomSeed,state.roomIndex))return false;
+    const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
+    int expected=plan.obstacleCount+early_browser_visuals::physicalTraversalSurfaceCount(plan);
+    if(propsValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++expected;
+    expected=std::min(ROOM_COLLIDER_COUNT,expected);
     if(state.debug.colliderCount!=expected)return false;
     for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(!std::isfinite(c.center.x)||!std::isfinite(c.center.y)||!std::isfinite(c.center.z)||c.minX>=c.maxX||c.minZ>=c.maxZ||c.width<=0||c.height<=0||c.depth<=0)return false;if(state.player.pos.x>c.minX-0.20f&&state.player.pos.x<c.maxX+0.20f&&state.player.pos.z>c.minZ-0.20f&&state.player.pos.z<c.maxZ+0.20f)return false;}
     for(const TargetState& target:state.targets)if(gameplay::isActiveHuman(target))for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(target.pos.x>c.minX-0.20f&&target.pos.x<c.maxX+0.20f&&target.pos.z>c.minZ-0.20f&&target.pos.z<c.maxZ+0.20f)return false;}

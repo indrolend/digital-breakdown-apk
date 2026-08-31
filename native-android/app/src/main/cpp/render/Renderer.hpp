@@ -26,6 +26,8 @@ private:
     unsigned int soulSurfaceVbo_ = 0;
     unsigned int datamoshProgram_ = 0;
     unsigned int datamoshTexture_ = 0;
+    unsigned int fieldGrassTexture_ = 0;
+    unsigned int citySurfaceTexture_ = 0;
     unsigned int datamoshVbo_ = 0;
     int datamoshPos_ = -1;
     int datamoshUv_ = -1;
@@ -39,6 +41,9 @@ private:
     int aNormal_ = -1;
     int uModel_ = -1;
     int uUseNormal_ = -1;
+    int uTextureEnabled_ = -1;
+    int uTextureScale_ = -1;
+    int uTexture_ = -1;
     std::string assetRoot_;
     StaticModelData phoneModel_;
     HumanModelData humanModel_;
@@ -49,6 +54,8 @@ private:
     bool initProgram();
     bool initDatamoshProgram();
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]);
+    void drawFieldGrass(const float* viewProj,int tileIndex,const float color[4]);
+    void drawCityGround(const float* viewProj,int tileIndex,const float color[4]);
     void drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]);
     void drawFxStrip(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4], const float* vertices, int vertexCount);
     void drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha);

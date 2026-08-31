@@ -2,12 +2,16 @@
 #include "../game/HumanVisual.hpp"
 #include "../game/BitmapFont.hpp"
 #include "../game/EarlyBrowserVisuals.hpp"
+#include "../game/RenderContracts.hpp"
+#include "../game/FieldGrassTexture.hpp"
+#include "../game/CitySurfaceTexture.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
 #include <array>
 #include <cmath>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -67,7 +71,11 @@ std::array<float, ROUNDED_VERTEX_COUNT * 3> makeLowPolySphereVertices() {
 }
 
 
-const char* VERT_SRC =
+std::string shaderFloat(float value){char text[32]{};std::snprintf(text,sizeof(text),"%.9g",static_cast<double>(value));return text;}
+
+std::string vertexShaderSource(){
+    const auto& lighting=render_contract::AndroidSceneLighting;
+    return
     "attribute vec3 aPos;\n"
     "attribute vec3 aNormal;\n"
     "uniform mat4 uMvp;\n"
@@ -75,31 +83,42 @@ const char* VERT_SRC =
     "uniform float uUseNormal;\n"
     "varying float vLight;\n"
     "varying float vFog;\n"
+    "varying vec2 vUv;\n"
+    "uniform float uTextureScale;\n"
     "void main() {\n"
     "  vec3 radial = normalize(aPos + vec3(0.0001));\n"
     "  vec3 modelNormal = normalize(mat3(uModel) * aNormal + vec3(0.0001));\n"
     "  vec3 n = normalize(mix(radial, modelNormal, uUseNormal));\n"
-    "  float sun = max(dot(n, normalize(vec3(0.42, 0.84, 0.35))), 0.0);\n"
-    "  float fill = max(dot(n, normalize(vec3(-0.46, 0.57, -0.68))), 0.0);\n"
-    "  vLight = uUseNormal < -0.5 ? 1.0 : clamp(0.48 + sun * 0.42 + fill * 0.10, 0.0, 1.0);\n"
+    "  float sun = max(dot(n, normalize(vec3("+shaderFloat(lighting.sun.direction.x)+","+shaderFloat(lighting.sun.direction.y)+","+shaderFloat(lighting.sun.direction.z)+"))), 0.0);\n"
+    "  float fill = max(dot(n, normalize(vec3("+shaderFloat(lighting.fill.direction.x)+","+shaderFloat(lighting.fill.direction.y)+","+shaderFloat(lighting.fill.direction.z)+"))), 0.0);\n"
+    "  vLight = uUseNormal < -0.5 ? 1.0 : clamp("+shaderFloat(lighting.ambient.r)+" + sun * "+shaderFloat(lighting.sun.intensity)+" + fill * "+shaderFloat(lighting.fill.intensity)+", 0.0, 1.0);\n"
     "  gl_Position = uMvp * vec4(aPos, 1.0);\n"
+    "  vec4 world = uModel * vec4(aPos, 1.0); vUv = world.xz / max(uTextureScale, 0.001);\n"
     "  vFog = smoothstep(0.72, 0.99, gl_Position.z / max(gl_Position.w, 0.001));\n"
     "}\n";
+}
 
-const char* FRAG_SRC =
+std::string fragmentShaderSource(){
+    const auto& fog=render_contract::AndroidSceneLighting.fog;
+    return
     "precision mediump float;\n"
     "uniform vec4 uColor;\n"
     "uniform float uUseNormal;\n"
+    "uniform float uTextureEnabled;\n"
+    "uniform sampler2D uTexture;\n"
     "varying float vLight;\n"
     "varying float vFog;\n"
+    "varying vec2 vUv;\n"
     "void main() {\n"
-    "  vec3 lit = uUseNormal > 0.5 ? uColor.rgb * vLight : uColor.rgb;\n"
+    "  vec3 surface = mix(uColor.rgb, texture2D(uTexture, vUv).rgb, uTextureEnabled);\n"
+    "  vec3 lit = uUseNormal > 0.5 ? surface * vLight : surface;\n"
     "  float luma = dot(lit, vec3(0.2126, 0.7152, 0.0722));\n"
     "  vec3 saturated = mix(vec3(luma), lit, 1.10);\n"
     "  vec3 graded = clamp((saturated - 0.5) * 1.06 + 0.5, 0.0, 1.0);\n"
-    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3(0.557,0.792,0.902), vFog);\n"
+    "  vec3 atmospheric = mix(uUseNormal > -0.5 ? graded : lit, vec3("+shaderFloat(fog.color.r)+","+shaderFloat(fog.color.g)+","+shaderFloat(fog.color.b)+"), vFog);\n"
     "  gl_FragColor = vec4(atmospheric, uColor.a);\n"
     "}\n";
+}
 
 const char* DATAMOSH_VERT="attribute vec2 aPos;attribute vec2 aUv;varying vec2 vUv;void main(){vUv=aUv;gl_Position=vec4(aPos,0.0,1.0);}";
 const char* DATAMOSH_FRAG="precision mediump float;uniform sampler2D uFrame;uniform float uAlpha;varying vec2 vUv;void main(){vec4 c=texture2D(uFrame,vUv);gl_FragColor=vec4(c.rgb,uAlpha);}";
@@ -202,8 +221,9 @@ GLuint compileShader(GLenum type, const char* src) {
 }
 
 bool Renderer::initProgram() {
-    const GLuint vs = compileShader(GL_VERTEX_SHADER, VERT_SRC);
-    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, FRAG_SRC);
+    const std::string vertexSource=vertexShaderSource(),fragmentSource=fragmentShaderSource();
+    const GLuint vs = compileShader(GL_VERTEX_SHADER, vertexSource.c_str());
+    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentSource.c_str());
     if (!vs || !fs) return false;
 
     program_ = glCreateProgram();
@@ -229,6 +249,7 @@ bool Renderer::initProgram() {
     uModel_ = glGetUniformLocation(program_, "uModel");
     uUseNormal_ = glGetUniformLocation(program_, "uUseNormal");
     uColor_ = glGetUniformLocation(program_, "uColor");
+    uTextureEnabled_=glGetUniformLocation(program_,"uTextureEnabled");uTextureScale_=glGetUniformLocation(program_,"uTextureScale");uTexture_=glGetUniformLocation(program_,"uTexture");
 
     const float cube[] = {
         -0.5f,-0.5f,-0.5f, 0.5f,-0.5f,-0.5f, 0.5f,0.5f,-0.5f, -0.5f,-0.5f,-0.5f, 0.5f,0.5f,-0.5f, -0.5f,0.5f,-0.5f,
@@ -267,6 +288,8 @@ void Renderer::surfaceCreated() {
     glClearColor(0.02f, 0.04f, 0.02f, 1.0f);
     initProgram();
     initDatamoshProgram();
+    {const auto pixels=field_grass_texture::pixels();glGenTextures(1,&fieldGrassTexture_);glBindTexture(GL_TEXTURE_2D,fieldGrassTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,field_grass_texture::Size,field_grass_texture::Size,0,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());}
+    {const auto pixels=city_surface_texture::pixels();glGenTextures(1,&citySurfaceTexture_);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,city_surface_texture::Size,city_surface_texture::Size,0,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());}
     if(!assetRoot_.empty()) {
         phoneModel_.load(assetRoot_+"/phone.dbmesh"); humanModel_.load(assetRoot_+"/human.dbhuman");
         if(phoneModel_.valid()){glGenBuffers(1,&phoneVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.vertices.size()*sizeof(float),phoneModel_.vertices.data(),GL_STATIC_DRAW);glGenBuffers(1,&phoneNormalVbo_);glBindBuffer(GL_ARRAY_BUFFER,phoneNormalVbo_);glBufferData(GL_ARRAY_BUFFER,phoneModel_.normals.size()*sizeof(float),phoneModel_.normals.data(),GL_STATIC_DRAW);}
@@ -288,7 +311,7 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     float mvp[16];
     modelBox(model, pos, scale, yaw);
     multiply(mvp, viewProj, model);
-    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);
+    glUseProgram(program_);glUniform1f(uUseNormal_,render_contract::androidShadingSelector(render_contract::ShadingModel::ColorGraded));glUniform1f(uTextureEnabled_,0.0f);glUniform1f(uTextureScale_,1.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
@@ -297,10 +320,20 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
+void Renderer::drawFieldGrass(const float* viewProj,int tileIndex,const float color[4]){
+    if(!program_||!fieldGrassTexture_)return;float model[16],mvp[16];modelBox(model,{0,-0.035f,static_cast<float>(tileIndex)*ROOM_DEPTH},{ROOM_WIDTH,0.07f,ROOM_DEPTH},0);multiply(mvp,viewProj,model);
+    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,1.0f);glUniform1f(uTextureScale_,render_contract::FieldOpenGround.textureWorldScale);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,color);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,fieldGrassTexture_);glUniform1i(uTexture_,0);glBindBuffer(GL_ARRAY_BUFFER,vbo_);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glDrawArrays(GL_TRIANGLES,0,36);glUniform1f(uTextureEnabled_,0.0f);
+}
+
+void Renderer::drawCityGround(const float* viewProj,int tileIndex,const float color[4]){
+    if(!program_||!citySurfaceTexture_)return;float model[16],mvp[16];modelBox(model,{0,-0.035f,static_cast<float>(tileIndex)*ROOM_DEPTH},{ROOM_WIDTH,0.07f,ROOM_DEPTH},0);multiply(mvp,viewProj,model);
+    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,1.0f);glUniform1f(uTextureScale_,render_contract::CityGround.textureWorldScale);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,color);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glUniform1i(uTexture_,0);glBindBuffer(GL_ARRAY_BUFFER,vbo_);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glDrawArrays(GL_TRIANGLES,0,36);glUniform1f(uTextureEnabled_,0.0f);
+}
+
 void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& model,unsigned int vbo,unsigned int normalVbo,const Vec3& pos,const Vec3& scale,const Quat& orientation,bool shadow) {
     if(!program_ || !vbo || !normalVbo || !model.valid()) return;
     float matrix[16],mvp[16];modelBox(matrix,pos,scale,orientation);multiply(mvp,viewProj,matrix);
-    glUseProgram(program_);glUniform1f(uUseNormal_,shadow?-1.0f:1.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,matrix);glBindBuffer(GL_ARRAY_BUFFER,vbo);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glBindBuffer(GL_ARRAY_BUFFER,normalVbo);glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);
+    glUseProgram(program_);glUniform1f(uUseNormal_,render_contract::androidShadingSelector(shadow?render_contract::ShadingModel::Unlit:render_contract::ShadingModel::NormalLit));glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,matrix);glBindBuffer(GL_ARRAY_BUFFER,vbo);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glBindBuffer(GL_ARRAY_BUFFER,normalVbo);glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);
     const float shadowColor[4]={0.012f,0.018f,0.022f,0.28f};
     for(const auto& batch:model.batches){const bool translucent=!shadow&&batch.color[3]<0.995f;if(translucent){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}glUniform4fv(uColor_,1,shadow?shadowColor:batch.color);glDrawArrays(GL_TRIANGLES,static_cast<GLint>(batch.start),static_cast<GLsizei>(batch.count));if(translucent){glDepthMask(GL_TRUE);glDisable(GL_BLEND);}}
 }
@@ -308,24 +341,26 @@ void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& mode
 void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]) {
     if (!program_) return;
     float model[16], mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
-    glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glBindBuffer(GL_ARRAY_BUFFER,vbo_); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glUniform1f(uTextureEnabled_,0.0f); glUniformMatrix4fv(uModel_,1,GL_FALSE,model); glBindBuffer(GL_ARRAY_BUFFER,vbo_); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);
     glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLES,0,36);
 }
 
 void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& scale,const Quat& orientation,const float color[4],const float* vertices,int vertexCount){
     if(!program_) return; float model[16],mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
-    glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glBindBuffer(GL_ARRAY_BUFFER,0); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glUniform1f(uTextureEnabled_,0.0f); glUniformMatrix4fv(uModel_,1,GL_FALSE,model); glBindBuffer(GL_ARRAY_BUFFER,0); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices); glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLE_STRIP,0,vertexCount);
 }
 
 void Renderer::drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha){
     constexpr int segments=8;std::array<float,(segments+2)*3> vertices{};int out=0;
-    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
-    const float stretch=height*0.16f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);
+    const Vec3& sun=render_contract::AndroidSceneLighting.sun.direction;constexpr float projectionScale=0.5f;
+    const float sunXOverY=sun.x/sun.y,sunZOverY=sun.z/sun.y;
+    const Vec3 center{caster.x-height*projectionScale*sunXOverY,0.012f,caster.z-height*projectionScale*sunZOverY};
+    const float stretch=height*0.16f,angle=std::atan2(-sunXOverY,-sunZOverY),c=std::cos(angle),s=std::sin(angle);
     const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=center.y;vertices[out++]=z;};emit(center.x,center.z);
     for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*(halfWidth+stretch*0.35f),localZ=std::sin(a)*(halfDepth+stretch);emit(center.x+localX*c-localZ*s,center.z+localX*s+localZ*c);}
-    float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
+    float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
 }
 
 void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
@@ -337,7 +372,7 @@ void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int t
     early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};
     const auto emit=[&](const Vec3& p){vertices[out++]=p.x;vertices[out++]=p.y;vertices[out++]=p.z;};
     for(int i=0;i<count;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;emit(rootL);emit(rootR);emit(tipR);emit(rootL);emit(tipR);emit(tipL);}
-    float identity[16];ident(identity);const float color[4]={Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLES,0,count*6);
+    float identity[16];ident(identity);const float color[4]={Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b,1.0f};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLES,0,count*6);
 }
 
 void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, const Vec3& scale, float yaw, const float color[4]) {
@@ -346,7 +381,7 @@ void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, cons
     float mvp[16];
     modelBox(model, pos, scale, yaw);
     multiply(mvp, viewProj, model);
-    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);
+    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);
     glBindBuffer(GL_ARRAY_BUFFER, roundedVbo_);
     glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
@@ -436,6 +471,8 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     const bool coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
     const float groundColor[4] = {field?Pass7Visual::FieldGround.r:(sterile?0.48f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.50f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.52f:(coastal?0.50f:Pass7Visual::RoomFloor.b)),1.0f};
     drawBox(viewProj, {0.0f, -0.04f, z0}, {ROOM_WIDTH, 0.08f, ROOM_DEPTH}, 0.0f, groundColor);
+    if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(viewProj,tileIndex,groundColor);
+    if(plan.setting==early_browser_visuals::RoomSetting::City){const float asphalt[4]={render_contract::CityGround.baseColor.r,render_contract::CityGround.baseColor.g,render_contract::CityGround.baseColor.b,1.0f};drawCityGround(viewProj,tileIndex,asphalt);}
     if(coastal){const float sand[4]={0.64f,0.58f,0.43f,1.0f};drawBox(viewProj,{0,0.005f,z0},{23.5f,0.01f,35.5f},0,sand);}
 
     const float wallColor[4] = {Pass7Visual::RoomWall.r, Pass7Visual::RoomWall.g, Pass7Visual::RoomWall.b, 1.0f};
@@ -453,7 +490,10 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{-ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
-    for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);}
+    for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);if(plan.setting==early_browser_visuals::RoomSetting::City&&plan.form==early_browser_visuals::RoomForm::Corridor&&early_browser_visuals::obstacleRole(plan,state.roomSeed,state.roomIndex,i)==early_browser_visuals::EnvironmentRole::Landmark){const float tierH=gameplay::WORLD_SCALE.storyHeight*0.34f;const float tierColor[4]={0.34f,0.40f,0.44f,1};drawBox(viewProj,{collider.center.x,collider.topY+tierH*0.5f,z0+collider.center.z},{collider.width*0.58f,tierH,collider.depth*0.62f},0,tierColor);}}
+    const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
+    const float traversalColor[4]={traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z,1.0f};
+    for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);drawBox(viewProj,spec.center+Vec3{0,0,z0},spec.size,0,traversalColor);}
     if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;const float walkX=canyon?3.55f:(skyline?8.15f:5.2f),walkW=canyon?1.1f:(skyline?2.4f:2.0f);drawBox(viewProj,{-walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);}
     const bool propsValid=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex);
     for(int i=0;propsValid&&i<early_browser_visuals::environmentPropCount(plan);++i){
@@ -483,7 +523,7 @@ void Renderer::drawHud(const GameState& state) {
         const float corners[8]={-hx,-hy,hx,-hy,hx,hy,-hx,hy};
         const int order[6]={0,1,2,0,2,3};float vertices[18]{};
         for(int i=0;i<6;++i){const int k=order[i]*2;const float px=cx+corners[k]*c-corners[k+1]*s,py=cy+corners[k]*s+corners[k+1]*c;vertices[i*3]=-1.0f+px*2.0f/width_;vertices[i*3+1]=1.0f-py*2.0f/height_;}
-        const float faded[4]={color[0],color[1],color[2],color[3]*overlayAlpha};glUseProgram(program_);glUniform1f(uUseNormal_,-1.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,identity);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,faded);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices);glDrawArrays(GL_TRIANGLES,0,6);
+        const float faded[4]={color[0],color[1],color[2],color[3]*overlayAlpha};glUseProgram(program_);glUniform1f(uUseNormal_,-1.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,identity);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,faded);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices);glDrawArrays(GL_TRIANGLES,0,6);
     };
     const auto text=[&](const std::string& value,float x,float y,float scale,const float color[4]){float pen=x;for(char c:value){if(c==' '){pen+=6*scale;continue;}const auto rows=bitmapGlyph(c);for(int row=0;row<7;++row)for(int col=0;col<5;++col)if(rows[row]&(1u<<(4-col))){const float px=pen+col*scale,py=y+row*scale;if(overlayAlpha<0.999f){const float outline[4]={0,0,0,color[3]};quad(px-1,py,scale,scale,outline);quad(px+1,py,scale,scale,outline);quad(px,py-1,scale,scale,outline);quad(px,py+1,scale,scale,outline);}quad(px,py,scale,scale,color);}pen+=6*scale;}};
     const auto floatingText=[&](const std::string& value,float x,float y,float scale,const float color[4]){const float pulse=clampf(state.cinematic.textInteraction,0.0f,1.0f),tracking=pulse*0.9f*std::min(scale,2.0f),wave=0.48f+pulse*0.78f;const float shadow[4]={0,0,0,0.72f*color[3]};float pen=x-tracking*std::max(0.0f,(static_cast<float>(value.size())-1.0f)*0.5f);for(std::size_t i=0;i<value.size();++i){const float offset=std::sin(state.time*4.2f+static_cast<float>(i)*0.68f)*wave;const std::string glyph(1,value[i]);text(glyph,pen+2.0f,y+offset+2.0f,scale,shadow);text(glyph,pen,y+offset,scale,color);pen+=6.0f*scale+tracking;}};
@@ -562,7 +602,7 @@ void Renderer::drawHumanModel(const float* viewProj,const TargetState& target,fl
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
     const Vec3 root{target.pos.x+attackLunge.x,target.attackTimer>0?std::sin(t*DB_PI)*0.024f*low:0,target.pos.z+attackLunge.z};float model[16],mvp[16];modelBox(model,root,{pose.scale,pose.scale,pose.scale},q);multiply(mvp,viewProj,model);
     const float shadowColor[4]={0.012f,0.018f,0.022f,0.28f};const bool parryCue=target.attackTimer>0&&t>=0.22f&&t<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={humanModel_.color[0]+(0.55f-humanModel_.color[0])*cue,humanModel_.color[1]+(0.96f-humanModel_.color[1])*cue,humanModel_.color[2]+(1.0f-humanModel_.color[2])*cue,humanModel_.color[3]};
-    glUseProgram(program_);glUniform1f(uUseNormal_,shadow?-1.0f:1.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glBindBuffer(GL_ARRAY_BUFFER,humanVbo_);glBufferData(GL_ARRAY_BUFFER,humanVertices_.size()*sizeof(float),humanVertices_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glBindBuffer(GL_ARRAY_BUFFER,humanNormalVbo_);glBufferData(GL_ARRAY_BUFFER,humanNormals_.size()*sizeof(float),humanNormals_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,shadow?shadowColor:cueColor);glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(humanVertices_.size()/3u));
+    glUseProgram(program_);glUniform1f(uUseNormal_,shadow?-1.0f:1.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glBindBuffer(GL_ARRAY_BUFFER,humanVbo_);glBufferData(GL_ARRAY_BUFFER,humanVertices_.size()*sizeof(float),humanVertices_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glBindBuffer(GL_ARRAY_BUFFER,humanNormalVbo_);glBufferData(GL_ARRAY_BUFFER,humanNormals_.size()*sizeof(float),humanNormals_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,shadow?shadowColor:cueColor);glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(humanVertices_.size()/3u));
 }
 
 void Renderer::drawSoulFlesh(const float* viewProj,const TargetState& target,const Vec3& center){
@@ -574,7 +614,7 @@ void Renderer::drawSoulFlesh(const float* viewProj,const TargetState& target,con
     for(int x=0;x<2;++x)for(int z=0;z<2;++z){quad(index(x,0,z),index(x,0,z+1),index(x+1,0,z+1),index(x+1,0,z));quad(index(x,2,z),index(x+1,2,z),index(x+1,2,z+1),index(x,2,z+1));}
     for(int x=0;x<2;++x)for(int y=0;y<2;++y){quad(index(x,y,0),index(x+1,y,0),index(x+1,y+1,0),index(x,y+1,0));quad(index(x,y,2),index(x,y+1,2),index(x+1,y+1,2),index(x+1,y,2));}
     float identity[16];ident(identity);const float flesh[4]={Pass7Visual::SoulFlesh.r,Pass7Visual::SoulFlesh.g,Pass7Visual::SoulFlesh.b,1.0f};
-    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glBindBuffer(GL_ARRAY_BUFFER,soulSurfaceVbo_);glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(out*sizeof(float)),vertices.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,flesh);glDrawArrays(GL_TRIANGLES,0,out/3);
+    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glBindBuffer(GL_ARRAY_BUFFER,soulSurfaceVbo_);glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(out*sizeof(float)),vertices.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,flesh);glDrawArrays(GL_TRIANGLES,0,out/3);
     if(target.tetherVisible){const Vec3 delta=target.tetherDestination-target.tetherAnchor;const float len=length(delta);if(len>0.001f){const float yaw=std::atan2(delta.x,delta.z),pitch=-std::asin(clampf(delta.y/len,-1.0f,1.0f));const Quat orientation=quaternionFromEulerXYZ(pitch,yaw,0);const float tether[4]={Pass7Visual::Tether.r,Pass7Visual::Tether.g,Pass7Visual::Tether.b,0.34f};glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);drawBox(viewProj,target.tetherAnchor+delta*0.5f,{0.13f*target.tetherWidth,0.13f*target.tetherWidth,std::min(len,4.5f)},orientation,tether);glDepthMask(GL_TRUE);glDisable(GL_BLEND);}}
 }
 
@@ -630,9 +670,10 @@ void Renderer::draw(const GameState& state) {
 
     // One bounded footprint per dynamic caster avoids projected mesh triangles
     // repeatedly darkening the same pixels on low-end tile GPUs.
-    if(state.localSettings.shadows){
+    const auto shadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,false);
+    if(shadowQuality==render_contract::ShadowQuality::Cheap){
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(state.started&&!state.dead&&!state.camera.firstPerson)drawGroundShadow(viewProj,state.phoneTransform.position,0.25f,0.18f,0.95f,0.20f);
     if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(viewProj,peer.player.pos,0.25f,0.18f,0.95f,0.20f);
     const float shadowTileOrigin=state.topology.currentTileIndex*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(viewProj,target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(viewProj,target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}

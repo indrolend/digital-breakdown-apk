@@ -3,6 +3,7 @@
 #include "Game.hpp"
 #include "ModelData.hpp"
 #include "HumanModelData.hpp"
+#include "DeveloperCodec.hpp"
 
 #include <filesystem>
 #include <vector>
@@ -15,7 +16,7 @@ public:
     void setAssetRoot(const std::filesystem::path& root);
     void resize(int width, int height);
     void setHudVisible(bool visible);
-    void draw(const GameState& state) const;
+    void draw(const GameState& state, const DeveloperCodecState* codec=nullptr) const;
 
 private:
     TvGifWall tvGifWall_;
@@ -28,6 +29,8 @@ private:
     mutable unsigned int datamoshTexture_ = 0;
     mutable unsigned int tvScreenTexture_ = 0;
     mutable unsigned int phoneDisplayTexture_ = 0;
+    mutable unsigned int fieldGrassTexture_ = 0;
+    mutable unsigned int citySurfaceTexture_ = 0;
     mutable std::vector<unsigned char> phoneDisplayPixels_;
     mutable unsigned long long phoneDisplayCacheKey_ = 0;
     mutable bool phoneDisplayCacheValid_ = false;
@@ -35,7 +38,9 @@ private:
     mutable bool datamoshFrameReady_ = false;
     bool hudVisible_ = true;
 
-    static void drawRoomTile(const GameState& state, int tileIndex);
+    void drawRoomTile(const GameState& state, int tileIndex) const;
+    void drawFieldGrass(int tileIndex) const;
+    void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
     void drawHumanModel(const TargetState& target, float time, bool shadow = false) const;
@@ -43,5 +48,6 @@ private:
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
     void drawPhoneDisplayTexture(const GameState& state) const;
     void drawHud(const GameState& state) const;
+    void drawDeveloperCodec(const DeveloperCodecState& codec) const;
     void drawDoorDataMosh(const GameState& state) const;
 };

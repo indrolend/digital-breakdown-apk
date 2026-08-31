@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "wrangler types --check && tsc --noEmit && vitest run",
+    "check": "wrangler types --check && tsc --noEmit && vitest run && node -e \"console.log('MULTIPLAYER_CHECK=PASS suite=server')\"",
     "protocol:check": "node ../tools/release/protocol-consistency.mjs",
     "test": "vitest run",
     "types": "wrangler types",

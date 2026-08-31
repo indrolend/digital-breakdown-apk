@@ -33,6 +33,31 @@ Both UIs call the same canonical scripts. Lines in the form
 UI. They are intentionally also visible in a plain terminal, alongside normal stage
 messages.
 
+The scriptable interface owns workflow routing; lower-level scripts under `tools/`
+and `scripts/` remain implementation adapters. Common commands:
+
+```powershell
+.\tools\dbdev.ps1 status
+.\tools\dbdev.ps1 doctor
+.\tools\dbdev.ps1 desktop-build
+.\tools\dbdev.ps1 desktop-test
+.\tools\dbdev.ps1 desktop-smoke
+.\tools\dbdev.ps1 playtest -Mode game
+.\tools\dbdev.ps1 playtest -Mode rally -Automation
+.\tools\dbdev.ps1 playtest -Mode traversal
+.\tools\dbdev.ps1 playtest -Mode rooms
+.\tools\dbdev.ps1 room-smoke
+.\tools\dbdev.ps1 android-build
+.\tools\dbdev.ps1 android-install
+.\tools\dbdev.ps1 android-stream
+```
+
+`-Automation` is local-only, clears held input on focus loss, and refuses
+host/join/multiplayer modes. It is safe for Codex or another desktop automation
+client; it does not expose a command server or remote input endpoint. Relative
+mouse look is suppressed because window-capture clients reposition the system
+pointer; use keyboard/gamepad actions against the lab's deterministic starting aim.
+
 ## Windows desktop
 
 Required: Visual Studio with Desktop development with C++, CMake 3.22 or newer,

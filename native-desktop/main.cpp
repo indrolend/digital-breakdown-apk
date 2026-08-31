@@ -2,6 +2,8 @@
 #include "DesktopAudio.hpp"
 #include "DesktopMultiplayer.hpp"
 #include "DesktopUpdateService.hpp"
+#include "DesktopPlaytestPolicy.hpp"
+#include "DeveloperCodec.hpp"
 #include "BuildIdentity.hpp"
 #include "MenuNavigation.hpp"
 #include "ControllerRumble.hpp"
@@ -31,6 +33,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <memory>
 #include <numeric>
 #include <vector>
@@ -102,6 +105,13 @@ struct HostState {
     int gamepadId = -1;
     bool gamepadMapped = false;
     bool restoreCaptureOnFocus = false;
+    // Explicit local-only dev policy. This never opens an input endpoint; it
+    // only prevents automation/screenshot focus changes from pausing play.
+    DesktopPlaytestPolicy playtestPolicy{};
+    DeveloperCodecState codec{};
+    bool codecPreviousPaused=false;
+    bool codecPreviousMouseCaptured=true;
+    int automationCaptureDelayFrames = 0;
     std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> previousGamepadButtons{};
     bool previousGamepadLeftTrigger = false;
     bool previousGamepadRightTrigger = false;
@@ -192,6 +202,16 @@ std::filesystem::path progressionSavePath(){
     const char* home=std::getenv("HOME");
     const std::filesystem::path root=home&&*home?std::filesystem::path(home)/".local"/"share":std::filesystem::temp_directory_path();
     return root/"DigitalBreakdown"/"progression.v1";
+#endif
+}
+
+std::filesystem::path automationPlaytestCapturePath(){
+#ifdef _WIN32
+    const char* local=std::getenv("LOCALAPPDATA");
+    const std::filesystem::path root=local&&*local?std::filesystem::path(local):std::filesystem::temp_directory_path();
+    return root/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
+#else
+    return std::filesystem::temp_directory_path()/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
 #endif
 }
 std::filesystem::path legacyTemporaryProgressionSavePath(){return std::filesystem::temp_directory_path()/"DigitalBreakdown"/"progression.v1";}
@@ -385,7 +405,12 @@ struct TargetPresentationSample {
 
 struct FramePresentationSample {
     float time=0.0f;
+    Vec3 playerPos;
     std::array<TargetPresentationSample,TARGET_COUNT> targets{};
+    std::array<Vec3,BULLET_COUNT> bulletPositions{};
+    std::array<bool,BULLET_COUNT> bulletActive{};
+    std::array<Vec3,FLOWER_POWERUP_COUNT> flowerPositions{};
+    std::array<bool,FLOWER_POWERUP_COUNT> flowerActive{};
     float crosshairRotationDegrees=0.0f;
     float crosshairSpreadPixels=8.0f;
     float crosshairOpacity=0.0f;
@@ -395,12 +420,15 @@ struct FramePresentationSample {
 FramePresentationSample capturePresentation(const GameState& state){
     FramePresentationSample sample;
     sample.time=state.time;
+    sample.playerPos=state.player.pos;
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetState& target=state.targets[i];
         sample.targets[i]={target.alive,target.slurpable,target.pos,target.visualYaw,
             target.visualWalkPhase,target.humanAnimationTime,target.attackTimer,
             target.locomotionAmount,target.visualReaction,target.hitFlash};
     }
+    for(int i=0;i<BULLET_COUNT;++i){sample.bulletPositions[i]=state.bullets[i].pos;sample.bulletActive[i]=state.bullets[i].alive;}
+    for(int i=0;i<FLOWER_POWERUP_COUNT;++i){sample.flowerPositions[i]=state.flowers[i].pos;sample.flowerActive[i]=state.flowers[i].active;}
     sample.crosshairRotationDegrees=state.hud.crosshairRotationDegrees;
     sample.crosshairSpreadPixels=state.hud.crosshairSpreadPixels;
     sample.crosshairOpacity=state.hud.crosshairOpacity;
@@ -415,6 +443,7 @@ float interpolateWrappedAngle(float previous,float current,float alpha){
 
 void interpolatePresentation(GameState& renderState,const FramePresentationSample& previous,const GameState& current,float alpha){
     renderState.time=previous.time+(current.time-previous.time)*alpha;
+    if(lengthSq(previous.playerPos-current.player.pos)<16.0f)renderState.player.pos=previous.playerPos+(current.player.pos-previous.playerPos)*alpha;
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetPresentationSample& before=previous.targets[i];
         const TargetState& now=current.targets[i];
@@ -448,6 +477,8 @@ void interpolatePresentation(GameState& renderState,const FramePresentationSampl
             (now.visualReaction.attackTimer-before.visualReaction.attackTimer)*alpha;
         target.hitFlash=before.hitFlash+(now.hitFlash-before.hitFlash)*alpha;
     }
+    for(int i=0;i<BULLET_COUNT;++i)if(previous.bulletActive[i]&&current.bullets[i].alive&&lengthSq(previous.bulletPositions[i]-current.bullets[i].pos)<64.0f)renderState.bullets[i].pos=previous.bulletPositions[i]+(current.bullets[i].pos-previous.bulletPositions[i])*alpha;
+    for(int i=0;i<FLOWER_POWERUP_COUNT;++i)if(previous.flowerActive[i]&&current.flowers[i].active&&lengthSq(previous.flowerPositions[i]-current.flowers[i].pos)<16.0f)renderState.flowers[i].pos=previous.flowerPositions[i]+(current.flowers[i].pos-previous.flowerPositions[i])*alpha;
     renderState.hud.crosshairRotationDegrees=interpolateWrappedAngle(
         previous.crosshairRotationDegrees*DB_PI/180.0f,
         current.hud.crosshairRotationDegrees*DB_PI/180.0f,alpha)*180.0f/DB_PI;
@@ -848,9 +879,77 @@ void setMouseCaptured(GLFWwindow* window, HostState& host, bool captured) {
     }
 }
 
+void setDeveloperCodecOpen(GLFWwindow* window,HostState& host,bool open){
+    if(open==host.codec.open)return;
+    if(open){
+        if(host.game.state().multiplayer.enabled)return;
+        host.codecPreviousPaused=host.game.state().uiPaused;host.codecPreviousMouseCaptured=host.mouseCaptured;
+        host.game.clearInputState();host.lookX=host.lookY=0.0;host.haveMouse=false;host.mouseCaptured=false;
+        glfwSetInputMode(window,GLFW_CURSOR,GLFW_CURSOR_NORMAL);host.game.setUiPaused(true);host.codec.open=true;
+        if(host.codec.outputCount==0){host.codec.write("READY");host.codec.write("type: help");}
+    }else{
+        host.game.clearInputState();host.codec.open=false;host.mouseCaptured=host.codecPreviousMouseCaptured;
+        glfwSetInputMode(window,GLFW_CURSOR,host.mouseCaptured?GLFW_CURSOR_DISABLED:GLFW_CURSOR_NORMAL);
+        host.game.setUiPaused(host.codecPreviousPaused);host.haveMouse=false;
+    }
+}
+
+void executeDeveloperCodec(HostState& host){
+    const std::string input=host.codec.input;host.codec.remember(input);host.codec.write("> "+input);
+    const auto parsed=parseDeveloperCodecCommand(input);
+    const auto invalid=[&](){host.codec.write(parsed.recognizedVerb?"INVALID ARGUMENTS":"UNKNOWN COMMAND");host.codec.write("type: help");};
+    switch(parsed.command){
+        case DeveloperCodecCommand::Help:host.codec.write("help | state | soul spawn | battery full");host.codec.write("enemies on/off/toggle | room next/reroll");host.codec.write("colliders show/hide/toggle | playtest rally/traversal/rooms");break;
+        case DeveloperCodecCommand::State:{
+            const auto& state=host.game.state();const auto& build=desktopBuildIdentity();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+            host.codec.write("build "+build.commitShort+"  version "+build.humanVersion);
+            host.codec.write("room "+std::to_string(state.roomIndex)+" seed "+std::to_string(state.roomSeed));
+            host.codec.write(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / "+early_browser_visuals::playstyleName(plan.playstyle));
+            std::ostringstream status;status<<"souls "<<state.player.souls<<" battery "<<std::fixed<<std::setprecision(1)<<state.player.battery;host.codec.write(status.str());
+            host.codec.write(std::string("mode ")+(state.rallyLab?"rally":(state.traversalLab?"traversal":(state.roomInspector?"rooms":"game"))));break;}
+        case DeveloperCodecCommand::SoulSpawn:host.codec.write(host.game.debugSpawnStoredSoul()?"SOUL SPAWNED":"SOUL WALLET FULL");break;
+        case DeveloperCodecCommand::BatteryFull:host.game.debugFillBattery();host.codec.write("BATTERY FULL");break;
+        case DeveloperCodecCommand::EnemiesOn:host.game.debugSetEnemies(1);host.codec.write("ENEMIES ON");break;
+        case DeveloperCodecCommand::EnemiesOff:host.game.debugSetEnemies(0);host.codec.write("ENEMIES OFF");break;
+        case DeveloperCodecCommand::EnemiesToggle:host.codec.write(host.game.debugSetEnemies(-1)?"ENEMIES ON":"ENEMIES OFF");break;
+        case DeveloperCodecCommand::RoomNext:host.game.debugNextRoom();host.codec.write("ROOM NEXT");break;
+        case DeveloperCodecCommand::RoomReroll:host.game.debugRerollRoom();host.codec.write("ROOM REROLLED");break;
+        case DeveloperCodecCommand::CollidersShow:host.codec.showColliders=true;host.codec.write("COLLIDERS SHOWN");break;
+        case DeveloperCodecCommand::CollidersHide:host.codec.showColliders=false;host.codec.write("COLLIDERS HIDDEN");break;
+        case DeveloperCodecCommand::CollidersToggle:host.codec.showColliders=!host.codec.showColliders;host.codec.write(host.codec.showColliders?"COLLIDERS SHOWN":"COLLIDERS HIDDEN");break;
+        case DeveloperCodecCommand::PlaytestRally:host.game.debugStartRallyLab();host.codec.write("PLAYTEST RALLY");break;
+        case DeveloperCodecCommand::PlaytestTraversal:host.game.debugStartTraversalLab();host.codec.write("PLAYTEST TRAVERSAL");break;
+        case DeveloperCodecCommand::PlaytestRooms:host.game.debugStartRoomInspector();host.codec.write("PLAYTEST ROOMS");break;
+        default:invalid();break;
+    }
+    host.codec.input.clear();
+}
+
+void codecCharacterCallback(GLFWwindow* window,unsigned int codepoint){
+    HostState* host=stateFor(window);if(!host||host->playtestPolicy.automation||!host->codec.open||codepoint<32||codepoint>126||codepoint=='`'||host->codec.input.size()>=96)return;
+    host->codec.input.push_back(static_cast<char>(codepoint));
+}
+
 void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
+    if(action==GLFW_PRESS&&host->playtestPolicy.automation)host->automationCaptureDelayFrames=8;
+    if(key==GLFW_KEY_GRAVE_ACCENT&&action==GLFW_PRESS){setDeveloperCodecOpen(window,*host,!host->codec.open);return;}
+    if(host->codec.open){
+        if(action!=GLFW_PRESS&&action!=GLFW_REPEAT)return;
+        if(key==GLFW_KEY_ESCAPE){setDeveloperCodecOpen(window,*host,false);return;}
+        if(key==GLFW_KEY_ENTER){executeDeveloperCodec(*host);return;}
+        if(key==GLFW_KEY_BACKSPACE){if(!host->codec.input.empty())host->codec.input.pop_back();return;}
+        if(key==GLFW_KEY_UP&&host->codec.historyCount>0){host->codec.historyCursor=std::max(0,host->codec.historyCursor-1);host->codec.input=host->codec.history[host->codec.historyCursor];return;}
+        if(key==GLFW_KEY_DOWN&&host->codec.historyCount>0){host->codec.historyCursor=std::min(host->codec.historyCount,host->codec.historyCursor+1);host->codec.input=host->codec.historyCursor==host->codec.historyCount?"":host->codec.history[host->codec.historyCursor];return;}
+        if(host->playtestPolicy.automation&&host->codec.input.size()<96){
+            if(key>=GLFW_KEY_A&&key<=GLFW_KEY_Z){host->codec.input.push_back(static_cast<char>('a'+key-GLFW_KEY_A));return;}
+            if(key>=GLFW_KEY_0&&key<=GLFW_KEY_9){host->codec.input.push_back(static_cast<char>('0'+key-GLFW_KEY_0));return;}
+            if(key==GLFW_KEY_SPACE){host->codec.input.push_back(' ');return;}
+            if(key==GLFW_KEY_MINUS){host->codec.input.push_back('-');return;}
+        }
+        return;
+    }
     if(action==GLFW_PRESS&&host->game.state().attractMode){host->game.dismissAttractMode();setMouseCaptured(window,*host,false);return;}
 
     if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<9;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=-1;host->audio.playMenuCue(true);return;}
@@ -934,6 +1033,15 @@ void cursorCallback(GLFWwindow* window, double x, double y) {
         return;
     }
 
+    // Desktop automation activates and captures windows by moving the system
+    // pointer. Those synthetic absolute moves must not become gameplay camera
+    // deltas. Human play retains normal relative mouse look.
+    if(!host->playtestPolicy.acceptsRelativeMouseLook()){
+        host->lastMouseX=x;
+        host->lastMouseY=y;
+        return;
+    }
+
     if(host->game.state().player.grabbedByTarget>=0){const double delta=x-host->lastMouseX;host->lastMouseX=x;host->lastMouseY=y;if(std::abs(delta)>=1.0)host->game.setWiggle(static_cast<float>(delta));return;}
 
     host->lookX += x - host->lastMouseX;
@@ -997,9 +1105,16 @@ void windowFocusCallback(GLFWwindow* window, int focused) {
     if (!host) return;
     const bool wasFocused = host->focused;
     host->focused = focused == GLFW_TRUE;
-    host->game.clearInputState();
-    resetGamepadHistory(*host);
+    if(host->playtestPolicy.clearInputOnFocusChange(host->focused)){
+        host->game.clearInputState();
+        resetGamepadHistory(*host);
+    }
     if (!host->focused) {
+        if(!host->playtestPolicy.releaseCaptureOnFocusLoss()){
+            host->restoreCaptureOnFocus=false;
+            host->automationCaptureDelayFrames=std::max(host->automationCaptureDelayFrames,2);
+            return;
+        }
         const GameState& state = host->game.state();
         host->restoreCaptureOnFocus = host->mouseCaptured && state.started && state.multiplayer.enabled && !state.dead && !state.upgradeMenu.active;
         setMouseCaptured(window, *host, false);
@@ -1231,6 +1346,8 @@ void printUsage() {
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
+    std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
+    std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --room-inspector-smoke  Sweep every inspector premise and three reproducible seeds.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
@@ -1487,7 +1604,7 @@ int runRoomInspectorSmoke(Game& game){
             const auto& state=game.state();const auto& r=state.roomInspectorReport;
             const bool playable=state.player.alive&&std::isfinite(state.player.pos.x)&&std::isfinite(state.player.pos.y)&&std::isfinite(state.player.pos.z)&&length(state.player.pos-start)>0.0001f;
             ok&=r.seedSelectionValid&&r.requiredRouteValid&&playable&&r.premise==static_cast<early_browser_visuals::RoomPremise>(premiseIndex);
-            std::printf("ROOM_INSPECT premise=%s seed=%d room=%d route=%s band=%s surfaces=%d edges=%d colliders=%d props=%d enemies=%d/%d playable=%s\n",early_browser_visuals::premiseName(r.premise),r.seed,r.roomIndex,r.requiredRouteValid?"VALID":"INVALID",gameplay::traversalDifficultyName(r.requiredBand),r.traversalSurfaceCount,r.traversalEdgeCount,r.colliderCount,r.presentationPropCount,r.enemyCount,r.enemyBudget,playable?"YES":"NO");
+            std::printf("ROOM_INSPECT premise=%s playstyle=%s seed=%d room=%d route=%s band=%s surfaces=%d edges=%d colliders=%d props=%d mass=%d landmark=%d traversal=%d detail=%d enemies=%d/%d playable=%s\n",early_browser_visuals::premiseName(r.premise),early_browser_visuals::playstyleName(r.playstyle),r.seed,r.roomIndex,r.requiredRouteValid?"VALID":"INVALID",gameplay::traversalDifficultyName(r.requiredBand),r.traversalSurfaceCount,r.traversalEdgeCount,r.colliderCount,r.presentationPropCount,r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Mass)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Landmark)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Traversal)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Detail)],r.enemyCount,r.enemyBudget,playable?"YES":"NO");
             const RoomReviewRating rating=sample==0?RoomReviewRating::Keep:(sample==1?RoomReviewRating::Tune:RoomReviewRating::Redesign);
             std::printf("%s\n",game.debugRoomReviewLine(rating).c_str());
             if(sample==0){game.debugToggleRoomInspectorEnemies();ok&=game.state().roomInspectorReport.enemyCount>0;game.debugToggleRoomInspectorEnemies();}
@@ -1531,10 +1648,15 @@ int main(int argc, char** argv) {
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
+    const bool rallyLab=hasArg(argc,argv,"--rally-lab");
+    const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
     const bool roomInspector=hasArg(argc,argv,"--room-inspector")||roomInspectorSmoke;
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
+    const bool automationNetworkRequested=multiplayerTest||hasArg(argc,argv,"--host-room")||argValue(argc,argv,"--join-room")||hasArg(argc,argv,"--auto-start-multiplayer");
+    const DesktopPlaytestPolicy playtestPolicy{automationPlaytest};
+    if(!playtestPolicy.allowsNetworkMode(automationNetworkRequested)){std::fprintf(stderr,"AUTOMATION_PLAYTEST_REFUSED reason=network_mode_not_local\n");return 2;}
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
@@ -1578,6 +1700,7 @@ int main(int argc, char** argv) {
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_STENCIL_BITS, 8);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
@@ -1598,6 +1721,8 @@ int main(int argc, char** argv) {
     }
 
     HostState host;
+    host.playtestPolicy=playtestPolicy;
+    if(automationPlaytest)host.automationCaptureDelayFrames=1;
     host.progressionPath=progressionSavePath();
     bool recoveredPersistentSave=false;
     bool loadedPersistentSave=loadProgressionWithBackup(host.game,host.progressionPath,&recoveredPersistentSave);
@@ -1641,7 +1766,12 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
+    if(rallyLab){
+        host.game.debugStartRallyLab();
+        std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
+    }
     if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
+    if(automationPlaytest)std::printf("AUTOMATION_PLAYTEST_READY local_only=YES focus_pause=OFF input_clearing=ON\n");
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     host.savedSettings=host.game.state().localSettings;
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;
@@ -1697,6 +1827,7 @@ int main(int argc, char** argv) {
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCursorPosCallback(window, cursorCallback);
+    glfwSetCharCallback(window, codecCharacterCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetWindowFocusCallback(window, windowFocusCallback);
@@ -1719,7 +1850,7 @@ int main(int argc, char** argv) {
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
-    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!roomInspector){
+    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!rallyLab&&!roomInspector){
         host.multiplayer.configureImpairment(
             argInt(argc,argv,"--net-latency-ms"),
             argInt(argc,argv,"--net-jitter-ms"),
@@ -2102,7 +2233,14 @@ int main(int argc, char** argv) {
             renderState.camera.firstPerson=false;
         }
         const auto renderBegin=std::chrono::steady_clock::now();
-        host.renderer.draw(renderState);
+        host.renderer.draw(renderState,&host.codec);
+        if(host.automationCaptureDelayFrames>0&&--host.automationCaptureDelayFrames==0){
+            glFinish();
+            const auto path=automationPlaytestCapturePath();
+            const bool captured=captureFramebuffer(path,framebufferWidth,framebufferHeight);
+            std::printf("AUTOMATION_PLAYTEST_FRAME_%s path=%s frame=%d\n",captured?"OK":"FAILED",path.string().c_str(),host.game.state().frame);
+            std::fflush(stdout);
+        }
         const auto renderEnd=std::chrono::steady_clock::now();
         if(captureDemo){
             const auto swapBegin=std::chrono::steady_clock::now();

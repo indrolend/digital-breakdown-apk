@@ -15,14 +15,40 @@ milestone does not alter their authority or the network protocol.
 
 ## Implemented grammar
 
-A room plan now names four separate dimensions:
+A room plan names five separate dimensions with deliberately narrow ownership:
 
 - `RoomSetting`: Field, City, Sterile, Coastal
 - `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber
 - `RoomScale`: Compact, Standard, Large, Arena
 - `RoomCondition`: Normal, Recovery
+- `RoomPlaystyle`: Playground, Funnel, Orbit, Vertical, Recovery
 
-Field/Open, City/Corridor, and Sterile/Corridor preserve the prior layouts.
+Setting owns visual/environmental vocabulary. Form owns spatial composition.
+Scale owns footprint and distances, not object meaning. Condition owns encounter
+pressure and pacing. Playstyle owns optional traversal/combat affordance topology.
+
+## World scale and semantic eligibility
+
+`gameplay/WorldScale.hpp` separates presentation scale from traversal scale.
+Architecture is proportioned against the canonical 1.16-unit human and an
+initial 2.6-human-height story. The phone's traversal clearance, jump envelope,
+and lunge envelope remain owned by `TraversalCapabilities`; architectural
+dimensions do not redefine player capability.
+
+Generated props now carry an `EnvironmentRole`: Boundary, Mass, Landmark,
+Traversal, or Detail. Role belongs to a placement rather than permanently to a
+primitive. A pure setting-eligibility contract rejects vocabulary that does not
+belong before physical placement validation asks whether it safely fits.
+
+City/Corridor is the first composition to use this distinction directly. It is
+one longitudinal street/service passage bounded by five paired building masses.
+The masses stay in left and right structural bands, use deterministic quantized
+frontages and two-to-five-story heights, and designate exactly one landmark.
+The obstacle geometry itself owns both gameplay collision and architectural
+meaning. City/Corridor therefore emits no separate House, MarkerPillar, or
+LawnFragment props.
+
+Field/Open and Sterile/Corridor preserve the prior layouts.
 City/Courtyard is the first new form. Its scale changes the bounded structure
 radius and footprint while the fixed shell depth remains unchanged. Arena is
 reserved vocabulary and is not selected yet.

@@ -7,6 +7,7 @@
 #include "Math.hpp"
 #include "gameplay/TraversalCapabilities.hpp"
 #include "gameplay/TraversalGraph.hpp"
+#include "gameplay/WorldScale.hpp"
 
 namespace early_browser_visuals {
 
@@ -25,6 +26,9 @@ inline const char* playstyleName(RoomPlaystyle playstyle){switch(playstyle){case
 inline const char* premiseName(RoomPremise premise){switch(premise){case RoomPremise::FieldOpen:return "FIELD_OPEN";case RoomPremise::CityCorridor:return "CITY_CORRIDOR";case RoomPremise::CityCourtyard:return "CITY_COURTYARD";case RoomPremise::CityCanyon:return "CITY_CANYON";case RoomPremise::CitySkyline:return "CITY_SKYLINE";case RoomPremise::SterileCorridor:return "STERILE_CORRIDOR";case RoomPremise::SterileChamber:return "STERILE_CHAMBER";case RoomPremise::CoastalShore:return "COASTAL_SHORE";case RoomPremise::Count:break;}return "UNKNOWN";}
 
 struct RoomEnvironmentPlan {
+    // Setting owns visual vocabulary; form owns spatial composition; scale
+    // owns footprint/distances; condition owns encounter pressure/pacing; and
+    // playstyle owns optional traversal/combat affordance topology.
     RoomSetting setting = RoomSetting::Field;
     RoomForm form = RoomForm::Open;
     RoomScale scale = RoomScale::Standard;
@@ -35,6 +39,8 @@ struct RoomEnvironmentPlan {
     bool sidewalks = false;
     float grassAmount = 1.0f;
     int enemyAdjustment = 0;
+    // A bounded local composition roll, not a second scene taxonomy.
+    unsigned char composition = 0;
     gameplay::TraversalGraph traversal{};
 
     constexpr bool recovery() const { return condition == RoomCondition::Recovery; }
@@ -42,7 +48,20 @@ struct RoomEnvironmentPlan {
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
 enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin };
-struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
+enum class EnvironmentRole : unsigned char { Boundary, Mass, Landmark, Traversal, Detail, Count };
+inline const char* environmentRoleName(EnvironmentRole role){switch(role){case EnvironmentRole::Boundary:return "BOUNDARY";case EnvironmentRole::Mass:return "MASS";case EnvironmentRole::Landmark:return "LANDMARK";case EnvironmentRole::Traversal:return "TRAVERSAL";case EnvironmentRole::Detail:return "DETAIL";case EnvironmentRole::Count:break;}return "UNKNOWN";}
+struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;EnvironmentRole role=EnvironmentRole::Detail;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
+struct TraversalPresentation { Vec3 color; bool debug = false; };
+inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting setting,bool inspectorDebug){
+    if(inspectorDebug)return {{0x78/255.0f,0xd5/255.0f,0xe1/255.0f},true};
+    switch(setting){
+        case RoomSetting::City:return {{0.49f,0.54f,0.57f},false};
+        case RoomSetting::Sterile:return {{0.67f,0.70f,0.72f},false};
+        case RoomSetting::Field:return {{0.39f,0.42f,0.36f},false};
+        case RoomSetting::Coastal:return {{0.43f,0.41f,0.35f},false};
+    }
+    return {{0.49f,0.54f,0.57f},false};
+}
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
 struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
 
@@ -61,6 +80,26 @@ inline float unit(std::uint32_t value) {
 
 inline std::uint32_t roomKey(int roomSeed,int roomIndex) {
     return mix(static_cast<std::uint32_t>(roomSeed)^static_cast<std::uint32_t>(roomIndex)*0x9e3779b9u);
+}
+
+constexpr bool validFormForSetting(RoomSetting setting,RoomForm form){
+    switch(setting){
+        case RoomSetting::Field:return form==RoomForm::Open;
+        case RoomSetting::City:return form==RoomForm::Corridor||form==RoomForm::Courtyard||form==RoomForm::Canyon||form==RoomForm::Skyline;
+        case RoomSetting::Sterile:return form==RoomForm::Corridor||form==RoomForm::Chamber;
+        case RoomSetting::Coastal:return form==RoomForm::Shore;
+    }
+    return false;
+}
+
+constexpr bool settingAllowsPrimitive(RoomSetting setting,EnvironmentPrimitive primitive){
+    switch(setting){
+        case RoomSetting::Field:return primitive==EnvironmentPrimitive::House||primitive==EnvironmentPrimitive::Tree||primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+        case RoomSetting::City:return primitive==EnvironmentPrimitive::House;
+        case RoomSetting::Sterile:return primitive==EnvironmentPrimitive::MarkerPillar;
+        case RoomSetting::Coastal:return primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+    }
+    return false;
 }
 
 inline RoomPlaystyle rawPlaystyle(std::uint32_t key) {
@@ -113,6 +152,22 @@ inline void appendOptionalTraversal(RoomEnvironmentPlan& plan,std::uint32_t key)
     }
 }
 
+// Physicalization is intentionally staged one playstyle at a time. Playground
+// proves the graph -> collider -> renderer path without changing the required
+// center route; the other optional grammars remain descriptive for now.
+inline bool physicalTraversalSurface(const RoomEnvironmentPlan& plan,const gameplay::TraversalSurface& surface){
+    return plan.playstyle==RoomPlaystyle::Playground&&!surface.required;
+}
+
+inline int physicalTraversalSurfaceCount(const RoomEnvironmentPlan& plan){
+    int count=0;for(int i=0;i<plan.traversal.surfaceCount;++i)if(physicalTraversalSurface(plan,plan.traversal.surfaces[i]))++count;return count;
+}
+
+inline ObstacleSpec physicalTraversalObstacle(const gameplay::TraversalSurface& surface){
+    const float top=std::max(0.0f,surface.center.y+surface.halfSize.y);
+    return {{surface.center.x,top*0.5f,surface.center.z},{surface.halfSize.x*2.0f,top,surface.halfSize.z*2.0f}};
+}
+
 inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     RoomEnvironmentPlan plan;
     const std::uint32_t key=roomKey(roomSeed,roomIndex);
@@ -125,7 +180,7 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     else plan.setting=roll<0.27f?RoomSetting::Field:(roll<0.60f?RoomSetting::City:(roll<0.82f?RoomSetting::Sterile:RoomSetting::Coastal));
 
     plan.scale=unit(key+143u)<0.18f?RoomScale::Compact:(unit(key+143u)<0.82f?RoomScale::Standard:RoomScale::Large);
-    if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.obstacleCount=plan.recovery()?1:3;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
+    if(plan.setting==RoomSetting::Field){plan.form=RoomForm::Open;plan.composition=static_cast<unsigned char>(mix(key+197u)%3u);plan.obstacleCount=0;plan.grass=true;plan.grassAmount=plan.recovery()?1.0f:0.82f;plan.enemyAdjustment=plan.recovery()?-2:0;}
     else if(plan.setting==RoomSetting::City){
         const float formRoll=unit(key+151u);
         plan.form=roomIndex<4?RoomForm::Corridor:
@@ -180,6 +235,21 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
         const float w=2.2f+unit(key+3u)*1.2f,d=2.8f+unit(key+4u)*1.6f,h=3.4f+unit(key+5u)*3.6f;
         return {{side*(8.7f+unit(key+1u)*0.55f),h*0.5f,-15.0f+row*7.5f+(unit(key+2u)-0.5f)*1.0f},{w,h,d}};
     }
+    if(plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor){
+        // One longitudinal passage, expressed as five paired building masses.
+        // Center-route clearance remains player-relative; construction rhythm
+        // and height are human-relative.
+        const float side=(index&1)?1.0f:-1.0f;
+        const int row=index/2;
+        const int frontageBand=static_cast<int>(unit(key+3u)*3.0f)%3;
+        const float frontage=gameplay::WORLD_SCALE.humanHeight*(3.5f+static_cast<float>(frontageBand));
+        const float depth=5.15f+static_cast<float>(static_cast<int>(unit(key+4u)*3.0f)%3)*0.58f;
+        const int stories=2+static_cast<int>(unit(key+5u)*4.0f)%4;
+        const float height=static_cast<float>(stories)*gameplay::WORLD_SCALE.storyHeight;
+        const float setback=unit(key+1u)*0.55f;
+        const float z=-14.0f+static_cast<float>(row)*7.0f+(unit(key+2u)-0.5f)*0.42f;
+        return {{side*(7.75f+setback),height*0.5f,z},{frontage,height,depth}};
+    }
     if(plan.setting==RoomSetting::City){
         const float side=(index&1)?1.0f:-1.0f;
         const int row=index/2;
@@ -202,8 +272,8 @@ inline ObstacleSpec obstacle(const RoomEnvironmentPlan& plan,int roomSeed,int ro
 }
 
 inline int environmentPropCount(const RoomEnvironmentPlan& plan){
-    if(plan.setting==RoomSetting::Field)return 3;
-    if(plan.setting==RoomSetting::City)return plan.form==RoomForm::Courtyard?5:4;
+    if(plan.setting==RoomSetting::Field)return plan.recovery()?1:(plan.composition==1?2:3);
+    if(plan.setting==RoomSetting::City)return plan.form==RoomForm::Corridor?0:(plan.form==RoomForm::Courtyard?5:4);
     if(plan.setting==RoomSetting::Coastal)return 4;
     return 4;
 }
@@ -219,33 +289,59 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
     const std::uint32_t key=roomKey(roomSeed,roomIndex)+0x51f15e5du+static_cast<std::uint32_t>(index)*313u;
     const float side=(index&1)?1.0f:-1.0f;
     if(plan.setting==RoomSetting::Field){
-        const float x=side*(9.2f+unit(key+1u)*2.4f),z=-12.0f+static_cast<float>(index)*11.0f+unit(key+2u)*1.2f;
-        return {EnvironmentPrimitive::LawnFragment,{x,0.035f,z},{3.0f+unit(key+3u)*1.8f,0.07f,4.0f+unit(key+4u)*2.2f},unit(key+5u)*0.08f,static_cast<unsigned char>(index%3)};
+        const float human=gameplay::WORLD_SCALE.humanHeight;
+        const float landmarkSide=unit(roomKey(roomSeed,roomIndex)+331u)<0.5f?-1.0f:1.0f;
+        if(plan.recovery())return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{landmarkSide*10.8f,0.035f,8.5f},{human*2.8f,0.07f,human*3.8f},landmarkSide*0.05f,0};
+        if(plan.composition==0){
+            if(index==0)return {EnvironmentPrimitive::Tree,EnvironmentRole::Landmark,{landmarkSide*10.6f,0,4.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.5f,human*4.2f,human*2.5f},0,0};
+            if(index==1)return {EnvironmentPrimitive::Ruin,EnvironmentRole::Mass,{-landmarkSide*9.4f,0,-8.0f+(unit(key+2u)-0.5f)*1.5f},{human*2.2f,gameplay::WORLD_SCALE.highCoverHeight,human*1.8f},landmarkSide*0.18f,1};
+        } else if(plan.composition==1){
+            if(index==0)return {EnvironmentPrimitive::House,EnvironmentRole::Landmark,{landmarkSide*10.5f,0,-2.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.6f,gameplay::WORLD_SCALE.storyHeight,human*3.2f},landmarkSide*1.5707963f,static_cast<unsigned char>(roomKey(roomSeed,roomIndex)%3u)};
+        } else {
+            if(index<2){const float ruinSide=index==0?-1.0f:1.0f;return {EnvironmentPrimitive::Ruin,EnvironmentRole::Mass,{ruinSide*(9.0f+unit(key+1u)*0.7f),0,index==0?-7.5f:7.5f},{human*(1.8f+unit(key+3u)*0.5f),gameplay::WORLD_SCALE.lowCoverHeight+unit(key+4u)*(gameplay::WORLD_SCALE.highCoverHeight-gameplay::WORLD_SCALE.lowCoverHeight),human*(1.6f+unit(key+5u)*0.5f)},ruinSide*0.22f,static_cast<unsigned char>(index)};}
+        }
+        return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{-landmarkSide*10.8f,0.035f,12.0f},{human*2.8f,0.07f,human*4.0f},-landmarkSide*0.06f,2};
     }
     if(plan.setting==RoomSetting::City){
         const int row=index/2;const float x=side*(13.05f+unit(key+1u)*0.12f),z=-12.0f+row*(plan.form==RoomForm::Courtyard?8.0f:12.0f)+unit(key+2u)*0.7f;
         const float scale=0.86f+unit(key+3u)*0.20f;
-        return {EnvironmentPrimitive::House,{x,0,z},{1.35f*scale,1.45f*scale,1.55f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
+        return {EnvironmentPrimitive::House,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{1.35f*scale,1.45f*scale,1.55f*scale},side*1.5707963f,static_cast<unsigned char>(index%3)};
     }
     if(plan.setting==RoomSetting::Coastal){
         const float x=side*(10.7f+unit(key+1u)*0.8f),z=-12.0f+static_cast<float>(index)*8.0f;
-        if(index==1||index==3)return {EnvironmentPrimitive::LawnFragment,{x,0.035f,z},{2.4f+unit(key+3u)*1.2f,0.07f,3.0f+unit(key+4u)*1.6f},unit(key+5u)*0.10f,static_cast<unsigned char>(index)};
-        return {EnvironmentPrimitive::Ruin,{x,0,z},{1.7f+unit(key+3u)*0.5f,1.05f+unit(key+4u)*0.45f,1.6f+unit(key+5u)*0.6f},side*1.5707963f,static_cast<unsigned char>(index)};
+        if(index==1||index==3)return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{x,0.035f,z},{2.4f+unit(key+3u)*1.2f,0.07f,3.0f+unit(key+4u)*1.6f},unit(key+5u)*0.10f,static_cast<unsigned char>(index)};
+        return {EnvironmentPrimitive::Ruin,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{1.7f+unit(key+3u)*0.5f,1.05f+unit(key+4u)*0.45f,1.6f+unit(key+5u)*0.6f},side*1.5707963f,static_cast<unsigned char>(index)};
     }
     const float x=side*(9.6f+unit(key+1u)*1.8f),z=-12.0f+static_cast<float>(index/2)*16.0f;
-    return {EnvironmentPrimitive::MarkerPillar,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
+    return {EnvironmentPrimitive::MarkerPillar,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
+}
+
+inline EnvironmentRole obstacleRole(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,int index){
+    if(plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor){
+        const int landmark=static_cast<int>(roomKey(roomSeed,roomIndex)%static_cast<std::uint32_t>(std::max(1,plan.obstacleCount)));
+        return index==landmark?EnvironmentRole::Landmark:EnvironmentRole::Mass;
+    }
+    return EnvironmentRole::Mass;
+}
+
+inline int environmentRoleCount(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,EnvironmentRole role,bool includeProps=true){
+    int count=0;
+    for(int i=0;i<plan.obstacleCount;++i)if(obstacleRole(plan,roomSeed,roomIndex,i)==role)++count;
+    if(includeProps)for(int i=0;i<environmentPropCount(plan);++i)if(environmentProp(plan,roomSeed,roomIndex,i).role==role)++count;
+    if(role==EnvironmentRole::Traversal)count+=physicalTraversalSurfaceCount(plan);
+    return count;
 }
 
 inline bool environmentPropsValid(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex){
     constexpr float wallInset=0.55f,separation=0.55f;int solidCount=0;
     const auto overlaps=[&](const ObstacleSpec& a,const ObstacleSpec& b){return a.center.x+a.size.x*0.5f+separation>b.center.x-b.size.x*0.5f&&a.center.x-a.size.x*0.5f-separation<b.center.x+b.size.x*0.5f&&a.center.z+a.size.z*0.5f+separation>b.center.z-b.size.z*0.5f&&a.center.z-a.size.z*0.5f-separation<b.center.z+b.size.z*0.5f;};
-    for(int i=0;i<environmentPropCount(plan);++i){const auto prop=environmentProp(plan,roomSeed,roomIndex,i);if(!environmentPropSolid(prop))continue;++solidCount;const auto box=environmentPropCollider(prop);
+    for(int i=0;i<environmentPropCount(plan);++i){const auto prop=environmentProp(plan,roomSeed,roomIndex,i);if(!settingAllowsPrimitive(plan.setting,prop.primitive))return false;if(!environmentPropSolid(prop))continue;++solidCount;const auto box=environmentPropCollider(prop);
         if(box.center.x-box.size.x*0.5f<-15.0f+wallInset||box.center.x+box.size.x*0.5f>15.0f-wallInset||box.center.z-box.size.z*0.5f<-21.0f+wallInset||box.center.z+box.size.z*0.5f>21.0f-wallInset)return false;
         for(int obstacleIndex=0;obstacleIndex<plan.obstacleCount;++obstacleIndex)if(overlaps(box,obstacle(plan,roomSeed,roomIndex,obstacleIndex)))return false;
         for(int prior=0;prior<i;++prior){const auto priorProp=environmentProp(plan,roomSeed,roomIndex,prior);if(environmentPropSolid(priorProp)&&overlaps(box,environmentPropCollider(priorProp)))return false;}
         for(int node=0;node<plan.traversal.surfaceCount;++node){const auto& surface=plan.traversal.surfaces[node];const ObstacleSpec route{{surface.center.x,0,surface.center.z},{surface.halfSize.x*2,0,surface.halfSize.z*2}};if(overlaps(box,route))return false;}
     }
-    return plan.obstacleCount+solidCount<=15;
+    return plan.obstacleCount+solidCount+physicalTraversalSurfaceCount(plan)<=15;
 }
 
 inline bool requiredRouteIsTraversable(const RoomEnvironmentPlan& plan,int roomSeed,int roomIndex,

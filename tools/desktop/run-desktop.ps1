@@ -113,7 +113,7 @@ Write-ProgressEvent 45 'Desktop build configured'
 
 Write-ProgressEvent 50 'Compiling native desktop game'
 Write-Stage 'Build native desktop host' 'run'
-& $environment.cmake.path --build $BuildDir --config $Configuration *>> $BuildLog
+& $environment.cmake.path --build $BuildDir --config $Configuration --target DigitalBreakdown *>> $BuildLog
 if ($LASTEXITCODE -ne 0) {
     Get-Content $BuildLog -Tail 40 -ErrorAction SilentlyContinue
     throw "CPP_COMPILE_FAILED: See $BuildLog"

@@ -113,24 +113,31 @@ int main(){
     }
     Game normal;normal.reset();
     if(normal.state().roomInspector||normal.state().traversalLab||normal.state().roomIndex!=1||normal.state().roomSeed!=12345){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL normal solo startup inherited developer state\n");return 1;}
-    Game inspector;inspector.debugStartRoomInspector();
+    Game inspector;inspector.debugStartRoomInspector();bool sawPhysicalPlayground=false;int physicalPlaygroundSeed=0;
     for(int premiseIndex=0;premiseIndex<static_cast<int>(early_browser_visuals::RoomPremise::Count);++premiseIndex){
         const GameState& state=inspector.state();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
         const auto premise=static_cast<early_browser_visuals::RoomPremise>(premiseIndex);const auto& report=state.roomInspectorReport;
         int solidProps=0;for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++solidProps;
         int expectedRequiredEdges=0;for(int i=0;i<plan.traversal.edgeCount;++i)if(gameplay::isRequired(plan.traversal.edges[i]))++expectedRequiredEdges;
         const int expectedProps=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
-        const int expectedColliders=plan.obstacleCount+(expectedProps?solidProps:0);
+        const int physicalSurfaces=early_browser_visuals::physicalTraversalSurfaceCount(plan);
+        const int expectedColliders=std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount+physicalSurfaces+(expectedProps?solidProps:0));
         if(!state.roomInspector||state.roomInspectorPremise!=premise||!early_browser_visuals::matchesInspectorPremise(plan,premise)||!state.roomClear||state.requiredSouls!=0||!report.seedSelectionValid||
-           report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||
+           report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||report.playstyle!=plan.playstyle||
            !report.requiredRouteValid||report.traversalSurfaceCount!=plan.traversal.surfaceCount||report.traversalEdgeCount!=plan.traversal.edgeCount||report.requiredEdgeCount!=expectedRequiredEdges||
            report.colliderCount!=state.debug.colliderCount||report.colliderCount!=expectedColliders||report.presentationPropCount!=expectedProps||report.enemyCount!=0||report.requiredBand!=gameplay::TraversalDifficulty::Automatic){
             std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s report does not match production state\n",early_browser_visuals::premiseName(premise));return 1;
+        }
+        if(physicalSurfaces){
+            sawPhysicalPlayground=true;physicalPlaygroundSeed=state.roomSeed;const auto& surface=plan.traversal.surfaces[plan.traversal.surfaceCount-1];const auto expected=early_browser_visuals::physicalTraversalObstacle(surface);const RoomCollider& collider=state.roomColliders[plan.obstacleCount];
+            if(plan.playstyle!=early_browser_visuals::RoomPlaystyle::Playground||surface.required||collider.bottomY!=0.0f||collider.topY!=expected.size.y||collider.center.x!=expected.center.x||collider.center.y!=expected.center.y||collider.center.z!=expected.center.z||collider.width!=expected.size.x||collider.height!=expected.size.y||collider.depth!=expected.size.z){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL Playground traversal surface was not materialized as one ground-supported shape\n");return 1;}
         }
         const std::string review=inspector.debugRoomReviewLine(RoomReviewRating::Tune);
         if(review!=inspector.debugRoomReviewLine(RoomReviewRating::Tune)||review.find(std::string("premise=")+early_browser_visuals::premiseName(premise))==std::string::npos||review.find("rating=TUNE")==std::string::npos||review.find("route=VALID band=AUTOMATIC")==std::string::npos){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL deterministic review record incomplete\n");return 1;}
         if(premiseIndex+1<static_cast<int>(early_browser_visuals::RoomPremise::Count))inspector.debugStepRoomInspector(1);
     }
+    if(!sawPhysicalPlayground){std::fprintf(stderr,"PLAYGROUND_TRAVERSAL_FAILED seed=unknown stage=inspector reason=not_exercised\n");return 1;}
+    std::printf("PLAYGROUND_TRAVERSAL_OK seed=%d colliders=verified surfaces=1\n",physicalPlaygroundSeed);
     const int previousSeed=inspector.state().roomSeed;inspector.debugStepRoomInspector(0,true);
     const int regeneratedSeed=inspector.state().roomSeed;const auto regeneratedPremise=inspector.state().roomInspectorPremise;
     if(regeneratedSeed==previousSeed||regeneratedPremise!=early_browser_visuals::RoomPremise::CoastalShore||!early_browser_visuals::matchesInspectorPremise(early_browser_visuals::roomPlan(regeneratedSeed,inspector.state().roomIndex),regeneratedPremise)){

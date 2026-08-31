@@ -1,6 +1,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet(
+        'help',
         'ui',
         'status',
         'doctor',
@@ -8,7 +9,10 @@ param(
         'sync',
         'desktop-build',
         'desktop-run',
+        'desktop-test',
         'desktop-smoke',
+        'playtest',
+        'room-smoke',
         'android-build',
         'android-install',
         'android-stream',
@@ -17,7 +21,13 @@ param(
         'release-all',
         'diagnostics'
     )]
-    [string]$Command = 'status'
+    [string]$Command = 'status',
+    [ValidateSet('game','rally','traversal','rooms','tv-room','tv-enter')]
+    [string]$Mode = 'game',
+    [ValidateSet('Debug','Release')]
+    [string]$Configuration = 'Release',
+    [switch]$Automation,
+    [switch]$Reconfigure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,13 +38,8 @@ $AndroidDeployScript = Join-Path $RepoRoot 'tools\device\deploy-local.ps1'
 $DevUiBuildScript = Join-Path $RepoRoot 'tools\dev-ui\build-dev-ui.ps1'
 $EnvironmentResolver = Join-Path $RepoRoot 'tools\environment\resolve-dev-environment.ps1'
 $EnvironmentRepair = Join-Path $RepoRoot 'tools\environment\repair-dev-environment.ps1'
+$GameplayVerifier = Join-Path $RepoRoot 'scripts\verify-gameplay.ps1'
 $NativeAndroidRoot = Join-Path $RepoRoot 'native-android'
-$DesktopExeCandidates = @(
-    (Join-Path $RepoRoot 'build\desktop-debug\bin\Debug\DigitalBreakdown.exe'),
-    (Join-Path $RepoRoot 'build\desktop-debug\bin\DigitalBreakdown.exe'),
-    (Join-Path $RepoRoot 'build\desktop-release\bin\Release\DigitalBreakdown.exe'),
-    (Join-Path $RepoRoot 'build\desktop-release\bin\DigitalBreakdown.exe')
-)
 
 function Invoke-Checked {
     param(
@@ -61,9 +66,50 @@ function Get-GitState {
 }
 
 function Get-DesktopExe {
-    $matches = @($DesktopExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
+    param([ValidateSet('Debug','Release')][string]$RequestedConfiguration = 'Release')
+    $buildName = $RequestedConfiguration.ToLowerInvariant()
+    $candidates = @(
+        (Join-Path $RepoRoot "build\desktop-$buildName\bin\$RequestedConfiguration\DigitalBreakdown.exe"),
+        (Join-Path $RepoRoot "build\desktop-$buildName\bin\DigitalBreakdown.exe")
+    )
+    $matches = @($candidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
     if ($matches.Count -gt 0) { return $matches[0] }
     return $null
+}
+
+function Invoke-DesktopBuild {
+    if (-not (Test-Path $DesktopScript)) { throw "Missing $DesktopScript" }
+    if ($Reconfigure) { & $DesktopScript -Configuration $Configuration -BuildOnly -Reconfigure }
+    else { & $DesktopScript -Configuration $Configuration -BuildOnly }
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
+}
+
+function Start-DesktopGame {
+    param([string[]]$GameArguments = @())
+    $exe = Get-DesktopExe $Configuration
+    if (-not $exe) { throw "Desktop $Configuration executable was not produced." }
+    $existing = @(Get-Process -Name DigitalBreakdown -ErrorAction SilentlyContinue)
+    if ($existing.Count -gt 0) { throw 'DESKTOP_ALREADY_RUNNING: Close the existing game before starting a playtest.' }
+    # Windows PowerShell 5.1 can concatenate a string array passed through a
+    # function boundary. These are closed-set, repo-owned flags, so construct
+    # one explicit command line for Start-Process.
+    Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -ArgumentList ($GameArguments -join ' ')
+    Write-Host "PLAYTEST_READY mode=$Mode automation=$($Automation.IsPresent) executable=$exe" -ForegroundColor Green
+    if ($Automation) {
+        $capture = Join-Path $env:LOCALAPPDATA 'DigitalBreakdownDev\captures\automation-latest.ppm'
+        Write-Host "PLAYTEST_CAPTURE path=$capture" -ForegroundColor Green
+    }
+}
+
+function Show-Help {
+    Write-Host 'DIGITAL BREAKDOWN DEVELOPMENT COMMANDS' -ForegroundColor Cyan
+    Write-Host '  status | doctor | repair | sync'
+    Write-Host '  desktop-build [-Configuration Debug|Release] [-Reconfigure]'
+    Write-Host '  desktop-run   [-Configuration Debug|Release] [-Reconfigure]'
+    Write-Host '  desktop-test | desktop-smoke | room-smoke'
+    Write-Host '  playtest -Mode game|rally|traversal|rooms|tv-room|tv-enter [-Automation]'
+    Write-Host '  android-build | android-install | android-stream'
+    Write-Host '  ui | release-windows | release-android | release-all | diagnostics'
 }
 
 function Get-Environment {
@@ -100,7 +146,7 @@ function Show-Status {
     Write-Host "Commit     : $($git.Commit)$(if ($git.Dirty) { '-dirty' })"
     Write-Host "Local edits: $($git.DirtyCount)"
 
-    $desktopExe = Get-DesktopExe
+    $desktopExe = Get-DesktopExe 'Release'
     Write-Host "Desktop    : $(if ($desktopExe) { $desktopExe } else { 'not built' })"
 
     $environment = Get-Environment
@@ -110,7 +156,7 @@ function Show-Status {
 function Show-Doctor {
     $environment = Get-Environment
     $gitState = Get-GitState
-    $desktopExe = Get-DesktopExe
+    $desktopExe = Get-DesktopExe 'Release'
 
     Write-Host 'DIGITAL BREAKDOWN DOCTOR' -ForegroundColor Cyan
     Write-Host ("{0,-18} {1}" -f 'Repository', $(if ($environment.repository.available) { 'ready' } else { 'missing' }))
@@ -126,6 +172,9 @@ function Show-Doctor {
 }
 
 switch ($Command) {
+    'help' {
+        Show-Help
+    }
     'ui' {
         if (-not (Test-Path $DevUiBuildScript)) { throw "Missing $DevUiBuildScript" }
         & $DevUiBuildScript -Launch
@@ -148,24 +197,43 @@ switch ($Command) {
         Show-Status
     }
     'desktop-build' {
-        if (-not (Test-Path $DesktopScript)) { throw "Missing $DesktopScript" }
-        & $DesktopScript -Configuration Release -BuildOnly
-        if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
+        Invoke-DesktopBuild
     }
     'desktop-run' {
-        if (-not (Test-Path $DesktopScript)) { throw "Missing $DesktopScript" }
-        & $DesktopScript -Configuration Release
-        if ($LASTEXITCODE -ne 0) { throw 'Desktop build/run failed.' }
+        Invoke-DesktopBuild
+        Start-DesktopGame
+    }
+    'desktop-test' {
+        if (-not (Test-Path $GameplayVerifier)) { throw "Missing $GameplayVerifier" }
+        & $GameplayVerifier
+        if ($LASTEXITCODE -ne 0) { throw 'Desktop gameplay verification failed.' }
     }
     'desktop-smoke' {
-        $exe = Get-DesktopExe
+        $exe = Get-DesktopExe $Configuration
         if (-not $exe) {
-            & $DesktopScript -Configuration Release -BuildOnly
-            if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed.' }
-            $exe = Get-DesktopExe
+            Invoke-DesktopBuild
+            $exe = Get-DesktopExe $Configuration
         }
         if (-not $exe) { throw 'Desktop executable was not produced.' }
         Invoke-Checked $exe @('--smoke-test')
+    }
+    'playtest' {
+        Invoke-DesktopBuild
+        [string[]]$arguments = @(switch ($Mode) {
+            'rally' { @('--rally-lab') }
+            'traversal' { @('--traversal-lab') }
+            'rooms' { @('--room-inspector') }
+            'tv-room' { @('--tv-room-test') }
+            'tv-enter' { @('--tv-room-enter') }
+            default { @() }
+        })
+        if ($Automation) { $arguments += '--automation-playtest' }
+        Start-DesktopGame $arguments
+    }
+    'room-smoke' {
+        Invoke-DesktopBuild
+        $exe = Get-DesktopExe $Configuration
+        Invoke-Checked $exe @('--room-inspector-smoke')
     }
     'android-build' {
         Ensure-NativeAndroidSdk
@@ -174,7 +242,7 @@ switch ($Command) {
     'android-install' {
         Ensure-NativeAndroidSdk
         if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
-        & $AndroidDeployScript
+        & $AndroidDeployScript -NoMirror -NoLogs
         if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
     }
     'android-stream' {
