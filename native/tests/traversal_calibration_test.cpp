@@ -60,9 +60,60 @@ int successes(float gap,float targetHeight=PlatformTop,float targetWidth=5.0f){
     return result;
 }
 
+bool runTreeClimbContract(){
+    Game game;game.reset();
+    GameState& state=game.networkMutableState();
+    for(auto& target:state.targets)target={};
+    for(auto& collider:state.roomColliders)collider={};
+    state.debug.colliderCount=1;
+    RoomCollider& tree=state.roomColliders[0];
+    setBox(tree,0.0f,0.0f,0.80f,0.80f,3.20f);
+    tree.kind=RoomColliderKind::TreeTrunk;
+    tree.climbTopY=5.60f;
+    state.player.pos={0.0f,0.08f,0.80f};
+    state.player.vel={};state.player.jumpVel=0.0f;state.player.grounded=true;state.player.battery=100.0f;
+    state.camera.yaw=0.0f;state.camera.pitch=0.0f;
+
+    game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
+    game.update(Dt);
+    if(!game.state().player.treeClimbing||game.state().player.treeCollider!=0){std::fprintf(stderr,"TREE_CLIMB_STAGE attach climbing=%d collider=%d pos=(%.3f,%.3f,%.3f)\n",game.state().player.treeClimbing?1:0,game.state().player.treeCollider,game.state().player.pos.x,game.state().player.pos.y,game.state().player.pos.z);return false;}
+
+    for(int frame=0;frame<150;++frame){
+        game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+    }
+    const float crownY=game.state().player.pos.y;
+    if(!game.state().player.treeClimbing||std::abs(crownY-tree.climbTopY)>0.001f){std::fprintf(stderr,"TREE_CLIMB_STAGE crown climbing=%d y=%.3f top=%.3f\n",game.state().player.treeClimbing?1:0,crownY,tree.climbTopY);return false;}
+
+    for(int frame=0;frame<15;++frame){
+        game.setTouchControls(0.0f,-1.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+    }
+    if(!game.state().player.treeClimbing||game.state().player.pos.y>=crownY-0.20f){std::fprintf(stderr,"TREE_CLIMB_STAGE descend climbing=%d y=%.3f crown=%.3f\n",game.state().player.treeClimbing?1:0,game.state().player.pos.y,crownY);return false;}
+
+    game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,true,false,false,false);
+    game.update(Dt);
+    const PlayerState& launched=game.state().player;
+    if(launched.treeClimbing||launched.treeCollider!=-1||launched.treeClimbCooldown<=0.0f||launched.jumpVel<=4.0f||launched.vel.z<=4.0f){std::fprintf(stderr,"TREE_CLIMB_STAGE jump climbing=%d collider=%d cooldown=%.3f jump=%.3f outZ=%.3f\n",launched.treeClimbing?1:0,launched.treeCollider,launched.treeClimbCooldown,launched.jumpVel,launched.vel.z);return false;}
+
+    Game wall;wall.reset();GameState& wallState=wall.networkMutableState();
+    for(auto& target:wallState.targets)target={};
+    for(auto& collider:wallState.roomColliders)collider={};
+    wallState.debug.colliderCount=1;setBox(wallState.roomColliders[0],0.0f,0.0f,0.80f,0.80f,3.20f);
+    wallState.player.pos={0.0f,0.08f,0.80f};wallState.player.vel={};wallState.player.grounded=true;wallState.camera.yaw=0.0f;
+    for(int frame=0;frame<20;++frame){wall.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);wall.update(Dt);}
+    if(wall.state().player.treeClimbing){std::fprintf(stderr,"TREE_CLIMB_STAGE isolation generic wall attached\n");return false;}
+    return true;
+}
+
 } // namespace
 
 int main(){
+    if(!runTreeClimbContract()){
+        std::fprintf(stderr,"TREE_CLIMB_FAIL trunk grip, crown clamp, descent, jump-off, or generic-wall isolation regressed\n");
+        return 1;
+    }
+    std::printf("TREE_CLIMB_OK crown=reachable descent=controlled jump_off=outward generic_walls=unchanged\n");
     gameplay::TraversalGraph graph;
     graph.surfaceCount=2;graph.edgeCount=1;
     graph.surfaces[0]={{0,1,0},{2.5f,0,3},true};

@@ -60,6 +60,12 @@ constexpr float LEDGE_REGRAB_COOLDOWN = 0.28f;
 constexpr float LEDGE_VAULT_UP_SPEED = 4.2f;
 constexpr float LEDGE_VAULT_OUT_SPEED = 2.4f;
 constexpr float LEDGE_MANTLE_DURATION = 0.26f;
+constexpr float TREE_CLIMB_SPEED = 3.15f;
+constexpr float TREE_CLIMB_DESCENT_SPEED = 2.35f;
+constexpr float TREE_CLIMB_GRIP_INSET = 0.025f;
+constexpr float TREE_CLIMB_JUMP_UP_SPEED = 5.4f;
+constexpr float TREE_CLIMB_JUMP_OUT_SPEED = 5.8f;
+constexpr float TREE_CLIMB_REGRAB_COOLDOWN = 0.30f;
 constexpr float CAMERA_COLLISION_RADIUS = gameplay::PHONE_BODY.cameraCollisionRadius;
 constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionBackoff;
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
@@ -1055,6 +1061,9 @@ void Game::clearPlayerLifecycleActions(){
     state_.player.ledgeHanging=false;
     state_.player.ledgeCollider=-1;
     state_.player.ledgeMantleTimer=0.0f;
+    state_.player.treeClimbing=false;
+    state_.player.treeCollider=-1;
+    state_.player.treeClimbCooldown=0.0f;
     state_.player.grabbedByTarget=-1;
     state_.player.grabEscape=0.0f;
     clearInputState();
@@ -1108,6 +1117,10 @@ void Game::buildRoomColliders() {
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
+        if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Tree){
+            c.kind=RoomColliderKind::TreeTrunk;
+            c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+prop.size.y*1.18f);
+        }
     }
 }
 
@@ -1623,6 +1636,8 @@ void Game::updateInputActions(float dt) {
         Vec3 move=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
         if(lengthSq(move)>0.0001f)move=normalized(move);
         releaseLedgeHang(dotXZ(move,state_.player.ledgeNormal*-1.0f)>0.25f);
+    }else if(input.jumpPressed&&state_.player.treeClimbing){
+        releaseTreeClimb(true);
     }else if(input.jumpPressed&&action.wallGripTimer>0.0f&&spendBattery(BATTERY_DOUBLE_JUMP_COST,BatteryReason::DoubleJump)){
         state_.player.vel+=action.wallNormal*6.0f;
         state_.player.jumpVel=AIR_JUMP_SPEED;
@@ -1646,7 +1661,7 @@ void Game::updateInputActions(float dt) {
         p.ledgeHanging=false; p.ledgeCollider=-1; p.ledgeGrabCooldown=LEDGE_REGRAB_COOLDOWN;
         p.grounded=false; p.jumpVel=std::max(p.jumpVel,2.3f); p.vel=launch;
     }
-    if(input.meleePressed&&!lungeOwned){
+    if(input.meleePressed&&!lungeOwned&&!state_.player.treeClimbing){
         const bool airborne=!state_.player.grounded;
         if(airborne||!state_.vacuum.active){
             if(airborne)state_.vacuum.active=false;
@@ -1654,7 +1669,7 @@ void Game::updateInputActions(float dt) {
         }
     }
     const bool committedAfterInput=action.airLungeLandingPending;
-    if(input.shootPressed&&!committedAfterInput&&!state_.vacuum.active)shootStoredSoul();
+    if(input.shootPressed&&!committedAfterInput&&!state_.vacuum.active&&!state_.player.treeClimbing)shootStoredSoul();
     input.cameraTogglePressed = input.jumpPressed = input.meleePressed = input.shootPressed = false;
     state_.meleeCooldown = std::max(0.0f, state_.meleeCooldown - dt);
     state_.meleeComboWindow = std::max(0.0f, state_.meleeComboWindow - dt);
@@ -1663,7 +1678,7 @@ void Game::updateInputActions(float dt) {
     const bool attackOwned=action.visualTimer>0.0f;
     const bool jumpVacuumBlocked=state_.phonePose.doubleJumpVacuumPause>0.0f;
     state_.vacuum.active=(input.primaryHeld||input.touchPrimaryHeld)&&state_.player.alive&&state_.player.battery>1.0f
-        && !action.airLungeLandingPending && !attackOwned && !jumpVacuumBlocked && !state_.player.ledgeHanging && state_.player.ledgeMantleTimer<=0.0f;
+        && !action.airLungeLandingPending && !attackOwned && !jumpVacuumBlocked && !state_.player.ledgeHanging && !state_.player.treeClimbing && state_.player.ledgeMantleTimer<=0.0f;
     if (state_.player.souls >= MAX_STORED_SOULS) state_.vacuum.active = false;
 }
 
@@ -1759,6 +1774,64 @@ void Game::resolveDoorwayCollisions(float previousX,float previousZ){
 
 void Game::applyWallClimb(float dt) {
     (void)dt;
+}
+
+bool Game::tryBeginTreeClimb(const Vec3& move) {
+    PlayerState& p=state_.player;
+    if(p.treeClimbing||p.treeClimbCooldown>0.0f||p.ledgeHanging||!p.alive||lengthSq(move)<0.01f)return false;
+    const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
+    const float localZ=p.pos.z-tileOriginZ;
+    int best=-1;float bestGap=PLAYER_COLLISION_RADIUS+0.10f;Vec3 bestNormal;
+    for(int i=0;i<state_.debug.colliderCount;++i){
+        const RoomCollider& c=state_.roomColliders[i];
+        if(c.kind!=RoomColliderKind::TreeTrunk||p.pos.y<c.bottomY+GROUND_Y-0.10f||p.pos.y>c.climbTopY+0.10f)continue;
+        const auto candidate=[&](float gap,const Vec3& normal,bool within){
+            if(!within||gap< -0.06f||gap>=bestGap||dotXZ(move,normal)>-0.28f)return;
+            best=i;bestGap=gap;bestNormal=normal;
+        };
+        candidate((c.minX-PLAYER_COLLISION_RADIUS)-p.pos.x,{-1,0,0},localZ>c.minZ-0.12f&&localZ<c.maxZ+0.12f);
+        candidate(p.pos.x-(c.maxX+PLAYER_COLLISION_RADIUS),{1,0,0},localZ>c.minZ-0.12f&&localZ<c.maxZ+0.12f);
+        candidate((c.minZ-PLAYER_COLLISION_RADIUS)-localZ,{0,0,-1},p.pos.x>c.minX-0.12f&&p.pos.x<c.maxX+0.12f);
+        candidate(localZ-(c.maxZ+PLAYER_COLLISION_RADIUS),{0,0,1},p.pos.x>c.minX-0.12f&&p.pos.x<c.maxX+0.12f);
+    }
+    if(best<0)return false;
+    const RoomCollider& c=state_.roomColliders[best];
+    p.treeClimbing=true;p.treeCollider=best;p.treeNormal=bestNormal;p.grounded=false;p.jumpVel=0.0f;p.vel={};
+    if(std::abs(bestNormal.x)>0.5f)p.pos.x=(bestNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    else p.pos.z=tileOriginZ+(bestNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    p.yaw=p.targetYaw=std::atan2(-bestNormal.x,-bestNormal.z);
+    state_.vacuum.active=false;
+    return true;
+}
+
+void Game::releaseTreeClimb(bool jumpAway){
+    PlayerState& p=state_.player;
+    if(!p.treeClimbing)return;
+    const Vec3 normal=p.treeNormal;
+    p.treeClimbing=false;p.treeCollider=-1;p.treeClimbCooldown=TREE_CLIMB_REGRAB_COOLDOWN;p.grounded=false;
+    if(jumpAway){
+        p.pos+=normal*(PLAYER_COLLISION_RADIUS*0.20f);
+        p.vel=normal*TREE_CLIMB_JUMP_OUT_SPEED;
+        p.jumpVel=TREE_CLIMB_JUMP_UP_SPEED;
+        p.airJumpsRemaining=1;
+        state_.phonePose.doubleJumpTimer=0.0f;
+    }
+}
+
+bool Game::updateTreeClimb(float dt,float forwardAxis,float strafeAxis){
+    (void)strafeAxis;
+    PlayerState& p=state_.player;
+    if(!p.treeClimbing)return false;
+    if(p.treeCollider<0||p.treeCollider>=state_.debug.colliderCount||state_.roomColliders[p.treeCollider].kind!=RoomColliderKind::TreeTrunk){releaseTreeClimb(false);return false;}
+    const RoomCollider& c=state_.roomColliders[p.treeCollider];
+    const float vertical=forwardAxis>=0.0f?forwardAxis*TREE_CLIMB_SPEED:forwardAxis*TREE_CLIMB_DESCENT_SPEED;
+    p.pos.y=clampf(p.pos.y+vertical*dt,GROUND_Y,c.climbTopY);
+    p.vel={};p.jumpVel=0.0f;p.grounded=false;
+    const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
+    if(std::abs(p.treeNormal.x)>0.5f)p.pos.x=(p.treeNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    else p.pos.z=tileOriginZ+(p.treeNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    p.yaw=p.targetYaw=std::atan2(-p.treeNormal.x,-p.treeNormal.z);
+    return true;
 }
 bool Game::isInsideDoorAperture(const Vec3& position, float pad) const {
     return std::abs(position.x) <= 2.1f + pad && position.y >= GROUND_Y - 0.12f && position.y <= 3.72f + 0.22f;
@@ -1988,6 +2061,7 @@ void Game::updatePlayer(float dt) {
     if (p.jumpBufferTimer > 0) p.jumpBufferTimer = std::max(0.0f, p.jumpBufferTimer - dt);
     p.ledgeGrabCooldown=std::max(0.0f,p.ledgeGrabCooldown-dt);
     p.ledgeMantleTimer=std::max(0.0f,p.ledgeMantleTimer-dt);
+    p.treeClimbCooldown=std::max(0.0f,p.treeClimbCooldown-dt);
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
     MeleeVisualState& lunge=state_.meleeVisual;
     lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
@@ -2003,6 +2077,17 @@ void Game::updatePlayer(float dt) {
     const float vacuumSlow = 1.0f - state_.vacuum.pose * (1.0f - VACUUM_MOVE_MULT);
     float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
+    Vec3 treeMove=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
+    if(lengthSq(treeMove)>1.0f)treeMove=normalized(treeMove);
+    if(!p.treeClimbing)tryBeginTreeClimb(treeMove);
+    if(updateTreeClimb(dt,forwardAxis,strafeAxis)){
+        updatePhoneGait(dt,false);updatePhoneActionPose(dt,false,forwardAxis,strafeAxis);
+        state_.debug.supportY=p.pos.y;state_.debug.localZ=wrapZ(p.pos.z);state_.debug.horizontalSpeed=0.0f;
+        state_.debug.cameraYaw=state_.camera.yaw;state_.debug.cameraPitch=state_.camera.pitch;state_.debug.cameraMode=state_.camera.firstPerson?1:0;
+        state_.debug.phoneYaw=state_.phonePose.yaw;state_.debug.phonePitch=state_.phonePose.pitch;state_.debug.phoneRoll=state_.phonePose.roll;
+        state_.debug.phoneLift=state_.phonePose.lift;state_.debug.phoneForward=state_.phonePose.forward;state_.debug.phoneSide=state_.phonePose.side;
+        return;
+    }
     if(updateLedgeHang(dt,forwardAxis,strafeAxis)){
         updatePhoneGait(dt,false);updatePhoneActionPose(dt,false,forwardAxis,strafeAxis);
         state_.debug.supportY=p.pos.y;state_.debug.localZ=wrapZ(p.pos.z);state_.debug.horizontalSpeed=std::abs(p.ledgeShimmySpeed);

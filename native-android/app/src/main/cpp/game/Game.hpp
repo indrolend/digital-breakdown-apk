@@ -124,6 +124,10 @@ struct PlayerState {
     float ledgeHangTime = 0.0f;
     float ledgeGrabCooldown = 0.0f;
     float ledgeMantleTimer = 0.0f;
+    bool treeClimbing = false;
+    int treeCollider = -1;
+    Vec3 treeNormal;
+    float treeClimbCooldown = 0.0f;
     int commSignal = 0;
     float commSignalTimer = 0.0f;
 };
@@ -316,6 +320,8 @@ struct ParticleState {
     unsigned char kind = 0;
 };
 
+enum class RoomColliderKind : unsigned char { Generic, TreeTrunk };
+
 struct RoomCollider {
     float minX = 0.0f;
     float maxX = 0.0f;
@@ -327,6 +333,8 @@ struct RoomCollider {
     float depth = 0.0f;
     float height = 0.0f;
     Vec3 center;
+    RoomColliderKind kind = RoomColliderKind::Generic;
+    float climbTopY = 0.0f;
 };
 
 struct SoulColliderHit {
@@ -771,6 +779,9 @@ private:
     bool tryBeginLedgeHang();
     bool updateLedgeHang(float dt, float forwardAxis, float strafeAxis);
     void releaseLedgeHang(bool mantle);
+    bool tryBeginTreeClimb(const Vec3& move);
+    bool updateTreeClimb(float dt, float forwardAxis, float strafeAxis);
+    void releaseTreeClimb(bool jumpAway);
     void updatePhoneGait(float dt, bool running);
     void updatePhoneActionPose(float dt, bool running, float forwardAxis, float strafeAxis);
     void updatePhoneTransform();
