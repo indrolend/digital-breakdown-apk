@@ -5,7 +5,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <winhttp.h>
-#elif defined(__APPLE__)
+#else
 #include <ixwebsocket/IXHttpClient.h>
 #endif
 
@@ -42,14 +42,12 @@ bool fetchManifest(std::string& body) {
     if(ok&&status>=200&&status<300)body=readResponse(request);
     if(request)WinHttpCloseHandle(request);if(connection)WinHttpCloseHandle(connection);WinHttpCloseHandle(session);
     return ok&&status>=200&&status<300&&!body.empty();
-#elif defined(__APPLE__)
+#else
     ix::HttpClient client;
     const auto response=client.get(ManifestUrl,std::make_shared<ix::HttpRequestArgs>());
     if(!response||response->statusCode<200||response->statusCode>=300)return false;
     body=response->body;
     return !body.empty();
-#else
-    return false;
 #endif
 }
 }

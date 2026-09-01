@@ -39,7 +39,7 @@ printf '%s' "$IDENTITY" | grep -q '"platform":"macos"'
 printf '%s' "$IDENTITY" | grep -q '"configuration":"Release"'
 
 for asset in audio fonts models tv-gifs; do
-  test -d "$APP/Contents/MacOS/$asset" || test -d "$BUILD_DIR/bin/$asset" || {
+  test -d "$APP/Contents/Resources/$asset" || {
     echo "Missing packaged asset directory: $asset" >&2
     exit 1
   }

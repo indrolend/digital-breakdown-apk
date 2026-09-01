@@ -214,6 +214,14 @@ std::filesystem::path automationPlaytestCapturePath(){
     return std::filesystem::temp_directory_path()/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
 #endif
 }
+std::filesystem::path desktopAssetRoot(const char* executablePath){
+    const std::filesystem::path executableDirectory=std::filesystem::absolute(executablePath).parent_path();
+#ifdef __APPLE__
+    if(executableDirectory.filename()=="MacOS"&&executableDirectory.parent_path().filename()=="Contents")
+        return executableDirectory.parent_path()/"Resources";
+#endif
+    return executableDirectory;
+}
 std::filesystem::path legacyTemporaryProgressionSavePath(){return std::filesystem::temp_directory_path()/"DigitalBreakdown"/"progression.v1";}
 std::filesystem::path progressionBackupPath(const std::filesystem::path& path){return path.wstring()+L".bak";}
 bool loadProgression(Game& game,const std::filesystem::path& path){
@@ -1673,7 +1681,7 @@ int main(int argc, char** argv) {
         return runParityProximityTest();
     }
     if (hasArg(argc, argv, "--model-test")) {
-        return runModelTest(std::filesystem::absolute(argv[0]).parent_path());
+        return runModelTest(desktopAssetRoot(argv[0]));
     }
     if (hasArg(argc, argv, "--check-updates")) {
         DesktopUpdateService updater;
@@ -1822,7 +1830,8 @@ int main(int argc, char** argv) {
         fixture.localSettings.particles=true;
         fixture.localSettings.fpsCounter=false;
     }
-    host.audio.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"audio");
+    const std::filesystem::path assetRoot=desktopAssetRoot(argv[0]);
+    host.audio.setAssetRoot(assetRoot/"audio");
 
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
@@ -1834,7 +1843,7 @@ int main(int argc, char** argv) {
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 
     glfwMakeContextCurrent(window);
-    host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
+    host.renderer.setAssetRoot(assetRoot/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
     glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
