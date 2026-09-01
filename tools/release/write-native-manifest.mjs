@@ -36,16 +36,16 @@ function artifact(filename, platform, architecture, packageType) {
 const artifacts = [
   artifact("DigitalBreakdown-Windows.zip", "windows", "x64", "zip"),
   artifact("DigitalBreakdown-macOS-Universal.zip", "macos", "universal", "zip"),
-  artifact("DigitalBreakdown-Android.apk", "android", "armeabi-v7a", "apk"),
+  artifact("DigitalBreakdown-Linux-x86_64.tar.gz", "linux", "x64", "tar.gz"),
 ];
 
 const windows = artifacts.find((item) => item.platform === "windows");
 const macos = artifacts.find((item) => item.platform === "macos");
-const android = artifacts.find((item) => item.platform === "android");
+const linux = artifacts.find((item) => item.platform === "linux");
 
 const manifest = {
   schemaVersion: 3,
-  channel: "experimental",
+  channel: "desktop-candidate",
   humanVersion,
   commit,
   shortCommit,
@@ -72,15 +72,14 @@ const manifest = {
     url: macos.url,
     sha256: macos.sha256,
   },
-  android: {
+  linux: {
     available: true,
-    architecture: android.architecture,
-    configuration: fs.existsSync(path.join(releaseDir, "android-variant.txt"))
-      ? fs.readFileSync(path.join(releaseDir, "android-variant.txt"), "utf8").trim()
-      : "unknown",
-    applicationId: "com.indrolend.digitalbreakdown.native",
-    url: android.url,
-    sha256: android.sha256,
+    architecture: linux.architecture,
+    configuration: "Release",
+    portable: true,
+    package: linux.package,
+    url: linux.url,
+    sha256: linux.sha256,
   },
 };
 

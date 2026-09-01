@@ -44,7 +44,7 @@ for (const artifact of manifest.artifacts ?? []) {
   }
 }
 
-for (const platform of ["windows", "macos", "android"]) {
+for (const platform of ["windows", "macos", "linux"]) {
   if (![...seen].some((id) => id.startsWith(`${platform}/`))) failures.push(`missing ${platform} artifact`);
 }
 

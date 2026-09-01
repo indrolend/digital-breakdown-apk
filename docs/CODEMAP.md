@@ -11,7 +11,8 @@ This document identifies the current gameplay ownership boundaries and the inten
 
 ## Experimental release ownership
 
-- Authoritative rolling native release workflow: `.github/workflows/native-release.yml`
+- Authoritative desktop artifact contract: `.github/workflows/native-release.yml`
+- Independent paused-platform Android validation: `.github/workflows/native-android.yml`
 - Validation-only macOS workflow: `.github/workflows/native-macos.yml`
 - Release manifest generator and verifier: `tools/release/write-native-manifest.mjs`,
   `tools/release/verify-native-manifest.mjs`
