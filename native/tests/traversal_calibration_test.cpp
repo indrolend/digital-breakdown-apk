@@ -77,6 +77,7 @@ bool runTreeClimbContract(){
     game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
     game.update(Dt);
     if(!game.state().player.treeClimbing||game.state().player.treeCollider!=0){std::fprintf(stderr,"TREE_CLIMB_STAGE attach climbing=%d collider=%d pos=(%.3f,%.3f,%.3f)\n",game.state().player.treeClimbing?1:0,game.state().player.treeCollider,game.state().player.pos.x,game.state().player.pos.y,game.state().player.pos.z);return false;}
+    if(std::abs(game.state().player.pos.x-tree.center.x)>0.001f){std::fprintf(stderr,"TREE_CLIMB_STAGE center attach x=%.3f expected=%.3f\n",game.state().player.pos.x,tree.center.x);return false;}
 
     for(int frame=0;frame<150;++frame){
         game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
@@ -95,6 +96,15 @@ bool runTreeClimbContract(){
     game.update(Dt);
     const PlayerState& launched=game.state().player;
     if(launched.treeClimbing||launched.treeCollider!=-1||launched.treeClimbCooldown<=0.0f||launched.jumpVel<=4.0f||launched.vel.z<=4.0f){std::fprintf(stderr,"TREE_CLIMB_STAGE jump climbing=%d collider=%d cooldown=%.3f jump=%.3f outZ=%.3f\n",launched.treeClimbing?1:0,launched.treeCollider,launched.treeClimbCooldown,launched.jumpVel,launched.vel.z);return false;}
+
+    Game offCenter;offCenter.reset();GameState& offCenterState=offCenter.networkMutableState();
+    for(auto& target:offCenterState.targets)target={};
+    for(auto& collider:offCenterState.roomColliders)collider={};
+    offCenterState.debug.colliderCount=1;setBox(offCenterState.roomColliders[0],0.0f,0.0f,0.80f,0.80f,3.20f);
+    offCenterState.roomColliders[0].kind=RoomColliderKind::TreeTrunk;offCenterState.roomColliders[0].climbTopY=5.60f;
+    offCenterState.player.pos={0.34f,0.08f,0.80f};offCenterState.player.vel={};offCenterState.player.grounded=true;offCenterState.camera.yaw=0.0f;
+    offCenter.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);offCenter.update(Dt);
+    if(offCenter.state().player.treeClimbing){std::fprintf(stderr,"TREE_CLIMB_STAGE off-center grip incorrectly attached x=%.3f\n",offCenter.state().player.pos.x);return false;}
 
     Game wall;wall.reset();GameState& wallState=wall.networkMutableState();
     for(auto& target:wallState.targets)target={};

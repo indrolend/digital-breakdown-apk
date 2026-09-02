@@ -66,6 +66,7 @@ constexpr float TREE_CLIMB_GRIP_INSET = 0.025f;
 constexpr float TREE_CLIMB_JUMP_UP_SPEED = 5.4f;
 constexpr float TREE_CLIMB_JUMP_OUT_SPEED = 5.8f;
 constexpr float TREE_CLIMB_REGRAB_COOLDOWN = 0.30f;
+constexpr float TREE_CLIMB_CENTER_LANE_MAX = 0.28f;
 constexpr float CAMERA_COLLISION_RADIUS = gameplay::PHONE_BODY.cameraCollisionRadius;
 constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionBackoff;
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
@@ -1785,20 +1786,26 @@ bool Game::tryBeginTreeClimb(const Vec3& move) {
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
         if(c.kind!=RoomColliderKind::TreeTrunk||p.pos.y<c.bottomY+GROUND_Y-0.10f||p.pos.y>c.climbTopY+0.10f)continue;
+        const float centerLane=std::min(TREE_CLIMB_CENTER_LANE_MAX,std::min(c.width,c.depth)*0.30f);
         const auto candidate=[&](float gap,const Vec3& normal,bool within){
             if(!within||gap< -0.06f||gap>=bestGap||dotXZ(move,normal)>-0.28f)return;
             best=i;bestGap=gap;bestNormal=normal;
         };
-        candidate((c.minX-PLAYER_COLLISION_RADIUS)-p.pos.x,{-1,0,0},localZ>c.minZ-0.12f&&localZ<c.maxZ+0.12f);
-        candidate(p.pos.x-(c.maxX+PLAYER_COLLISION_RADIUS),{1,0,0},localZ>c.minZ-0.12f&&localZ<c.maxZ+0.12f);
-        candidate((c.minZ-PLAYER_COLLISION_RADIUS)-localZ,{0,0,-1},p.pos.x>c.minX-0.12f&&p.pos.x<c.maxX+0.12f);
-        candidate(localZ-(c.maxZ+PLAYER_COLLISION_RADIUS),{0,0,1},p.pos.x>c.minX-0.12f&&p.pos.x<c.maxX+0.12f);
+        candidate((c.minX-PLAYER_COLLISION_RADIUS)-p.pos.x,{-1,0,0},std::abs(localZ-c.center.z)<=centerLane);
+        candidate(p.pos.x-(c.maxX+PLAYER_COLLISION_RADIUS),{1,0,0},std::abs(localZ-c.center.z)<=centerLane);
+        candidate((c.minZ-PLAYER_COLLISION_RADIUS)-localZ,{0,0,-1},std::abs(p.pos.x-c.center.x)<=centerLane);
+        candidate(localZ-(c.maxZ+PLAYER_COLLISION_RADIUS),{0,0,1},std::abs(p.pos.x-c.center.x)<=centerLane);
     }
     if(best<0)return false;
     const RoomCollider& c=state_.roomColliders[best];
     p.treeClimbing=true;p.treeCollider=best;p.treeNormal=bestNormal;p.grounded=false;p.jumpVel=0.0f;p.vel={};
-    if(std::abs(bestNormal.x)>0.5f)p.pos.x=(bestNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
-    else p.pos.z=tileOriginZ+(bestNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    if(std::abs(bestNormal.x)>0.5f){
+        p.pos.x=(bestNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+        p.pos.z=tileOriginZ+c.center.z;
+    }else{
+        p.pos.x=c.center.x;
+        p.pos.z=tileOriginZ+(bestNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    }
     p.yaw=p.targetYaw=std::atan2(-bestNormal.x,-bestNormal.z);
     state_.vacuum.active=false;
     return true;
@@ -1828,8 +1835,13 @@ bool Game::updateTreeClimb(float dt,float forwardAxis,float strafeAxis){
     p.pos.y=clampf(p.pos.y+vertical*dt,GROUND_Y,c.climbTopY);
     p.vel={};p.jumpVel=0.0f;p.grounded=false;
     const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
-    if(std::abs(p.treeNormal.x)>0.5f)p.pos.x=(p.treeNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
-    else p.pos.z=tileOriginZ+(p.treeNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    if(std::abs(p.treeNormal.x)>0.5f){
+        p.pos.x=(p.treeNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+        p.pos.z=tileOriginZ+c.center.z;
+    }else{
+        p.pos.x=c.center.x;
+        p.pos.z=tileOriginZ+(p.treeNormal.z<0.0f?c.minZ-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxZ+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
+    }
     p.yaw=p.targetYaw=std::atan2(-p.treeNormal.x,-p.treeNormal.z);
     return true;
 }
