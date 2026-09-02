@@ -15,6 +15,8 @@ include(FetchContent)
 
 set(DB_CHANNEL "experimental" CACHE STRING "Digital Breakdown release channel")
 set(DB_SAVE_FORMAT_VERSION "4" CACHE STRING "Digital Breakdown persistent save format version")
+option(DB_STOREFRONT_RELEASE "Build the locked-down solo storefront player surface" ON)
+option(DB_ENABLE_DEVELOPER_CONSOLE "Enable the interactive in-game developer console" OFF)
 string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
 string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 if(NOT DEFINED DB_HUMAN_VERSION)
@@ -135,6 +137,8 @@ target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
 target_compile_definitions(DigitalBreakdown PRIVATE
     GLFW_INCLUDE_NONE
     DB_BUILD_CONFIGURATION="$<CONFIG>"
+    DB_STOREFRONT_RELEASE=$<BOOL:${DB_STOREFRONT_RELEASE}>
+    DB_ENABLE_DEVELOPER_CONSOLE=$<BOOL:${DB_ENABLE_DEVELOPER_CONSOLE}>
 )
 
 target_link_libraries(

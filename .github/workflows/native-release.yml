@@ -29,7 +29,7 @@ jobs:
           node tools/release/protocol-consistency.mjs
       - name: Configure, build, and test
         run: |
-          cmake -S native-desktop -B build/release -A x64 -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}"
+          cmake -S native-desktop -B build/release -A x64 -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}" -DDB_STOREFRONT_RELEASE=ON -DDB_ENABLE_DEVELOPER_CONSOLE=OFF
           cmake --build build/release --config Release --parallel
           ctest --test-dir build/release -C Release --output-on-failure
       - name: Stage, audit, and smoke
@@ -44,6 +44,10 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or ($smoke -join "`n") -notmatch 'SMOKE_TEST_OK') { throw 'Staged smoke failed.' }
           $identity = & $exe --build-identity-json 2>&1
           if (($identity -join "`n") -notmatch '${{ github.sha }}') { throw 'Embedded identity mismatch.' }
+          $identityObject = $identity | ConvertFrom-Json
+          if (-not $identityObject.storefront_release -or $identityObject.developer_console) { throw 'Release profile mismatch.' }
+          $models = & $exe --model-test 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($models -join "`n") -notmatch 'MODEL_TEST_OK') { throw 'Staged asset decode failed.' }
           node tools/release/write-desktop-build-info.mjs --output "$stage/build-info.json" --platform windows --architecture x64 --commit "${{ github.sha }}" --portable true
           $llvm = Get-Command llvm-readobj -ErrorAction SilentlyContinue
           if ($llvm) {
@@ -64,7 +68,9 @@ jobs:
           Expand-Archive dist/DigitalBreakdown-Windows.zip $extract -Force
           $smoke = & "$extract/DigitalBreakdown/DigitalBreakdown.exe" --smoke-test 2>&1
           if ($LASTEXITCODE -ne 0 -or ($smoke -join "`n") -notmatch 'SMOKE_TEST_OK') { throw 'Extracted smoke failed.' }
-          'WINDOWS_STAGE_COMPLETE=PASS'; 'WINDOWS_DEPENDENCIES=PASS'; 'WINDOWS_SMOKE_EXTRACTED=PASS'
+          $models = & "$extract/DigitalBreakdown/DigitalBreakdown.exe" --model-test 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($models -join "`n") -notmatch 'MODEL_TEST_OK') { throw 'Extracted asset decode failed.' }
+          'WINDOWS_STAGE_COMPLETE=PASS'; 'WINDOWS_DEPENDENCIES=PASS'; 'WINDOWS_SMOKE_EXTRACTED=PASS'; 'WINDOWS_ASSETS_EXTRACTED=PASS'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: desktop-windows-x64
@@ -83,7 +89,7 @@ jobs:
           node tools/release/protocol-consistency.mjs
       - name: Configure, build, and test
         run: |
-          cmake -S native-desktop -B build/release -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake -S native-desktop -B build/release -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}" -DDB_STOREFRONT_RELEASE=ON -DDB_ENABLE_DEVELOPER_CONSOLE=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
           cmake --build build/release --config Release --parallel
           ctest --test-dir build/release -C Release --output-on-failure
       - name: Stage, audit, and smoke
@@ -98,13 +104,18 @@ jobs:
           grep -q x86_64 dist/macos-binary.txt; grep -q arm64 dist/macos-binary.txt
           otool -L "$EXE" | tee dist/macos-dependencies.txt
           node tools/release/write-desktop-build-info.mjs --output "$APP/Contents/Resources/build-info.json" --platform macos --architecture universal --commit "${{ github.sha }}" --portable false
-          "$EXE" --build-identity-json | grep -q "${{ github.sha }}"
+          IDENTITY=$("$EXE" --build-identity-json)
+          echo "$IDENTITY" | grep -q "${{ github.sha }}"
+          echo "$IDENTITY" | grep -q '"storefront_release":true'
+          echo "$IDENTITY" | grep -q '"developer_console":false'
           "$EXE" --smoke-test | grep -q SMOKE_TEST_OK
+          "$EXE" --model-test | grep -q MODEL_TEST_OK
           ditto -c -k --sequesterRsrc --keepParent "$APP" dist/DigitalBreakdown-macOS-Universal.zip
           mkdir -p "$RUNNER_TEMP/db-macos"
           ditto -x -k dist/DigitalBreakdown-macOS-Universal.zip "$RUNNER_TEMP/db-macos"
           "$RUNNER_TEMP/db-macos/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown" --smoke-test | grep -q SMOKE_TEST_OK
-          echo MACOS_STAGE_COMPLETE=PASS; echo MACOS_DEPENDENCIES=PASS; echo MACOS_SMOKE_EXTRACTED=PASS
+          "$RUNNER_TEMP/db-macos/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown" --model-test | grep -q MODEL_TEST_OK
+          echo MACOS_STAGE_COMPLETE=PASS; echo MACOS_DEPENDENCIES=PASS; echo MACOS_SMOKE_EXTRACTED=PASS; echo MACOS_ASSETS_EXTRACTED=PASS
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: desktop-macos-universal
@@ -127,7 +138,7 @@ jobs:
           node tools/release/protocol-consistency.mjs
       - name: Configure, build, and test
         run: |
-          cmake -S native-desktop -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}"
+          cmake -S native-desktop -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DDB_COMMIT_SHA="${{ github.sha }}" -DDB_CHANNEL=desktop-candidate -DDB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}" -DDB_STOREFRONT_RELEASE=ON -DDB_ENABLE_DEVELOPER_CONSOLE=OFF
           cmake --build build/release --parallel
           ctest --test-dir build/release --output-on-failure
       - name: Stage, audit, and smoke
@@ -143,13 +154,18 @@ jobs:
           ldd "$EXE" | tee dist/linux-dependencies.txt
           ! grep -q 'not found' dist/linux-dependencies.txt
           node tools/release/write-desktop-build-info.mjs --output "$STAGE/build-info.json" --platform linux --architecture x64 --commit "${{ github.sha }}" --portable true
-          "$EXE" --build-identity-json | grep -q "${{ github.sha }}"
+          IDENTITY=$("$EXE" --build-identity-json)
+          echo "$IDENTITY" | grep -q "${{ github.sha }}"
+          echo "$IDENTITY" | grep -q '"storefront_release":true'
+          echo "$IDENTITY" | grep -q '"developer_console":false'
           "$EXE" --smoke-test | grep -q SMOKE_TEST_OK
+          "$EXE" --model-test | grep -q MODEL_TEST_OK
           tar -C dist/linux -czf dist/DigitalBreakdown-Linux-x86_64.tar.gz DigitalBreakdown
           mkdir -p "$RUNNER_TEMP/db-linux"
           tar -C "$RUNNER_TEMP/db-linux" -xzf dist/DigitalBreakdown-Linux-x86_64.tar.gz
           "$RUNNER_TEMP/db-linux/DigitalBreakdown/DigitalBreakdown" --smoke-test | grep -q SMOKE_TEST_OK
-          echo LINUX_STAGE_COMPLETE=PASS; echo LINUX_DEPENDENCIES=PASS; echo LINUX_SMOKE_EXTRACTED=PASS
+          "$RUNNER_TEMP/db-linux/DigitalBreakdown/DigitalBreakdown" --model-test | grep -q MODEL_TEST_OK
+          echo LINUX_STAGE_COMPLETE=PASS; echo LINUX_DEPENDENCIES=PASS; echo LINUX_SMOKE_EXTRACTED=PASS; echo LINUX_ASSETS_EXTRACTED=PASS
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: desktop-linux-x86-64

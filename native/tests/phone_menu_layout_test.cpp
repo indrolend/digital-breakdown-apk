@@ -64,6 +64,7 @@ int main() {
     state.localSettings.menuPage = LocalMenuPage::Main;
     PhoneMenuPageViewModel mainModel = makePhoneMenuPageModel(state);
     static_assert(!PhoneMenuMultiplayerAvailable);
+    static_assert(!PhoneMenuSelfUpdateAvailable);
     assert(mainModel.selectableCount == 3);
     assert(selectionElement(mainModel, 0).action == PhoneMenuAction::Solo);
     assert(selectionElement(mainModel, 0).label == "Play");

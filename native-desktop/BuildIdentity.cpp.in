@@ -7,6 +7,12 @@
 #ifndef DB_BUILD_CONFIGURATION
 #define DB_BUILD_CONFIGURATION "unknown"
 #endif
+#ifndef DB_STOREFRONT_RELEASE
+#define DB_STOREFRONT_RELEASE 0
+#endif
+#ifndef DB_ENABLE_DEVELOPER_CONSOLE
+#define DB_ENABLE_DEVELOPER_CONSOLE 0
+#endif
 
 const BuildIdentity& desktopBuildIdentity() {
     static const BuildIdentity identity{
@@ -20,7 +26,9 @@ const BuildIdentity& desktopBuildIdentity() {
         "@DB_ARCHITECTURE@",
         DB_BUILD_CONFIGURATION,
         "@DB_BUILD_TIME@",
-        "@DB_CHANNEL@"
+        "@DB_CHANNEL@",
+        DB_STOREFRONT_RELEASE != 0,
+        DB_ENABLE_DEVELOPER_CONSOLE != 0
     };
     return identity;
 }
@@ -33,6 +41,8 @@ std::string desktopBuildIdentityLine() {
         << " " << identity.platform << "/" << identity.architecture
         << " protocol " << identity.protocolVersion
         << " gameplay " << identity.gameplayVersion
-        << " save " << identity.saveFormatVersion;
+        << " save " << identity.saveFormatVersion
+        << (identity.storefrontRelease ? " storefront/solo" : " development")
+        << (identity.developerConsole ? " dev-console" : "");
     return out.str();
 }

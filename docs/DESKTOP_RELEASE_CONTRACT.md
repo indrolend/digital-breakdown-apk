@@ -11,10 +11,12 @@ the same protocol, gameplay, save-format, and human release identity.
 | Native regression suite | CTest | CTest | CTest |
 | Runtime assets | beside executable | `Contents/Resources` | beside executable |
 | Embedded provenance | `BuildIdentity` | `BuildIdentity` | `BuildIdentity` |
+| Storefront profile | solo, developer console off | solo, developer console off | solo, developer console off |
 | Staged provenance | `build-info.json` | `Contents/Resources/build-info.json` | `build-info.json` |
 | Dependency audit | PE imports | `otool -L` and bundle structure | `ldd` and ELF architecture |
 | Build-tree smoke | `--smoke-test` | `--smoke-test` | `--smoke-test` |
 | Extracted-package smoke | required | required | required |
+| Extracted asset decode | required | required | required |
 
 The aggregate `desktop-release-contract` artifact contains all three packages,
 their hashes in `checksums.txt`, and one verified schema-3 manifest. Steam and
@@ -41,6 +43,9 @@ itch.io should eventually consume these packages without gameplay forks.
 A commit is a desktop artifact candidate only when all three platform jobs and
 the aggregate contract job pass. A CI smoke test is noninteractive evidence;
 it is not a substitute for graphical and controller testing on real machines.
+The embedded identity must report `storefront_release: true` and
+`developer_console: false`; the player menu exposes one `Play` path and leaves
+updates to the storefront client.
 macOS signing/notarization and storefront upload remain later, explicitly
 authorized operations.
 

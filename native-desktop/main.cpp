@@ -130,6 +130,8 @@ struct HostState {
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
     LocalSettingsState savedSettings;
+    std::chrono::steady_clock::time_point nextSaveAttempt{};
+    bool saveFailureReported = false;
 };
 
 struct DesktopGamepadInput {
@@ -261,7 +263,12 @@ bool replaceProgressionFile(const std::filesystem::path& source,const std::files
 #endif
 }
 bool saveProgression(const PermanentProgressionState& progression,const LocalSettingsState& settings,const std::filesystem::path& path){
-    std::error_code error;std::filesystem::create_directories(path.parent_path(),error);
+    std::error_code error;
+    if(!path.has_filename())return false;
+    if(!path.parent_path().empty()){
+        std::filesystem::create_directories(path.parent_path(),error);
+        if(error)return false;
+    }
     const std::filesystem::path temporary=path.wstring()+L".tmp";
     {std::ofstream output(temporary,std::ios::trunc);if(!output)return false;output<<"DBPROG 4 "<<progression.tokens<<' '<<progression.levels[0]<<' '<<progression.levels[1]<<' '<<progression.levels[2]<<' '<<settings.musicVolume<<' '<<settings.sfxVolume<<' '<<settings.musicMuted<<' '<<settings.sfxMuted<<' '<<settings.graphicsPreset<<' '<<settings.shadows<<' '<<settings.portalWindow<<' '<<settings.particles<<' '<<settings.fpsCounter<<' '<<settings.mouseLookSensitivity<<' '<<settings.touchLookSensitivity<<' '<<settings.controllerLookSensitivity<<' '<<settings.controllerTriggerSensitivity<<' '<<settings.controllerVibration;for(int key:settings.keyboardBindings)output<<' '<<key;output<<'\n';output.flush();if(!output)return false;}
     if(!replaceProgressionFile(temporary,path)){std::filesystem::remove(temporary,error);return false;}
@@ -953,7 +960,9 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
     if(action==GLFW_PRESS&&host->playtestPolicy.automation)host->automationCaptureDelayFrames=8;
+#if DB_ENABLE_DEVELOPER_CONSOLE
     if(key==GLFW_KEY_GRAVE_ACCENT&&action==GLFW_PRESS){setDeveloperCodecOpen(window,*host,!host->codec.open);return;}
+#endif
     if(host->codec.open){
         if(action!=GLFW_PRESS&&action!=GLFW_REPEAT)return;
         if(key==GLFW_KEY_ESCAPE){setDeveloperCodecOpen(window,*host,false);return;}
@@ -1405,7 +1414,8 @@ void printBuildIdentityJson() {
     std::printf(
         "{\"commit\":\"%s\",\"commit_short\":\"%s\",\"protocol\":%u,"
         "\"gameplay\":%u,\"save_format\":%d,\"platform\":\"%s\","
-        "\"architecture\":\"%s\",\"configuration\":\"%s\"}\n",
+        "\"architecture\":\"%s\",\"configuration\":\"%s\","
+        "\"storefront_release\":%s,\"developer_console\":%s}\n",
         identity.commit.c_str(),
         identity.commitShort.c_str(),
         static_cast<unsigned int>(identity.protocolVersion),
@@ -1413,7 +1423,9 @@ void printBuildIdentityJson() {
         identity.saveFormatVersion,
         identity.platform.c_str(),
         identity.architecture.c_str(),
-        identity.buildConfiguration.c_str()
+        identity.buildConfiguration.c_str(),
+        identity.storefrontRelease ? "true" : "false",
+        identity.developerConsole ? "true" : "false"
     );
 }
 
@@ -2193,7 +2205,23 @@ int main(int argc, char** argv) {
         const auto audioBegin=std::chrono::steady_clock::now();
         host.audio.update(host.game.state());
         const auto audioEnd=std::chrono::steady_clock::now();
-        const auto& permanent=host.game.state().progression.permanent;const auto& settings=host.game.state().localSettings;if(permanent.revision!=host.savedProgressionRevision||!samePersistentSettings(settings,host.savedSettings)){if(saveProgression(permanent,settings,host.progressionPath)){host.savedProgressionRevision=permanent.revision;host.savedSettings=settings;}}
+        const auto& permanent=host.game.state().progression.permanent;
+        const auto& settings=host.game.state().localSettings;
+        const bool saveDirty=permanent.revision!=host.savedProgressionRevision||!samePersistentSettings(settings,host.savedSettings);
+        const auto saveNow=std::chrono::steady_clock::now();
+        if(saveDirty&&saveNow>=host.nextSaveAttempt){
+            if(saveProgression(permanent,settings,host.progressionPath)){
+                host.savedProgressionRevision=permanent.revision;
+                host.savedSettings=settings;
+                host.saveFailureReported=false;
+            }else{
+                host.nextSaveAttempt=saveNow+std::chrono::seconds(5);
+                if(!host.saveFailureReported){
+                    std::fprintf(stderr,"SAVE_FAILED path=%s retry_seconds=5\n",host.progressionPath.string().c_str());
+                    host.saveFailureReported=true;
+                }
+            }
+        }
         GameState renderState = host.game.state();
         host.multiplayer.applyPresentation(renderState);
         if(captureMenuPause){

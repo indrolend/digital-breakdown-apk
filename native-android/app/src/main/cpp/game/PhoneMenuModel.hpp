@@ -47,6 +47,10 @@ enum class PhoneMenuHorizontal : unsigned char { None, Adjust, Toggle };
 // absent from the public release surface until its player-facing contract is ready.
 inline constexpr bool PhoneMenuMultiplayerAvailable = false;
 
+// Storefronts own player-facing updates. Keep the legacy checker available to
+// development tooling without advertising an unfinished updater in the game.
+inline constexpr bool PhoneMenuSelfUpdateAvailable = false;
+
 inline void applyPhoneGraphicsPreset(LocalSettingsState& settings, int preset) {
     settings.graphicsPreset = std::max(0, std::min(2, preset));
     settings.shadows = settings.graphicsPreset >= 2;
@@ -211,7 +215,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Controls", PhoneMenuAction::Controls);
         addPhoneMenuItem(page, "Audio", PhoneMenuAction::Audio);
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
-        addPhoneMenuItem(page, "Check Updates", PhoneMenuAction::CheckUpdates);
+        if (PhoneMenuSelfUpdateAvailable) addPhoneMenuItem(page, "Check Updates", PhoneMenuAction::CheckUpdates);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Controls) {
         page.title = "Controls";
