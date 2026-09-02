@@ -566,17 +566,6 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
             cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, selected ? 1.0f : 0.70f, selected ? 1.0f : 0.88f, 1.0f, alpha, selected, state.dead && row.action == PhoneMenuAction::Restart);
         }
     }
-    if (layout.maxScroll > 0.0f) {
-        const float trackX = layout.safe.x + layout.safe.w - 8.0f;
-        const float trackY = layout.content.y + 8.0f;
-        const float trackH = layout.content.h - 16.0f;
-        const float thumbH = trackH * phoneDisplayScrollThumbFraction(layout);
-        const float thumbY = trackY + (trackH - thumbH) * phoneDisplayScrollProgress(layout);
-        cpuRect(canvas, trackX, trackY, 4.0f, trackH, 0.22f, 0.48f, 0.54f, 0.30f);
-        cpuRect(canvas, trackX - 1.0f, thumbY, 6.0f, thumbH,
-                Pass7Visual::ElectricCyan.r, Pass7Visual::ElectricCyan.g,
-                Pass7Visual::ElectricCyan.b, 0.90f);
-    }
 }
 
 std::uint64_t phoneDisplayRenderKey(const GameState& state) {
