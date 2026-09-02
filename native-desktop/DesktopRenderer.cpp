@@ -854,15 +854,25 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         using early_browser_visuals::EnvironmentPrimitive;
         if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.40f,0.47f,0.50f);drawBox(p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},0,prop.yaw,0,0.30f,0.37f,0.41f);drawBox(p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},0,prop.yaw,0,0.26f,0.32f,0.36f);drawBox(p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},0,prop.yaw,0,0.05f,0.08f,0.09f);}
         else if(prop.primitive==EnvironmentPrimitive::Tree){
-            drawBox(p+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.20f,prop.size.y*0.70f,prop.size.z*0.20f},0,prop.yaw,0,0.25f,0.20f,0.14f);
+            drawBox(p+Vec3{-prop.size.x*0.018f,prop.size.y*0.18f,0},{prop.size.x*0.26f,prop.size.y*0.36f,prop.size.z*0.26f},0,prop.yaw-0.035f,0,0.25f,0.20f,0.14f);
+            drawBox(p+Vec3{ prop.size.x*0.012f,prop.size.y*0.49f,0},{prop.size.x*0.21f,prop.size.y*0.30f,prop.size.z*0.21f},0,prop.yaw+0.025f,0,0.27f,0.21f,0.14f);
+            drawBox(p+Vec3{-prop.size.x*0.010f,prop.size.y*0.70f,0},{prop.size.x*0.16f,prop.size.y*0.18f,prop.size.z*0.16f},0,prop.yaw-0.018f,0,0.29f,0.22f,0.14f);
             bool activeClimb=false;
             if(state.player.treeClimbing&&tileIndex==state.topology.currentTileIndex&&state.player.treeCollider>=0&&state.player.treeCollider<state.debug.colliderCount){
                 const RoomCollider& climbTree=state.roomColliders[state.player.treeCollider];
                 activeClimb=climbTree.kind==RoomColliderKind::TreeTrunk&&std::abs(climbTree.center.x-prop.center.x)<0.05f&&std::abs(climbTree.center.z-prop.center.z)<0.05f;
             }
-            if(activeClimb){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}
-            drawBox(p+Vec3{0,prop.size.y*0.88f,0},{prop.size.x,prop.size.y*0.72f,prop.size.z},0,prop.yaw,0,0.18f,0.42f,0.24f,activeClimb?0.18f:1.0f);
-            if(activeClimb){glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
+            const float c=std::cos(prop.yaw),s=std::sin(prop.yaw);
+            for(const auto& cluster:early_browser_visuals::treeFoliageClusters()){
+                const Vec3 local{cluster.offset.x*prop.size.x,cluster.offset.y*prop.size.y,cluster.offset.z*prop.size.z};
+                const Vec3 center=p+Vec3{local.x*c+local.z*s,local.y,-local.x*s+local.z*c};
+                const Vec3 scale{cluster.scale.x*prop.size.x,cluster.scale.y*prop.size.y,cluster.scale.z*prop.size.z};
+                const float radius=std::max(scale.x,scale.z)*0.58f;
+                const bool occluding=activeClimb&&early_browser_visuals::treeFoliageClusterOccludes(state.camera.pos,state.player.pos,center,radius);
+                if(occluding){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}
+                drawBox(center,scale,0,prop.yaw+cluster.yawOffset,0,0.16f,0.43f,0.23f,occluding?0.28f:1.0f);
+                if(occluding){glDepthMask(GL_TRUE);glDisable(GL_BLEND);}
+            }
         }
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(p,prop.size,0,prop.yaw,0,0.20f,0.39f,0.23f);
         else if(prop.primitive==EnvironmentPrimitive::Ruin){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.38f,0.36f,0.30f);drawBox(p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},0,prop.yaw,0,0.29f,0.28f,0.25f);}
