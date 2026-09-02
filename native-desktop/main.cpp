@@ -121,6 +121,8 @@ struct HostState {
     bool previousGamepadMenuRight = false;
     bool previousGamepadMenuUp = false;
     bool previousGamepadMenuDown = false;
+    dbmenu::MenuRepeatState controllerVerticalMenuRepeat;
+    dbmenu::MenuRepeatState keyboardVerticalMenuRepeat;
     unsigned int lastHapticAudioSerial = 0;
     unsigned int previousMeleeHitMask = 0;
     std::array<int,3> previousPermanentLevels{};
@@ -151,7 +153,7 @@ void rumblePulse(const LocalSettingsState& settings,float low,float high,int mil
     const float scale=settings.controllerVibration==1?1.0f:1.30f;
     controllerRumblePulse(clampf(low*scale,0.0f,1.0f),clampf(high*scale,0.0f,1.0f),milliseconds);
 }
-void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;controllerRumbleStop();}
+void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
 
 void updateOutcomeRumble(HostState& host){
@@ -816,11 +818,12 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     const bool rightTriggerPressed=rightTriggerDown&&!host.previousGamepadRightTrigger;
     if(menuActive&&!host.enteringJoinCode){
-        if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
+        const int verticalDirection=menuDown?1:(menuUp?-1:0);
+        if(dbmenu::menuRepeatMove(host.controllerVerticalMenuRepeat,verticalDirection,glfwGetTime())){
             const int current=host.game.state().hud.menuSelection;
             const int next=host.game.state().upgradeMenu.active
-                ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
-                :current+(menuDown?1:-1);
+                ?dbmenu::moveUpgradeGridSelection(current,0,verticalDirection)
+                :current+verticalDirection;
             setMenuSelection(host,next);
             rumblePulse(host.game.state().localSettings,0.03f,0.14f,18);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
@@ -835,8 +838,10 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
         if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else if(host.enteringJoinCode){
+        dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);
         if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else{
+        dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);
         input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*13.5f;input.lookY=rightY*10.5f;
         input.vacuumHeld=rightTriggerDown||currentButtons[GLFW_GAMEPAD_BUTTON_B]==GLFW_PRESS;
         input.sprintHeld=currentButtons[GLFW_GAMEPAD_BUTTON_LEFT_THUMB]==GLFW_PRESS;
@@ -965,16 +970,25 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<9;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=-1;host->audio.playMenuCue(true);return;}
 
     const bool menuActive=menuItemCount(host->game.state())>0;
-    if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
+    if(menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
-        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        if(action==GLFW_PRESS&&key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
         const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
         const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
-        if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
+        if(up||down){
+            if(action==GLFW_RELEASE){dbmenu::resetMenuRepeat(host->keyboardVerticalMenuRepeat);return;}
+            if(action!=GLFW_PRESS&&action!=GLFW_REPEAT)return;
+            const int direction=down?1:-1;
+            if(!dbmenu::menuRepeatMove(host->keyboardVerticalMenuRepeat,direction,glfwGetTime()))return;
+            const int current=host->game.state().hud.menuSelection;
+            setMenuSelection(*host,host->game.state().upgradeMenu.active
+                ?dbmenu::moveUpgradeGridSelection(current,0,direction)
+                :current+direction);
+            return;
+        }
+        if(action!=GLFW_PRESS)return;
         if((left||right)){if(!adjustMenuSetting(*host,right?1:-1)&&right)toggleMenuSetting(*host);return;}
-        if(up){setMenuSelection(*host,host->game.state().hud.menuSelection-1);return;}
-        if(down){setMenuSelection(*host,host->game.state().hud.menuSelection+1);return;}
         if(key==GLFW_KEY_ENTER||key==GLFW_KEY_SPACE||key==GLFW_KEY_F){activateMenuSelection(window,*host);return;}
         if(host->game.state().upgradeMenu.active&&key>=GLFW_KEY_1&&key<=GLFW_KEY_6){setMenuSelection(*host,key-GLFW_KEY_1);activateMenuSelection(window,*host);}
         return;
