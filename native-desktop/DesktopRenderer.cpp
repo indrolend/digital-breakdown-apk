@@ -540,11 +540,6 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
                     Pass7Visual::MetallicTeal.b, 0.24f);
             continue;
         }
-        if (row.fixedFooter) {
-            cpuRect(canvas, row.visual.x, row.visual.y, row.visual.w, 3.0f,
-                    Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g,
-                    Pass7Visual::MetallicTeal.b, selected ? 0.92f : 0.38f);
-        }
         if (row.kind == PhoneMenuRowKind::Section) {
             cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g, Pass7Visual::MetallicTeal.b, 0.62f, true);
             continue;

@@ -123,14 +123,13 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
     for (int i = 0; i < layout.rowCount; ++i) {
         PhoneDisplayMenuRow& row = layout.rows[i];
         if (row.fixedFooter) {
-            const float footerInset = 18.0f;
-            row.visual = {layout.footer.x + footerInset, layout.footer.y + footerInset,
-                          layout.footer.w - footerInset * 2.0f, layout.footer.h - footerInset * 2.0f};
+            row.visual = {layout.safe.x, layout.footer.y + (layout.footer.h - rowH) * 0.5f,
+                          layout.safe.w, rowH};
             row.contentVisual = row.visual;
             row.hit = row.visual;
             row.visible = true;
             row.baselineY = row.visual.y + row.visual.h * 0.5f + row.fontPx * 0.34f;
-            row.labelX = row.visual.x + row.visual.w * 0.38f;
+            row.labelX = page.tablePage ? layout.safe.x + layout.safe.w * 0.08f : layout.safe.x + layout.safe.w * 0.38f;
             row.valueRightX = row.visual.x + row.visual.w * 0.92f;
             continue;
         }

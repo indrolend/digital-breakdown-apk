@@ -144,11 +144,12 @@ inline void addPhoneMenuValue(PhoneMenuPageViewModel& page, const std::string& l
     addPhoneMenuElement(page, element);
 }
 
-inline void addPhoneMenuToggle(PhoneMenuPageViewModel& page, const std::string& label, PhoneMenuAction action) {
+inline void addPhoneMenuToggle(PhoneMenuPageViewModel& page, const std::string& label, bool enabled, PhoneMenuAction action) {
     PhoneMenuElement element;
-    element.kind = PhoneMenuRowKind::Item;
+    element.kind = PhoneMenuRowKind::TwoColumn;
     element.action = action;
     element.label = label;
+    element.value = enabled ? "On" : "Off";
     element.selectable = true;
     element.horizontal = PhoneMenuHorizontal::Toggle;
     addPhoneMenuElement(page, element);
@@ -173,8 +174,8 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
         addPhoneMenuItem(page, "Exit Run", PhoneMenuAction::ExitRun);
     } else if (state.localSettings.menuPage == LocalMenuPage::Main) {
-        addPhoneMenuItem(page, "Solo", PhoneMenuAction::Solo);
-        addPhoneMenuItem(page, "Online", PhoneMenuAction::Online);
+        addPhoneMenuItem(page, "Play Solo", PhoneMenuAction::Solo);
+        addPhoneMenuItem(page, "Play Online", PhoneMenuAction::Online);
         addPhoneMenuItem(page, "Settings", PhoneMenuAction::Settings);
         addPhoneMenuItem(page, "Exit", PhoneMenuAction::Exit);
     } else if (state.localSettings.menuPage == LocalMenuPage::Online) {
@@ -193,8 +194,8 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
             if(networkStatus.find("READY 2/2")!=std::string::npos)
                 addPhoneMenuItem(page,"Start Game",PhoneMenuAction::Start);
         }else{
-            addPhoneMenuItem(page, "Host", PhoneMenuAction::Host);
-            addPhoneMenuItem(page, "Join", PhoneMenuAction::Join);
+            addPhoneMenuItem(page, "Host Game", PhoneMenuAction::Host);
+            addPhoneMenuItem(page, "Join Game", PhoneMenuAction::Join);
         }
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::JoinCode) {
@@ -227,24 +228,24 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuValue(page, "Controller", std::to_string(phoneMenuPercent(state.localSettings.controllerLookSensitivity)) + "%", PhoneMenuAction::AdjustController);
         addPhoneMenuValue(page, "Triggers", phoneMenuTriggerSensitivityName(state.localSettings.controllerTriggerSensitivity), PhoneMenuAction::AdjustTriggers);
         addPhoneMenuValue(page, "Vibration", phoneMenuVibrationName(state.localSettings.controllerVibration), PhoneMenuAction::AdjustVibration);
-        addPhoneMenuItem(page, "Defaults", PhoneMenuAction::Defaults);
+        addPhoneMenuItem(page, "Reset Controls", PhoneMenuAction::Defaults);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Audio) {
         page.title = "Audio";
         page.tablePage = true;
         addPhoneMenuValue(page, "Music", std::to_string(phoneMenuPercent(state.localSettings.musicVolume)) + "%", PhoneMenuAction::MusicVolume);
-        addPhoneMenuValue(page, "SFX", std::to_string(phoneMenuPercent(state.localSettings.sfxVolume)) + "%", PhoneMenuAction::SfxVolume);
-        addPhoneMenuToggle(page, state.localSettings.musicMuted ? "Music On" : "Music Mute", PhoneMenuAction::MusicMute);
-        addPhoneMenuToggle(page, state.localSettings.sfxMuted ? "SFX On" : "SFX Mute", PhoneMenuAction::SfxMute);
+        addPhoneMenuValue(page, "Sound Effects", std::to_string(phoneMenuPercent(state.localSettings.sfxVolume)) + "%", PhoneMenuAction::SfxVolume);
+        addPhoneMenuToggle(page, "Music", !state.localSettings.musicMuted, PhoneMenuAction::MusicMute);
+        addPhoneMenuToggle(page, "Sound Effects", !state.localSettings.sfxMuted, PhoneMenuAction::SfxMute);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else {
         const char* presets[] = {"Legacy", "Normal", "Pretty"};
         page.title = "Graphics";
         page.tablePage = true;
         addPhoneMenuValue(page, "Preset", presets[std::max(0, std::min(2, state.localSettings.graphicsPreset))], PhoneMenuAction::GraphicsPreset);
-        addPhoneMenuToggle(page, state.localSettings.shadows ? "Shadows On" : "Shadows Off", PhoneMenuAction::ToggleShadows);
-        addPhoneMenuToggle(page, state.localSettings.particles ? "Particles On" : "Particles Off", PhoneMenuAction::ToggleParticles);
-        addPhoneMenuToggle(page, state.localSettings.fpsCounter ? "FPS On" : "FPS Off", PhoneMenuAction::ToggleFps);
+        addPhoneMenuToggle(page, "Shadows", state.localSettings.shadows, PhoneMenuAction::ToggleShadows);
+        addPhoneMenuToggle(page, "Particles", state.localSettings.particles, PhoneMenuAction::ToggleParticles);
+        addPhoneMenuToggle(page, "Frame Rate", state.localSettings.fpsCounter, PhoneMenuAction::ToggleFps);
         addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     }
     return page;

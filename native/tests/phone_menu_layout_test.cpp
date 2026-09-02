@@ -70,6 +70,7 @@ int main() {
     assert(main.selectableCount == 4);
     expectVisibleRowsInsideSafe(main);
     assert(selectionRow(main, 0).action == PhoneMenuAction::Solo);
+    assert(selectionRow(main, 0).label == "Play Solo");
 
     state.started = true;
     state.uiPaused = true;
@@ -151,6 +152,9 @@ int main() {
     assert(selectionElement(audioModel, 2).horizontal == PhoneMenuHorizontal::Toggle);
     PhoneDisplayMenuLayout audio = makePhoneDisplayMenuLayout(state);
     assert(audio.selectableCount == 5);
+    assert(selectionRow(audio, 2).label == "Music");
+    assert(selectionRow(audio, 2).value == "On");
+    assert(selectionRow(audio, 3).label == "Sound Effects");
     assert(audio.maxScroll == 0.0f);
     assert(!phoneDisplayHasMoreAbove(audio));
     assert(!phoneDisplayHasMoreBelow(audio));
@@ -169,7 +173,10 @@ int main() {
     applyPhoneGraphicsPreset(state.localSettings, 2);
     assert(state.localSettings.graphicsPreset == 2 && state.localSettings.shadows && state.localSettings.portalWindow && state.localSettings.particles);
     PhoneDisplayMenuLayout graphics = makePhoneDisplayMenuLayout(state);
-    assert(graphics.selectableCount == 5);
+        assert(graphics.selectableCount == 5);
+    assert(selectionRow(graphics, 1).label == "Shadows");
+    assert(selectionRow(graphics, 1).value == "On");
+    assert(selectionRow(graphics, 3).label == "Frame Rate");
     expectVisibleRowsInsideSafe(graphics);
 
     assert(phoneMenuCycleIndex(0, 1, 3) == 1);
