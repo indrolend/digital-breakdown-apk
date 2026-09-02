@@ -1005,8 +1005,8 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){const char value=static_cast<char>(key);if(dbmultiplayer::isRoomCharacter(value))host->joinCode.push_back(value);host->game.setNetworkRoom(host->joinCode.c_str(),host->joinCode.size()==6?"PRESS ENTER":"ENTER CODE",false);return;}
         return;
     }
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_J){host->enteringJoinCode=true;host->joinCode.clear();host->game.setNetworkRoom("","ENTER ROOM CODE",false);return;}
+    if(PhoneMenuMultiplayerAvailable&&action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
+    if(PhoneMenuMultiplayerAvailable&&action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_J){host->enteringJoinCode=true;host->joinCode.clear();host->game.setNetworkRoom("","ENTER ROOM CODE",false);return;}
     if (action == GLFW_PRESS && !host->game.state().started && host->multiplayer.role()==DesktopMultiplayer::Role::Offline &&
         (key == GLFW_KEY_ENTER || key == GLFW_KEY_R || key == GLFW_KEY_SPACE)) {
         host->game.restart();

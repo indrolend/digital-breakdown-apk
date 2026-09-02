@@ -43,6 +43,10 @@ enum class PhoneMenuAction : unsigned char {
 
 enum class PhoneMenuHorizontal : unsigned char { None, Adjust, Toggle };
 
+// Multiplayer remains compiled and continuously tested, but is intentionally
+// absent from the public release surface until its player-facing contract is ready.
+inline constexpr bool PhoneMenuMultiplayerAvailable = false;
+
 inline void applyPhoneGraphicsPreset(LocalSettingsState& settings, int preset) {
     settings.graphicsPreset = std::max(0, std::min(2, preset));
     settings.shadows = settings.graphicsPreset >= 2;
@@ -174,8 +178,8 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
         addPhoneMenuItem(page, "Graphics", PhoneMenuAction::Graphics);
         addPhoneMenuItem(page, "Exit Run", PhoneMenuAction::ExitRun);
     } else if (state.localSettings.menuPage == LocalMenuPage::Main) {
-        addPhoneMenuItem(page, "Play Solo", PhoneMenuAction::Solo);
-        addPhoneMenuItem(page, "Play Online", PhoneMenuAction::Online);
+        addPhoneMenuItem(page, "Play", PhoneMenuAction::Solo);
+        if (PhoneMenuMultiplayerAvailable) addPhoneMenuItem(page, "Play Online", PhoneMenuAction::Online);
         addPhoneMenuItem(page, "Settings", PhoneMenuAction::Settings);
         addPhoneMenuItem(page, "Exit", PhoneMenuAction::Exit);
     } else if (state.localSettings.menuPage == LocalMenuPage::Online) {

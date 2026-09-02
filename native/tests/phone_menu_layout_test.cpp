@@ -63,14 +63,17 @@ int main() {
     state.dead = false;
     state.localSettings.menuPage = LocalMenuPage::Main;
     PhoneMenuPageViewModel mainModel = makePhoneMenuPageModel(state);
-    assert(mainModel.selectableCount == 4);
+    static_assert(!PhoneMenuMultiplayerAvailable);
+    assert(mainModel.selectableCount == 3);
     assert(selectionElement(mainModel, 0).action == PhoneMenuAction::Solo);
-    assert(selectionElement(mainModel, 3).action == PhoneMenuAction::Exit);
+    assert(selectionElement(mainModel, 0).label == "Play");
+    assert(selectionElement(mainModel, 2).action == PhoneMenuAction::Exit);
+    for (int i = 0; i < mainModel.selectableCount; ++i) assert(selectionElement(mainModel, i).action != PhoneMenuAction::Online);
     PhoneDisplayMenuLayout main = makePhoneDisplayMenuLayout(state);
-    assert(main.selectableCount == 4);
+    assert(main.selectableCount == 3);
     expectVisibleRowsInsideSafe(main);
     assert(selectionRow(main, 0).action == PhoneMenuAction::Solo);
-    assert(selectionRow(main, 0).label == "Play Solo");
+    assert(selectionRow(main, 0).label == "Play");
 
     state.started = true;
     state.uiPaused = true;
