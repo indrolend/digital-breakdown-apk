@@ -32,7 +32,7 @@ void expectVisibleRowsInsideSafe(const PhoneDisplayMenuLayout& layout) {
         }
         assert(row.selectable);
         assert(row.selectableIndex >= 0);
-        if (row.visible) expectRectInside(layout.safe, row.hit);
+        if (row.visible && !row.peek) expectRectInside(layout.safe, row.hit);
         else assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
     }
 }
@@ -63,13 +63,18 @@ int main() {
     state.dead = false;
     state.localSettings.menuPage = LocalMenuPage::Main;
     PhoneMenuPageViewModel mainModel = makePhoneMenuPageModel(state);
-    assert(mainModel.selectableCount == 4);
+    static_assert(!PhoneMenuMultiplayerAvailable);
+    static_assert(!PhoneMenuSelfUpdateAvailable);
+    assert(mainModel.selectableCount == 3);
     assert(selectionElement(mainModel, 0).action == PhoneMenuAction::Solo);
-    assert(selectionElement(mainModel, 3).action == PhoneMenuAction::Exit);
+    assert(selectionElement(mainModel, 0).label == "Play");
+    assert(selectionElement(mainModel, 2).action == PhoneMenuAction::Exit);
+    for (int i = 0; i < mainModel.selectableCount; ++i) assert(selectionElement(mainModel, i).action != PhoneMenuAction::Online);
     PhoneDisplayMenuLayout main = makePhoneDisplayMenuLayout(state);
-    assert(main.selectableCount == 4);
+    assert(main.selectableCount == 3);
     expectVisibleRowsInsideSafe(main);
     assert(selectionRow(main, 0).action == PhoneMenuAction::Solo);
+    assert(selectionRow(main, 0).label == "Play");
 
     state.started = true;
     state.uiPaused = true;
@@ -114,23 +119,29 @@ int main() {
     assert(controlsTop.maxScroll > 0.0f);
     assert(!phoneDisplayHasMoreAbove(controlsTop));
     assert(phoneDisplayHasMoreBelow(controlsTop));
-    assert(phoneDisplayScrollThumbFraction(controlsTop) < 1.0f);
-    assert(phoneDisplayScrollProgress(controlsTop) == 0.0f);
     assert(controlsTop.rows[0].kind == PhoneMenuRowKind::Section);
     assert(controlsTop.rows[7].kind == PhoneMenuRowKind::Section);
     assert(controlsTop.rows[11].kind == PhoneMenuRowKind::Section);
     assert(selectionRow(controlsTop, 0).action == PhoneMenuAction::Rebind);
     assert(selectionRow(controlsTop, 0).horizontal == PhoneMenuHorizontal::None);
+    assert(phoneDisplayRowForSelection(controlsTop, 14)->fixedFooter);
+    bool hasBottomPeek = false;
+    for (int i = 0; i < controlsTop.rowCount; ++i) {
+        const PhoneDisplayMenuRow& row = controlsTop.rows[i];
+        if (row.peek && row.visual.y + row.visual.h > controlsTop.content.y + controlsTop.content.h) hasBottomPeek = true;
+    }
+    assert(hasBottomPeek);
     expectVisibleRowsInsideSafe(controlsTop);
 
-    state.hud.menuSelection = 14;
-    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 14);
+    state.hud.menuSelection = 13;
+    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 13);
     PhoneDisplayMenuLayout controlsBottom = makePhoneDisplayMenuLayout(state);
     assert(controlsBottom.scrollOffset > 0.0f);
     assert(phoneDisplayHasMoreAbove(controlsBottom));
     assert(!phoneDisplayHasMoreBelow(controlsBottom));
-    assert(phoneDisplayScrollProgress(controlsBottom) > 0.99f);
+    assert(selectionRow(controlsBottom, 13).action == PhoneMenuAction::Defaults);
     assert(selectionRow(controlsBottom, 14).action == PhoneMenuAction::Back);
+    assert(phoneDisplayScrollForSelection(controlsBottom, 14) == controlsBottom.scrollOffset);
     expectVisibleRowsInsideSafe(controlsBottom);
 
     state.localSettings.menuPage = LocalMenuPage::Audio;
@@ -142,10 +153,12 @@ int main() {
     assert(selectionElement(audioModel, 2).horizontal == PhoneMenuHorizontal::Toggle);
     PhoneDisplayMenuLayout audio = makePhoneDisplayMenuLayout(state);
     assert(audio.selectableCount == 5);
+    assert(selectionRow(audio, 2).label == "Music");
+    assert(selectionRow(audio, 2).value == "On");
+    assert(selectionRow(audio, 3).label == "Sound Effects");
     assert(audio.maxScroll == 0.0f);
     assert(!phoneDisplayHasMoreAbove(audio));
     assert(!phoneDisplayHasMoreBelow(audio));
-    assert(phoneDisplayScrollThumbFraction(audio) == 1.0f);
     expectVisibleRowsInsideSafe(audio);
 
     state.localSettings.menuPage = LocalMenuPage::Graphics;
@@ -160,7 +173,10 @@ int main() {
     applyPhoneGraphicsPreset(state.localSettings, 2);
     assert(state.localSettings.graphicsPreset == 2 && state.localSettings.shadows && state.localSettings.portalWindow && state.localSettings.particles);
     PhoneDisplayMenuLayout graphics = makePhoneDisplayMenuLayout(state);
-    assert(graphics.selectableCount == 5);
+        assert(graphics.selectableCount == 5);
+    assert(selectionRow(graphics, 1).label == "Shadows");
+    assert(selectionRow(graphics, 1).value == "On");
+    assert(selectionRow(graphics, 3).label == "Frame Rate");
     expectVisibleRowsInsideSafe(graphics);
 
     assert(phoneMenuCycleIndex(0, 1, 3) == 1);
@@ -171,11 +187,12 @@ int main() {
 
     state.localSettings.menuPage = LocalMenuPage::JoinCode;
     PhoneMenuPageViewModel joinModel = makePhoneMenuPageModel(state);
-    assert(joinModel.selectableCount == 0);
+    assert(joinModel.selectableCount == 1);
     assert(joinModel.joinCode);
     PhoneDisplayMenuLayout join = makePhoneDisplayMenuLayout(state);
-    assert(join.selectableCount == 0);
+    assert(join.selectableCount == 1);
     assert(join.joinCode);
+    assert(selectionRow(join, 0).fixedFooter);
 
     state.dead = true;
     state.started = false;

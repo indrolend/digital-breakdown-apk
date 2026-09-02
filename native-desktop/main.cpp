@@ -21,6 +21,8 @@
 #elif defined(__APPLE__)
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
 #endif
 #include <GLFW/glfw3.h>
 
@@ -119,6 +121,8 @@ struct HostState {
     bool previousGamepadMenuRight = false;
     bool previousGamepadMenuUp = false;
     bool previousGamepadMenuDown = false;
+    dbmenu::MenuRepeatState controllerVerticalMenuRepeat;
+    dbmenu::MenuRepeatState keyboardVerticalMenuRepeat;
     unsigned int lastHapticAudioSerial = 0;
     unsigned int previousMeleeHitMask = 0;
     std::array<int,3> previousPermanentLevels{};
@@ -126,6 +130,8 @@ struct HostState {
     std::filesystem::path progressionPath;
     std::uint64_t savedProgressionRevision = 0;
     LocalSettingsState savedSettings;
+    std::chrono::steady_clock::time_point nextSaveAttempt{};
+    bool saveFailureReported = false;
 };
 
 struct DesktopGamepadInput {
@@ -149,7 +155,7 @@ void rumblePulse(const LocalSettingsState& settings,float low,float high,int mil
     const float scale=settings.controllerVibration==1?1.0f:1.30f;
     controllerRumblePulse(clampf(low*scale,0.0f,1.0f),clampf(high*scale,0.0f,1.0f),milliseconds);
 }
-void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;controllerRumbleStop();}
+void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
 
 void updateOutcomeRumble(HostState& host){
@@ -214,6 +220,14 @@ std::filesystem::path automationPlaytestCapturePath(){
     return std::filesystem::temp_directory_path()/"DigitalBreakdownDev"/"captures"/"automation-latest.ppm";
 #endif
 }
+std::filesystem::path desktopAssetRoot(const char* executablePath){
+    const std::filesystem::path executableDirectory=std::filesystem::absolute(executablePath).parent_path();
+#ifdef __APPLE__
+    if(executableDirectory.filename()=="MacOS"&&executableDirectory.parent_path().filename()=="Contents")
+        return executableDirectory.parent_path()/"Resources";
+#endif
+    return executableDirectory;
+}
 std::filesystem::path legacyTemporaryProgressionSavePath(){return std::filesystem::temp_directory_path()/"DigitalBreakdown"/"progression.v1";}
 std::filesystem::path progressionBackupPath(const std::filesystem::path& path){return path.wstring()+L".bak";}
 bool loadProgression(Game& game,const std::filesystem::path& path){
@@ -249,7 +263,12 @@ bool replaceProgressionFile(const std::filesystem::path& source,const std::files
 #endif
 }
 bool saveProgression(const PermanentProgressionState& progression,const LocalSettingsState& settings,const std::filesystem::path& path){
-    std::error_code error;std::filesystem::create_directories(path.parent_path(),error);
+    std::error_code error;
+    if(!path.has_filename())return false;
+    if(!path.parent_path().empty()){
+        std::filesystem::create_directories(path.parent_path(),error);
+        if(error)return false;
+    }
     const std::filesystem::path temporary=path.wstring()+L".tmp";
     {std::ofstream output(temporary,std::ios::trunc);if(!output)return false;output<<"DBPROG 4 "<<progression.tokens<<' '<<progression.levels[0]<<' '<<progression.levels[1]<<' '<<progression.levels[2]<<' '<<settings.musicVolume<<' '<<settings.sfxVolume<<' '<<settings.musicMuted<<' '<<settings.sfxMuted<<' '<<settings.graphicsPreset<<' '<<settings.shadows<<' '<<settings.portalWindow<<' '<<settings.particles<<' '<<settings.fpsCounter<<' '<<settings.mouseLookSensitivity<<' '<<settings.touchLookSensitivity<<' '<<settings.controllerLookSensitivity<<' '<<settings.controllerTriggerSensitivity<<' '<<settings.controllerVibration;for(int key:settings.keyboardBindings)output<<' '<<key;output<<'\n';output.flush();if(!output)return false;}
     if(!replaceProgressionFile(temporary,path)){std::filesystem::remove(temporary,error);return false;}
@@ -685,7 +704,11 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
         else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
-        else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
+        else if(action==PhoneMenuAction::Back){
+            if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();
+            if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();}
+            popMenuPage(host);
+        }
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings=DEFAULT_KEYBOARD_BINDINGS;settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);
@@ -806,11 +829,12 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     const bool rightTriggerPressed=rightTriggerDown&&!host.previousGamepadRightTrigger;
     if(menuActive&&!host.enteringJoinCode){
-        if((menuUp&&!host.previousGamepadMenuUp)||(menuDown&&!host.previousGamepadMenuDown)){
+        const int verticalDirection=menuDown?1:(menuUp?-1:0);
+        if(dbmenu::menuRepeatMove(host.controllerVerticalMenuRepeat,verticalDirection,glfwGetTime())){
             const int current=host.game.state().hud.menuSelection;
             const int next=host.game.state().upgradeMenu.active
-                ?dbmenu::moveUpgradeGridSelection(current,0,menuDown?1:-1)
-                :current+(menuDown?1:-1);
+                ?dbmenu::moveUpgradeGridSelection(current,0,verticalDirection)
+                :current+verticalDirection;
             setMenuSelection(host,next);
             rumblePulse(host.game.state().localSettings,0.03f,0.14f,18);
         }else if((menuLeft&&!host.previousGamepadMenuLeft)||(menuRight&&!host.previousGamepadMenuRight)){
@@ -825,8 +849,10 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
         if(pressed(GLFW_GAMEPAD_BUTTON_START)&&host.game.state().uiPaused){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else if(host.enteringJoinCode){
+        dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);
         if(pressed(GLFW_GAMEPAD_BUTTON_B)){rumblePulse(host.game.state().localSettings,0.12f,0.05f,28);controllerMenuBack(window,host);}
     }else{
+        dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);
         input.moveX=leftX;input.moveZ=-leftY;input.lookX=rightX*13.5f;input.lookY=rightY*10.5f;
         input.vacuumHeld=rightTriggerDown||currentButtons[GLFW_GAMEPAD_BUTTON_B]==GLFW_PRESS;
         input.sprintHeld=currentButtons[GLFW_GAMEPAD_BUTTON_LEFT_THUMB]==GLFW_PRESS;
@@ -934,7 +960,9 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     HostState* host = stateFor(window);
     if (!host) return;
     if(action==GLFW_PRESS&&host->playtestPolicy.automation)host->automationCaptureDelayFrames=8;
+#if DB_ENABLE_DEVELOPER_CONSOLE
     if(key==GLFW_KEY_GRAVE_ACCENT&&action==GLFW_PRESS){setDeveloperCodecOpen(window,*host,!host->codec.open);return;}
+#endif
     if(host->codec.open){
         if(action!=GLFW_PRESS&&action!=GLFW_REPEAT)return;
         if(key==GLFW_KEY_ESCAPE){setDeveloperCodecOpen(window,*host,false);return;}
@@ -955,16 +983,25 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
     if(action==GLFW_PRESS&&host->game.state().localSettings.rebindingAction>=0){auto& settings=host->game.networkMutableState().localSettings;if(key==GLFW_KEY_ESCAPE){settings.rebindingAction=-1;return;}const int actionIndex=settings.rebindingAction;int conflict=-1;for(int i=0;i<9;++i)if(i!=actionIndex&&settings.keyboardBindings[i]==key){conflict=i;break;}const int old=settings.keyboardBindings[actionIndex];settings.keyboardBindings[actionIndex]=key;if(conflict>=0)settings.keyboardBindings[conflict]=old;settings.rebindingAction=-1;host->audio.playMenuCue(true);return;}
 
     const bool menuActive=menuItemCount(host->game.state())>0;
-    if(action==GLFW_PRESS&&menuActive&&!host->enteringJoinCode){
+    if(menuActive&&!host->enteringJoinCode){
         // Menus release the cursor, so Escape has the same second-press exit
         // meaning it has after releasing the cursor during ordinary play.
-        if(key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
+        if(action==GLFW_PRESS&&key==GLFW_KEY_ESCAPE){if(soloPauseMenu(host->game.state())||multiplayerPauseMenu(host->game.state())){controllerMenuBack(window,*host);return;}if(!host->game.state().started&&host->game.state().localSettings.menuPage!=LocalMenuPage::Main){controllerMenuBack(window,*host);return;}glfwSetWindowShouldClose(window,GLFW_TRUE);return;}
         const bool left=key==GLFW_KEY_LEFT||key==GLFW_KEY_A, right=key==GLFW_KEY_RIGHT||key==GLFW_KEY_D;
         const bool up=key==GLFW_KEY_UP||key==GLFW_KEY_W, down=key==GLFW_KEY_DOWN||key==GLFW_KEY_S;
-        if(host->game.state().upgradeMenu.active&&(up||down)){setMenuSelection(*host,host->game.state().hud.menuSelection+(down?3:-3));return;}
+        if(up||down){
+            if(action==GLFW_RELEASE){dbmenu::resetMenuRepeat(host->keyboardVerticalMenuRepeat);return;}
+            if(action!=GLFW_PRESS&&action!=GLFW_REPEAT)return;
+            const int direction=down?1:-1;
+            if(!dbmenu::menuRepeatMove(host->keyboardVerticalMenuRepeat,direction,glfwGetTime()))return;
+            const int current=host->game.state().hud.menuSelection;
+            setMenuSelection(*host,host->game.state().upgradeMenu.active
+                ?dbmenu::moveUpgradeGridSelection(current,0,direction)
+                :current+direction);
+            return;
+        }
+        if(action!=GLFW_PRESS)return;
         if((left||right)){if(!adjustMenuSetting(*host,right?1:-1)&&right)toggleMenuSetting(*host);return;}
-        if(up){setMenuSelection(*host,host->game.state().hud.menuSelection-1);return;}
-        if(down){setMenuSelection(*host,host->game.state().hud.menuSelection+1);return;}
         if(key==GLFW_KEY_ENTER||key==GLFW_KEY_SPACE||key==GLFW_KEY_F){activateMenuSelection(window,*host);return;}
         if(host->game.state().upgradeMenu.active&&key>=GLFW_KEY_1&&key<=GLFW_KEY_6){setMenuSelection(*host,key-GLFW_KEY_1);activateMenuSelection(window,*host);}
         return;
@@ -977,8 +1014,8 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         if(host->joinCode.size()<6&&((key>=GLFW_KEY_A&&key<=GLFW_KEY_Z)||(key>=GLFW_KEY_2&&key<=GLFW_KEY_9))){const char value=static_cast<char>(key);if(dbmultiplayer::isRoomCharacter(value))host->joinCode.push_back(value);host->game.setNetworkRoom(host->joinCode.c_str(),host->joinCode.size()==6?"PRESS ENTER":"ENTER CODE",false);return;}
         return;
     }
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
-    if(action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_J){host->enteringJoinCode=true;host->joinCode.clear();host->game.setNetworkRoom("","ENTER ROOM CODE",false);return;}
+    if(PhoneMenuMultiplayerAvailable&&action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_H){host->multiplayer.host(host->multiplayerService);return;}
+    if(PhoneMenuMultiplayerAvailable&&action==GLFW_PRESS&&!host->game.state().started&&key==GLFW_KEY_J){host->enteringJoinCode=true;host->joinCode.clear();host->game.setNetworkRoom("","ENTER ROOM CODE",false);return;}
     if (action == GLFW_PRESS && !host->game.state().started && host->multiplayer.role()==DesktopMultiplayer::Role::Offline &&
         (key == GLFW_KEY_ENTER || key == GLFW_KEY_R || key == GLFW_KEY_SPACE)) {
         host->game.restart();
@@ -1377,7 +1414,8 @@ void printBuildIdentityJson() {
     std::printf(
         "{\"commit\":\"%s\",\"commit_short\":\"%s\",\"protocol\":%u,"
         "\"gameplay\":%u,\"save_format\":%d,\"platform\":\"%s\","
-        "\"architecture\":\"%s\",\"configuration\":\"%s\"}\n",
+        "\"architecture\":\"%s\",\"configuration\":\"%s\","
+        "\"storefront_release\":%s,\"developer_console\":%s}\n",
         identity.commit.c_str(),
         identity.commitShort.c_str(),
         static_cast<unsigned int>(identity.protocolVersion),
@@ -1385,7 +1423,9 @@ void printBuildIdentityJson() {
         identity.saveFormatVersion,
         identity.platform.c_str(),
         identity.architecture.c_str(),
-        identity.buildConfiguration.c_str()
+        identity.buildConfiguration.c_str(),
+        identity.storefrontRelease ? "true" : "false",
+        identity.developerConsole ? "true" : "false"
     );
 }
 
@@ -1673,7 +1713,7 @@ int main(int argc, char** argv) {
         return runParityProximityTest();
     }
     if (hasArg(argc, argv, "--model-test")) {
-        return runModelTest(std::filesystem::absolute(argv[0]).parent_path());
+        return runModelTest(desktopAssetRoot(argv[0]));
     }
     if (hasArg(argc, argv, "--check-updates")) {
         DesktopUpdateService updater;
@@ -1822,7 +1862,8 @@ int main(int argc, char** argv) {
         fixture.localSettings.particles=true;
         fixture.localSettings.fpsCounter=false;
     }
-    host.audio.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"audio");
+    const std::filesystem::path assetRoot=desktopAssetRoot(argv[0]);
+    host.audio.setAssetRoot(assetRoot/"audio");
 
     glfwSetWindowUserPointer(window, &host);
     glfwSetKeyCallback(window, keyCallback);
@@ -1834,7 +1875,7 @@ int main(int argc, char** argv) {
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 
     glfwMakeContextCurrent(window);
-    host.renderer.setAssetRoot(std::filesystem::absolute(argv[0]).parent_path()/"models");
+    host.renderer.setAssetRoot(assetRoot/"models");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
     glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
@@ -2164,7 +2205,23 @@ int main(int argc, char** argv) {
         const auto audioBegin=std::chrono::steady_clock::now();
         host.audio.update(host.game.state());
         const auto audioEnd=std::chrono::steady_clock::now();
-        const auto& permanent=host.game.state().progression.permanent;const auto& settings=host.game.state().localSettings;if(permanent.revision!=host.savedProgressionRevision||!samePersistentSettings(settings,host.savedSettings)){if(saveProgression(permanent,settings,host.progressionPath)){host.savedProgressionRevision=permanent.revision;host.savedSettings=settings;}}
+        const auto& permanent=host.game.state().progression.permanent;
+        const auto& settings=host.game.state().localSettings;
+        const bool saveDirty=permanent.revision!=host.savedProgressionRevision||!samePersistentSettings(settings,host.savedSettings);
+        const auto saveNow=std::chrono::steady_clock::now();
+        if(saveDirty&&saveNow>=host.nextSaveAttempt){
+            if(saveProgression(permanent,settings,host.progressionPath)){
+                host.savedProgressionRevision=permanent.revision;
+                host.savedSettings=settings;
+                host.saveFailureReported=false;
+            }else{
+                host.nextSaveAttempt=saveNow+std::chrono::seconds(5);
+                if(!host.saveFailureReported){
+                    std::fprintf(stderr,"SAVE_FAILED path=%s retry_seconds=5\n",host.progressionPath.string().c_str());
+                    host.saveFailureReported=true;
+                }
+            }
+        }
         GameState renderState = host.game.state();
         host.multiplayer.applyPresentation(renderState);
         if(captureMenuPause){

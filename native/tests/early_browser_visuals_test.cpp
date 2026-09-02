@@ -5,6 +5,9 @@
 
 int main(){
     using namespace early_browser_visuals;
+    assert(treeFoliageClusters().size()==7);
+    assert(treeFoliageClusterOccludes({0,2,6},{0,2,0},{0,2,3},1.0f));
+    assert(!treeFoliageClusterOccludes({0,2,6},{0,2,0},{3,2,3},1.0f));
     const auto first=roomPlan(12345,1);
     assert(first.setting==RoomSetting::Field&&first.form==RoomForm::Open&&first.grass&&!first.sidewalks);
     assert(first.obstacleCount==0&&!first.recovery());

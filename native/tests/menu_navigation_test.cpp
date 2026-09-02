@@ -4,6 +4,18 @@
 
 int main() {
     using dbmenu::moveUpgradeGridSelection;
+    dbmenu::MenuRepeatState repeat;
+    assert(dbmenu::menuRepeatMove(repeat, 1, 10.0));
+    assert(!dbmenu::menuRepeatMove(repeat, 1, 10.34));
+    assert(dbmenu::menuRepeatMove(repeat, 1, 10.35));
+    assert(!dbmenu::menuRepeatMove(repeat, 1, 10.43));
+    assert(dbmenu::menuRepeatMove(repeat, 1, 10.44));
+    assert(dbmenu::menuRepeatMove(repeat, -1, 10.45));
+    assert(!dbmenu::menuRepeatMove(repeat, -1, 10.79));
+    assert(dbmenu::menuRepeatMove(repeat, -1, 10.80));
+    assert(!dbmenu::menuRepeatMove(repeat, 0, 10.81));
+    assert(repeat.direction == 0);
+    assert(dbmenu::menuRepeatMove(repeat, 1, 10.82));
     assert(dbmenu::pointerAction(0, 0, 1) == dbmenu::PointerAction::Activate);
     assert(dbmenu::pointerAction(1, 0, 1) == dbmenu::PointerAction::Back);
     assert(dbmenu::pointerAction(2, 0, 1) == dbmenu::PointerAction::None);

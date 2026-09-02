@@ -1,10 +1,13 @@
 # Experimental release contract
 
-`Native Cross-Platform Release` is the authoritative rolling experimental
-publisher. It builds Windows, macOS, and Android from one commit, generates a
-versioned manifest from the actual artifacts, verifies that manifest, and only
-updates the `latest-native` release from `main` pushes or an explicitly
-published manual dispatch from `main`.
+`Desktop Release Contract` is the authoritative desktop artifact validator. It
+builds Windows x64, a universal macOS app, and Linux x86-64 from one commit,
+generates a manifest from the actual packages, and verifies that manifest. It
+does not publish a GitHub release or upload to a storefront.
+
+Android validation remains in `.github/workflows/native-android.yml`. Android
+source-level protocol consistency is retained, but APK construction and signing
+do not gate the desktop artifact contract.
 
 `Native macOS Validation` is a manual validation workflow only. It is not a
 release authority and must not be treated as a source for `latest-native`.
@@ -13,7 +16,7 @@ release authority and must not be treated as a source for `latest-native`.
 
 Desktop builds generate `BuildIdentity` at CMake configure time. It reports:
 
-- channel: `experimental`
+- channel: `desktop-candidate` in release-contract CI
 - human version: `experimental-YYYY.MM.DD` unless overridden by CI
 - full and short Git commit
 - multiplayer protocol version
@@ -43,9 +46,10 @@ Required top-level fields are:
 - `publishedAt`
 - `artifacts`
 
-Each artifact declares `platform`, `architecture`, `filename`, `assetName`,
-`url`, `sha256`, `size`, and `package`. Legacy `windows` and `android` fields
-remain for the PowerShell recovery installer.
+Each desktop artifact declares `platform`, `architecture`, `filename`, `assetName`,
+`url`, `sha256`, `size`, and `package`. The required platforms are Windows,
+macOS, and Linux. Android distribution metadata is owned by its separate
+workflow.
 
 Validate a manifest with:
 

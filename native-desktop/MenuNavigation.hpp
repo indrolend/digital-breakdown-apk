@@ -4,6 +4,40 @@
 
 namespace dbmenu {
 
+struct MenuRepeatState {
+    int direction = 0;
+    double startedAt = 0.0;
+    double lastMoveAt = 0.0;
+};
+
+inline void resetMenuRepeat(MenuRepeatState& state) {
+    state = {};
+}
+
+inline bool menuRepeatMove(
+    MenuRepeatState& state,
+    int direction,
+    double now,
+    double initialDelay = 0.35,
+    double repeatInterval = 0.09
+) {
+    direction = direction > 0 ? 1 : (direction < 0 ? -1 : 0);
+    if (direction == 0) {
+        resetMenuRepeat(state);
+        return false;
+    }
+    if (state.direction != direction) {
+        state.direction = direction;
+        state.startedAt = now;
+        state.lastMoveAt = now;
+        return true;
+    }
+    if (now - state.startedAt < initialDelay ||
+        now - state.lastMoveAt < repeatInterval) return false;
+    state.lastMoveAt = now;
+    return true;
+}
+
 enum class PointerAction {
     None,
     Activate,

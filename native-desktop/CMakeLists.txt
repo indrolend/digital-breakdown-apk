@@ -15,6 +15,8 @@ include(FetchContent)
 
 set(DB_CHANNEL "experimental" CACHE STRING "Digital Breakdown release channel")
 set(DB_SAVE_FORMAT_VERSION "4" CACHE STRING "Digital Breakdown persistent save format version")
+option(DB_STOREFRONT_RELEASE "Build the locked-down solo storefront player surface" ON)
+option(DB_ENABLE_DEVELOPER_CONSOLE "Enable the interactive in-game developer console" OFF)
 string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
 string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 if(NOT DEFINED DB_HUMAN_VERSION)
@@ -37,7 +39,7 @@ if(WIN32)
 elseif(APPLE)
     set(DB_PLATFORM "macos")
 else()
-    set(DB_PLATFORM "desktop")
+    set(DB_PLATFORM "linux")
 endif()
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" DB_ARCHITECTURE)
 if(DB_ARCHITECTURE MATCHES "^(amd64|x86_64)$")
@@ -56,6 +58,12 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+if(UNIX AND NOT APPLE)
+    # The initial Linux release contract targets Steam-compatible X11 hosts.
+    # Wayland can be added later as an independently validated backend.
+    set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+endif()
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
@@ -72,9 +80,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(miniaudio)
-if(APPLE)
+if(UNIX AND NOT WIN32)
     set(USE_TLS ON CACHE BOOL "" FORCE)
-    set(USE_OPEN_SSL OFF CACHE BOOL "" FORCE)
+    if(APPLE)
+        set(USE_OPEN_SSL OFF CACHE BOOL "" FORCE)
+    else()
+        set(USE_OPEN_SSL ON CACHE BOOL "" FORCE)
+        find_package(OpenSSL REQUIRED)
+    endif()
     set(IXWEBSOCKET_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
         ixwebsocket
@@ -105,6 +118,8 @@ if(WIN32)
 elseif(APPLE)
     target_sources(DigitalBreakdown PRIVATE ControllerRumbleMac.m)
     set_source_files_properties(ControllerRumbleMac.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+else()
+    target_sources(DigitalBreakdown PRIVATE ControllerRumbleStub.cpp)
 endif()
 
 target_include_directories(
@@ -122,6 +137,8 @@ target_compile_features(DigitalBreakdown PRIVATE cxx_std_17)
 target_compile_definitions(DigitalBreakdown PRIVATE
     GLFW_INCLUDE_NONE
     DB_BUILD_CONFIGURATION="$<CONFIG>"
+    DB_STOREFRONT_RELEASE=$<BOOL:${DB_STOREFRONT_RELEASE}>
+    DB_ENABLE_DEVELOPER_CONSOLE=$<BOOL:${DB_ENABLE_DEVELOPER_CONSOLE}>
 )
 
 target_link_libraries(
@@ -130,14 +147,18 @@ target_link_libraries(
     glfw
     OpenGL::GL
 )
+if(UNIX AND NOT WIN32)
+    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket)
+endif()
 if(APPLE)
-    target_link_libraries(DigitalBreakdown PRIVATE ixwebsocket "-framework AppKit" "-framework GameController" "-framework CoreHaptics")
+    target_link_libraries(DigitalBreakdown PRIVATE "-framework AppKit" "-framework GameController" "-framework CoreHaptics")
     set_target_properties(DigitalBreakdown PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "Data"
+        MACOSX_BUNDLE_BUNDLE_NAME "Digital Breakdown"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.indrolend.digitalbreakdown.native"
         MACOSX_BUNDLE_BUNDLE_VERSION "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     )
 endif()
 if(WIN32)
@@ -334,19 +355,27 @@ if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
 endif()
 
+if(APPLE)
+    set(DB_RUNTIME_ASSET_DIR "$<TARGET_BUNDLE_DIR:DigitalBreakdown>/Contents/Resources")
+else()
+    set(DB_RUNTIME_ASSET_DIR "$<TARGET_FILE_DIR:DigitalBreakdown>")
+endif()
+
 add_custom_command(TARGET DigitalBreakdown POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/audio"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/audio"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/fonts"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/fonts"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/../native-models"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/models"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/../native-tv-gifs"
-        "$<TARGET_FILE_DIR:DigitalBreakdown>/tv-gifs")
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/audio" "${DB_RUNTIME_ASSET_DIR}/audio"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/fonts" "${DB_RUNTIME_ASSET_DIR}/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../native-models" "${DB_RUNTIME_ASSET_DIR}/models"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../native-tv-gifs" "${DB_RUNTIME_ASSET_DIR}/tv-gifs")
+
+if(APPLE)
+    install(TARGETS DigitalBreakdown BUNDLE DESTINATION .)
+else()
+    install(TARGETS DigitalBreakdown RUNTIME DESTINATION DigitalBreakdown)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/audio" DESTINATION DigitalBreakdown)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/fonts" DESTINATION DigitalBreakdown)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../native-models/" DESTINATION DigitalBreakdown/models)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../native-tv-gifs/" DESTINATION DigitalBreakdown/tv-gifs)
+endif()
 
 if(MSVC)
     target_compile_options(DigitalBreakdown PRIVATE /W4 /permissive-)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -51,6 +52,31 @@ enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, Mar
 enum class EnvironmentRole : unsigned char { Boundary, Mass, Landmark, Traversal, Detail, Count };
 inline const char* environmentRoleName(EnvironmentRole role){switch(role){case EnvironmentRole::Boundary:return "BOUNDARY";case EnvironmentRole::Mass:return "MASS";case EnvironmentRole::Landmark:return "LANDMARK";case EnvironmentRole::Traversal:return "TRAVERSAL";case EnvironmentRole::Detail:return "DETAIL";case EnvironmentRole::Count:break;}return "UNKNOWN";}
 struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;EnvironmentRole role=EnvironmentRole::Detail;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
+
+struct TreeFoliageClusterSpec { Vec3 offset; Vec3 scale; float yawOffset=0.0f; };
+
+inline const std::array<TreeFoliageClusterSpec,7>& treeFoliageClusters(){
+    static const std::array<TreeFoliageClusterSpec,7> clusters{{
+        {{-0.24f,0.73f,-0.10f},{0.58f,0.34f,0.54f},-0.12f},
+        {{ 0.23f,0.76f, 0.05f},{0.56f,0.38f,0.52f}, 0.16f},
+        {{-0.06f,0.91f, 0.23f},{0.62f,0.36f,0.50f}, 0.08f},
+        {{ 0.08f,0.94f,-0.23f},{0.60f,0.34f,0.48f},-0.18f},
+        {{-0.29f,1.04f, 0.08f},{0.46f,0.30f,0.44f}, 0.22f},
+        {{ 0.29f,1.07f,-0.04f},{0.44f,0.28f,0.42f},-0.24f},
+        {{ 0.00f,1.18f, 0.00f},{0.48f,0.32f,0.46f}, 0.10f}
+    }};
+    return clusters;
+}
+
+inline bool treeFoliageClusterOccludes(const Vec3& camera,const Vec3& player,const Vec3& clusterCenter,float radius){
+    const Vec3 sight=player-camera;
+    const float sightLengthSq=lengthSq(sight);
+    if(sightLengthSq<=0.0001f)return false;
+    const float along=clampf(dot3(clusterCenter-camera,sight)/sightLengthSq,0.0f,1.0f);
+    if(along<=0.02f||along>=0.98f)return false;
+    const Vec3 nearest=camera+sight*along;
+    return lengthSq(clusterCenter-nearest)<radius*radius;
+}
 struct TraversalPresentation { Vec3 color; bool debug = false; };
 inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting setting,bool inspectorDebug){
     if(inspectorDebug)return {{0x78/255.0f,0xd5/255.0f,0xe1/255.0f},true};

@@ -20,7 +20,7 @@ import org.json.JSONObject;
 public final class MultiplayerClient {
     public interface Listener { void onStatus(String status, String roomCode, boolean connected); }
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    private static final int GAMEPLAY_VERSION = 5;
+    private static final int GAMEPLAY_VERSION = 7;
     private static final long MAX_QUEUED_BYTES = 512L * 1024L;
     private final Activity activity;
     private final Handler handler = new Handler(Looper.getMainLooper());

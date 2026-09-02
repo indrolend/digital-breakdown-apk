@@ -6,7 +6,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <winhttp.h>
-#elif defined(__APPLE__)
+#else
 #include <ixwebsocket/IXHttpClient.h>
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -139,7 +139,7 @@ void DesktopMultiplayer::emitCombatEvents(const dbnet::WorldSnapshot& world){
 void DesktopMultiplayer::disconnect(){stop_=true;void* session=nullptr;void* connection=nullptr;void* request=nullptr;void* socket=nullptr;{std::lock_guard<std::mutex> sendLock(sendMutex_);std::lock_guard<std::mutex> handleLock(handleMutex_);session=session_;connection=connection_;request=request_;socket=webSocket_;session_=connection_=request_=webSocket_=nullptr;}
 #ifdef _WIN32
 if(socket)WinHttpCloseHandle(static_cast<HINTERNET>(socket));if(request)WinHttpCloseHandle(static_cast<HINTERNET>(request));if(connection)WinHttpCloseHandle(static_cast<HINTERNET>(connection));if(session)WinHttpCloseHandle(static_cast<HINTERNET>(session));
-#elif defined(__APPLE__)
+#else
 if(socket)static_cast<ix::WebSocket*>(socket)->stop();
 #endif
 if(worker_.joinable()&&worker_.get_id()!=std::this_thread::get_id())worker_.join();{std::lock_guard<std::mutex> lock(queueMutex_);incoming_.clear();}connected_=false;role_=Role::Offline;phase_=dbmultiplayer::Phase::Offline;configuredGame_=false;snapshotInterpolator_.reset();}
@@ -197,7 +197,7 @@ bool DesktopMultiplayer::checkServiceCompatibility() {
   const int protocol=jsonInt(response,"protocolVersion",jsonInt(response,"protocol",-1));
   if(protocol!=dbnet::PROTOCOL_VERSION){std::printf("MULTIPLAYER_HEALTH_REJECT protocol=%d expected=%u\n",protocol,dbnet::PROTOCOL_VERSION);std::fflush(stdout);fail("VERSION MISMATCH","health_version");return false;}
   return true;
-#elif defined(__APPLE__)
+#else
   ix::HttpClient client;
   const auto response=client.get(serviceUrl_+"/health",std::make_shared<ix::HttpRequestArgs>());
   if(!response||response->statusCode<200||response->statusCode>=300){fail("CONNECTION FAILED","health");return false;}
@@ -205,9 +205,6 @@ bool DesktopMultiplayer::checkServiceCompatibility() {
   std::printf("MULTIPLAYER_HEALTH status=%d protocol=%d\n",response->statusCode,protocol);std::fflush(stdout);
   if(protocol!=dbnet::PROTOCOL_VERSION){fail("VERSION MISMATCH","health_version");return false;}
   return true;
-#else
-  fail("CONNECTION FAILED","health_unsupported");
-  return false;
 #endif
 }
 
@@ -275,7 +272,7 @@ bool DesktopMultiplayer::createRoom() {
   std::printf("MULTIPLAYER_ROOM_CODE %s\n", code.c_str());
   std::fflush(stdout);
   return true;
-#elif defined(__APPLE__)
+#else
   ix::HttpClient client;
   auto args=std::make_shared<ix::HttpRequestArgs>();
   args->extraHeaders["Content-Type"]="application/json";
@@ -285,8 +282,6 @@ bool DesktopMultiplayer::createRoom() {
   if(code.size()!=6||key.empty()||jsonInt(response->body,"protocol")!=dbnet::PROTOCOL_VERSION||jsonInt(response->body,"gameplayVersion")!=dbnet::GAMEPLAY_VERSION){fail("VERSION MISMATCH","create_version");return false;}
   {std::lock_guard<std::mutex> lock(stateMutex_);roomCode_=code;hostKey_=key;}
   std::printf("MULTIPLAYER_ROOM_CODE %s\n",code.c_str());std::fflush(stdout);return true;
-#else
-  return false;
 #endif
 }
 
@@ -410,7 +405,7 @@ bool DesktopMultiplayer::connectWebSocket() {
   const bool owns=releaseHandles(session,connection,nullptr,socket);
   if(owns){WinHttpCloseHandle(socket);if(connection)WinHttpCloseHandle(connection);WinHttpCloseHandle(session);}
   return connected_;
-#elif defined(__APPLE__)
+#else
   static const bool netReady=ix::initNetSystem();
   if(!netReady)return false;
   if(url.rfind("https://",0)==0)url.replace(0,5,"wss");else if(url.rfind("http://",0)==0)url.replace(0,4,"ws");
@@ -442,8 +437,6 @@ bool DesktopMultiplayer::connectWebSocket() {
   socket.stop();
   {std::lock_guard<std::mutex> lock(sendMutex_);if(webSocket_==&socket)webSocket_=nullptr;}
   return connected_;
-#else
-  return false;
 #endif
 }
 
@@ -499,10 +492,8 @@ if(dbnet::decodeHeader(packet.data(),packet.size(),impairmentHeader)){
 std::lock_guard<std::mutex> lock(sendMutex_);if(!webSocket_||packet.empty())return false;
 #ifdef _WIN32
 return WinHttpWebSocketSend(static_cast<HINTERNET>(webSocket_),WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,const_cast<std::uint8_t*>(packet.data()),static_cast<DWORD>(packet.size()))==NO_ERROR;
-#elif defined(__APPLE__)
-return static_cast<ix::WebSocket*>(webSocket_)->sendBinary(std::string(reinterpret_cast<const char*>(packet.data()),packet.size())).success;
 #else
-return false;
+return static_cast<ix::WebSocket*>(webSocket_)->sendBinary(std::string(reinterpret_cast<const char*>(packet.data()),packet.size())).success;
 #endif
 }
 
@@ -511,10 +502,8 @@ bool DesktopMultiplayer::sendText(const std::string& message){std::lock_guard<st
 const DWORD result=WinHttpWebSocketSend(static_cast<HINTERNET>(webSocket_),WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,const_cast<char*>(message.data()),static_cast<DWORD>(message.size()));
 if(result!=NO_ERROR){std::printf("MULTIPLAYER_TEXT_SEND_FAILED error=%lu type=%s\n",static_cast<unsigned long>(result),jsonString(message,"type").c_str());std::fflush(stdout);}
 return result==NO_ERROR;
-#elif defined(__APPLE__)
-return static_cast<ix::WebSocket*>(webSocket_)->send(message).success;
 #else
-return false;
+return static_cast<ix::WebSocket*>(webSocket_)->send(message).success;
 #endif
 }
 
