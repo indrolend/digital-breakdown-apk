@@ -531,6 +531,20 @@ void renderPhoneDisplayPixels(const GameState& state, std::vector<unsigned char>
         const PhoneDisplayMenuRow& row = layout.rows[i];
         if (!row.visible) continue;
         const bool selected = row.selectable && state.hud.menuSelection == row.selectableIndex;
+        if (row.peek) {
+            const float top = std::max(row.visual.y, layout.content.y);
+            const float bottom = std::min(row.visual.y + row.visual.h, layout.content.y + layout.content.h);
+            const float height = std::max(0.0f, bottom - top);
+            cpuRect(canvas, row.visual.x + 26.0f, top, row.visual.w - 52.0f, height,
+                    Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g,
+                    Pass7Visual::MetallicTeal.b, 0.24f);
+            continue;
+        }
+        if (row.fixedFooter) {
+            cpuRect(canvas, row.visual.x, row.visual.y, row.visual.w, 3.0f,
+                    Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g,
+                    Pass7Visual::MetallicTeal.b, selected ? 0.92f : 0.38f);
+        }
         if (row.kind == PhoneMenuRowKind::Section) {
             cpuText(canvas, row.label, row.labelX, row.baselineY, row.fontPx, Pass7Visual::MetallicTeal.r, Pass7Visual::MetallicTeal.g, Pass7Visual::MetallicTeal.b, 0.62f, true);
             continue;

@@ -200,6 +200,7 @@ inline PhoneMenuPageViewModel makePhoneMenuPageModel(const GameState& state) {
     } else if (state.localSettings.menuPage == LocalMenuPage::JoinCode) {
         page.title = "Enter Code";
         page.joinCode = true;
+        addPhoneMenuItem(page, "Back", PhoneMenuAction::Back);
     } else if (state.localSettings.menuPage == LocalMenuPage::Settings) {
         page.title = "Settings";
         addPhoneMenuItem(page, "Controls", PhoneMenuAction::Controls);

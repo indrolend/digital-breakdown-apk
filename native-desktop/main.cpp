@@ -697,7 +697,11 @@ void activateMenuSelection(GLFWwindow* window,HostState& host) {
         else if(action==PhoneMenuAction::Audio)pushMenuPage(host,LocalMenuPage::Audio);
         else if(action==PhoneMenuAction::Graphics)pushMenuPage(host,LocalMenuPage::Graphics);
         else if(action==PhoneMenuAction::CheckUpdates)host.updater.checkForUpdates(desktopBuildIdentity());
-        else if(action==PhoneMenuAction::Back){if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();popMenuPage(host);}
+        else if(action==PhoneMenuAction::Back){
+            if(host.multiplayer.role()!=DesktopMultiplayer::Role::Offline)host.multiplayer.disconnect();
+            if(host.enteringJoinCode){host.enteringJoinCode=false;host.joinCode.clear();}
+            popMenuPage(host);
+        }
         else if(row.action==PhoneMenuAction::Rebind&&row.bindingAction>=0){settings.rebindingAction=row.bindingAction;}
         else if(row.action==PhoneMenuAction::Defaults){settings.keyboardBindings=DEFAULT_KEYBOARD_BINDINGS;settings.mouseLookSensitivity=1.0f;settings.controllerLookSensitivity=1.15f;settings.controllerTriggerSensitivity=1;settings.controllerVibration=1;}
         else if(!adjustMenuSetting(host,1))toggleMenuSetting(host);

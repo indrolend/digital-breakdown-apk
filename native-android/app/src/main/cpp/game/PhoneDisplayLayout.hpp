@@ -31,6 +31,8 @@ struct PhoneDisplayMenuRow {
     float fontPx = 34.0f;
     bool selectable = false;
     bool visible = true;
+    bool fixedFooter = false;
+    bool peek = false;
 };
 
 struct PhoneDisplayMenuLayout {
@@ -103,20 +105,47 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state)
     const float rowH = page.tablePage ? 72.0f : 86.0f;
     const float preferredStep = page.tablePage ? 78.0f : 96.0f;
     layout.rowHeight = rowH;
-    const float usedH = preferredStep * static_cast<float>(layout.rowCount - 1) + rowH;
+    int scrollingRowCount = 0;
+    for (int i = 0; i < layout.rowCount; ++i) {
+        PhoneDisplayMenuRow& row = layout.rows[i];
+        row.fixedFooter = row.action == PhoneMenuAction::Back;
+        if (!row.fixedFooter) ++scrollingRowCount;
+    }
+    const float usedH = scrollingRowCount > 0
+        ? preferredStep * static_cast<float>(scrollingRowCount - 1) + rowH
+        : 0.0f;
     layout.contentHeight = usedH;
     layout.maxScroll = std::max(0.0f, usedH - layout.content.h);
     layout.scrollOffset = std::min(layout.scrollOffset, layout.maxScroll);
     const float firstContentCenterY = rowH * 0.5f;
     const float shortPageOffset = layout.maxScroll <= 0.0f ? (layout.content.h - usedH) * 0.5f : 0.0f;
+    int scrollingRowIndex = 0;
     for (int i = 0; i < layout.rowCount; ++i) {
         PhoneDisplayMenuRow& row = layout.rows[i];
-        const float contentCy = firstContentCenterY + static_cast<float>(i) * preferredStep;
+        if (row.fixedFooter) {
+            const float footerInset = 18.0f;
+            row.visual = {layout.footer.x + footerInset, layout.footer.y + footerInset,
+                          layout.footer.w - footerInset * 2.0f, layout.footer.h - footerInset * 2.0f};
+            row.contentVisual = row.visual;
+            row.hit = row.visual;
+            row.visible = true;
+            row.baselineY = row.visual.y + row.visual.h * 0.5f + row.fontPx * 0.34f;
+            row.labelX = row.visual.x + row.visual.w * 0.38f;
+            row.valueRightX = row.visual.x + row.visual.w * 0.92f;
+            continue;
+        }
+        const float contentCy = firstContentCenterY + static_cast<float>(scrollingRowIndex++) * preferredStep;
         const float cy = layout.content.y + shortPageOffset + contentCy - layout.scrollOffset;
         row.contentVisual = {layout.safe.x, contentCy - rowH * 0.5f, layout.safe.w, rowH};
         row.visual = {layout.safe.x, cy - rowH * 0.5f, layout.safe.w, rowH};
-        row.visible = row.visual.y >= layout.content.y && row.visual.y + row.visual.h <= layout.content.y + layout.content.h;
-        row.hit = row.selectable && row.visible ? row.visual : PhoneDisplayRect{};
+        const float clippedTop = std::max(row.visual.y, layout.content.y);
+        const float clippedBottom = std::min(row.visual.y + row.visual.h, layout.content.y + layout.content.h);
+        const float visibleHeight = std::max(0.0f, clippedBottom - clippedTop);
+        row.visible = visibleHeight > 0.0f;
+        row.peek = row.visible && visibleHeight + 0.5f < row.visual.h;
+        row.hit = row.selectable && row.visible && !row.peek
+            ? row.visual
+            : PhoneDisplayRect{};
         row.baselineY = cy + row.fontPx * 0.34f;
         row.labelX = page.tablePage ? layout.safe.x + layout.safe.w * 0.08f : layout.safe.x + layout.safe.w * 0.38f;
         row.valueRightX = layout.safe.x + layout.safe.w * 0.92f;
@@ -138,6 +167,7 @@ inline const PhoneDisplayMenuRow* phoneDisplayRowForSelection(const PhoneDisplay
 inline float phoneDisplayScrollForSelection(const PhoneDisplayMenuLayout& layout, int selection) {
     const PhoneDisplayMenuRow* row = phoneDisplayRowForSelection(layout, selection);
     if (!row) return layout.scrollOffset;
+    if (row->fixedFooter) return layout.scrollOffset;
     float next = layout.scrollOffset;
     const float rowTop = row->contentVisual.y;
     const float rowBottom = row->contentVisual.y + row->contentVisual.h;

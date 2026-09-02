@@ -32,7 +32,7 @@ void expectVisibleRowsInsideSafe(const PhoneDisplayMenuLayout& layout) {
         }
         assert(row.selectable);
         assert(row.selectableIndex >= 0);
-        if (row.visible) expectRectInside(layout.safe, row.hit);
+        if (row.visible && !row.peek) expectRectInside(layout.safe, row.hit);
         else assert(row.hit.w == 0.0f && row.hit.h == 0.0f);
     }
 }
@@ -121,16 +121,25 @@ int main() {
     assert(controlsTop.rows[11].kind == PhoneMenuRowKind::Section);
     assert(selectionRow(controlsTop, 0).action == PhoneMenuAction::Rebind);
     assert(selectionRow(controlsTop, 0).horizontal == PhoneMenuHorizontal::None);
+    assert(phoneDisplayRowForSelection(controlsTop, 14)->fixedFooter);
+    bool hasBottomPeek = false;
+    for (int i = 0; i < controlsTop.rowCount; ++i) {
+        const PhoneDisplayMenuRow& row = controlsTop.rows[i];
+        if (row.peek && row.visual.y + row.visual.h > controlsTop.content.y + controlsTop.content.h) hasBottomPeek = true;
+    }
+    assert(hasBottomPeek);
     expectVisibleRowsInsideSafe(controlsTop);
 
-    state.hud.menuSelection = 14;
-    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 14);
+    state.hud.menuSelection = 13;
+    state.localSettings.menuScroll = phoneDisplayScrollForSelection(controlsTop, 13);
     PhoneDisplayMenuLayout controlsBottom = makePhoneDisplayMenuLayout(state);
     assert(controlsBottom.scrollOffset > 0.0f);
     assert(phoneDisplayHasMoreAbove(controlsBottom));
     assert(!phoneDisplayHasMoreBelow(controlsBottom));
     assert(phoneDisplayScrollProgress(controlsBottom) > 0.99f);
+    assert(selectionRow(controlsBottom, 13).action == PhoneMenuAction::Defaults);
     assert(selectionRow(controlsBottom, 14).action == PhoneMenuAction::Back);
+    assert(phoneDisplayScrollForSelection(controlsBottom, 14) == controlsBottom.scrollOffset);
     expectVisibleRowsInsideSafe(controlsBottom);
 
     state.localSettings.menuPage = LocalMenuPage::Audio;
@@ -171,11 +180,12 @@ int main() {
 
     state.localSettings.menuPage = LocalMenuPage::JoinCode;
     PhoneMenuPageViewModel joinModel = makePhoneMenuPageModel(state);
-    assert(joinModel.selectableCount == 0);
+    assert(joinModel.selectableCount == 1);
     assert(joinModel.joinCode);
     PhoneDisplayMenuLayout join = makePhoneDisplayMenuLayout(state);
-    assert(join.selectableCount == 0);
+    assert(join.selectableCount == 1);
     assert(join.joinCode);
+    assert(selectionRow(join, 0).fixedFooter);
 
     state.dead = true;
     state.started = false;
