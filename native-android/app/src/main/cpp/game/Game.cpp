@@ -3,6 +3,7 @@
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "gameplay/MeleeConfig.hpp"
 #include "gameplay/TraversalCapabilities.hpp"
 #include "EarlyBrowserVisuals.hpp"
 
@@ -199,18 +200,6 @@ constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
 constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_WINDOW = 1.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_COST_MULT = 0.55f;
-struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
-constexpr MeleeCombo MELEE_COMBOS[] = {
-    {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
-    {1,2.85f,1.08f,0.90f,0.25f,0.18f,14.0f,0.27f,0.12f,1.75f,0.22f,3.6f},
-    {2,3.18f,1.48f,1.02f,0.31f,0.23f,15.2f,0.38f,0.15f,2.10f,0.29f,5.0f},
-    {3,3.00f,1.22f,0.96f,0.29f,0.20f,13.8f,0.34f,0.12f,1.80f,0.25f,4.2f}
-};
-constexpr float MELEE_VARIANT_SIDE[] = {1,-1,1,-1};
-constexpr float MELEE_VARIANT_ROLL[] = {-0.72f,0.72f,-0.42f,0.42f};
-constexpr float MELEE_VARIANT_YAW[] = {0.62f,-0.62f,0.42f,-0.42f};
-constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
-constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
 constexpr float BULLET_BRUTE_SPEED = 20.0f;
 constexpr float BULLET_GRAVITY = 6.5f;
@@ -683,6 +672,17 @@ bool Game::storeSoul(PlayerState& player, const SoulRecord& source) {
     return true;
 }
 
+bool Game::consumeStoredSoul(PlayerState& player, SoulRecord* consumed) {
+    if (player.souls <= 0) return false;
+    const int index = --player.souls;
+    SoulRecord soul = player.storedSouls[index];
+    if (soul.id == 0) soul.brute = player.storedSoulBrute[index];
+    player.storedSouls[index] = SoulRecord{};
+    player.storedSoulBrute[index] = false;
+    if (consumed) *consumed = soul;
+    return true;
+}
+
 int Game::upgradeLevel(UpgradeTrack track) const {
     const int i=static_cast<int>(track);
     const int permanent=(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost)
@@ -914,7 +914,7 @@ bool Game::spendBattery(float amount,BatteryReason reason) {
     if (player.battery <= 0.0f) {
         player.battery = 0.0f;
         if(reason==BatteryReason::Hit&&state_.multiplayer.enabled){player.downed=true;player.bleedoutTimer=15.0f;player.reviveCharge=0.0f;player.vel={};player.jumpVel=0.0f;clearPlayerLifecycleActions();setEnergyTicker("SIGNAL DOWN",1);return false;}
-        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){--player.souls;player.storedSoulBrute[player.souls]=false;player.storedSouls[player.souls]=SoulRecord{};player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
+        if(reason==BatteryReason::Hit&&!state_.multiplayer.enabled&&player.souls>0&&!player.soloSoulRebootUsed){consumeStoredSoul(player);player.battery=15.0f;player.soloSoulRebootUsed=true;state_.progression.run.batteryRegenLock=PASSIVE_RECHARGE_DELAY;setEnergyTicker("SOUL REBOOT",2);return true;}
         triggerRunDeath();
         return false;
     }
@@ -1531,9 +1531,7 @@ void Game::updateSecretTv(float dt) {
         player.secretVisitTimer = std::max(0.0f, player.secretVisitTimer - dt);
         if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
             inputs[id]->shootPressed = false;
-            --player.souls;
-            player.storedSoulBrute[player.souls]=false;
-            player.storedSouls[player.souls]=SoulRecord{};
+            consumeStoredSoul(player);
             ++tv.signal;
             tv.donationCooldown = 0.70f;
             const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
@@ -2363,11 +2361,11 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
             const int variant = std::max(0, std::min(3, melee.variant));
             const float hitWeight = melee.visualHit ? 1.18f : 0.82f;
             pose.forward += melee.lunge * snap;
-            pose.side += MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
-            pose.lift += MELEE_VARIANT_LIFT[variant] * snap;
-            q = q * quatAxisAngle({1,0,0}, MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
-            q = q * quatAxisAngle({0,0,1}, MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
-            q = q * quatAxisAngle({0,1,0}, MELEE_VARIANT_YAW[variant] * snap * hitWeight);
+            pose.side += gameplay::MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
+            pose.lift += gameplay::MELEE_VARIANT_LIFT[variant] * snap;
+            q = q * quatAxisAngle({1,0,0}, gameplay::MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
+            q = q * quatAxisAngle({0,0,1}, gameplay::MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
+            q = q * quatAxisAngle({0,1,0}, gameplay::MELEE_VARIANT_YAW[variant] * snap * hitWeight);
             pose.actionState = 4;
         }
         if(!locomotionLunge&&melee.landingRecovery>0.0f){
@@ -2806,7 +2804,7 @@ void Game::triggerMelee(bool authoritativeDamage) {
     if(state_.meleeVisual.airLungeLandingPending) return;
     if (state_.meleeCooldown > 0) return;
     const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
-    const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
+    const gameplay::MeleeCombo& combo = gameplay::MELEE_COMBOS[comboIndex];
     const bool airborne=!state_.player.grounded;
     const float upwardAim=airborne?clampf(state_.camera.pitch/0.62f,0.0f,1.0f):0.0f;
     const int lungeLevel=upgradeLevel(UpgradeTrack::Lunge);
@@ -3077,13 +3075,10 @@ void Game::shootStoredSoul() {
     if (state_.player.souls <= 0) return;
     for (auto& pending : state_.pendingShots) if (!pending.active) {
         if (!spendBattery(BATTERY_SHOOT_COST,BatteryReason::Shoot)) return;
-        const int storedIndex=state_.player.souls-1;
-        pending=PendingShotState{}; pending.active=true; pending.brute=state_.player.storedSoulBrute[storedIndex];
-        pending.soul=state_.player.storedSouls[storedIndex];
+        pending=PendingShotState{}; pending.active=true;
+        consumeStoredSoul(state_.player,&pending.soul);
+        pending.brute=pending.soul.brute;
         if(pending.soul.id==0) pending.soul=makeSoulRecord(pending.brute,state_.roomIndex);
-        state_.player.storedSoulBrute[storedIndex]=false;
-        state_.player.storedSouls[storedIndex]=SoulRecord{};
-        state_.player.souls--;
         state_.hud.shootJoinTimer=0.18f;
         state_.energy.dischargeTimer=0.34f;
         return;
@@ -3294,7 +3289,7 @@ void Game::chooseHumanWalkTarget(int index) {
 
 void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TARGET_COUNT)return;TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;if(id==0){state_.player.grabbedByTarget=-1;state_.player.grabEscape=0;state_.player.grabLastDirection=0;clearInputState();}else if(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active){auto& player=state_.multiplayer.peers[id].player;player.grabbedByTarget=-1;player.grabEscape=0;player.grabLastDirection=0;state_.multiplayer.peers[id].input=InputState{};}target.grabbedPlayerId=-1;target.grabCooldown=18.0f;target.attackTimer=0;target.attackCooldown=1.15f;}
 
-void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){--player->souls;player->storedSoulBrute[player->souls]=false;player->storedSouls[player->souls]=SoulRecord{};player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
+void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){consumeStoredSoul(*player);player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
 
 void Game::updateTargets(float dt) {
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);

@@ -213,7 +213,7 @@ std::vector<GameplayEvent> deriveGameplayEvents(
        before.action!=NetActionState::Discharge){
       state.lastDischargeSource=static_cast<std::uint16_t>(i);
       append(GameplayEventType::DischargeStarted,
-             static_cast<std::uint16_t>(i),0xffffu,now.pos,now.meleeDirection);
+             static_cast<std::uint16_t>(i),NO_ENTITY_ID,now.pos,now.meleeDirection);
     }
     if(now.active&&now.souls<before.souls)
       state.lastDischargeSource=static_cast<std::uint16_t>(i);
@@ -397,9 +397,10 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
         std::max(0, std::min(PHONE_CAPACITY, player.souls)));
     out.flags = (player.grounded ? 1 : 0) | (camera.firstPerson ? 2 : 0) |
                 (player.alive ? 4 : 0) | (player.downed ? 8 : 0) | (player.inSecretRoom ? 16 : 0);
-    out.actionFlags=(player.ledgeHanging?1:0)|(vacuum.active?2:0)|(energy.supplementalActive?4:0)|
-      (melee.airLungePending?8:0)|(melee.airLungeLandingPending?16:0)|
-      (melee.locomotionLunge?32:0)|(melee.visualHit?64:0);
+    out.actionFlags=(player.ledgeHanging?ActionLedgeHanging:0)|(vacuum.active?ActionVacuumActive:0)|
+      (energy.supplementalActive?ActionSupplementalEnergy:0)|(melee.airLungePending?ActionAirLungePending:0)|
+      (melee.airLungeLandingPending?ActionAirLungeLandingPending:0)|
+      (melee.locomotionLunge?ActionLocomotionLunge:0)|(melee.visualHit?ActionMeleeVisualHit:0);
     const float speed=horizontalLength(player.vel);
     out.locomotion=!player.alive?NetLocomotionState::Dead:
       player.ledgeMantleTimer>0?NetLocomotionState::LedgeMantle:
@@ -419,7 +420,7 @@ std::array<PlayerSnapshot, MAX_PLAYERS> capturePlayers(const GameState &state) {
       melee.visualTimer>0?NetActionPhase::Active:
       player.downed?NetActionPhase::Recovery:NetActionPhase::Active;
     out.actionSequence=melee.actionSequence;
-    out.actionTargetId=vacuum.target>=0?static_cast<std::uint16_t>(vacuum.target):0xffffu;
+    out.actionTargetId=vacuum.target>=0?static_cast<std::uint16_t>(vacuum.target):NO_ENTITY_ID;
     out.actionProgress=melee.visualDuration>0?clampf(1.0f-melee.visualTimer/melee.visualDuration,0.0f,1.0f):
       std::max(vacuum.pose,energy.dischargePositionAmount);
     for(int i=0;i<PHONE_CAPACITY;++i)if(player.storedSoulBrute[i])out.storedSoulBruteMask|=static_cast<std::uint8_t>(1u<<i);
@@ -600,7 +601,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         state.player.targetYaw=p.targetYaw;
         if(hardCorrection){state.player.jumpVel=p.jumpVel;state.player.airJumpsRemaining=p.airJumpsRemaining;}
         state.player.storedSouls=p.storedSouls;for(int i=0;i<PHONE_CAPACITY;++i)state.player.storedSoulBrute[i]=p.storedSouls[i].id!=0?p.storedSouls[i].brute:(p.storedSoulBruteMask&(1u<<i))!=0;
-        state.player.ledgeHanging=(p.actionFlags&1)!=0;state.player.ledgeCollider=p.ledgeCollider;
+        state.player.ledgeHanging=(p.actionFlags&ActionLedgeHanging)!=0;state.player.ledgeCollider=p.ledgeCollider;
         state.player.ledgeNormal=p.ledgeNormal;state.player.ledgeHangTime=p.ledgeHangTime;state.player.ledgeMantleTimer=p.ledgeMantleTimer;
         state.player.battery = p.battery;
         state.player.souls = p.souls;
@@ -613,19 +614,19 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         // authoritative, but routine snapshots must not move the local camera.
         state.vacuum.power = p.vacuumPower;
         state.vacuum.pose = p.vacuumPose;
-        state.vacuum.active=(p.actionFlags&2)!=0;state.vacuum.fieldStrength=p.vacuumFieldStrength;
+        state.vacuum.active=(p.actionFlags&ActionVacuumActive)!=0;state.vacuum.fieldStrength=p.vacuumFieldStrength;
         state.vacuum.coneTightness=p.vacuumConeTightness;state.vacuum.lockStrength=p.vacuumLockStrength;
         state.vacuum.target = p.vacuumTarget;
         state.meleeVisual.visualTimer = p.meleeTimer;
-        state.meleeVisual.airLungePending=(p.actionFlags&8)!=0;
-        state.meleeVisual.airLungeLandingPending=(p.actionFlags&16)!=0;
-        state.meleeVisual.locomotionLunge=(p.actionFlags&32)!=0;state.meleeVisual.visualHit=(p.actionFlags&64)!=0;
+        state.meleeVisual.airLungePending=(p.actionFlags&ActionAirLungePending)!=0;
+        state.meleeVisual.airLungeLandingPending=(p.actionFlags&ActionAirLungeLandingPending)!=0;
+        state.meleeVisual.locomotionLunge=(p.actionFlags&ActionLocomotionLunge)!=0;state.meleeVisual.visualHit=(p.actionFlags&ActionMeleeVisualHit)!=0;
         state.meleeVisual.variant=p.meleeVariant;state.meleeVisual.comboIndex=p.meleeComboIndex;
         state.meleeVisual.actionSequence=p.actionSequence;
         state.meleeVisual.direction=p.meleeDirection;state.meleeVisual.airLungeRotation=p.airLungeRotation;
         state.meleeVisual.landingRecovery=p.landingRecovery;
         state.energy.dischargePositionAmount = p.dischargeAmount;
-        state.energy.dischargeTimer=p.dischargeTimer;state.energy.supplementalActive=(p.actionFlags&4)!=0;
+        state.energy.dischargeTimer=p.dischargeTimer;state.energy.supplementalActive=(p.actionFlags&ActionSupplementalEnergy)!=0;
         state.energy.supplementalValue=p.supplementalValue;state.energy.supplementalMax=p.supplementalMax;
         state.energy.flowerStacks=p.flowerStacks;
         state.phonePose.pitch=p.phonePitch;state.phonePose.roll=p.phoneRoll;state.phonePose.yaw=p.phoneYaw;
@@ -642,7 +643,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.player.yaw = p.yaw;
         peer.player.targetYaw=p.targetYaw;peer.player.jumpVel=p.jumpVel;peer.player.airJumpsRemaining=p.airJumpsRemaining;
         peer.player.storedSouls=p.storedSouls;for(int i=0;i<PHONE_CAPACITY;++i)peer.player.storedSoulBrute[i]=p.storedSouls[i].id!=0?p.storedSouls[i].brute:(p.storedSoulBruteMask&(1u<<i))!=0;
-        peer.player.ledgeHanging=(p.actionFlags&1)!=0;peer.player.ledgeCollider=p.ledgeCollider;
+        peer.player.ledgeHanging=(p.actionFlags&ActionLedgeHanging)!=0;peer.player.ledgeCollider=p.ledgeCollider;
         peer.player.ledgeNormal=p.ledgeNormal;peer.player.ledgeHangTime=p.ledgeHangTime;peer.player.ledgeMantleTimer=p.ledgeMantleTimer;
         peer.player.battery = p.battery;
         peer.player.souls = p.souls;
@@ -655,19 +656,19 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
         peer.camera.firstPerson = (p.flags & 2) != 0;
         peer.vacuum.power = p.vacuumPower;
         peer.vacuum.pose = p.vacuumPose;
-        peer.vacuum.active=(p.actionFlags&2)!=0;peer.vacuum.fieldStrength=p.vacuumFieldStrength;
+        peer.vacuum.active=(p.actionFlags&ActionVacuumActive)!=0;peer.vacuum.fieldStrength=p.vacuumFieldStrength;
         peer.vacuum.coneTightness=p.vacuumConeTightness;peer.vacuum.lockStrength=p.vacuumLockStrength;
         peer.vacuum.target = p.vacuumTarget;
         peer.meleeVisual.visualTimer = p.meleeTimer;
-        peer.meleeVisual.airLungePending=(p.actionFlags&8)!=0;
-        peer.meleeVisual.airLungeLandingPending=(p.actionFlags&16)!=0;
-        peer.meleeVisual.locomotionLunge=(p.actionFlags&32)!=0;peer.meleeVisual.visualHit=(p.actionFlags&64)!=0;
+        peer.meleeVisual.airLungePending=(p.actionFlags&ActionAirLungePending)!=0;
+        peer.meleeVisual.airLungeLandingPending=(p.actionFlags&ActionAirLungeLandingPending)!=0;
+        peer.meleeVisual.locomotionLunge=(p.actionFlags&ActionLocomotionLunge)!=0;peer.meleeVisual.visualHit=(p.actionFlags&ActionMeleeVisualHit)!=0;
         peer.meleeVisual.variant=p.meleeVariant;peer.meleeVisual.comboIndex=p.meleeComboIndex;
         peer.meleeVisual.actionSequence=p.actionSequence;
         peer.meleeVisual.direction=p.meleeDirection;peer.meleeVisual.airLungeRotation=p.airLungeRotation;
         peer.meleeVisual.landingRecovery=p.landingRecovery;
         peer.energy.dischargePositionAmount = p.dischargeAmount;
-        peer.energy.dischargeTimer=p.dischargeTimer;peer.energy.supplementalActive=(p.actionFlags&4)!=0;
+        peer.energy.dischargeTimer=p.dischargeTimer;peer.energy.supplementalActive=(p.actionFlags&ActionSupplementalEnergy)!=0;
         peer.energy.supplementalValue=p.supplementalValue;peer.energy.supplementalMax=p.supplementalMax;
         peer.energy.flowerStacks=p.flowerStacks;
         peer.phonePose.pitch=p.phonePitch;peer.phonePose.roll=p.phoneRoll;peer.phonePose.yaw=p.phoneYaw;

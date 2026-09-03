@@ -816,6 +816,7 @@ private:
 
     SoulRecord makeSoulRecord(bool brute, int originRoom);
     bool storeSoul(PlayerState& player, const SoulRecord& soul);
+    bool consumeStoredSoul(PlayerState& player, SoulRecord* soul = nullptr);
 
     float batteryDrainMultiplier() const;
     int upgradeLevel(UpgradeTrack track) const;
