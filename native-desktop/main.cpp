@@ -106,6 +106,8 @@ struct HostState {
     bool suppressLeftMouseUntilRelease = false;
     int gamepadId = -1;
     bool gamepadMapped = false;
+    int gamepadRefreshDelayFrames = 0;
+    bool gamepadSnapshotReady = false;
     bool restoreCaptureOnFocus = false;
     // Explicit local-only dev policy. This never opens an input endpoint; it
     // only prevents automation/screenshot focus changes from pausing play.
@@ -157,6 +159,8 @@ void rumblePulse(const LocalSettingsState& settings,float low,float high,int mil
 }
 void resetGamepadHistory(HostState& host){host.previousGamepadButtons.fill(GLFW_RELEASE);host.previousGamepadLeftTrigger=false;host.previousGamepadRightTrigger=false;host.previousGamepadMenuLeft=host.previousGamepadMenuRight=host.previousGamepadMenuUp=host.previousGamepadMenuDown=false;dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);controllerRumbleStop();}
 bool preferRawXboxLayout(int jid){const char* guid=glfwGetJoystickGUID(jid);return guid&&std::strcmp(guid,"030000005e040000130b000013050000")==0;}
+bool joystickTopologyDirty=true;
+void joystickConnectionCallback(int,int){joystickTopologyDirty=true;}
 
 void updateOutcomeRumble(HostState& host){
     const GameState& state=host.game.state();
@@ -736,18 +740,27 @@ void controllerMenuBack(GLFWwindow* window,HostState& host){
 DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     DesktopGamepadInput input;
     controllerRumbleUpdate();
+    if(joystickTopologyDirty){
+        joystickTopologyDirty=false;
+        host.gamepadId=-1;host.gamepadMapped=false;host.gamepadSnapshotReady=false;
+        host.gamepadRefreshDelayFrames=2;
+        resetGamepadHistory(host);
+        return input;
+    }
+    if(host.gamepadRefreshDelayFrames>0){--host.gamepadRefreshDelayFrames;return input;}
     int jid=host.gamepadId;
-    bool mapped=jid>=GLFW_JOYSTICK_1&&jid<=GLFW_JOYSTICK_LAST&&glfwJoystickPresent(jid)&&glfwJoystickIsGamepad(jid)&&!preferRawXboxLayout(jid);
     bool present=jid>=GLFW_JOYSTICK_1&&jid<=GLFW_JOYSTICK_LAST&&glfwJoystickPresent(jid);
+    bool mapped=present&&glfwJoystickIsGamepad(jid)&&!preferRawXboxLayout(jid);
     if(!present){
         jid=-1;
-        for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickIsGamepad(candidate)&&!preferRawXboxLayout(candidate)){jid=candidate;break;}
+        for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickPresent(candidate)&&glfwJoystickIsGamepad(candidate)&&!preferRawXboxLayout(candidate)){jid=candidate;break;}
         if(jid<0)for(int candidate=GLFW_JOYSTICK_1;candidate<=GLFW_JOYSTICK_LAST;++candidate)if(glfwJoystickPresent(candidate)){jid=candidate;break;}
         mapped=jid>=0&&glfwJoystickIsGamepad(jid)&&!preferRawXboxLayout(jid);
         if(jid!=host.gamepadId||mapped!=host.gamepadMapped){
             resetGamepadHistory(host);
             host.gamepadId=jid;
             host.gamepadMapped=mapped;
+            host.gamepadSnapshotReady=false;
 
             if(jid>=0){
                 const char* controllerName=mapped
@@ -764,14 +777,15 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
             }
 
             // A Bluetooth device can be reported as present before Windows and
-            // GLFW have finished exposing its complete state. Do not query axes
-            // or buttons until the following frame.
+            // GLFW have finished exposing its complete state. Quarantine the
+            // first state snapshot instead of generating gameplay edges from it.
             return input;
         }
     }
     if(jid<0)return input;
     GLFWgamepadstate pad{};
     std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> currentButtons{};
+    std::array<float, 16> currentRawAxes{};
     std::array<unsigned char, 32> currentRawButtons{};
     std::array<unsigned char, 8> currentRawHats{};
     float leftX=0,leftY=0,rightX=0,rightY=0;
@@ -782,12 +796,16 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     }else{
         int axisCount=0,buttonCount=0,hatCount=0;
         const float* axes=glfwGetJoystickAxes(jid,&axisCount);
+        if(axisCount<0||axisCount>static_cast<int>(currentRawAxes.size())){host.gamepadId=-1;host.gamepadSnapshotReady=false;resetGamepadHistory(host);return input;}
+        if(axes)std::copy_n(axes,axisCount,currentRawAxes.begin());
         const unsigned char* buttons=glfwGetJoystickButtons(jid,&buttonCount);
+        if(buttonCount<0||buttonCount>static_cast<int>(currentRawButtons.size())){host.gamepadId=-1;host.gamepadSnapshotReady=false;resetGamepadHistory(host);return input;}
+        if(buttons)std::copy_n(buttons,buttonCount,currentRawButtons.begin());
         const unsigned char* hats=glfwGetJoystickHats(jid,&hatCount);
-        if(!axes&&!buttons&&!hats){host.gamepadId=-1;resetGamepadHistory(host);return input;}
-        if(axisCount>0)leftX=gamepadAxis(axes[0],0.12f);if(axisCount>1)leftY=gamepadAxis(axes[1],0.12f);if(axisCount>2)rightX=gamepadLookAxis(axes[2]);if(axisCount>3)rightY=gamepadLookAxis(axes[3]);
-        for(int i=0;i<std::min(buttonCount,static_cast<int>(currentRawButtons.size()));++i)currentRawButtons[i]=buttons[i];
-        for(int i=0;i<std::min(hatCount,static_cast<int>(currentRawHats.size()));++i)currentRawHats[i]=hats[i];
+        if(hatCount<0||hatCount>static_cast<int>(currentRawHats.size())){host.gamepadId=-1;host.gamepadSnapshotReady=false;resetGamepadHistory(host);return input;}
+        if(hats)std::copy_n(hats,hatCount,currentRawHats.begin());
+        if(!axes&&!buttons&&!hats){host.gamepadId=-1;host.gamepadSnapshotReady=false;resetGamepadHistory(host);return input;}
+        if(axisCount>0)leftX=gamepadAxis(currentRawAxes[0],0.12f);if(axisCount>1)leftY=gamepadAxis(currentRawAxes[1],0.12f);if(axisCount>2)rightX=gamepadLookAxis(currentRawAxes[2]);if(axisCount>3)rightY=gamepadLookAxis(currentRawAxes[3]);
         auto rawButton=[&](int button){return button<buttonCount&&button<static_cast<int>(currentRawButtons.size())&&currentRawButtons[button]==GLFW_PRESS;};
         if(preferRawXboxLayout(jid)){
             currentButtons[GLFW_GAMEPAD_BUTTON_A]=rawButton(0)?GLFW_PRESS:GLFW_RELEASE;
@@ -800,8 +818,8 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
             currentButtons[GLFW_GAMEPAD_BUTTON_START]=rawButton(11)?GLFW_PRESS:GLFW_RELEASE;
             currentButtons[GLFW_GAMEPAD_BUTTON_LEFT_THUMB]=rawButton(13)?GLFW_PRESS:GLFW_RELEASE;
             currentButtons[GLFW_GAMEPAD_BUTTON_RIGHT_THUMB]=rawButton(14)?GLFW_PRESS:GLFW_RELEASE;
-            pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]=axisCount>5?axes[5]:-1.0f;
-            pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]=axisCount>4?axes[4]:-1.0f;
+            pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]=axisCount>5?currentRawAxes[5]:-1.0f;
+            pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]=axisCount>4?currentRawAxes[4]:-1.0f;
         }else{
             currentButtons[GLFW_GAMEPAD_BUTTON_A]=rawButton(0)?GLFW_PRESS:GLFW_RELEASE;
             currentButtons[GLFW_GAMEPAD_BUTTON_B]=rawButton(1)?GLFW_PRESS:GLFW_RELEASE;
@@ -812,8 +830,8 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
             currentButtons[GLFW_GAMEPAD_BUTTON_START]=(rawButton(7)||rawButton(9))?GLFW_PRESS:GLFW_RELEASE;
             currentButtons[GLFW_GAMEPAD_BUTTON_LEFT_THUMB]=rawButton(8)?GLFW_PRESS:GLFW_RELEASE;
             currentButtons[GLFW_GAMEPAD_BUTTON_RIGHT_THUMB]=rawButton(9)?GLFW_PRESS:GLFW_RELEASE;
-            pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]=axisCount>4?axes[4]:-1.0f;
-            pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]=axisCount>5?axes[5]:-1.0f;
+            pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]=axisCount>4?currentRawAxes[4]:-1.0f;
+            pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]=axisCount>5?currentRawAxes[5]:-1.0f;
         }
         if(hatCount>0){const unsigned char hat=currentRawHats[0];if(hat&GLFW_HAT_UP)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_UP]=GLFW_PRESS;if(hat&GLFW_HAT_RIGHT)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]=GLFW_PRESS;if(hat&GLFW_HAT_DOWN)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_DOWN]=GLFW_PRESS;if(hat&GLFW_HAT_LEFT)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]=GLFW_PRESS;}
     }
@@ -826,6 +844,14 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     const auto triggerThresholds=dbmenu::controllerTriggerThresholds(host.game.state().localSettings.controllerTriggerSensitivity);
     const bool leftTriggerDown=triggerHeld(pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER],triggerThresholds.left);
     const bool rightTriggerDown=triggerHeld(pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER],triggerThresholds.right);
+    if(!host.gamepadSnapshotReady){
+        host.gamepadSnapshotReady=true;
+        host.previousGamepadButtons=currentButtons;
+        host.previousGamepadLeftTrigger=leftTriggerDown;host.previousGamepadRightTrigger=rightTriggerDown;
+        host.previousGamepadMenuLeft=menuLeft;host.previousGamepadMenuRight=menuRight;
+        host.previousGamepadMenuUp=menuUp;host.previousGamepadMenuDown=menuDown;
+        return input;
+    }
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     const bool rightTriggerPressed=rightTriggerDown&&!host.previousGamepadRightTrigger;
     if(menuActive&&!host.enteringJoinCode){
@@ -1728,6 +1754,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Data: GLFW initialization failed.\n");
         return 1;
     }
+    glfwSetJoystickCallback(joystickConnectionCallback);
     if (hasArg(argc, argv, "--controller-test")) {
         const int result=runControllerTest();
         glfwTerminate();
@@ -2176,7 +2203,6 @@ int main(int argc, char** argv) {
             setMouseCaptured(window, host, true);
         }
 
-        if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         int simulationSteps=0;
         bool droppedAccumulator=false;
         if (capturePath||captureDemo) {
@@ -2200,6 +2226,7 @@ int main(int argc, char** argv) {
             }
         }
         const auto updateEnd=std::chrono::steady_clock::now();
+        if(captureMosh&&captureFrames>=10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.localSettings.portalWindow=true;fixture.doorTransition.active=true;fixture.doorTransition.progress=0.55f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         updateOutcomeRumble(host);
         const auto audioBegin=std::chrono::steady_clock::now();

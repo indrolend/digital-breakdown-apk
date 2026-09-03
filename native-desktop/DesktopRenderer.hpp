@@ -36,6 +36,8 @@ private:
     mutable bool phoneDisplayCacheValid_ = false;
     mutable bool phoneDisplayTextureAllocated_ = false;
     mutable bool datamoshFrameReady_ = false;
+    mutable int datamoshWidth_ = 0;
+    mutable int datamoshHeight_ = 0;
     bool hudVisible_ = true;
 
     void drawRoomTile(const GameState& state, int tileIndex) const;
