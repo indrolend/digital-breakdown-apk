@@ -260,7 +260,9 @@ void DesktopRenderer::setAssetRoot(const std::filesystem::path& root) {
 }
 
 void DesktopRenderer::resize(int width, int height) {
-    width_ = std::max(1, width); height_ = std::max(1, height); glViewport(0, 0, width_, height_);
+    const int nextWidth=std::max(1,width),nextHeight=std::max(1,height);
+    if(nextWidth!=width_||nextHeight!=height_)datamoshFrameReady_=false;
+    width_=nextWidth;height_=nextHeight;glViewport(0,0,width_,height_);
 }
 
 void DesktopRenderer::setHudVisible(bool visible) {
@@ -1092,15 +1094,51 @@ void DesktopRenderer::drawHud(const GameState& state) const {
 void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
     if(!datamoshTexture_)glGenTextures(1,&datamoshTexture_);
     glBindTexture(GL_TEXTURE_2D,datamoshTexture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
-    if(!state.doorTransition.active||state.doorTransition.progress<=0.018f){glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGB,0,0,width_,height_,0);datamoshFrameReady_=true;return;}
+    if(!state.doorTransition.active||state.doorTransition.progress<=0.018f){
+        if(!datamoshFrameReady_||datamoshWidth_!=width_||datamoshHeight_!=height_){glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGB,0,0,width_,height_,0);datamoshWidth_=width_;datamoshHeight_=height_;datamoshFrameReady_=true;}
+        else glCopyTexSubImage2D(GL_TEXTURE_2D,0,0,0,0,0,width_,height_);
+        return;
+    }
     if(!datamoshFrameReady_)return;
     const float strength=clampf(state.doorTransition.progress,0,1),alpha=clampf(0.34f+strength*0.56f,0.34f,0.90f);
     const float mvX=clampf(state.doorTransition.frameMotion.x*width_*0.045f,-20.0f,20.0f)*(0.42f+strength*0.92f);
     const float mvY=clampf(-state.doorTransition.frameMotion.z*height_*0.030f,-24.0f,24.0f)*(0.42f+strength*0.92f);
     glDisable(GL_LIGHTING);glDisable(GL_DEPTH_TEST);glEnable(GL_TEXTURE_2D);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,width_,0,height_,-1,1);glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
-    for(int pass=5;pass>=1;--pass){const float k=pass/5.0f;glColor4f(1,1,1,(0.10f+0.14f*k)*strength);glBegin(GL_QUADS);glTexCoord2f(0,0);glVertex2f(mvX*k,mvY*k);glTexCoord2f(1,0);glVertex2f(width_+mvX*k,mvY*k);glTexCoord2f(1,1);glVertex2f(width_+mvX*k,height_+mvY*k);glTexCoord2f(0,1);glVertex2f(mvX*k,height_+mvY*k);glEnd();}
-    glColor4f(1,1,1,alpha);glBegin(GL_QUADS);glTexCoord2f(0,0);glVertex2f(mvX,mvY);glTexCoord2f(1,0);glVertex2f(width_+mvX,mvY);glTexCoord2f(1,1);glVertex2f(width_+mvX,height_+mvY);glTexCoord2f(0,1);glVertex2f(mvX,height_+mvY);glEnd();
+    for(int pass=5;pass>=1;--pass){const float k=pass/5.0f;glColor4f(1,1,1,(0.07f+0.09f*k)*strength);glBegin(GL_QUADS);glTexCoord2f(0,0);glVertex2f(mvX*k,mvY*k);glTexCoord2f(1,0);glVertex2f(width_+mvX*k,mvY*k);glTexCoord2f(1,1);glVertex2f(width_+mvX*k,height_+mvY*k);glTexCoord2f(0,1);glVertex2f(mvX*k,height_+mvY*k);glEnd();}
+    if(state.localSettings.particles){
+        // Basic Browser's explode/reform transition, translated into Data's
+        // block vocabulary: the captured room remains whole at the threshold,
+        // then its sampled cells peel through stable radial/depth trajectories.
+        constexpr int columns=48,rows=27;
+        const float release=1.0f-strength;
+        const float eased=1.0f-(1.0f-release)*(1.0f-release);
+        const float cellW=static_cast<float>(width_)/columns,cellH=static_cast<float>(height_)/rows;
+        const auto noise=[](unsigned int value){value^=value>>16;value*=0x7feb352du;value^=value>>15;value*=0x846ca68bu;value^=value>>16;return static_cast<float>(value&0xffffu)/65535.0f;};
+        glBegin(GL_QUADS);
+        for(int row=0;row<rows;++row)for(int column=0;column<columns;++column){
+            const unsigned int id=static_cast<unsigned int>(row*columns+column+1);
+            const float x0=column*cellW,y0=row*cellH;
+            const float centerX=x0+cellW*0.5f-width_*0.5f,centerY=y0+cellH*0.5f-height_*0.5f;
+            const float invLength=1.0f/std::max(1.0f,std::sqrt(centerX*centerX+centerY*centerY));
+            const float angle=(noise(id*17u)-0.5f)*1.1f;
+            const float radialX=centerX*invLength,radialY=centerY*invLength;
+            const float tangentX=-radialY,tangentY=radialX;
+            const float travel=(42.0f+noise(id*31u)*150.0f)*eased;
+            const float depth=(noise(id*47u)-0.5f)*0.72f;
+            const float scale=clampf(1.0f+depth*eased,0.52f,1.42f);
+            const float dx=(radialX*std::cos(angle)+tangentX*std::sin(angle))*travel+mvX*(0.35f+noise(id*61u));
+            const float dy=(radialY*std::cos(angle)+tangentY*std::sin(angle))*travel+mvY*(0.35f+noise(id*73u));
+            const float halfW=cellW*0.52f*scale,halfH=cellH*0.52f*scale,cx=x0+cellW*0.5f+dx,cy=y0+cellH*0.5f+dy;
+            const float u0=static_cast<float>(column)/columns,u1=static_cast<float>(column+1)/columns;
+            const float v0=static_cast<float>(row)/rows,v1=static_cast<float>(row+1)/rows;
+            glColor4f(1,1,1,strength*(0.72f+0.24f*noise(id*89u)));
+            glTexCoord2f(u0,v0);glVertex2f(cx-halfW,cy-halfH);glTexCoord2f(u1,v0);glVertex2f(cx+halfW,cy-halfH);glTexCoord2f(u1,v1);glVertex2f(cx+halfW,cy+halfH);glTexCoord2f(u0,v1);glVertex2f(cx-halfW,cy+halfH);
+        }
+        glEnd();
+    }else{
+        glColor4f(1,1,1,alpha);glBegin(GL_QUADS);glTexCoord2f(0,0);glVertex2f(mvX,mvY);glTexCoord2f(1,0);glVertex2f(width_+mvX,mvY);glTexCoord2f(1,1);glVertex2f(width_+mvX,height_+mvY);glTexCoord2f(0,1);glVertex2f(mvX,height_+mvY);glEnd();
+    }
     glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glDisable(GL_TEXTURE_2D);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
 }
 
@@ -1281,7 +1319,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(particle.kind==1)drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,0.16f,0.39f,0.42f,0.82f*t);
         else drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,1.0f,0.267f,0.267f,0.9f);
     }
-    if(state.localSettings.portalWindow)drawDoorDataMosh(state);
+    if(state.localSettings.particles||state.localSettings.portalWindow)drawDoorDataMosh(state);
     if(codec&&codec->showColliders){
         glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);glLineWidth(2.0f);
         const float z0=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;

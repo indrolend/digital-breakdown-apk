@@ -2176,7 +2176,6 @@ int main(int argc, char** argv) {
             setMouseCaptured(window, host, true);
         }
 
-        if(captureMosh&&captureFrames==10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.doorTransition.active=true;fixture.doorTransition.progress=1.0f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         int simulationSteps=0;
         bool droppedAccumulator=false;
         if (capturePath||captureDemo) {
@@ -2200,6 +2199,7 @@ int main(int argc, char** argv) {
             }
         }
         const auto updateEnd=std::chrono::steady_clock::now();
+        if(captureMosh&&captureFrames>=10){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.localSettings.portalWindow=true;fixture.doorTransition.active=true;fixture.doorTransition.progress=0.55f;fixture.doorTransition.distanceTravelled=0;fixture.doorTransition.lastPlayerPos=fixture.player.pos;}
         if(capturePhone){GameState& fixture=const_cast<GameState&>(host.game.state());fixture.camera.pos=fixture.phoneTransform.position+Vec3{0,0.035f,0.38f};fixture.camera.lookTarget=fixture.phoneTransform.position;fixture.camera.forward=normalized(fixture.camera.lookTarget-fixture.camera.pos);}
         updateOutcomeRumble(host);
         const auto audioBegin=std::chrono::steady_clock::now();
