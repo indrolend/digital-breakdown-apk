@@ -3,6 +3,7 @@
 #include "gameplay/PhoneBody.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "gameplay/MeleeConfig.hpp"
 #include "gameplay/TraversalCapabilities.hpp"
 #include "EarlyBrowserVisuals.hpp"
 
@@ -199,18 +200,6 @@ constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
 constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_WINDOW = 1.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_COST_MULT = 0.55f;
-struct MeleeCombo { int variant; float range, damage, hitRadius, visual, dash, dashSpeed, cooldown, recoilDistance, recoilSpeed, lunge, cost; };
-constexpr MeleeCombo MELEE_COMBOS[] = {
-    {0,2.35f,0.82f,0.78f,0.20f,0.13f,12.5f,0.22f,0.08f,1.25f,0.15f,2.8f},
-    {1,2.85f,1.08f,0.90f,0.25f,0.18f,14.0f,0.27f,0.12f,1.75f,0.22f,3.6f},
-    {2,3.18f,1.48f,1.02f,0.31f,0.23f,15.2f,0.38f,0.15f,2.10f,0.29f,5.0f},
-    {3,3.00f,1.22f,0.96f,0.29f,0.20f,13.8f,0.34f,0.12f,1.80f,0.25f,4.2f}
-};
-constexpr float MELEE_VARIANT_SIDE[] = {1,-1,1,-1};
-constexpr float MELEE_VARIANT_ROLL[] = {-0.72f,0.72f,-0.42f,0.42f};
-constexpr float MELEE_VARIANT_YAW[] = {0.62f,-0.62f,0.42f,-0.42f};
-constexpr float MELEE_VARIANT_PITCH[] = {-0.32f,-0.32f,0.42f,0.42f};
-constexpr float MELEE_VARIANT_LIFT[] = {0.012f,0.012f,-0.006f,-0.006f};
 constexpr float BULLET_SPEED = 25.0f;
 constexpr float BULLET_BRUTE_SPEED = 20.0f;
 constexpr float BULLET_GRAVITY = 6.5f;
@@ -2363,11 +2352,11 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
             const int variant = std::max(0, std::min(3, melee.variant));
             const float hitWeight = melee.visualHit ? 1.18f : 0.82f;
             pose.forward += melee.lunge * snap;
-            pose.side += MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
-            pose.lift += MELEE_VARIANT_LIFT[variant] * snap;
-            q = q * quatAxisAngle({1,0,0}, MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
-            q = q * quatAxisAngle({0,0,1}, MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
-            q = q * quatAxisAngle({0,1,0}, MELEE_VARIANT_YAW[variant] * snap * hitWeight);
+            pose.side += gameplay::MELEE_VARIANT_SIDE[variant] * 0.035f * snap;
+            pose.lift += gameplay::MELEE_VARIANT_LIFT[variant] * snap;
+            q = q * quatAxisAngle({1,0,0}, gameplay::MELEE_VARIANT_PITCH[variant] * snap * hitWeight);
+            q = q * quatAxisAngle({0,0,1}, gameplay::MELEE_VARIANT_ROLL[variant] * recover * hitWeight);
+            q = q * quatAxisAngle({0,1,0}, gameplay::MELEE_VARIANT_YAW[variant] * snap * hitWeight);
             pose.actionState = 4;
         }
         if(!locomotionLunge&&melee.landingRecovery>0.0f){
@@ -2806,7 +2795,7 @@ void Game::triggerMelee(bool authoritativeDamage) {
     if(state_.meleeVisual.airLungeLandingPending) return;
     if (state_.meleeCooldown > 0) return;
     const int comboIndex = state_.meleeComboWindow > 0.0f ? (state_.meleeVisual.comboIndex + 1) % 4 : 0;
-    const MeleeCombo& combo = MELEE_COMBOS[comboIndex];
+    const gameplay::MeleeCombo& combo = gameplay::MELEE_COMBOS[comboIndex];
     const bool airborne=!state_.player.grounded;
     const float upwardAim=airborne?clampf(state_.camera.pitch/0.62f,0.0f,1.0f):0.0f;
     const int lungeLevel=upgradeLevel(UpgradeTrack::Lunge);

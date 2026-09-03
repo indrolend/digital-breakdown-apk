@@ -21,6 +21,20 @@ constexpr std::int64_t REMOTE_MAX_EXTRAPOLATION_MS = 100;
 constexpr float REMOTE_TELEPORT_RESET_DISTANCE = 4.0f;
 constexpr float LOCAL_PREDICTION_SNAP_DISTANCE = 1.5f;
 constexpr float LOCAL_PREDICTION_LOG_DISTANCE = 0.05f;
+constexpr std::uint16_t NO_ENTITY_ID = 0xffffu;
+
+enum PlayerActionFlag : std::uint8_t {
+    ActionLedgeHanging = 1u << 0,
+    ActionVacuumActive = 1u << 1,
+    ActionSupplementalEnergy = 1u << 2,
+    ActionAirLungePending = 1u << 3,
+    ActionAirLungeLandingPending = 1u << 4,
+    ActionLocomotionLunge = 1u << 5,
+    ActionMeleeVisualHit = 1u << 6
+};
+
+static_assert(PHONE_CAPACITY <= 255, "stored soul count must fit the wire field");
+static_assert(MAX_PLAYERS <= 255, "player id must fit the wire field");
 
 enum class MessageType : std::uint8_t { Input = 1, Snapshot = 2, Event = 3, Ping = 4, Pong = 5 };
 enum InputButton : std::uint16_t {
@@ -81,7 +95,7 @@ struct PlayerSnapshot {
     NetActionState action = NetActionState::None;
     NetActionPhase actionPhase = NetActionPhase::None;
     std::uint16_t actionSequence = 0;
-    std::uint16_t actionTargetId = 0xffffu;
+    std::uint16_t actionTargetId = NO_ENTITY_ID;
     float actionProgress = 0.0f;
     std::uint8_t storedSoulBruteMask = 0;
     std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
@@ -248,7 +262,7 @@ struct GameplayEvent {
     std::uint32_t eventId = 0;
     GameplayEventType type = GameplayEventType::PlayerActionStarted;
     std::uint16_t sourceEntityId = 0;
-    std::uint16_t targetEntityId = 0xffffu;
+    std::uint16_t targetEntityId = NO_ENTITY_ID;
     Vec3 position;
     Vec3 direction;
     std::uint16_t flags = 0;

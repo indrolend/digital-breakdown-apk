@@ -96,7 +96,9 @@ int main() {
   players[1].airJumpsRemaining = 0;
   players[1].storedSoulBruteMask = 1;
   players[1].storedSouls[0]={7001,true,3};
-  players[1].actionFlags = 1 | 2 | 4 | 16 | 32 | 64;
+  players[1].actionFlags = ActionLedgeHanging | ActionVacuumActive |
+      ActionSupplementalEnergy | ActionAirLungeLandingPending |
+      ActionLocomotionLunge | ActionMeleeVisualHit;
   players[1].locomotion = NetLocomotionState::Airborne;
   players[1].action = NetActionState::AirLunge;
   players[1].actionPhase = NetActionPhase::Contact;
@@ -229,6 +231,29 @@ int main() {
         completeGuest.state().topology.currentTileIndex == -2 &&
         completeGuest.state().doorTransition.active &&
         std::abs(completeGuest.state().captures[0].pos.x + 1.25f) < 0.0001f;
+  auto modernInventory=std::make_unique<WorldSnapshot>(roundtrip);
+  modernInventory->players[1].storedSoulBruteMask=1;
+  modernInventory->players[1].storedSouls[0]={7001,false,3};
+  modernInventory->players[1].storedSouls[12]={7012,true,9};
+  const auto modernInventoryBytes=encodeSnapshot(0,*modernInventory,9);
+  auto modernInventoryRoundtrip=std::make_unique<WorldSnapshot>();
+  ok &= decodeSnapshot(modernInventoryBytes.data(),modernInventoryBytes.size(),h,*modernInventoryRoundtrip)&&
+      !modernInventoryRoundtrip->players[1].storedSouls[0].brute&&
+      modernInventoryRoundtrip->players[1].storedSouls[12].brute;
+  auto modernGuest=std::make_unique<Game>();
+  modernGuest->reset();
+  modernGuest->configureNetworkGuest(1);
+  applyWorld(modernGuest->networkMutableState(),*modernInventoryRoundtrip,1);
+  ok &= !modernGuest->state().player.storedSoulBrute[0]&&
+      modernGuest->state().player.storedSoulBrute[12];
+  auto legacyInventory=std::make_unique<WorldSnapshot>(roundtrip);
+  legacyInventory->players[1].storedSouls[0]=SoulRecord{};
+  legacyInventory->players[1].storedSoulBruteMask=1;
+  auto legacyGuest=std::make_unique<Game>();
+  legacyGuest->reset();
+  legacyGuest->configureNetworkGuest(1);
+  applyWorld(legacyGuest->networkMutableState(),*legacyInventory,1);
+  ok &= legacyGuest->state().player.storedSoulBrute[0];
   game.configureNetworkHost();
   game.setNetworkPeerActive(1, true);
   const Vec3 hostBefore = game.state().player.pos;
