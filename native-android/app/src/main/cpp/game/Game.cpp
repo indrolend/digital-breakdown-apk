@@ -1214,7 +1214,9 @@ void Game::resetRoom() {
         target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
         target.attackCooldown = seededRoomValue(460 + i) * 0.5f;
         target.attackVariant = static_cast<int>(seededRoomValue(480 + i) * 4.0f) % 4;
-        target.pos=scaledInitialFormation&&target.alive?chooseHumanSpawnPoint(i):Vec3{-8.0f+static_cast<float>(i%5)*4.0f,GROUND_Y,-12.0f+static_cast<float>(i/5)*4.5f};
+        const Vec3 legacyPosition{-8.0f+static_cast<float>(i%5)*4.0f,GROUND_Y,-12.0f+static_cast<float>(i/5)*4.5f};
+        const bool legacyBlocked=target.alive&&isHumanPointBlocked(legacyPosition.x,legacyPosition.z,0.7f);
+        target.pos=target.alive&&(scaledInitialFormation||legacyBlocked)?chooseHumanSpawnPoint(i):legacyPosition;
         resetSoulLattice(target);
         chooseHumanWalkTarget(i);
         syncTargetReactionVisual(target);

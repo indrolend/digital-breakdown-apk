@@ -1,6 +1,7 @@
 #include "Game.hpp"
 #include "EarlyBrowserVisuals.hpp"
 #include "gameplay/TraversalGraph.hpp"
+#include "gameplay/TargetRoles.hpp"
 
 #include <array>
 #include <cstdio>
@@ -14,6 +15,11 @@ void setBox(RoomCollider& box,float x,float z,float width,float depth,float heig
     box={};box.minX=x-width*0.5f;box.maxX=x+width*0.5f;
     box.minZ=z-depth*0.5f;box.maxZ=z+depth*0.5f;box.bottomY=0.0f;box.topY=height;
     box.width=width;box.depth=depth;box.height=height;box.center={x,height*0.5f,z};
+}
+
+bool activeEnemyIntersectsCollider(const GameState& state){
+    for(const auto& target:state.targets)if(gameplay::isActiveHuman(target))for(int index=0;index<state.debug.colliderCount;++index){const auto& collider=state.roomColliders[index];if(target.pos.x>collider.minX-0.20f&&target.pos.x<collider.maxX+0.20f&&target.pos.z>collider.minZ-0.20f&&target.pos.z<collider.maxZ+0.20f)return true;}
+    return false;
 }
 
 bool runJumpTrial(float gap,int timingOffset,float steeringError,float targetHeight=PlatformTop,float targetWidth=5.0f){
@@ -195,6 +201,9 @@ int main(){
         }
         const std::string review=inspector.debugRoomReviewLine(RoomReviewRating::Tune);
         if(review!=inspector.debugRoomReviewLine(RoomReviewRating::Tune)||review.find(std::string("premise=")+early_browser_visuals::premiseName(premise))==std::string::npos||review.find("rating=TUNE")==std::string::npos||review.find("route=VALID band=AUTOMATIC")==std::string::npos){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL deterministic review record incomplete\n");return 1;}
+        inspector.debugToggleRoomInspectorEnemies();
+        if(activeEnemyIntersectsCollider(inspector.state())){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s placed an enemy inside production geometry\n",early_browser_visuals::premiseName(premise));return 1;}
+        inspector.debugToggleRoomInspectorEnemies();
         if(premiseIndex+1<static_cast<int>(early_browser_visuals::RoomPremise::Count))inspector.debugStepRoomInspector(1);
     }
     if(!sawPhysicalPlayground){std::fprintf(stderr,"PLAYGROUND_TRAVERSAL_FAILED seed=unknown stage=inspector reason=not_exercised\n");return 1;}
