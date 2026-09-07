@@ -417,7 +417,7 @@ struct LocalSettingsState {
     bool musicMuted = false;
     bool sfxMuted = false;
     int graphicsPreset = 1; // 0 legacy, 1 normal, 2 pretty
-    bool shadows = true;
+    bool shadows = false;
     bool portalWindow = true;
     bool particles = true;
     bool fpsCounter = false;

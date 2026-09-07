@@ -88,8 +88,7 @@ find_package(OpenGL REQUIRED)
 
 set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/cpp")
 
-add_executable(
-    DigitalBreakdown
+set(DB_DESKTOP_RUNTIME_SOURCES
     main.cpp
     DesktopRenderer.cpp
     DesktopAudio.cpp
@@ -100,8 +99,25 @@ add_executable(
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
+
+if(WIN32)
+    add_executable(DigitalBreakdown WIN32
+        DesktopPlayerMainWin.cpp
+        ${DB_DESKTOP_RUNTIME_SOURCES}
+    )
+    add_executable(DigitalBreakdownCLI
+        DesktopCliMain.cpp
+        ${DB_DESKTOP_RUNTIME_SOURCES}
+    )
+else()
+    add_executable(DigitalBreakdown
+        DesktopCliMain.cpp
+        ${DB_DESKTOP_RUNTIME_SOURCES}
+    )
+endif()
 if(WIN32)
     target_sources(DigitalBreakdown PRIVATE ControllerRumbleWin.cpp)
+    target_sources(DigitalBreakdownCLI PRIVATE ControllerRumbleWin.cpp)
 elseif(APPLE)
     target_sources(DigitalBreakdown PRIVATE ControllerRumbleMac.m)
     set_source_files_properties(ControllerRumbleMac.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -123,6 +139,22 @@ target_compile_definitions(DigitalBreakdown PRIVATE
     GLFW_INCLUDE_NONE
     DB_BUILD_CONFIGURATION="$<CONFIG>"
 )
+if(WIN32)
+    target_include_directories(DigitalBreakdownCLI PRIVATE
+        "${DB_SHARED_ROOT}/game"
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        "${miniaudio_SOURCE_DIR}"
+    )
+    target_compile_features(DigitalBreakdownCLI PRIVATE cxx_std_17)
+    target_compile_definitions(DigitalBreakdownCLI PRIVATE
+        GLFW_INCLUDE_NONE
+        DB_BUILD_CONFIGURATION="$<CONFIG>"
+    )
+    target_link_libraries(DigitalBreakdownCLI PRIVATE glfw OpenGL::GL)
+endif()
 
 target_link_libraries(
     DigitalBreakdown
@@ -292,13 +324,18 @@ add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
-add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
+if(WIN32)
+    add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdownCLI --save-roundtrip-test)
+else()
+    add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-test)
+endif()
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
 add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)
 add_test(NAME DeterministicInputSoak COMMAND DeterministicInputSoak)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)
+    target_link_libraries(DigitalBreakdownCLI PRIVATE xinput9_1_0 winmm winhttp)
 endif()
 
 add_custom_command(TARGET DigitalBreakdown POST_BUILD

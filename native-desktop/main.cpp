@@ -1475,7 +1475,7 @@ int runRoomInspectorSmoke(Game& game){
 }
 }
 
-int main(int argc, char** argv) {
+int runDigitalBreakdown(int argc, char** argv) {
     if (hasArg(argc, argv, "--build-identity-json")) {
         printBuildIdentityJson();
         return 0;

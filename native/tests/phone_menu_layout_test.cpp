@@ -153,6 +153,13 @@ int main() {
     assert(graphicsModel.tablePage);
     assert(selectionElement(graphicsModel, 0).action == PhoneMenuAction::GraphicsPreset);
     assert(selectionElement(graphicsModel, 1).horizontal == PhoneMenuHorizontal::Toggle);
+    LocalSettingsState freshSettings;
+    assert(
+        freshSettings.graphicsPreset == 1 &&
+        !freshSettings.shadows &&
+        freshSettings.portalWindow &&
+        freshSettings.particles
+    );
     applyPhoneGraphicsPreset(state.localSettings, 0);
     assert(state.localSettings.graphicsPreset == 0 && !state.localSettings.shadows && !state.localSettings.portalWindow && !state.localSettings.particles);
     applyPhoneGraphicsPreset(state.localSettings, 1);
