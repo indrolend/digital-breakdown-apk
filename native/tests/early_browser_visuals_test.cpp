@@ -17,6 +17,7 @@ int main(){
     bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
+    bool sawPhysicalPlayground=false,sawPhysicalFunnel=false;
     bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
@@ -41,6 +42,8 @@ int main(){
         sawFunnel|=a.playstyle==RoomPlaystyle::Funnel;
         sawOrbit|=a.playstyle==RoomPlaystyle::Orbit;
         sawVertical|=a.playstyle==RoomPlaystyle::Vertical;
+        sawPhysicalPlayground|=a.playstyle==RoomPlaystyle::Playground&&physicalTraversalSurfaceCount(a)==1;
+        sawPhysicalFunnel|=a.playstyle==RoomPlaystyle::Funnel&&physicalTraversalSurfaceCount(a)==1;
         sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawCoastal|=a.setting==RoomSetting::Coastal;sawRecovery|=a.recovery();
         if(a.setting==RoomSetting::Field){
             assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks&&a.obstacleCount==0&&a.composition<3);
@@ -91,6 +94,7 @@ int main(){
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
+    assert(sawPhysicalPlayground&&sawPhysicalFunnel);
     assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins);
     const auto cityTraversal=traversalPresentationFor(RoomSetting::City,false);
     const auto sterileTraversal=traversalPresentationFor(RoomSetting::Sterile,false);
@@ -105,6 +109,20 @@ int main(){
     appendOptionalTraversal(full,roomKey(7,9));
     assert(full.traversal.surfaceCount==gameplay::TraversalGraph::SurfaceCapacity-1);
     assert(full.traversal.edgeCount==gameplay::TraversalGraph::EdgeCapacity-2);
+
+    RoomEnvironmentPlan funnel;
+    funnel.playstyle=RoomPlaystyle::Funnel;
+    funnel.traversal.surfaceCount=4;
+    funnel.traversal.edgeCount=3;
+    appendOptionalTraversal(funnel,roomKey(11,5));
+    const Vec3 funnelFocus=funnel.traversal.surfaces[funnel.traversal.surfaceCount-1].center;
+    const Vec3 preferred{funnelFocus.x+3.4f,0.0f,funnelFocus.z};
+    const Vec3 distant{funnelFocus.x+10.0f,0.0f,funnelFocus.z};
+    assert(physicalTraversalSurfaceCount(funnel)==1);
+    assert(funnelEncounterCandidateBias(funnel,0,preferred)>funnelEncounterCandidateBias(funnel,0,distant));
+    assert(funnelEncounterCandidateBias(funnel,1,preferred)==0.0f);
+    funnel.playstyle=RoomPlaystyle::Orbit;
+    assert(funnelEncounterCandidateBias(funnel,0,preferred)==0.0f);
 
     const auto capabilities=gameplay::TRAVERSAL_CAPABILITIES;
     assert(std::abs(capabilities.maximumGroundJumpHeight()-0.7232142f)<0.0001f);

@@ -3264,6 +3264,8 @@ void Game::respawnTarget(int index) {
 Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
     const float tileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
     const float playerLocalZ=wrapZ(state_.player.pos.z);
+    const auto roomPlan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+    const bool composeFunnelEncounter=roomPlan.playstyle==early_browser_visuals::RoomPlaystyle::Funnel&&(index%3)==0;
     Vec3 best{0.0f,GROUND_Y,tileOrigin+ROOM_MIN_SPAWN_Z+4.5f};
     float bestScore=-1.0e9f;
     for(int attempt=0;attempt<32;++attempt){
@@ -3283,9 +3285,11 @@ Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
         if(avoid){const float dx=candidate.x-avoid->x,dz=wrapZ(candidate.z)-wrapZ(avoid->z);oldDistSq=dx*dx+dz*dz;}
         float overlapPenalty=0.0f;
         for(int h=0;h<TARGET_COUNT;++h){if(h==index)continue;const TargetState& other=state_.targets[h];if(!other.alive||other.slurpable||other.soulState!=SoulState::Free)continue;const float dx=candidate.x-other.pos.x,dz=wrapZ(candidate.z)-wrapZ(other.pos.z);if(dx*dx+dz*dz<6.25f)overlapPenalty+=100.0f;}
-        const float score=std::min(playerDistSq,144.0f)+std::min(oldDistSq,144.0f)-overlapPenalty;
+        const Vec3 localCandidate{candidate.x,candidate.y,wrapZ(candidate.z)};
+        const float encounterBias=early_browser_visuals::funnelEncounterCandidateBias(roomPlan,index,localCandidate);
+        const float score=std::min(playerDistSq,144.0f)+std::min(oldDistSq,144.0f)+encounterBias-overlapPenalty;
         if(score>bestScore){bestScore=score;best=candidate;}
-        if(playerDistSq>=64.0f&&oldDistSq>=36.0f&&overlapPenalty<=0.0f)return candidate;
+        if(!composeFunnelEncounter&&playerDistSq>=64.0f&&oldDistSq>=36.0f&&overlapPenalty<=0.0f)return candidate;
     }
     return best;
 }
