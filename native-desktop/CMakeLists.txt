@@ -114,7 +114,7 @@ add_executable(
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
 if(WIN32)
-    target_sources(DigitalBreakdown PRIVATE ControllerRumbleWin.cpp)
+    target_sources(DigitalBreakdown PRIVATE ControllerInputWin.cpp ControllerRumbleWin.cpp)
 elseif(APPLE)
     target_sources(DigitalBreakdown PRIVATE ControllerRumbleMac.m)
     set_source_files_properties(ControllerRumbleMac.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")

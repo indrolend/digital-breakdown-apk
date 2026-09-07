@@ -7,6 +7,7 @@
 #include "BuildIdentity.hpp"
 #include "MenuNavigation.hpp"
 #include "ControllerRumble.hpp"
+#include "ControllerInput.hpp"
 #include "Game.hpp"
 #include "gameplay/TargetRoles.hpp"
 #include "PhoneDisplayLayout.hpp"
@@ -740,6 +741,34 @@ void controllerMenuBack(GLFWwindow* window,HostState& host){
 DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     DesktopGamepadInput input;
     controllerRumbleUpdate();
+    GLFWgamepadstate pad{};
+    std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> currentButtons{};
+    float leftX=0,leftY=0,rightX=0,rightY=0;
+#ifdef _WIN32
+    NativeControllerSnapshot native{};
+    const bool connected=readNativeController(native);
+    const int jid=connected?native.id:-1;
+    if(jid!=host.gamepadId){
+        resetGamepadHistory(host);host.gamepadId=jid;host.gamepadMapped=connected;
+        host.gamepadSnapshotReady=false;host.gamepadRefreshDelayFrames=connected?2:0;
+        if(connected)std::printf("Controller connected: XInput Gamepad\n");
+        return input;
+    }
+    if(!connected)return input;
+    if(host.gamepadRefreshDelayFrames>0){--host.gamepadRefreshDelayFrames;return input;}
+    const auto setButton=[&](int button,bool down){currentButtons[button]=down?GLFW_PRESS:GLFW_RELEASE;};
+    setButton(GLFW_GAMEPAD_BUTTON_A,native.a);setButton(GLFW_GAMEPAD_BUTTON_B,native.b);
+    setButton(GLFW_GAMEPAD_BUTTON_X,native.x);setButton(GLFW_GAMEPAD_BUTTON_Y,native.y);
+    setButton(GLFW_GAMEPAD_BUTTON_LEFT_BUMPER,native.leftBumper);setButton(GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,native.rightBumper);
+    setButton(GLFW_GAMEPAD_BUTTON_BACK,native.back);setButton(GLFW_GAMEPAD_BUTTON_START,native.start);
+    setButton(GLFW_GAMEPAD_BUTTON_LEFT_THUMB,native.leftThumb);setButton(GLFW_GAMEPAD_BUTTON_RIGHT_THUMB,native.rightThumb);
+    setButton(GLFW_GAMEPAD_BUTTON_DPAD_UP,native.dpadUp);setButton(GLFW_GAMEPAD_BUTTON_DPAD_RIGHT,native.dpadRight);
+    setButton(GLFW_GAMEPAD_BUTTON_DPAD_DOWN,native.dpadDown);setButton(GLFW_GAMEPAD_BUTTON_DPAD_LEFT,native.dpadLeft);
+    leftX=gamepadAxis(native.leftX,0.12f);leftY=gamepadAxis(native.leftY,0.12f);
+    rightX=gamepadLookAxis(native.rightX);rightY=gamepadLookAxis(native.rightY);
+    pad.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]=native.leftTrigger;
+    pad.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]=native.rightTrigger;
+#else
     if(joystickTopologyDirty){
         joystickTopologyDirty=false;
         host.gamepadId=-1;host.gamepadMapped=false;host.gamepadSnapshotReady=false;
@@ -783,12 +812,9 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         }
     }
     if(jid<0)return input;
-    GLFWgamepadstate pad{};
-    std::array<unsigned char, GLFW_GAMEPAD_BUTTON_LAST + 1> currentButtons{};
     std::array<float, 16> currentRawAxes{};
     std::array<unsigned char, 32> currentRawButtons{};
     std::array<unsigned char, 8> currentRawHats{};
-    float leftX=0,leftY=0,rightX=0,rightY=0;
     if(mapped){
         if(!glfwGetGamepadState(jid,&pad)){host.gamepadId=-1;resetGamepadHistory(host);return input;}
         for(int button=0;button<=GLFW_GAMEPAD_BUTTON_LAST;++button)currentButtons[button]=pad.buttons[button];
@@ -835,6 +861,7 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
         }
         if(hatCount>0){const unsigned char hat=currentRawHats[0];if(hat&GLFW_HAT_UP)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_UP]=GLFW_PRESS;if(hat&GLFW_HAT_RIGHT)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_RIGHT]=GLFW_PRESS;if(hat&GLFW_HAT_DOWN)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_DOWN]=GLFW_PRESS;if(hat&GLFW_HAT_LEFT)currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]=GLFW_PRESS;}
     }
+#endif
     const auto pressed=[&](int button){return currentButtons[button]==GLFW_PRESS&&host.previousGamepadButtons[button]!=GLFW_PRESS;};
     const bool menuActive=menuItemCount(host.game.state())>0;
     const bool menuLeft=currentButtons[GLFW_GAMEPAD_BUTTON_DPAD_LEFT]==GLFW_PRESS||leftX<-0.55f;
@@ -1754,7 +1781,6 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Data: GLFW initialization failed.\n");
         return 1;
     }
-    glfwSetJoystickCallback(joystickConnectionCallback);
     if (hasArg(argc, argv, "--controller-test")) {
         const int result=runControllerTest();
         glfwTerminate();
@@ -1786,6 +1812,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Data: window creation failed.\n");
         return 1;
     }
+    glfwSetWindowTitle(window,"Data - Loading...");
+    glfwMakeContextCurrent(window);
+    glClearColor(Pass7Visual::Background.r,Pass7Visual::Background.g,Pass7Visual::Background.b,1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+#ifndef _WIN32
+    glfwSetJoystickCallback(joystickConnectionCallback);
+#endif
 
     HostState host;
     host.playtestPolicy=playtestPolicy;
@@ -1901,8 +1936,8 @@ int main(int argc, char** argv) {
     glfwSetWindowFocusCallback(window, windowFocusCallback);
     glfwSetFramebufferSizeCallback(window, framebufferCallback);
 
-    glfwMakeContextCurrent(window);
     host.renderer.setAssetRoot(assetRoot/"models");
+    glfwSetWindowTitle(window,"Data");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
     glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
