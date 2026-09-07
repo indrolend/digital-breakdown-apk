@@ -18,7 +18,9 @@ private:
     int height_ = 1;
     unsigned int program_ = 0;
     unsigned int vbo_ = 0;
+    unsigned int cubeNormalVbo_ = 0;
     unsigned int roundedVbo_ = 0;
+    unsigned int roundedNormalVbo_ = 0;
     unsigned int phoneVbo_ = 0;
     unsigned int phoneNormalVbo_ = 0;
     unsigned int humanVbo_ = 0;

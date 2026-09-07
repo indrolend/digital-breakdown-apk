@@ -1099,118 +1099,24 @@ void DesktopRenderer::draw(const GameState& state) const {
         drawBox({41.45f,0.16f,0.76f},{2.1f,0.045f,0.045f},0,-0.22f,0,Pass7Visual::SecretCable.r,Pass7Visual::SecretCable.g,Pass7Visual::SecretCable.b);
     }
 
-    // Geometry-derived planar shadows. Project the caster's actual rendered
-    // geometry along the established sun direction onto the receiving floor.
-    // A per-caster stencil mask prevents overlapping triangles within one mesh
-    // from accumulating alpha into the opaque black patches seen in the older
-    // projected-shadow implementation.
+    // Soft bounded contact shadows follow the browser sun direction without the
+    // overlapping triangles and hard polygon edges of earlier implementations.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive||state.uiPaused)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
-    if(state.localSettings.shadows&&!menuPresentation){
-        GLint stencilBits=0;
-        glGetIntegerv(GL_STENCIL_BITS,&stencilBits);
-
-        if(stencilBits>0){
-            const float shadowMatrix[16]={
-                1,0,0,0,
-                -0.5f,0,-25.0f/60.0f,0,
-                0,0,1,0,
-                0.006f,0.012f,0.005f,1
-            };
-            const float shadowColor[4]={0.012f,0.018f,0.022f,0.24f};
-
-            glDisable(GL_LIGHTING);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-            glDepthMask(GL_FALSE);
-            glEnable(GL_STENCIL_TEST);
-            glStencilMask(0xFF);
-            glClearStencil(0);
-
-            const auto beginShadowCaster=[&](){
-                glClear(GL_STENCIL_BUFFER_BIT);
-                glStencilFunc(GL_EQUAL,0,0xFF);
-                glStencilOp(GL_KEEP,GL_KEEP,GL_INCR);
-            };
-
-            glPushMatrix();
-            glMultMatrixf(shadowMatrix);
-
-            if(!state.camera.firstPerson&&state.player.alive&&state.phoneVisual.visible){
-                beginShadowCaster();
-                if(phoneShadowList_)drawStaticModel(phoneShadowList_,state.phoneTransform.position,state.phoneVisual.bodyScale,state.phoneTransform.orientation);
-                else { glColor4f(shadowColor[0],shadowColor[1],shadowColor[2],shadowColor[3]); drawBox(state.phoneTransform.position,{PHONE_BODY_WIDTH*state.phoneVisual.bodyScale.x,PHONE_BODY_HEIGHT*state.phoneVisual.bodyScale.y,PHONE_BODY_DEPTH},state.phoneTransform.orientation,shadowColor[0],shadowColor[1],shadowColor[2]); }
-            }
-
-            if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers){
-                if(!peer.active||peer.playerId==state.multiplayer.localPlayerId||!peer.player.alive)continue;
-                beginShadowCaster();
-                if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);
-                else { glColor4f(shadowColor[0],shadowColor[1],shadowColor[2],shadowColor[3]); drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH*peer.phoneVisual.bodyScale.x,PHONE_BODY_HEIGHT*peer.phoneVisual.bodyScale.y,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,shadowColor[0],shadowColor[1],shadowColor[2]); }
-            }
-
-            const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-            for(int offset=-1;offset<=1;++offset)for(auto target:state.targets){
-                if(!target.alive)continue;
-                target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
-                if(!actorVisible(target.pos))continue;
-
-                beginShadowCaster();
-
-                if(!target.slurpable){
-                    if(humanModel_.valid())drawHumanModel(target,state.time,true);
-                    else drawProceduralHumanDesktop(target,state.time,shadowColor[0],shadowColor[1],shadowColor[2]);
-                }else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){
-                    const auto& sv=target.soulVisual;
-                    const Vec3 center=target.pos+Vec3{0,0.57f+sv.verticalOffset,0};
-                    const float cubeSize=0.72f*0.78f*target.scale*sv.morphScale;
-                    drawBox(center,{cubeSize*sv.scale.x,cubeSize*sv.scale.y,cubeSize*sv.scale.z},0,sv.rotationY,0,shadowColor[0],shadowColor[1],shadowColor[2],shadowColor[3]);
-                }
-            }
-
-            for(const auto& flower:state.flowers)if(flower.active){
-                beginShadowCaster();
-                const Vec3 center{flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin};
-                drawBox(center,{0.72f,0.72f,0.72f},0,flower.rotationY,0,shadowColor[0],shadowColor[1],shadowColor[2],shadowColor[3]);
-            }
-
-            for(const auto& bullet:state.bullets)if(bullet.alive){
-                beginShadowCaster();
-                const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);
-                drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,shadowColor[0],shadowColor[1],shadowColor[2],shadowColor[3]);
-            }
-
-            glPopMatrix();
-
-            glStencilMask(0xFF);
-            glDisable(GL_STENCIL_TEST);
-            glDepthMask(GL_TRUE);
-            glDisable(GL_BLEND);
-            glEnable(GL_LIGHTING);
-        }else{
-            // Compatibility fallback for framebuffers without a stencil plane.
-            glDisable(GL_LIGHTING);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-            glDepthMask(GL_FALSE);
-
-            if(!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.player.pos,0.25f,0.18f,0.95f,0.20f);
-            if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f);
-
-            const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-            for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){
-                target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
-                if(!actorVisible(target.pos))continue;
-                if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);
-                else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);
-            }
-            for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
-            for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f);}
-
-            glDepthMask(GL_TRUE);
-            glDisable(GL_BLEND);
-            glEnable(GL_LIGHTING);
-        }
+    if(state.localSettings.shadows){
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+    if(!menuPresentation&&!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(!menuPresentation&&state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(!menuPresentation){
+    const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}
+    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
+    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f);}
+    // Static room geometry already provides the receiving floor and its own
+    // lighting. Projecting every collider (including room-scale walls) onto the
+    // floor created large overlapping black sheets unrelated to visible casters.
     }
+    glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
+
     if (state.phoneVisual.visible) {
         const Vec3 phonePos=state.phoneTransform.position;
         const auto& pv=state.phoneVisual;

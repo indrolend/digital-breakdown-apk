@@ -101,15 +101,23 @@ async function main() {
     return options.json ? console.log(JSON.stringify(value, null, 2)) : (console.log('TOOLS'), printObject(value.tools), console.log('PROJECT_COMMANDS'), value.commands.forEach((item) => console.log(`${item.name}=${item.command}`)));
   }
   if (command === 'run') {
-    const record = await runCommand(project, args, { objective: options.objective, stream: !options.quiet });
+    const sourceSearch = args[0] === 'git' && args[1] === 'grep';
+    const record = await runCommand(project, args, {
+      objective: options.objective,
+      stream: !options.quiet && !sourceSearch,
+    });
     const packet = formatPacket(record.packet);
     console.log(`\n${record.status.toUpperCase()} ${record.command} ${(record.durationMs / 1000).toFixed(1)}s`);
     console.log(`HEAD ${record.headAfter.slice(0, 12)}`);
     console.log(`DIRTY ${record.dirtyAfter ? 'dirty' : 'clean'}`);
     for (const line of record.reduction.summary) console.log(line);
-    console.log('packet ready');
     console.log(packet);
-    if (options.copy) copy(packet);
+    try {
+      copy(packet);
+      console.log('packet copied');
+    } catch (error) {
+      console.log(`packet not copied: ${error.message}`);
+    }
     process.exitCode = record.exitCode === 0 ? 0 : record.status === 'blocked' ? 2 : 1;
     return;
   }

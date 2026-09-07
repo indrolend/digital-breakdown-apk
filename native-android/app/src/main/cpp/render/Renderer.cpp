@@ -21,7 +21,7 @@ constexpr int ROOM_VISUAL_HORIZON = 0;
 
 constexpr int ROUNDED_SEGMENTS = 7;
 constexpr int ROUNDED_RINGS = 5;
-constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * (ROUNDED_RINGS - 1) * 6;
+constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * ROUNDED_RINGS * 6;
 constexpr int FX_SEGMENTS=12;
 constexpr int FX_STRIP_VERTICES=(FX_SEGMENTS+1)*2;
 
@@ -242,11 +242,34 @@ bool Renderer::initProgram() {
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 
+    const float cubeNormals[] = {
+         0, 0,-1,  0, 0,-1,  0, 0,-1,  0, 0,-1,  0, 0,-1,  0, 0,-1,
+         0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
+        -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0,
+         1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,
+         0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,
+         0,-1, 0,  0,-1, 0,  0,-1, 0,  0,-1, 0,  0,-1, 0,  0,-1, 0
+    };
+    glGenBuffers(1, &cubeNormalVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeNormalVbo_);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeNormals), cubeNormals, GL_STATIC_DRAW);
+
     const auto rounded = makeLowPolySphereVertices();
     roundedVertexCount_ = ROUNDED_VERTEX_COUNT;
     glGenBuffers(1, &roundedVbo_);
     glBindBuffer(GL_ARRAY_BUFFER, roundedVbo_);
     glBufferData(GL_ARRAY_BUFFER, rounded.size() * sizeof(float), rounded.data(), GL_STATIC_DRAW);
+
+    std::array<float, ROUNDED_VERTEX_COUNT * 3> roundedNormals{};
+    for (std::size_t i = 0; i + 2 < rounded.size(); i += 3) {
+        const Vec3 n = normalized({rounded[i], rounded[i + 1], rounded[i + 2]});
+        roundedNormals[i] = n.x;
+        roundedNormals[i + 1] = n.y;
+        roundedNormals[i + 2] = n.z;
+    }
+    glGenBuffers(1, &roundedNormalVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, roundedNormalVbo_);
+    glBufferData(GL_ARRAY_BUFFER, roundedNormals.size() * sizeof(float), roundedNormals.data(), GL_STATIC_DRAW);
     glGenBuffers(1, &soulSurfaceVbo_);
     glBindBuffer(GL_ARRAY_BUFFER, soulSurfaceVbo_);
     glBufferData(GL_ARRAY_BUFFER, 144u * 3u * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
@@ -288,10 +311,14 @@ void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale
     float mvp[16];
     modelBox(model, pos, scale, yaw);
     multiply(mvp, viewProj, model);
-    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);
+    glUseProgram(program_);glUniform1f(uUseNormal_,1.0f);
+    glUniformMatrix4fv(uModel_,1,GL_FALSE,model);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER,cubeNormalVbo_);
+    glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));
+    glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);
     glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
     glUniform4fv(uColor_, 1, color);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -308,8 +335,8 @@ void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& mode
 void Renderer::drawBox(const float* viewProj, const Vec3& pos, const Vec3& scale, const Quat& orientation, const float color[4]) {
     if (!program_) return;
     float model[16], mvp[16]; modelBox(model,pos,scale,orientation); multiply(mvp,viewProj,model);
-    glUseProgram(program_); glUniform1f(uUseNormal_,0.0f); glBindBuffer(GL_ARRAY_BUFFER,vbo_); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
-    glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);
+    glUseProgram(program_); glUniform1f(uUseNormal_,1.0f); glUniformMatrix4fv(uModel_,1,GL_FALSE,model); glBindBuffer(GL_ARRAY_BUFFER,vbo_); glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
+    glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr); glBindBuffer(GL_ARRAY_BUFFER,cubeNormalVbo_); glEnableVertexAttribArray(static_cast<GLuint>(aNormal_)); glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);
     glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp); glUniform4fv(uColor_,1,color); glDrawArrays(GL_TRIANGLES,0,36);
 }
 
@@ -320,12 +347,9 @@ void Renderer::drawFxStrip(const float* viewProj,const Vec3& pos,const Vec3& sca
 }
 
 void Renderer::drawGroundShadow(const float* viewProj,const Vec3& caster,float halfWidth,float halfDepth,float height,float alpha){
-    constexpr int segments=8;std::array<float,(segments+2)*3> vertices{};int out=0;
-    const Vec3 center{caster.x-height*0.25f,0.012f,caster.z-height*(25.0f/120.0f)};
-    const float stretch=height*0.16f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);
-    const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=center.y;vertices[out++]=z;};emit(center.x,center.z);
-    for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*(halfWidth+stretch*0.35f),localZ=std::sin(a)*(halfDepth+stretch);emit(center.x+localX*c-localZ*s,center.z+localX*s+localZ*c);}
-    float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,alpha};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
+    constexpr int segments=20;const float offsetX=-height*0.14f,offsetZ=-height*(14.0f/120.0f),stretch=height*0.11f,angle=std::atan2(-0.5f,-25.0f/60.0f),c=std::cos(angle),s=std::sin(angle);const Vec3 center{caster.x+offsetX,0.012f,caster.z+offsetZ};
+    const auto ellipse=[&](const Vec3& p,float width,float depth,float opacity){std::array<float,(segments+2)*3> vertices{};int out=0;const auto emit=[&](float x,float z){vertices[out++]=x;vertices[out++]=p.y;vertices[out++]=z;};emit(p.x,p.z);for(int i=0;i<=segments;++i){const float a=2.0f*DB_PI*static_cast<float>(i)/static_cast<float>(segments),localX=std::cos(a)*width,localZ=std::sin(a)*depth;emit(p.x+localX*c-localZ*s,p.z+localX*s+localZ*c);}float identity[16];ident(identity);const float color[4]={0.012f,0.018f,0.022f,opacity};glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,vertices.data());glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);};
+    ellipse(center,halfWidth+stretch*0.45f,halfDepth+stretch,alpha*0.22f);ellipse(center,(halfWidth+stretch*0.30f)*0.82f,(halfDepth+stretch*0.78f)*0.82f,alpha*0.28f);ellipse({caster.x+offsetX*0.28f,center.y,caster.z+offsetZ*0.28f},halfWidth*0.72f,halfDepth*0.72f,alpha*0.34f);
 }
 
 void Renderer::drawGrassBatch(const float* viewProj,const GameState& state,int tileIndex){
@@ -346,10 +370,14 @@ void Renderer::drawRoundedEllipsoid(const float* viewProj, const Vec3& pos, cons
     float mvp[16];
     modelBox(model, pos, scale, yaw);
     multiply(mvp, viewProj, model);
-    glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);
+    glUseProgram(program_);glUniform1f(uUseNormal_,1.0f);
+    glUniformMatrix4fv(uModel_,1,GL_FALSE,model);
     glBindBuffer(GL_ARRAY_BUFFER, roundedVbo_);
     glEnableVertexAttribArray(static_cast<GLuint>(aPos_));
     glVertexAttribPointer(static_cast<GLuint>(aPos_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, roundedNormalVbo_);
+    glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));
+    glVertexAttribPointer(static_cast<GLuint>(aNormal_), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
     glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
     glUniform4fv(uColor_, 1, color);
     glDrawArrays(GL_TRIANGLES, 0, roundedVertexCount_);

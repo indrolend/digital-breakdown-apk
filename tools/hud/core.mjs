@@ -226,6 +226,25 @@ function firstMatch(text, patterns) {
 export function reduceOutput(command, stdout, stderr, exitCode) {
   const text = `${stdout}\n${stderr}`.trim();
   const summary = [];
+
+  if (/\bgit\s+grep\b/.test(command)) {
+    const matches = stdout.split(/\r?\n/).filter((line) => /^[^:\r\n]+:\d+:/.test(line));
+
+    const important = matches.filter((line) =>
+      /\b(?:constexpr|const|DEFAULT|save|load|persist|migrate|legacy|binding|mapping|semantic|route)\w*\b/i.test(line) ||
+      /[^=!<>]=[^=]/.test(line)
+    );
+
+    const selected = [...new Set([...important, ...matches])].slice(0, 12);
+
+    summary.push(
+      `SEARCH matches=${matches.length} shown=${selected.length} suppressed=${Math.max(0, matches.length - selected.length)}`
+    );
+
+    for (const line of selected) {
+      summary.push(line.length > 180 ? `${line.slice(0, 177)}...` : line);
+    }
+  }
   const ctest = text.match(/(\d+)% tests passed(?:,\s*(\d+) tests failed)? out of (\d+)/i);
   if (ctest) {
     const total = Number(ctest[3]);
@@ -249,7 +268,16 @@ export function reduceOutput(command, stdout, stderr, exitCode) {
       : /test|assert|expect/i.test(cause || text) ? 'test'
         : /compile|link|cmake|msbuild/i.test(cause || text) ? 'build' : 'command';
   const tail = text.split(/\r?\n/).filter(Boolean).slice(-8);
-  return { reducer: /npm/.test(command) ? 'npm' : /ctest/.test(command) ? 'ctest' : 'generic', summary, cause, classification, tail };
+  return {
+    reducer: /\bgit\s+grep\b/.test(command) ? 'source-search'
+      : /npm/.test(command) ? 'npm'
+      : /ctest/.test(command) ? 'ctest'
+      : 'generic',
+    summary,
+    cause,
+    classification,
+    tail,
+  };
 }
 
 function createRunId(date = new Date()) {
@@ -260,7 +288,11 @@ function createRunId(date = new Date()) {
 export function buildPacket(record) {
   const status = record.status.toUpperCase();
   const change = record.gitAfter.changedFiles.length ? record.gitAfter.changedFiles.join(' | ') : 'none';
-  const verify = record.reduction.summary.length ? record.reduction.summary.join('; ') : `exit ${record.exitCode}`;
+  const verify = record.reduction.summary.length
+    ? record.reduction.reducer === 'source-search'
+      ? record.reduction.summary[0]
+      : record.reduction.summary.join('; ')
+    : `exit ${record.exitCode}`;
   const packet = {
     STATUS: status,
     OBJECTIVE: record.objective || record.command,
