@@ -178,11 +178,11 @@ int main(){
     for(int premiseIndex=0;premiseIndex<static_cast<int>(early_browser_visuals::RoomPremise::Count);++premiseIndex){
         const GameState& state=inspector.state();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
         const auto premise=static_cast<early_browser_visuals::RoomPremise>(premiseIndex);const auto& report=state.roomInspectorReport;
-        int solidProps=0;for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i)if(early_browser_visuals::environmentPropSolid(early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i)))++solidProps;
         int expectedRequiredEdges=0;for(int i=0;i<plan.traversal.edgeCount;++i)if(gameplay::isRequired(plan.traversal.edges[i]))++expectedRequiredEdges;
-        const int expectedProps=early_browser_visuals::environmentPropsValid(plan,state.roomSeed,state.roomIndex)?early_browser_visuals::environmentPropCount(plan):0;
-        const int physicalSurfaces=early_browser_visuals::physicalTraversalSurfaceCount(plan);
-        const int expectedColliders=std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount+physicalSurfaces+(expectedProps?solidProps:0));
+        const auto geometry=early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
+        const int expectedProps=early_browser_visuals::selectedEnvironmentPropCount(plan,geometry);
+        const int physicalSurfaces=geometry.optionalTraversalColliderCount;
+        const int expectedColliders=geometry.totalColliderCount;
         if(!state.roomInspector||state.roomInspectorPremise!=premise||!early_browser_visuals::matchesInspectorPremise(plan,premise)||!state.roomClear||state.requiredSouls!=0||!report.seedSelectionValid||
            report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||report.playstyle!=plan.playstyle||
            !report.requiredRouteValid||report.traversalSurfaceCount!=plan.traversal.surfaceCount||report.traversalEdgeCount!=plan.traversal.edgeCount||report.requiredEdgeCount!=expectedRequiredEdges||

@@ -14,7 +14,7 @@ int main(){
     assert(first.playstyle==RoomPlaystyle::Playground);
     assert(requiredRouteIsTraversable(first,12345,1));
 
-    bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false;
+    bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false,sawCapacityPressure=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
     bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false;
@@ -83,7 +83,13 @@ int main(){
         if(a.setting==RoomSetting::City&&a.form==RoomForm::Corridor)assert(propCount==0);
         const bool propsValid=environmentPropsValid(a,seed,room);
         int solidProps=0;for(int i=0;i<propCount;++i)solidProps+=environmentPropSolid(environmentProp(a,seed,room,i))?1:0;
-        assert(propsValid==(a.obstacleCount+solidProps+physicalTraversalSurfaceCount(a)<=15));
+        const auto geometry=roomGeometryCapacityPlan(a,seed,room,15),sameGeometry=roomGeometryCapacityPlan(a,seed,room,15);
+        assert(geometry.totalColliderCount<=15&&geometry.totalColliderCount==sameGeometry.totalColliderCount&&geometry.traversalIncluded==sameGeometry.traversalIncluded&&geometry.propIncluded==sameGeometry.propIncluded);
+        assert(geometry.requiredGeometryComplete&&geometry.authoredColliderCount==a.obstacleCount);
+        if(propsValid&&a.setting==RoomSetting::City&&a.form==RoomForm::Courtyard){
+            assert(geometry.identityColliderCount==solidProps);
+            if(a.obstacleCount+solidProps+physicalTraversalSurfaceCount(a)>15){sawCapacityPressure=true;assert(geometry.optionalTraversalColliderCount==0);}
+        }
         int landmarks=0;
         for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.role==propB.role&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(settingAllowsPrimitive(a.setting,propA.primitive));assert(std::abs(propA.center.x)>7.0f);if(a.setting==RoomSetting::Field)assert(propA.primitive!=EnvironmentPrimitive::MarkerPillar&&std::abs(propA.center.x)>8.4f);landmarks+=propA.role==EnvironmentRole::Landmark?1:0;}
         assert(landmarks<=1);
@@ -91,7 +97,11 @@ int main(){
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
-    assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins);
+    assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins&&sawCapacityPressure);
+    const auto courtyardFunnelPressure=allocateRoomGeometryCapacity(15,10,5,1,0);
+    assert(courtyardFunnelPressure.required==10&&courtyardFunnelPressure.identity==5&&courtyardFunnelPressure.optionalTraversal==0&&courtyardFunnelPressure.total==15);
+    const auto exhausted=allocateRoomGeometryCapacity(15,10,3,4,2);
+    assert(exhausted.required==10&&exhausted.identity==3&&exhausted.optionalTraversal==2&&exhausted.decorative==0&&exhausted.total==15);
     const auto cityTraversal=traversalPresentationFor(RoomSetting::City,false);
     const auto sterileTraversal=traversalPresentationFor(RoomSetting::Sterile,false);
     const auto debugTraversal=traversalPresentationFor(RoomSetting::City,true);

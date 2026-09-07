@@ -560,9 +560,9 @@ void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
     report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
     report.colliderCount=state_.debug.colliderCount;
-    const bool propsValid=report.requiredRouteValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
-    report.presentationPropCount=propsValid?early_browser_visuals::environmentPropCount(plan):0;
-    for(int role=0;role<static_cast<int>(early_browser_visuals::EnvironmentRole::Count);++role)report.environmentRoleCounts[role]=early_browser_visuals::environmentRoleCount(plan,state_.roomSeed,state_.roomIndex,static_cast<early_browser_visuals::EnvironmentRole>(role),propsValid);
+    const auto geometry=report.requiredRouteValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
+    report.presentationPropCount=early_browser_visuals::selectedEnvironmentPropCount(plan,geometry);
+    for(int role=0;role<static_cast<int>(early_browser_visuals::EnvironmentRole::Count);++role)report.environmentRoleCounts[role]=early_browser_visuals::selectedEnvironmentRoleCount(plan,state_.roomSeed,state_.roomIndex,geometry,static_cast<early_browser_visuals::EnvironmentRole>(role));
     report.enemyBudget=activeHumanTarget();
     for(const auto& target:state_.targets){if(gameplay::isActiveHuman(target))++report.enemyCount;if(target.alive&&target.slurpable&&target.soulVisual.visible&&target.soulCubeAmount>0.001f)++report.transparentPrimitiveCount;}
     report.visiblePrimitiveEstimate=report.colliderCount+report.presentationPropCount+report.enemyCount+report.transparentPrimitiveCount+(plan.grass?1:0)+2;
@@ -1110,7 +1110,8 @@ void Game::buildRoomColliders() {
     // its conservative required-route contract, retain the room shell and
     // objectives but reject its optional obstacle geometry.
     const bool routeValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
-    state_.debug.colliderCount=routeValid?std::min(ROOM_COLLIDER_COUNT,plan.obstacleCount):0;
+    const auto geometry=routeValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
+    state_.debug.colliderCount=geometry.authoredColliderCount;
     for (auto& c : state_.roomColliders) c = RoomCollider{};
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);
@@ -1122,16 +1123,15 @@ void Game::buildRoomColliders() {
         c.width = w; c.depth = d; c.height = h; c.center = {px, h * 0.5f, pz};
     }
     if(routeValid)for(int i=0;i<plan.traversal.surfaceCount&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
-        const auto& surface=plan.traversal.surfaces[i];if(!early_browser_visuals::physicalTraversalSurface(plan,surface))continue;
+        const auto& surface=plan.traversal.surfaces[i];if(!geometry.traversalIncluded[i])continue;
         const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;
         c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0.0f;c.topY=spec.size.y;
         c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
     }
-    const bool propsValid=routeValid&&early_browser_visuals::environmentPropsValid(plan,state_.roomSeed,state_.roomIndex);
-    if(propsValid)for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
-        const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!early_browser_visuals::environmentPropSolid(prop))continue;
+    for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
+        const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!geometry.propIncluded[i]||!early_browser_visuals::environmentPropSolid(prop))continue;
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;

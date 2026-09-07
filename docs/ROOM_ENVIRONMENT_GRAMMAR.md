@@ -88,11 +88,15 @@ trial correctly failed the existing lunge-to-ledge regression fixture.
 
 The complete prop set is now accepted or rejected by one deterministic pure
 validation function shared by simulation and both renderers. It checks room
-bounds, protected traversal surfaces, clearance from gameplay obstacles,
-prop-to-prop separation, and the fixed collider budget. A rejected set produces
-neither visible props nor colliders, preventing partial render/simulation
-disagreement. The regression sweep exercises this contract across 4,096
-seed/room pairs in Release builds.
+bounds, protected traversal surfaces, clearance from gameplay obstacles, and
+prop-to-prop separation. The fixed 15-collider state budget is allocated
+deterministically: authored route/safety geometry first, then solid landmark
+and mass geometry that communicates room identity, then optional traversal,
+then decorative colliders. Capacity pressure therefore removes optional detail
+before it erases environmental identity or the ordinary route. Non-solid props
+do not consume collider capacity. Simulation, desktop and Android rendering,
+and the room inspector all consume the same inclusion plan. The regression
+sweep exercises this contract across 4,096 seed/room pairs in Release builds.
 
 Every generated plan contains a small required traversal route from entry,
 through the central circulation space, to the capture/exit approach. Generation
