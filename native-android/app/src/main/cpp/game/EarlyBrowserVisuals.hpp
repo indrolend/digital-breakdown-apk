@@ -178,11 +178,10 @@ inline void appendOptionalTraversal(RoomEnvironmentPlan& plan,std::uint32_t key)
     }
 }
 
-// Physicalization is intentionally staged one playstyle at a time. Playground
-// proves the graph -> collider -> renderer path without changing the required
-// center route; the other optional grammars remain descriptive for now.
+// Physicalization is intentionally staged one playstyle at a time. These
+// optional shapes never replace the required center walking route.
 inline bool physicalTraversalSurface(const RoomEnvironmentPlan& plan,const gameplay::TraversalSurface& surface){
-    return plan.playstyle==RoomPlaystyle::Playground&&!surface.required;
+    return (plan.playstyle==RoomPlaystyle::Playground||plan.playstyle==RoomPlaystyle::Funnel)&&!surface.required;
 }
 
 inline int physicalTraversalSurfaceCount(const RoomEnvironmentPlan& plan){
@@ -192,6 +191,17 @@ inline int physicalTraversalSurfaceCount(const RoomEnvironmentPlan& plan){
 inline ObstacleSpec physicalTraversalObstacle(const gameplay::TraversalSurface& surface){
     const float top=std::max(0.0f,surface.center.y+surface.halfSize.y);
     return {{surface.center.x,top*0.5f,surface.center.z},{surface.halfSize.x*2.0f,top,surface.halfSize.z*2.0f}};
+}
+
+inline float funnelEncounterCandidateBias(const RoomEnvironmentPlan& plan,int targetIndex,const Vec3& candidate){
+    if(plan.playstyle!=RoomPlaystyle::Funnel||targetIndex<0||(targetIndex%3)!=0||plan.traversal.surfaceCount<=4)return 0.0f;
+    constexpr float PreferredRadius=3.4f;
+    constexpr float BiasAtPreferredRadius=72.0f;
+    constexpr float BiasFalloffPerMeter=20.0f;
+    const Vec3 focus=plan.traversal.surfaces[plan.traversal.surfaceCount-1].center;
+    const float dx=candidate.x-focus.x,dz=candidate.z-focus.z;
+    const float distance=std::sqrt(dx*dx+dz*dz);
+    return std::max(0.0f,BiasAtPreferredRadius-std::abs(distance-PreferredRadius)*BiasFalloffPerMeter);
 }
 
 inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {

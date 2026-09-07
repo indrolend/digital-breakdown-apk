@@ -180,7 +180,7 @@ int main(){
     }
     Game normal;normal.reset();
     if(normal.state().roomInspector||normal.state().traversalLab||normal.state().roomIndex!=1||normal.state().roomSeed!=12345){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL normal solo startup inherited developer state\n");return 1;}
-    Game inspector;inspector.debugStartRoomInspector();bool sawPhysicalPlayground=false;int physicalPlaygroundSeed=0;
+    Game inspector;inspector.debugStartRoomInspector();bool sawPhysicalPlayground=false,sawPhysicalFunnel=false;int physicalPlaygroundSeed=0,physicalFunnelSeed=0;
     for(int premiseIndex=0;premiseIndex<static_cast<int>(early_browser_visuals::RoomPremise::Count);++premiseIndex){
         const GameState& state=inspector.state();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
         const auto premise=static_cast<early_browser_visuals::RoomPremise>(premiseIndex);const auto& report=state.roomInspectorReport;
@@ -196,8 +196,10 @@ int main(){
             std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s report does not match production state\n",early_browser_visuals::premiseName(premise));return 1;
         }
         if(physicalSurfaces){
-            sawPhysicalPlayground=true;physicalPlaygroundSeed=state.roomSeed;const auto& surface=plan.traversal.surfaces[plan.traversal.surfaceCount-1];const auto expected=early_browser_visuals::physicalTraversalObstacle(surface);const RoomCollider& collider=state.roomColliders[plan.obstacleCount];
-            if(plan.playstyle!=early_browser_visuals::RoomPlaystyle::Playground||surface.required||collider.bottomY!=0.0f||collider.topY!=expected.size.y||collider.center.x!=expected.center.x||collider.center.y!=expected.center.y||collider.center.z!=expected.center.z||collider.width!=expected.size.x||collider.height!=expected.size.y||collider.depth!=expected.size.z){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL Playground traversal surface was not materialized as one ground-supported shape\n");return 1;}
+            if(plan.playstyle==early_browser_visuals::RoomPlaystyle::Playground){sawPhysicalPlayground=true;physicalPlaygroundSeed=state.roomSeed;}
+            if(plan.playstyle==early_browser_visuals::RoomPlaystyle::Funnel){sawPhysicalFunnel=true;physicalFunnelSeed=state.roomSeed;}
+            const auto& surface=plan.traversal.surfaces[plan.traversal.surfaceCount-1];const auto expected=early_browser_visuals::physicalTraversalObstacle(surface);const RoomCollider& collider=state.roomColliders[plan.obstacleCount];
+            if((plan.playstyle!=early_browser_visuals::RoomPlaystyle::Playground&&plan.playstyle!=early_browser_visuals::RoomPlaystyle::Funnel)||surface.required||collider.bottomY!=0.0f||collider.topY!=expected.size.y||collider.center.x!=expected.center.x||collider.center.y!=expected.center.y||collider.center.z!=expected.center.z||collider.width!=expected.size.x||collider.height!=expected.size.y||collider.depth!=expected.size.z){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL optional traversal surface was not materialized as one ground-supported shape\n");return 1;}
         }
         const std::string review=inspector.debugRoomReviewLine(RoomReviewRating::Tune);
         if(review!=inspector.debugRoomReviewLine(RoomReviewRating::Tune)||review.find(std::string("premise=")+early_browser_visuals::premiseName(premise))==std::string::npos||review.find("rating=TUNE")==std::string::npos||review.find("route=VALID band=AUTOMATIC")==std::string::npos){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL deterministic review record incomplete\n");return 1;}
@@ -208,6 +210,8 @@ int main(){
     }
     if(!sawPhysicalPlayground){std::fprintf(stderr,"PLAYGROUND_TRAVERSAL_FAILED seed=unknown stage=inspector reason=not_exercised\n");return 1;}
     std::printf("PLAYGROUND_TRAVERSAL_OK seed=%d colliders=verified surfaces=1\n",physicalPlaygroundSeed);
+    if(!sawPhysicalFunnel){std::fprintf(stderr,"FUNNEL_TRAVERSAL_FAILED seed=unknown stage=inspector reason=not_exercised\n");return 1;}
+    std::printf("FUNNEL_TRAVERSAL_OK seed=%d colliders=verified surfaces=1\n",physicalFunnelSeed);
     const int previousSeed=inspector.state().roomSeed;inspector.debugStepRoomInspector(0,true);
     const int regeneratedSeed=inspector.state().roomSeed;const auto regeneratedPremise=inspector.state().roomInspectorPremise;
     if(regeneratedSeed==previousSeed||regeneratedPremise!=early_browser_visuals::RoomPremise::CoastalShore||!early_browser_visuals::matchesInspectorPremise(early_browser_visuals::roomPlan(regeneratedSeed,inspector.state().roomIndex),regeneratedPremise)){
