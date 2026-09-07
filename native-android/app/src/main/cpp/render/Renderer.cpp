@@ -25,7 +25,7 @@ constexpr int ROOM_VISUAL_HORIZON = 0;
 
 constexpr int ROUNDED_SEGMENTS = 7;
 constexpr int ROUNDED_RINGS = 5;
-constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * (ROUNDED_RINGS - 1) * 6;
+constexpr int ROUNDED_VERTEX_COUNT = ROUNDED_SEGMENTS * ROUNDED_RINGS * 6;
 constexpr int FX_SEGMENTS=12;
 constexpr int FX_STRIP_VERTICES=(FX_SEGMENTS+1)*2;
 
