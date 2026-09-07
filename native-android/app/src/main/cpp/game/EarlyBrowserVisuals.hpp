@@ -231,6 +231,13 @@ inline RoomEnvironmentPlan roomPlan(int roomSeed,int roomIndex) {
     return plan;
 }
 
+inline float roomScaleEncounterCandidateBias(RoomScale scale,const Vec3& candidate){
+    if(scale==RoomScale::Standard||scale==RoomScale::Arena)return 0.0f;
+    const float preferredRadius=scale==RoomScale::Compact?5.5f:10.5f;
+    const float radius=std::sqrt(candidate.x*candidate.x+candidate.z*candidate.z);
+    return std::max(0.0f,48.0f-std::abs(radius-preferredRadius)*8.0f);
+}
+
 inline bool matchesInspectorPremise(const RoomEnvironmentPlan& plan,RoomPremise premise){switch(premise){case RoomPremise::FieldOpen:return plan.setting==RoomSetting::Field&&plan.form==RoomForm::Open&&!plan.recovery();case RoomPremise::CityCorridor:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Corridor;case RoomPremise::CityCourtyard:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Courtyard;case RoomPremise::CityCanyon:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Canyon;case RoomPremise::CitySkyline:return plan.setting==RoomSetting::City&&plan.form==RoomForm::Skyline;case RoomPremise::SterileCorridor:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Corridor;case RoomPremise::SterileChamber:return plan.setting==RoomSetting::Sterile&&plan.form==RoomForm::Chamber;case RoomPremise::CoastalShore:return plan.setting==RoomSetting::Coastal&&plan.form==RoomForm::Shore;case RoomPremise::Count:break;}return false;}
 
 inline int representativeInspectorSeed(RoomPremise premise){constexpr int seeds[]={8,26,16,4,2,1,7,11};const int index=static_cast<int>(premise);return index>=0&&index<static_cast<int>(RoomPremise::Count)?seeds[index]:1;}

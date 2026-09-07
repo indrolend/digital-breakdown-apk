@@ -98,6 +98,9 @@ int main(){
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
     assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins&&sawCapacityPressure);
+    assert(roomScaleEncounterCandidateBias(RoomScale::Compact,{5.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Compact,{10.5f,0,0}));
+    assert(roomScaleEncounterCandidateBias(RoomScale::Large,{10.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Large,{5.5f,0,0}));
+    assert(roomScaleEncounterCandidateBias(RoomScale::Standard,{5.5f,0,0})==0.0f);
     const auto courtyardFunnelPressure=allocateRoomGeometryCapacity(15,10,5,1,0);
     assert(courtyardFunnelPressure.required==10&&courtyardFunnelPressure.identity==5&&courtyardFunnelPressure.optionalTraversal==0&&courtyardFunnelPressure.total==15);
     const auto exhausted=allocateRoomGeometryCapacity(15,10,3,4,2);

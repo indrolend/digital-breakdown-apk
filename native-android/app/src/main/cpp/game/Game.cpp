@@ -1195,11 +1195,13 @@ void Game::resetRoom() {
     buildRoomColliders();
     chooseSecretTvEntrance();
 
+    for(auto& target:state_.targets)target=TargetState{};
+    const int initialHumanCount=activeHumanTarget();
+    const auto initialPlan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+    const bool scaledInitialFormation=initialPlan.scale==early_browser_visuals::RoomScale::Compact||initialPlan.scale==early_browser_visuals::RoomScale::Large;
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& target = state_.targets[i];
-        target = TargetState{};
-        target.pos = {-8.0f + static_cast<float>(i % 5) * 4.0f, GROUND_Y, -12.0f + static_cast<float>(i / 5) * 4.5f};
-        target.alive = i < activeHumanTarget();
+        target.alive = i < initialHumanCount;
         target.brute = seededRoomValue(420 + i) < 0.18f;
         target.soul = makeSoulRecord(target.brute, state_.roomIndex);
         target.armor = target.brute ? SOUL_ARMOR_BRUTE : SOUL_ARMOR_NORMAL;
@@ -1212,6 +1214,7 @@ void Game::resetRoom() {
         target.visualYaw = seededRoomValue(440 + i) * DB_PI * 2.0f;
         target.attackCooldown = seededRoomValue(460 + i) * 0.5f;
         target.attackVariant = static_cast<int>(seededRoomValue(480 + i) * 4.0f) % 4;
+        target.pos=scaledInitialFormation&&target.alive?chooseHumanSpawnPoint(i):Vec3{-8.0f+static_cast<float>(i%5)*4.0f,GROUND_Y,-12.0f+static_cast<float>(i/5)*4.5f};
         resetSoulLattice(target);
         chooseHumanWalkTarget(i);
         syncTargetReactionVisual(target);
@@ -3264,6 +3267,8 @@ void Game::respawnTarget(int index) {
 Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
     const float tileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
     const float playerLocalZ=wrapZ(state_.player.pos.z);
+    const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+    const bool composeScaleFormation=plan.scale!=early_browser_visuals::RoomScale::Standard&&plan.scale!=early_browser_visuals::RoomScale::Arena;
     Vec3 best{0.0f,GROUND_Y,tileOrigin+ROOM_MIN_SPAWN_Z+4.5f};
     float bestScore=-1.0e9f;
     for(int attempt=0;attempt<32;++attempt){
@@ -3283,9 +3288,11 @@ Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
         if(avoid){const float dx=candidate.x-avoid->x,dz=wrapZ(candidate.z)-wrapZ(avoid->z);oldDistSq=dx*dx+dz*dz;}
         float overlapPenalty=0.0f;
         for(int h=0;h<TARGET_COUNT;++h){if(h==index)continue;const TargetState& other=state_.targets[h];if(!other.alive||other.slurpable||other.soulState!=SoulState::Free)continue;const float dx=candidate.x-other.pos.x,dz=wrapZ(candidate.z)-wrapZ(other.pos.z);if(dx*dx+dz*dz<6.25f)overlapPenalty+=100.0f;}
-        const float score=std::min(playerDistSq,144.0f)+std::min(oldDistSq,144.0f)-overlapPenalty;
+        const Vec3 localCandidate{candidate.x,candidate.y,wrapZ(candidate.z)};
+        const float formationBias=early_browser_visuals::roomScaleEncounterCandidateBias(plan.scale,localCandidate);
+        const float score=std::min(playerDistSq,144.0f)+std::min(oldDistSq,144.0f)+formationBias-overlapPenalty;
         if(score>bestScore){bestScore=score;best=candidate;}
-        if(playerDistSq>=64.0f&&oldDistSq>=36.0f&&overlapPenalty<=0.0f)return candidate;
+        if(!composeScaleFormation&&playerDistSq>=64.0f&&oldDistSq>=36.0f&&overlapPenalty<=0.0f)return candidate;
     }
     return best;
 }

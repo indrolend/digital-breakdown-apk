@@ -40,6 +40,14 @@ int ruleStacks(const GameState& state) {
            state.runRules.fasterSlurpStacks;
 }
 
+bool usesOnlyLegacyInitialGrid(const GameState& state){
+    for(int index=0;index<TARGET_COUNT;++index)if(gameplay::isActiveHuman(state.targets[index])){
+        const Vec3 legacy{-8.0f+static_cast<float>(index%5)*4.0f,0.0f,-12.0f+static_cast<float>(index/5)*4.5f};
+        if(state.targets[index].pos.x!=legacy.x||state.targets[index].pos.z!=legacy.z)return false;
+    }
+    return true;
+}
+
 bool finiteState(const GameState& state) {
     return std::isfinite(state.player.pos.x) && std::isfinite(state.player.pos.y) &&
            std::isfinite(state.player.pos.z) && std::isfinite(state.player.battery) &&
@@ -79,6 +87,7 @@ int main() {
     int secretWakeCount = 0;
     int maximumRequired = 0;
     int maximumHumans = 0;
+    bool sawCompactFormation=false,sawLargeFormation=false;
 
     for (int iteration = 1; iteration <= kRooms; ++iteration) {
         const GameState& roomStart = game.state();
@@ -93,6 +102,9 @@ int main() {
         const std::int64_t tokensBefore = roomStart.progression.permanent.tokens;
         maximumRequired = std::max(maximumRequired, required);
         maximumHumans = std::max(maximumHumans, activeHumans(roomStart));
+        const auto roomPlan=early_browser_visuals::roomPlan(seed,room);
+        if(roomPlan.scale==early_browser_visuals::RoomScale::Compact){sawCompactFormation=true;if(usesOnlyLegacyInitialGrid(roomStart))return fail(iteration,"compact_formation_not_composed",roomStart);}
+        if(roomPlan.scale==early_browser_visuals::RoomScale::Large){sawLargeFormation=true;if(usesOnlyLegacyInitialGrid(roomStart))return fail(iteration,"large_formation_not_composed",roomStart);}
 
         for (int shot = 0; shot < required; ++shot) {
             GameState& state = game.networkMutableState();
@@ -159,5 +171,5 @@ int main() {
         kRooms, finalState.roomIndex,
         static_cast<long long>(finalState.progression.permanent.tokens),
         ruleStacks(finalState), maximumRequired, maximumHumans, secretWakeCount);
-    return secretWakeCount == 1 ? 0 : 1;
+    return secretWakeCount == 1&&sawCompactFormation&&sawLargeFormation ? 0 : 1;
 }

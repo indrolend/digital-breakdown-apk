@@ -148,6 +148,14 @@ eight current setting/form families, `R` finds another deterministic seed for
 the selected family, and `E` toggles enemies. Its HUD reports the exact setting,
 form, scale, and room seed so human feedback can identify a reproducible room.
 
+Room scale now also composes with encounter formation without changing enemy
+count or the room boundary. Compact rooms softly prefer an inner spawn ring,
+standard rooms retain the established placement policy, and large rooms softly
+prefer an outer ring. Collision rejection, player clearance, prior-capture
+clearance, and enemy separation remain authoritative over this bias. The same
+deterministic candidate scorer is used for scaled initial populations and all
+later respawns.
+
 ## Observed mappings
 
 - Room seed and index already determine the complete environment plan.
