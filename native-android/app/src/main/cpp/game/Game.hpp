@@ -662,6 +662,7 @@ public:
     GameState& networkMutableState() { return state_; }
 
 private:
+    friend struct HostRemotePeerSimulationTestAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
     int simulationPlayerId_ = 0;
