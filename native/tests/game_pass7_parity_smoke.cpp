@@ -860,17 +860,17 @@ int main() {
     {
         Game secretWake;secretWake.reset();
         GameState& setup=const_cast<GameState&>(secretWake.state());
-        setup.roomIndex=10;setup.requiredSouls=1;setup.roomClear=false;setup.captures[0].filled=true;setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,12.0f};
+        setup.roomIndex=3;setup.requiredSouls=1;setup.roomClear=false;setup.captures[0].filled=true;setup.player.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,12.0f};
         step(secretWake);
         ok &= expect(secretWake.state().roomClear&&secretWake.state().secretTv.knockCueTimer>5.0f&&std::strstr(secretWake.state().hud.energyTicker.data(),"KNOCK")!=nullptr,
-            "filling every level-ten capture point wakes the secret TV entrance instead of silently only opening the exit");
+            "filling every capture point in the first eligible room wakes the secret TV entrance instead of silently only opening the exit");
         step(secretWake);
         ok &= expect(secretWake.state().secretTv.available&&secretWake.state().secretTv.knockVolume>0.0f,
-            "the awakened level-ten TV entrance becomes audible and discoverable on the following desktop frame");
+            "the awakened secret TV entrance becomes audible and discoverable on the following desktop frame");
         {GameState& enter=const_cast<GameState&>(secretWake.state());enter.player.pos=enter.secretTv.entrancePos;enter.player.vel={};enter.player.grounded=true;}
         step(secretWake);
         ok &= expect(secretWake.state().player.inSecretRoom,
-            "a grounded level-ten player can enter the secret TV room through the awakened membrane");
+            "a grounded player in an eligible room can enter the secret TV room through the awakened membrane");
         ok &= expect(secretWake.state().player.secretVisitTimer>100.0f&&secretWake.state().camera.pos.x>36.8f,
             "secret TV entry gives the player a readable visit window and keeps the camera in the off-map room");
     }

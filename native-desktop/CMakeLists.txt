@@ -306,6 +306,14 @@ add_executable(
 target_include_directories(DeterministicInputSoak PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(DeterministicInputSoak PRIVATE cxx_std_17)
 
+add_executable(
+    SecretTvPolicyTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/secret_tv_policy_test.cpp"
+    "${DB_SHARED_ROOT}/game/Game.cpp"
+)
+target_include_directories(SecretTvPolicyTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(SecretTvPolicyTest PRIVATE cxx_std_17)
+
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
@@ -329,6 +337,7 @@ add_test(NAME DesktopSaveRecoveryTest COMMAND DigitalBreakdown --save-roundtrip-
 add_test(NAME GameplayFlowProbe COMMAND GameplayFlowProbe)
 add_test(NAME RoomProgressionProbe COMMAND RoomProgressionProbe)
 add_test(NAME DeterministicInputSoak COMMAND DeterministicInputSoak)
+add_test(NAME SecretTvPolicyTest COMMAND SecretTvPolicyTest)
 
 if(WIN32)
     target_link_libraries(DigitalBreakdown PRIVATE winmm winhttp)

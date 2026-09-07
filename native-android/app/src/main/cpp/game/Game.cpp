@@ -383,6 +383,23 @@ float finiteClamped(float value, float lo, float hi) {
 Vec3 mix3(const Vec3& a, const Vec3& b, float t) {
     return a * (1.0f - t) + b * t;
 }
+
+constexpr int SECRET_TV_FIRST_ROOM = 3;
+constexpr int SECRET_TV_ROOM_INTERVAL = 2;
+constexpr int SECRET_TV_SOULS_PER_TIER = 6;
+constexpr int SECRET_TV_MAX_HOARD_TIER = 5;
+
+bool secretTvAppearsInRoom(int roomIndex) {
+    return roomIndex >= SECRET_TV_FIRST_ROOM &&
+           ((roomIndex - SECRET_TV_FIRST_ROOM) % SECRET_TV_ROOM_INTERVAL) == 0;
+}
+
+int secretTvSignalGain(int souls) {
+    return 1 + std::clamp(
+        souls / SECRET_TV_SOULS_PER_TIER,
+        0,
+        SECRET_TV_MAX_HOARD_TIER);
+}
 }
 
 void Game::reset() {
@@ -1466,7 +1483,7 @@ void Game::updateNetworkPeers(float dt){if(!state_.multiplayer.enabled||!state_.
 void Game::updateTeamRevival(float dt){if(!state_.multiplayer.enabled||!state_.multiplayer.authoritativeHost)return;PlayerState* players[NETWORK_PLAYER_COUNT]={&state_.player};InputState* inputs[NETWORK_PLAYER_COUNT]={&state_.input};bool active[NETWORK_PLAYER_COUNT]={true};for(int id=1;id<NETWORK_PLAYER_COUNT;++id){players[id]=&state_.multiplayer.peers[id].player;inputs[id]=&state_.multiplayer.peers[id].input;active[id]=state_.multiplayer.peers[id].active;}for(int donor=0;donor<NETWORK_PLAYER_COUNT;++donor){PlayerState& source=*players[donor];if(!active[donor]||!source.alive||source.downed||source.battery<=10.0f||!(inputs[donor]->primaryHeld||inputs[donor]->touchPrimaryHeld))continue;int recipient=-1;float best=2.2f;const Vec3 forward{-std::sin(source.yaw),0,-std::cos(source.yaw)};for(int id=0;id<NETWORK_PLAYER_COUNT;++id){if(id==donor||!active[id]||!players[id]->alive||!players[id]->downed)continue;const Vec3 delta{players[id]->pos.x-source.pos.x,0,players[id]->pos.z-source.pos.z};const float distance=length(delta);if(distance<best&&distance>0.001f&&dot3(delta*(1.0f/distance),forward)>0.72f){best=distance;recipient=id;}}if(recipient<0)continue;const float spend=std::min(source.battery-10.0f,10.0f*dt);source.battery-=spend;PlayerState& target=*players[recipient];target.reviveCharge+=spend*0.8f;target.battery=target.reviveCharge;if(target.reviveCharge>=18.0f){target.battery=target.reviveCharge;target.downed=false;target.bleedoutTimer=0.0f;target.reviveCharge=0.0f;target.alive=true;target.pos.y=GROUND_Y+PHONE_BODY_HEIGHT*0.5f;target.grounded=true;if(recipient==0){setEnergyTicker("SIGNAL RESTORED",2);emitAudio(AudioCue::RewardWoah,0.42f);}}}}
 void Game::updateSecretTv(float dt) {
     auto& tv = state_.secretTv;
-    tv.available = state_.roomClear && state_.roomIndex == 10;
+    tv.available = state_.roomClear && secretTvAppearsInRoom(state_.roomIndex);
     tv.donationCooldown = std::max(0.0f, tv.donationCooldown - dt);
     tv.knockCueTimer = std::max(0.0f, tv.knockCueTimer - dt);
     tv.knockVolume = 0.0f;
@@ -1530,10 +1547,11 @@ void Game::updateSecretTv(float dt) {
         player.secretVisitTimer = std::max(0.0f, player.secretVisitTimer - dt);
         if (inputs[id]->shootPressed && player.souls > 0 && !tv.broken && tv.donationCooldown <= 0.0f) {
             inputs[id]->shootPressed = false;
+            const int signalGain = secretTvSignalGain(player.souls);
             --player.souls;
             player.storedSoulBrute[player.souls]=false;
             player.storedSouls[player.souls]=SoulRecord{};
-            ++tv.signal;
+            tv.signal += signalGain;
             tv.donationCooldown = 0.70f;
             const int denominator = tv.signal < 6 ? 12 : tv.signal < 12 ? 9 : tv.signal < 18 ? 7 : tv.signal < 24 ? 5 : 4;
             const float roll = seededRoomValue(static_cast<float>(state_.roomSeed) * 0.17f + static_cast<float>(tv.signal) * 13.71f + static_cast<float>(tv.damage) * 31.3f);
@@ -1542,7 +1560,13 @@ void Game::updateSecretTv(float dt) {
                 if (tv.damage >= tv.tolerance) tv.broken = true;
             }
             if (id == 0) {
-                setEnergyTicker(tv.broken ? "NO SIGNAL" : "SIGNAL +1", tv.broken ? 1 : 2);
+                if (tv.broken) {
+                    setEnergyTicker("NO SIGNAL", 1);
+                } else {
+                    char message[48]{};
+                    std::snprintf(message, sizeof(message), "SIGNAL +%d", signalGain);
+                    setEnergyTicker(message, 2);
+                }
                 if (!tv.broken) emitAudio(AudioCue::RewardNice, 0.30f);
             }
         }
@@ -1628,6 +1652,7 @@ void Game::updateInputActions(float dt) {
     state_.camera.yaw -= input.lookDeltaX * 0.003f;
     state_.camera.pitch = clampf(state_.camera.pitch - input.lookDeltaY * 0.003f, -DB_PI * 0.48f, DB_PI * 0.48f);
     input.lookDeltaX = input.lookDeltaY = 0.0f;
+    if(state_.player.inSecretRoom){input.jumpPressed=false;input.meleePressed=false;input.shootPressed=false;input.cameraTogglePressed=false;return;}
     MeleeVisualState& action=state_.meleeVisual;
     const bool lungeOwned=action.airLungeLandingPending;
     if(input.jumpPressed&&state_.player.ledgeHanging){
@@ -3730,7 +3755,7 @@ void Game::updateCaptures(float dt) {
     state_.depositedSouls=filled;
     const bool wasClear=state_.roomClear;
     state_.roomClear = filled >= state_.requiredSouls;
-    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(state_.roomIndex==10){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
+    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
 }
 void Game::clampRoom(Vec3& pos) {
     pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + PLAYER_WALL_MARGIN, ROOM_WIDTH * 0.5f - PLAYER_WALL_MARGIN);
