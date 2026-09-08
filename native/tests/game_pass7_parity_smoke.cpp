@@ -1116,7 +1116,7 @@ int main() {
         const Vec3 d=flower.pos-game.state().targets[0].pos;
         dropDistance=std::sqrt(d.x*d.x+d.z*d.z);
     }
-    int shellFragments=0;for(const auto& particle:game.state().particles)if(particle.kind==1&&particle.life>0.0f)++shellFragments;
+    int shellFragments=0;for(const auto& particle:game.state().particles)if(particle.material==ParticleMaterial::Environment&&particle.life>0.0f)++shellFragments;
     ok &= expect(game.state().targets[0].slurpable && droppedFlowers==1 && dropDistance>=1.05f && shellFragments==48,
         "brute shell conversion performs one drop roll and separates the flower from its source");
     ok &= expect(game.state().targets[0].soulMorph<0.10f,
@@ -1126,7 +1126,7 @@ int main() {
     int repeatedDrops=0; for(const auto& flower:game.state().flowers) if(flower.active) ++repeatedDrops;
     ok &= expect(repeatedDrops==1,
         "subsequent hits on an already slurpable brute do not roll duplicate flowers");
-    step(game,70);int lingeringShellFragments=0;for(const auto& particle:game.state().particles)if(particle.kind==1&&particle.life>0.0f)++lingeringShellFragments;
+    step(game,70);int lingeringShellFragments=0;for(const auto& particle:game.state().particles)if(particle.material==ParticleMaterial::Environment&&particle.life>0.0f)++lingeringShellFragments;
     ok &= expect(lingeringShellFragments==0,
         "shattered shell fragments settle, shrink, and are fully reabsorbed into the floor");
 

@@ -1262,7 +1262,7 @@ struct RuntimePerfTrace {
         if(std::chrono::duration<double>(now-windowStarted).count()<1.0)return;
         int humans=0,souls=0,particles=0,fragments=0,respawns=0;
         for(const auto& target:state.targets){if(gameplay::isActiveHuman(target))++humans;if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;}
-        for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}
         for(const auto& request:state.respawnQueue)if(request.active)++respawns;
         const Stats totalStats=stats(totalMs),updateStats=stats(updateMs),audioStats=stats(audioMs),renderStats=stats(renderMs),swapStats=stats(swapMs);
         output<<std::fixed<<std::setprecision(3)<<std::chrono::duration<double>(now-started).count()<<','<<state.frame<<','<<state.roomIndex<<','<<totalMs.size()<<','
@@ -1302,7 +1302,7 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
         samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());
         glfwSwapBuffers(window);glfwPollEvents();
         int particles=0,fragments=0,souls=0;
-        for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}
         for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
         peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
     };
@@ -1382,7 +1382,7 @@ int runCombatCrowdStress(GLFWwindow* window,HostState& host){
         const auto audioBegin=std::chrono::steady_clock::now();host.audio.update(host.game.state());const auto audioEnd=std::chrono::steady_clock::now();audioSamples.push_back(std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count());
         const auto begin=std::chrono::steady_clock::now();host.renderer.draw(host.game.state());glFinish();const auto end=std::chrono::steady_clock::now();
         samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();
-        int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
+        int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
         if(particles>peakParticles)peakLoadState=std::make_unique<GameState>(host.game.state());peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
     };
     for(int wave=0;wave<waves;++wave){

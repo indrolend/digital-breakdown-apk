@@ -835,12 +835,12 @@ void Game::updateFlowerPowerups(float dt) {
     }
 }
 
-void Game::spawnParticleBurst(const Vec3& position) {
+void Game::spawnParticleBurst(const Vec3& position,ParticleMaterial material) {
     for(int n=0;n<22;++n) {
         ParticleState& particle=state_.particles[state_.nextParticle];
         state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
         const float life=0.55f+nextFlowerRandom()*0.35f;
-        particle=ParticleState{}; particle.pos=position;
+        particle=ParticleState{}; particle.pos=position; particle.material=material;
         particle.vel={(nextFlowerRandom()-0.5f)*5.0f,nextFlowerRandom()*4.0f,(nextFlowerRandom()-0.5f)*5.0f};
         particle.life=life; particle.maxLife=life;
     }
@@ -851,7 +851,7 @@ void Game::spawnFlameBurst(const Vec3& position,float strength) {
     for(int n=0;n<count;++n) {
         ParticleState& particle=state_.particles[state_.nextParticle]; state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
         const float angle=nextFlowerRandom()*DB_PI*2.0f,radial=1.2f+nextFlowerRandom()*5.4f*strength,life=0.42f+nextFlowerRandom()*0.32f;
-        particle=ParticleState{}; particle.pos=position+Vec3{0,0.06f,0};
+        particle=ParticleState{}; particle.pos=position+Vec3{0,0.06f,0}; particle.material=ParticleMaterial::Impact;
         particle.vel={std::cos(angle)*radial,2.4f+nextFlowerRandom()*5.0f*strength,std::sin(angle)*radial}; particle.life=life; particle.maxLife=life;
     }
 }
@@ -869,7 +869,7 @@ void Game::spawnShellShatter(const TargetState& target) {
         const float radial=0.45f+visualRandom()*1.55f;
         const float life=0.72f+visualRandom()*0.38f;
         particle=ParticleState{};
-        particle.kind=1;
+        particle.material=ParticleMaterial::Environment;
         particle.size=(0.055f+visualRandom()*0.075f)*target.scale;
         particle.pos=target.pos+Vec3{std::cos(angle)*bodyWidth*visualRandom(),height,std::sin(angle)*bodyWidth*visualRandom()};
         particle.vel={std::cos(angle)*radial,0.45f+visualRandom()*2.25f,std::sin(angle)*radial};
@@ -880,9 +880,10 @@ void Game::spawnShellShatter(const TargetState& target) {
 void Game::updateParticles(float dt) {
     for(auto& particle:state_.particles) {
         if(particle.life<=0.0f) continue;
-        particle.vel.y-=(particle.kind==1?10.5f:8.0f)*dt;
+        const bool reclaimed=particle.material==ParticleMaterial::Environment;
+        particle.vel.y-=(reclaimed?10.5f:8.0f)*dt;
         particle.pos+=particle.vel*dt;
-        if(particle.kind==1&&particle.pos.y<=0.025f){
+        if(reclaimed&&particle.pos.y<=0.025f){
             particle.pos.y=0.025f;particle.vel.y=0.0f;
             const float settle=std::exp(-16.0f*dt);particle.vel.x*=settle;particle.vel.z*=settle;
             particle.life=std::max(0.0f,particle.life-dt*1.25f);
@@ -3031,7 +3032,7 @@ void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, f
     state_.hud.headshotKillCharge=clampf(std::max(state_.hud.headshotKillCharge,killCharge),0.0f,1.0f);
     if(perfect)state_.hud.perfectPulse=1.0f;
     spawnFlameBurst(position,1.35f);
-    spawnParticleBurst(position);
+    spawnParticleBurst(position,ParticleMaterial::Flesh);
     emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.86f:0.72f);
     emitAudio(AudioCue::RewardWoah,0.42f);
     if(precision>0){
@@ -3060,7 +3061,7 @@ bool Game::damageSoulShell(int index, float amount) {
     Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
     t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
     feedSupplementalBattery(FLOWER_ATTACK_FEED);
-    spawnParticleBurst(t.pos+Vec3{0,0.65f,0});
+    spawnParticleBurst(t.pos+Vec3{0,0.65f,0},ParticleMaterial::Flesh);
     return true;
 }
 
@@ -3151,7 +3152,7 @@ void Game::processPendingShots(float dt) {
         slot->vel=direction*(slot->brute?BULLET_BRUTE_SPEED:BULLET_SPEED);
         slot->vel.y+=BULLET_VERTICAL_LIFT;
         emitAudio(AudioCue::SentMessage,0.62f);
-        spawnParticleBurst(slot->pos);
+        spawnParticleBurst(slot->pos,ParticleMaterial::Data);
         pending=PendingShotState{};
     }
 }
@@ -3213,7 +3214,7 @@ void Game::captureSoul(int index) {
     emitAudio(AudioCue::ReceivedMessage,0.58f);
     emitAudio(AudioCue::RewardNice,0.30f);
     t.captureQueued=false; t.captureCommitted=false; t.soulState=SoulState::Free; t.networkOwnerPlayerId=-1;
-    spawnParticleBurst(capturedAt);
+    spawnParticleBurst(capturedAt,ParticleMaterial::Data);
     queueHumanRespawn(capturedAt);
 }
 
@@ -3709,8 +3710,8 @@ void Game::updateBullets(float dt) {
                 int filledSlot=0;
                 for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
                 emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);emitAudio(AudioCue::RewardNice,0.28f);
-                spawnParticleBurst(b.pos);
-                spawnParticleBurst(goal);
+                spawnParticleBurst(b.pos,ParticleMaterial::Soul);
+                spawnParticleBurst(goal,ParticleMaterial::Soul);
                 b.alive=false; deposited=true; break;
             }
             if(!deposited&&!b.depositNearMissPlayed){
