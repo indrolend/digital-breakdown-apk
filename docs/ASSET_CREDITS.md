@@ -28,7 +28,7 @@ These assets are recorded as user-provided/original unless a third-party source 
 
 | Asset | Repository Path | Source / Attribution Status | Notes |
 | --- | --- | --- | --- |
-| Phone model | `native-models/phone.dbmesh` | Baked derivative of user-provided iPhone 17 Pro GLB, pending final ownership confirmation. | Baked native runtime mesh generated from `IPHONE_GLB_BASE64`. |
+| DATA phone model | `native-models/source/DATA_phone_release.glb`, baked to `native-models/phone.dbmesh` | Original clean-room parametric asset created for DATA; no historical source mesh or textures included. | Camera-free release model; historical iPhone GLB remains reference-only. |
 | Flower model | `native-models/flower.dbmesh` | Derived from checked-in browser reference asset; needs final source attribution audit before release. | Baked native runtime mesh. |
 | Human model | `native-models/human.dbhuman` | Baked derivative of “Walk Cycle” by Niraj Ekaant, CC BY 4.0. | Baked native runtime model generated from `HUMAN_FBX_BASE64`. |
 | TV GIF clips | `native-tv-gifs/*.dbgif` | Curated from the allowlist in `tools/build_tv_gifs.py`; each source URL should be reviewed before release. | Baked 12x8 runtime clips. |

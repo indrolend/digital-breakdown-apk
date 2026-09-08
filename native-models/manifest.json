@@ -1,10 +1,10 @@
 {
-  "format": "DBM1 texture-baked/DBH1",
-  "source": "reference/browser-pass7/assets/embedded-assets.js",
+  "format": "DBM1/DBH1",
+  "source": "native-models/source/DATA_phone_release.glb",
   "phone": {
-    "vertices": 253740,
-    "batches": 30,
-    "bytes": 3045612
+    "vertices": 11820,
+    "batches": 7,
+    "bytes": 142020
   },
   "flower": {
     "vertices": 11628,

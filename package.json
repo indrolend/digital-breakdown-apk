@@ -7,6 +7,7 @@
     "hud:check": "node --test ./tools/commandhud-project.test.mjs ./tools/verify.test.mjs",
     "lint": "node ./tools/lint.mjs",
     "assets": "python ./tools/verify_asset_mirrors.py",
+    "assets:phone": "node ./tools/assets/generate-phone-model.mjs",
     "multiplayer": "npm --prefix multiplayer-server run check",
     "verify": "node ./tools/verify.mjs",
     "menu": "node ./tools/dev-menu.mjs",
