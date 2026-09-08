@@ -31,7 +31,24 @@ int main(){
     Game shot;shot.debugStartSlopeLab();placeOnSlope(shot,0,7);if(!shot.debugSpawnStoredSoul()){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL shot setup\n");return 1;}input(shot,0,0,false,false,false,true);bool pending=false;for(const auto& request:shot.state().pendingShots)pending|=request.active;if(!pending){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL shot\n");return 1;}
     Game lunge;lunge.debugStartSlopeLab();placeOnSlope(lunge,0,7);input(lunge,0,0,false,true);input(lunge,0,0,false,false,true);if(!lunge.state().meleeVisual.airLungeLandingPending){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL lunge\n");return 1;}
 
+    Game rock;rock.debugStartSlopeLab();const auto rockAuthority=rock.state().rockSupports[0];const auto& rockProp=rockAuthority.prop;
+    if(rock.state().rockSupportCount!=1){std::fprintf(stderr,"ROCK_SUPPORT_FAIL fixture authority\n");return 1;}
+    const auto centerSurface=faceted_rock::sampleSupport(rockAuthority,rockProp.center.x,rockProp.center.z);
+    const auto centerGameplay=rock.debugPlayerSupportAt(rockProp.center.x,rockProp.center.z);
+    if(!centerSurface.inside||!near(centerGameplay.height,centerSurface.height+0.08f)||centerGameplay.normal.y<faceted_rock::WalkableNormalY){std::fprintf(stderr,"ROCK_SUPPORT_FAIL shared facet support\n");return 1;}
+    const float emptyX=rockProp.center.x+rockProp.size.x*0.49f,emptyZ=rockProp.center.z+rockProp.size.z*0.49f;
+    if(faceted_rock::sampleSupport(rockAuthority,emptyX,emptyZ).inside||!near(rock.debugPlayerSupportAt(emptyX,emptyZ).height,0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL invisible box top\n");return 1;}
+    auto& rockPlayer=rock.networkMutableState().player;rockPlayer.pos={rockProp.center.x,centerGameplay.height,rockProp.center.z};rockPlayer.vel={};rockPlayer.jumpVel=0;rockPlayer.grounded=true;rockPlayer.battery=100;rock.networkMutableState().camera.yaw=-1.5707963f;
+    input(rock,0,0,false,true);for(int frame=0;frame<150&&!rock.state().player.grounded;++frame)input(rock,0,0);
+    if(!rock.state().player.grounded||!near(rock.state().player.pos.y,centerGameplay.height)||!std::isfinite(rock.state().player.pos.y)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL jump landing\n");return 1;}
+    bool fellFromFacet=false;for(int frame=0;frame<180;++frame){input(rock,0,1);fellFromFacet|=!rock.state().player.grounded;if(rock.state().player.pos.x>rockProp.center.x+rockProp.size.x)break;}
+    if(!fellFromFacet||!std::isfinite(rock.state().player.pos.x)||!std::isfinite(rock.state().player.pos.y)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL traversal/fall\n");return 1;}
+    Game rockSide;rockSide.debugStartSlopeLab();auto& sidePlayer=rockSide.networkMutableState().player;sidePlayer.pos={rockProp.center.x-rockProp.size.x,0.08f,rockProp.center.z};sidePlayer.vel={};sidePlayer.grounded=true;rockSide.networkMutableState().camera.yaw=-1.5707963f;for(int frame=0;frame<180;++frame)input(rockSide,0,1);const auto sideSupport=faceted_rock::sampleSupport(rockAuthority,rockSide.state().player.pos.x,rockSide.state().player.pos.z);if(sideSupport.inside||rockSide.state().player.pos.x>=rockProp.center.x-rockProp.size.x*0.25f){std::fprintf(stderr,"ROCK_SUPPORT_FAIL steep side obstruction pos=(%.3f,%.3f,%.3f)\n",rockSide.state().player.pos.x,rockSide.state().player.pos.y,rockSide.state().player.pos.z);return 1;}
+    Game rockCombat;rockCombat.debugStartSlopeLab();auto& combatPlayer=rockCombat.networkMutableState().player;combatPlayer.pos={rockProp.center.x,centerGameplay.height,rockProp.center.z};combatPlayer.vel={};combatPlayer.grounded=true;combatPlayer.battery=100;input(rockCombat,0,0,false,false,true);if(rockCombat.state().meleeVisual.visualTimer<=0){std::fprintf(stderr,"ROCK_SUPPORT_FAIL combat authority\n");return 1;}
+    rockCombat.debugStartSlopeLab();auto& vacuumPlayer=rockCombat.networkMutableState().player;vacuumPlayer.pos={rockProp.center.x,centerGameplay.height,rockProp.center.z};vacuumPlayer.vel={};vacuumPlayer.grounded=true;vacuumPlayer.battery=100;input(rockCombat,0,0,true);if(!rockCombat.state().vacuum.active){std::fprintf(stderr,"ROCK_SUPPORT_FAIL vacuum authority\n");return 1;}
+
     Game normal;normal.reset();if(normal.state().slopeLab||normal.state().slopeSupportCount!=0){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL leaked into normal rooms\n");return 1;}
-    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed");
+    if(normal.state().rockSupportCount!=0){std::fprintf(stderr,"ROCK_SUPPORT_FAIL leaked into normal rooms\n");return 1;}
+    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top");
     return 0;
 }

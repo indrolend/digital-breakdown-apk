@@ -28,6 +28,16 @@ int main(){
     assert(!faceted_rock::eligible(RoomSetting::Sterile,EnvironmentRole::Landmark));
     assert(!faceted_rock::eligible(RoomSetting::Field,EnvironmentRole::Traversal));
     assert(faceted_rock::shapeKey(91,7,2,EnvironmentRole::Mass)!=faceted_rock::shapeKey(91,7,2,EnvironmentRole::Landmark));
+    const faceted_rock::Support support{mass,91,7,2};
+    const auto supportAgain=faceted_rock::sampleSupport(support,8.0f,-3.0f);
+    const auto supportFirst=faceted_rock::sampleSupport(support,8.0f,-3.0f);
+    assert(supportFirst.inside&&supportAgain.inside);
+    assert(supportFirst.height==supportAgain.height&&supportFirst.normal.x==supportAgain.normal.x&&supportFirst.normal.y==supportAgain.normal.y&&supportFirst.normal.z==supportAgain.normal.z);
+    assert(supportFirst.normal.y>=faceted_rock::WalkableNormalY&&std::isfinite(supportFirst.height));
+    assert(!faceted_rock::sampleSupport(support,20.0f,-3.0f).inside);
+    bool sawRejectedSteepFace=false;
+    for(int vertex=0;vertex+2<a.vertexCount;vertex+=3){const Vec3 n{a.normals[vertex*3],a.normals[vertex*3+1],a.normals[vertex*3+2]};sawRejectedSteepFace|=n.y>0.0f&&!faceted_rock::triangleWalkable(n);}
+    assert(sawRejectedSteepFace);
     std::puts("Faceted rock tests passed.");
     return 0;
 }

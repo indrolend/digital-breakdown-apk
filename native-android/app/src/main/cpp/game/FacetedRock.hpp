@@ -19,6 +19,21 @@ struct Mesh {
     int vertexCount=0;
 };
 
+constexpr float WalkableNormalY=0.819152044f; // cos(35 degrees)
+
+struct Support {
+    early_browser_visuals::EnvironmentPropSpec prop{};
+    int roomSeed=0;
+    int roomIndex=0;
+    int propIndex=0;
+};
+
+struct SurfaceSample {
+    bool inside=false;
+    float height=0.0f;
+    Vec3 normal{0.0f,1.0f,0.0f};
+};
+
 inline Vec3 faceNormal(const Vec3& a,const Vec3& b,const Vec3& c){
     const Vec3 u=b-a,v=c-a;
     return normalized({u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x});
@@ -76,5 +91,34 @@ inline Mesh makeMesh(const early_browser_visuals::EnvironmentPropSpec& prop,
     for(int i=0;i<RingVertexCount;++i){const int next=(i+1)%RingVertexCount;emit(base[i],shoulder[next],base[next]);emit(base[i],shoulder[i],shoulder[next]);emit(shoulder[i],crown,shoulder[next]);}
     return mesh;
 }
+
+inline bool triangleWalkable(const Vec3& normal){return normal.y>=WalkableNormalY;}
+
+inline bool sampleProjectedTriangle(const Vec3& a,const Vec3& b,const Vec3& c,float x,float z,float& height){
+    const float denominator=(b.z-c.z)*(a.x-c.x)+(c.x-b.x)*(a.z-c.z);
+    if(std::abs(denominator)<0.000001f)return false;
+    const float u=((b.z-c.z)*(x-c.x)+(c.x-b.x)*(z-c.z))/denominator;
+    const float v=((c.z-a.z)*(x-c.x)+(a.x-c.x)*(z-c.z))/denominator;
+    const float w=1.0f-u-v;
+    constexpr float EdgeTolerance=0.0001f;
+    if(u<-EdgeTolerance||v<-EdgeTolerance||w<-EdgeTolerance)return false;
+    height=u*a.y+v*b.y+w*c.y;
+    return std::isfinite(height);
+}
+
+inline SurfaceSample sampleSurface(const Support& support,float x,float z,bool walkableOnly){
+    SurfaceSample result{};const auto mesh=makeMesh(support.prop,support.roomSeed,support.roomIndex,support.propIndex);
+    for(int vertex=0;vertex+2<mesh.vertexCount;vertex+=3){
+        const auto point=[&](int index){return Vec3{mesh.positions[index*3],mesh.positions[index*3+1],mesh.positions[index*3+2]};};
+        const Vec3 a=point(vertex),b=point(vertex+1),c=point(vertex+2),normal=faceNormal(a,b,c);
+        if(normal.y<=0.0001f||(walkableOnly&&!triangleWalkable(normal)))continue;
+        float height=0.0f;if(!sampleProjectedTriangle(a,b,c,x,z,height))continue;
+        if(!result.inside||height>result.height){result.inside=true;result.height=height;result.normal=normal;}
+    }
+    return result;
+}
+
+inline SurfaceSample sampleSupport(const Support& support,float x,float z){return sampleSurface(support,x,z,true);}
+inline SurfaceSample sampleEnvelope(const Support& support,float x,float z){return sampleSurface(support,x,z,false);}
 
 } // namespace faceted_rock
