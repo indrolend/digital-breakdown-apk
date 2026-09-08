@@ -51,7 +51,7 @@ struct RoomEnvironmentPlan {
 };
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
-enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin };
+enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin, Rock };
 enum class EnvironmentRole : unsigned char { Boundary, Mass, Landmark, Traversal, Detail, Count };
 inline const char* environmentRoleName(EnvironmentRole role){switch(role){case EnvironmentRole::Boundary:return "BOUNDARY";case EnvironmentRole::Mass:return "MASS";case EnvironmentRole::Landmark:return "LANDMARK";case EnvironmentRole::Traversal:return "TRAVERSAL";case EnvironmentRole::Detail:return "DETAIL";case EnvironmentRole::Count:break;}return "UNKNOWN";}
 struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;EnvironmentRole role=EnvironmentRole::Detail;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
@@ -123,10 +123,10 @@ constexpr bool validFormForSetting(RoomSetting setting,RoomForm form){
 
 constexpr bool settingAllowsPrimitive(RoomSetting setting,EnvironmentPrimitive primitive){
     switch(setting){
-        case RoomSetting::Field:return primitive==EnvironmentPrimitive::House||primitive==EnvironmentPrimitive::Tree||primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+        case RoomSetting::Field:return primitive==EnvironmentPrimitive::House||primitive==EnvironmentPrimitive::Tree||primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin||primitive==EnvironmentPrimitive::Rock;
         case RoomSetting::City:return primitive==EnvironmentPrimitive::House;
         case RoomSetting::Sterile:return primitive==EnvironmentPrimitive::MarkerPillar;
-        case RoomSetting::Coastal:return primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+        case RoomSetting::Coastal:return primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin||primitive==EnvironmentPrimitive::Rock;
     }
     return false;
 }
@@ -326,7 +326,7 @@ inline int environmentPropCount(const RoomEnvironmentPlan& plan){
 inline bool environmentPropSolid(const EnvironmentPropSpec& prop){return prop.primitive!=EnvironmentPrimitive::LawnFragment;}
 inline ObstacleSpec environmentPropCollider(const EnvironmentPropSpec& prop){
     if(prop.primitive==EnvironmentPrimitive::Tree)return {prop.center+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.28f,prop.size.y*0.70f,prop.size.z*0.28f}};
-    if(prop.primitive==EnvironmentPrimitive::House||prop.primitive==EnvironmentPrimitive::Ruin)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
+    if(prop.primitive==EnvironmentPrimitive::House||prop.primitive==EnvironmentPrimitive::Ruin||prop.primitive==EnvironmentPrimitive::Rock)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
     return {prop.center+Vec3{0,prop.size.y*0.5f,0},prop.size};
 }
 
