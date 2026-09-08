@@ -5,6 +5,7 @@
 #include "../game/RenderContracts.hpp"
 #include "../game/FieldGrassTexture.hpp"
 #include "../game/CitySurfaceTexture.hpp"
+#include "../game/FacetedRock.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
@@ -330,6 +331,11 @@ void Renderer::drawCityGround(const float* viewProj,int tileIndex,const float co
     glUseProgram(program_);glUniform1f(uUseNormal_,0.0f);glUniform1f(uTextureEnabled_,1.0f);glUniform1f(uTextureScale_,render_contract::CityGround.textureWorldScale);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,color);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,citySurfaceTexture_);glUniform1i(uTexture_,0);glBindBuffer(GL_ARRAY_BUFFER,vbo_);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glDrawArrays(GL_TRIANGLES,0,36);glUniform1f(uTextureEnabled_,0.0f);
 }
 
+void Renderer::drawFacetedRock(const float* viewProj,const early_browser_visuals::EnvironmentPropSpec& prop,int roomSeed,int roomIndex,int propIndex,float zOffset,const float color[4]){
+    if(!program_)return;const auto mesh=faceted_rock::makeMesh(prop,roomSeed,roomIndex,propIndex,zOffset);float identity[16];ident(identity);
+    glUseProgram(program_);glUniform1f(uUseNormal_,render_contract::androidShadingSelector(render_contract::ShadingModel::NormalLit));glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,mesh.positions.data());glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,mesh.normals.data());glDrawArrays(GL_TRIANGLES,0,mesh.vertexCount);
+}
+
 void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& model,unsigned int vbo,unsigned int normalVbo,const Vec3& pos,const Vec3& scale,const Quat& orientation,bool shadow) {
     if(!program_ || !vbo || !normalVbo || !model.valid()) return;
     float matrix[16],mvp[16];modelBox(matrix,pos,scale,orientation);multiply(mvp,viewProj,matrix);
@@ -504,6 +510,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
         else if(prop.primitive==EnvironmentPrimitive::Tree){drawBox(viewProj,p+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.20f,prop.size.y*0.70f,prop.size.z*0.20f},prop.yaw,trunk);drawBox(viewProj,p+Vec3{0,prop.size.y*0.88f,0},{prop.size.x,prop.size.y*0.72f,prop.size.z},prop.yaw,leaf);}
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(viewProj,p,prop.size,prop.yaw,lawn);
         else if(prop.primitive==EnvironmentPrimitive::Ruin){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,ruin);drawBox(viewProj,p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},prop.yaw,ruinTop);}
+        else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);const float rock[4]={substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f,1};drawFacetedRock(viewProj,prop,state.roomSeed,state.roomIndex,i,z0,rock);}
         else {drawBox(viewProj,p+Vec3{0,prop.size.y*0.5f,0},prop.size,prop.yaw,marker);drawBox(viewProj,p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},prop.yaw,cap);}
     }
     if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);

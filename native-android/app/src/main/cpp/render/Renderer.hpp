@@ -14,6 +14,7 @@ public:
     void draw(const GameState& state);
 
 private:
+    void drawFacetedRock(const float* viewProj,const early_browser_visuals::EnvironmentPropSpec& prop,int roomSeed,int roomIndex,int propIndex,float zOffset,const float color[4]);
     int width_ = 1;
     int height_ = 1;
     unsigned int program_ = 0;

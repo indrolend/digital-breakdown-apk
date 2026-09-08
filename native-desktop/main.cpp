@@ -1439,6 +1439,7 @@ void printUsage() {
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
+    std::printf("  --room-inspector-premise N  Select a fixed inspector premise for deterministic capture.\n");
     std::printf("  --room-inspector-smoke  Sweep every inspector premise and three reproducible seeds.\n");
     std::printf("  --smoke-test         Run the desktop smoke test and exit.\n");
     std::printf("  --combat-render-stress  Measure ten repeated kill/capture/respawn cycles.\n");
@@ -1747,6 +1748,7 @@ int main(int argc, char** argv) {
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
     const bool roomInspector=hasArg(argc,argv,"--room-inspector")||roomInspectorSmoke;
+    const int roomInspectorPremise=std::max(0,std::min(static_cast<int>(early_browser_visuals::RoomPremise::Count)-1,argInt(argc,argv,"--room-inspector-premise",0)));
     const bool multiplayerParityTest=hasArg(argc,argv,"--multiplayer-parity-test");
     const bool multiplayerTest=hasArg(argc,argv,"--multiplayer-test")||multiplayerParityTest;
     const bool automationNetworkRequested=multiplayerTest||hasArg(argc,argv,"--host-room")||argValue(argc,argv,"--join-room")||hasArg(argc,argv,"--auto-start-multiplayer");
@@ -1874,7 +1876,7 @@ int main(int argc, char** argv) {
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
     }
-    if(roomInspector){host.game.debugStartRoomInspector();std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
+    if(roomInspector){host.game.debugStartRoomInspector();for(int premise=0;premise<roomInspectorPremise;++premise)host.game.debugStepRoomInspector(1,false);std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
     if(automationPlaytest)std::printf("AUTOMATION_PLAYTEST_READY local_only=YES focus_pause=OFF input_clearing=ON\n");
     host.savedProgressionRevision=host.game.state().progression.permanent.revision;
     host.savedSettings=host.game.state().localSettings;
