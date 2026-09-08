@@ -46,3 +46,13 @@ triangles may answer the support query. Side/steep triangles remain non-support
 and obstruction stays bounded to the rock footprint. Normal room generation,
 generated rock collision, ledge discovery, network protocol and traversal verbs
 remain unchanged.
+
+## Proven deployment boundary
+
+After the fixture passed, the same support authority was enabled only for rocks
+already selected by the existing Field and Coastal room plans. Their placement,
+rendered mesh, capacity priority and deterministic identity are unchanged. The
+reserved `RoomCollider` entry remains as a capacity/accounting and non-player
+query slot, but player support, obstruction and ledge discovery skip its box;
+those player-contact answers now come from the rock mesh. Houses, ruins, trees,
+markers and procedural traversal placement remain deferred.

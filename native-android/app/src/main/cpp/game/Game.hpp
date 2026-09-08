@@ -325,7 +325,7 @@ struct ParticleState {
     ParticleMaterial material = ParticleMaterial::Impact;
 };
 
-enum class RoomColliderKind : unsigned char { Generic, TreeTrunk };
+enum class RoomColliderKind : unsigned char { Generic, TreeTrunk, RockAuthoritySlot };
 
 struct RoomCollider {
     float minX = 0.0f;
