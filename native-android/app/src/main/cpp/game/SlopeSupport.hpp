@@ -2,6 +2,7 @@
 
 #include "Math.hpp"
 
+#include <array>
 #include <cmath>
 
 enum class SlopeAxis : unsigned char { PositiveX, NegativeX, PositiveZ, NegativeZ };
@@ -58,4 +59,25 @@ inline SlopeSupportSample sampleSlopeSupport(const SlopeSupport& slope,float x,f
     sample.inside=true;sample.height=slope.lowHeight+(slope.highHeight-slope.lowHeight)*clampf(t,0.0f,1.0f);
     sample.normal=slopeSupportNormal(slope);sample.classification=classifySupport(slope);
     return sample;
+}
+
+constexpr int SlopeWedgeVertexCount=36;
+struct SlopeWedgeMesh { std::array<float,SlopeWedgeVertexCount*3> positions{};std::array<float,SlopeWedgeVertexCount*3> normals{};int vertexCount=0; };
+
+inline Vec3 slopeFaceNormal(const Vec3& a,const Vec3& b,const Vec3& c){
+    const Vec3 u=b-a,v=c-a;return normalized({u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x});
+}
+
+inline SlopeWedgeMesh makeSlopeWedgeMesh(const SlopeSupport& slope,float zOffset=0.0f){
+    SlopeWedgeMesh mesh{};
+    const auto heightAt=[&](float x,float z){return sampleSlopeSupport(slope,x,z).height;};
+    const Vec3 a{slope.minX,heightAt(slope.minX,slope.minZ),slope.minZ+zOffset},b{slope.maxX,heightAt(slope.maxX,slope.minZ),slope.minZ+zOffset};
+    const Vec3 c{slope.maxX,heightAt(slope.maxX,slope.maxZ),slope.maxZ+zOffset},d{slope.minX,heightAt(slope.minX,slope.maxZ),slope.maxZ+zOffset};
+    const Vec3 ab{slope.minX,0.0f,slope.minZ+zOffset},bb{slope.maxX,0.0f,slope.minZ+zOffset},cb{slope.maxX,0.0f,slope.maxZ+zOffset},db{slope.minX,0.0f,slope.maxZ+zOffset};
+    const auto emit=[&](const Vec3& p0,const Vec3& p1,const Vec3& p2){const Vec3 n=slopeFaceNormal(p0,p1,p2);for(const Vec3& p:{p0,p1,p2}){mesh.positions[mesh.vertexCount*3]=p.x;mesh.positions[mesh.vertexCount*3+1]=p.y;mesh.positions[mesh.vertexCount*3+2]=p.z;mesh.normals[mesh.vertexCount*3]=n.x;mesh.normals[mesh.vertexCount*3+1]=n.y;mesh.normals[mesh.vertexCount*3+2]=n.z;++mesh.vertexCount;}};
+    emit(a,d,c);emit(a,c,b); // support plane
+    emit(ab,bb,cb);emit(ab,cb,db); // underside
+    emit(ab,db,d);emit(ab,d,a);emit(bb,b,c);emit(bb,c,cb); // sides
+    emit(ab,a,b);emit(ab,b,bb);emit(db,cb,c);emit(db,c,d); // bounded ends
+    return mesh;
 }

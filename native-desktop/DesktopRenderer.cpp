@@ -818,6 +818,11 @@ void DesktopRenderer::drawFacetedRock(const early_browser_visuals::EnvironmentPr
     glEnd();
 }
 
+void DesktopRenderer::drawSlopeWedge(const SlopeSupport& slope,float zOffset,const VisualColor& color){
+    const auto mesh=makeSlopeWedgeMesh(slope,zOffset);gradedColor(color.r,color.g,color.b);glBegin(GL_TRIANGLES);
+    for(int i=0;i<mesh.vertexCount;++i){glNormal3f(mesh.normals[i*3],mesh.normals[i*3+1],mesh.normals[i*3+2]);glVertex3f(mesh.positions[i*3],mesh.positions[i*3+1],mesh.positions[i*3+2]);}glEnd();
+}
+
 void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const {
     const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
     const float z0 = static_cast<float>(tileIndex) * ROOM_DEPTH;
@@ -841,7 +846,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     }
     drawBox({-ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     drawBox({ ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
-    const int authoredObstacleCount=state.traversalLab?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount);
+    const int authoredObstacleCount=(state.traversalLab||state.slopeLab)?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount);
     for (int i=0;i<authoredObstacleCount;++i) {
         const RoomCollider& c=state.roomColliders[i];
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
@@ -850,8 +855,9 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
             drawBox({c.center.x,c.topY+tierH*0.5f,z0+c.center.z},{c.width*0.58f,tierH,c.depth*0.62f},0,0,0,0.34f,0.40f,0.44f);
         }
     }
+    for(int i=0;i<state.slopeSupportCount;++i)drawSlopeWedge(state.slopeSupports[i],z0,{0.39f,0.42f,0.36f});
     const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
-    const auto geometry=early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
+    const auto geometry=state.slopeLab?early_browser_visuals::RoomGeometryCapacityPlan{}:early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
     for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!geometry.traversalIncluded[i])continue;const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);
         drawBox(spec.center+Vec3{0,0,z0},spec.size,0,0,0,traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z);
     }

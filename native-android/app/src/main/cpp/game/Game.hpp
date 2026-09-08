@@ -690,6 +690,7 @@ struct GameState {
     bool attractMode = false;
     bool rallyLab = false;
     bool traversalLab = false;
+    bool slopeLab = false;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
     early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
@@ -719,6 +720,7 @@ public:
     void debugStartSecretTvTest(bool enterRoom);
     void debugStartRallyLab();
     void debugStartTraversalLab();
+    void debugStartSlopeLab();
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
     void debugFillBattery();

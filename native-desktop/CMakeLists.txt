@@ -279,6 +279,10 @@ add_executable(SlopeSupportTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slo
 target_include_directories(SlopeSupportTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(SlopeSupportTest PRIVATE cxx_std_17)
 
+add_executable(SlopeTraversalFixtureTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_traversal_fixture_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
+target_include_directories(SlopeTraversalFixtureTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(SlopeTraversalFixtureTest PRIVATE cxx_std_17)
+
 add_executable(RenderContractsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/render_contracts_test.cpp")
 target_include_directories(RenderContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(RenderContractsTest PRIVATE cxx_std_17)
@@ -363,6 +367,7 @@ add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME MaterialResponseTest COMMAND MaterialResponseTest)
 add_test(NAME FacetedRockTest COMMAND FacetedRockTest)
 add_test(NAME SlopeSupportTest COMMAND SlopeSupportTest)
+add_test(NAME SlopeTraversalFixtureTest COMMAND SlopeTraversalFixtureTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
 add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)

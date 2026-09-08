@@ -1436,6 +1436,7 @@ void printUsage() {
     std::printf("  --tv-room-test       Local lab exploit: start level 10 beside the awakened TV-room entrance.\n");
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
+    std::printf("  --slope-lab          Start the deterministic physical-slope fixture.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
@@ -1744,6 +1745,7 @@ int main(int argc, char** argv) {
     const bool tvRoomTest=hasArg(argc,argv,"--tv-room-test");
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
+    const bool slopeLab=hasArg(argc,argv,"--slope-lab");
     const bool rallyLab=hasArg(argc,argv,"--rally-lab");
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
@@ -1872,6 +1874,7 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
+    if(slopeLab){host.game.debugStartSlopeLab();std::printf("SLOPE_LAB_READY low_z=12 high_z=2 rise=1.60 run=10.00 controls=standard\n");}
     if(rallyLab){
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
@@ -1957,7 +1960,7 @@ int main(int argc, char** argv) {
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
-    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!rallyLab&&!roomInspector){
+    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!slopeLab&&!rallyLab&&!roomInspector){
         host.multiplayer.configureImpairment(
             argInt(argc,argv,"--net-latency-ms"),
             argInt(argc,argv,"--net-jitter-ms"),

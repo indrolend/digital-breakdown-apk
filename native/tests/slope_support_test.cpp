@@ -21,6 +21,11 @@ int main(){
     assert(classifySupport(flat)==SupportClassification::Ordinary);
     const SlopeSupport steep{-1,1,-0.5f,0.5f,0.0f,2.0f,SlopeAxis::PositiveZ};
     assert(classifySupport(steep)==SupportClassification::Steep);
+    const auto wedge=makeSlopeWedgeMesh(moderate);
+    assert(wedge.vertexCount==SlopeWedgeVertexCount);
+    bool sawPhysicalTop=false;
+    for(int i=0;i<wedge.vertexCount;++i){assert(std::isfinite(wedge.positions[i*3])&&std::isfinite(wedge.positions[i*3+1])&&std::isfinite(wedge.positions[i*3+2]));assert(std::isfinite(wedge.normals[i*3])&&std::isfinite(wedge.normals[i*3+1])&&std::isfinite(wedge.normals[i*3+2]));sawPhysicalTop|=wedge.normals[i*3+1]>0.98f&&wedge.normals[i*3+2]>0.0f;}
+    assert(sawPhysicalTop);
     std::puts("Slope support tests passed.");
     return 0;
 }
