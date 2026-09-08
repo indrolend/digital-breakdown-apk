@@ -525,6 +525,17 @@ void Game::debugStartTraversalLab() {
     updatePhoneDisplay(0.0f);
 }
 
+void Game::debugStartSlopeLab(){
+    reset();state_.slopeLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;
+    state_.upgradeMenu.active=false;state_.cinematic.introActive=false;
+    for(auto& target:state_.targets)target=TargetState{};for(auto& capture:state_.captures)capture=CapturePointState{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};
+    state_.slopeSupports[0]={-3.0f,3.0f,2.0f,12.0f,0.0f,1.6f,SlopeAxis::NegativeZ};state_.slopeSupportCount=1;
+    RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
+    state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
+    state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
+}
+
 void Game::debugStartRoomInspector(){
     reset();state_.roomInspector=true;state_.roomInspectorPremise=early_browser_visuals::RoomPremise::FieldOpen;state_.roomInspectorEnemies=false;
     debugStepRoomInspector(0,false);

@@ -336,6 +336,11 @@ void Renderer::drawFacetedRock(const float* viewProj,const early_browser_visuals
     glUseProgram(program_);glUniform1f(uUseNormal_,render_contract::androidShadingSelector(render_contract::ShadingModel::NormalLit));glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,mesh.positions.data());glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,mesh.normals.data());glDrawArrays(GL_TRIANGLES,0,mesh.vertexCount);
 }
 
+void Renderer::drawSlopeWedge(const float* viewProj,const SlopeSupport& slope,float zOffset,const float color[4]){
+    if(!program_)return;const auto mesh=makeSlopeWedgeMesh(slope,zOffset);float identity[16];ident(identity);
+    glUseProgram(program_);glUniform1f(uUseNormal_,render_contract::androidShadingSelector(render_contract::ShadingModel::NormalLit));glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,identity);glUniformMatrix4fv(uMvp_,1,GL_FALSE,viewProj);glUniform4fv(uColor_,1,color);glBindBuffer(GL_ARRAY_BUFFER,0);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,mesh.positions.data());glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,mesh.normals.data());glDrawArrays(GL_TRIANGLES,0,mesh.vertexCount);
+}
+
 void Renderer::drawStaticModel(const float* viewProj,const StaticModelData& model,unsigned int vbo,unsigned int normalVbo,const Vec3& pos,const Vec3& scale,const Quat& orientation,bool shadow) {
     if(!program_ || !vbo || !normalVbo || !model.valid()) return;
     float matrix[16],mvp[16];modelBox(matrix,pos,scale,orientation);multiply(mvp,viewProj,matrix);
@@ -497,9 +502,11 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
     drawBox(viewProj,{ROOM_WIDTH*0.5f,wallHeight*0.5f,z0},{0.5f,wallHeight,ROOM_DEPTH},0,wallColor);
     const float obstacleColor[4]={Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b,1.0f};
     for(int i=0;i<std::min(state.debug.colliderCount,plan.obstacleCount);++i){const RoomCollider& collider=state.roomColliders[i]; drawBox(viewProj,{collider.center.x,collider.center.y,z0+collider.center.z},{collider.width,collider.height,collider.depth},0,obstacleColor);if(plan.setting==early_browser_visuals::RoomSetting::City&&plan.form==early_browser_visuals::RoomForm::Corridor&&early_browser_visuals::obstacleRole(plan,state.roomSeed,state.roomIndex,i)==early_browser_visuals::EnvironmentRole::Landmark){const float tierH=gameplay::WORLD_SCALE.storyHeight*0.34f;const float tierColor[4]={0.34f,0.40f,0.44f,1};drawBox(viewProj,{collider.center.x,collider.topY+tierH*0.5f,z0+collider.center.z},{collider.width*0.58f,tierH,collider.depth*0.62f},0,tierColor);}}
+    if(state.slopeLab){const RoomCollider& plateau=state.roomColliders[0];drawBox(viewProj,{plateau.center.x,plateau.center.y,z0+plateau.center.z},{plateau.width,plateau.height,plateau.depth},0,obstacleColor);}
+    const float slopeColor[4]={0.39f,0.42f,0.36f,1.0f};for(int i=0;i<state.slopeSupportCount;++i)drawSlopeWedge(viewProj,state.slopeSupports[i],z0,slopeColor);
     const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
     const float traversalColor[4]={traversalPresentation.color.x,traversalPresentation.color.y,traversalPresentation.color.z,1.0f};
-    const auto geometry=early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
+    const auto geometry=state.slopeLab?early_browser_visuals::RoomGeometryCapacityPlan{}:early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
     for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!geometry.traversalIncluded[i])continue;const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);drawBox(viewProj,spec.center+Vec3{0,0,z0},spec.size,0,traversalColor);}
     if(plan.sidewalks){const float sidewalk[4]={0.32f,0.34f,0.36f,1.0f};const bool canyon=plan.form==early_browser_visuals::RoomForm::Canyon,skyline=plan.form==early_browser_visuals::RoomForm::Skyline;const float walkX=canyon?3.55f:(skyline?8.15f:5.2f),walkW=canyon?1.1f:(skyline?2.4f:2.0f);drawBox(viewProj,{-walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);drawBox(viewProj,{walkX,0.08f,z0},{walkW,0.16f,ROOM_DEPTH},0,sidewalk);}
     for(int i=0;i<early_browser_visuals::environmentPropCount(plan);++i){
