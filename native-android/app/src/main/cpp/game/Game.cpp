@@ -1125,6 +1125,7 @@ void Game::buildRoomColliders() {
     const auto geometry=routeValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
     state_.debug.colliderCount=geometry.authoredColliderCount;
     for (auto& c : state_.roomColliders) c = RoomCollider{};
+    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};state_.rockSupportCount=0;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);
         const float px=spec.center.x,pz=spec.center.z,w=spec.size.x,h=spec.size.y,d=spec.size.z;
@@ -1150,6 +1151,9 @@ void Game::buildRoomColliders() {
         if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Tree){
             c.kind=RoomColliderKind::TreeTrunk;
             c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+prop.size.y*1.18f);
+        }else if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Rock&&state_.rockSupportCount<ROCK_SUPPORT_COUNT){
+            c.kind=RoomColliderKind::RockAuthoritySlot;
+            state_.rockSupports[state_.rockSupportCount++]={prop,state_.roomSeed,state_.roomIndex,i};
         }
     }
 }
@@ -1740,6 +1744,7 @@ PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
     const float localZ = wrapZ(z);
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius)
             support.height = std::max(support.height, c.topY + GROUND_Y);
     }
@@ -1765,6 +1770,7 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
     float localPlayerZ = player.pos.z - tileOriginZ;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         // Side blocking ends only once the phone's solid lower edge has cleared
         // the collider top.  Using the center height here allowed the phone to
         // move through the lip while its lower half still intersected it.
@@ -1846,6 +1852,7 @@ bool Game::tryBeginTreeClimb(const Vec3& move) {
     int best=-1;float bestGap=PLAYER_COLLISION_RADIUS+0.10f;Vec3 bestNormal;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if(c.kind!=RoomColliderKind::TreeTrunk||p.pos.y<c.bottomY+GROUND_Y-0.10f||p.pos.y>c.climbTopY+0.10f)continue;
         const float centerLane=std::min(TREE_CLIMB_CENTER_LANE_MAX,std::min(c.width,c.depth)*0.30f);
         const auto candidate=[&](float gap,const Vec3& normal,bool within){
@@ -2030,6 +2037,7 @@ bool Game::tryBeginLedgeHang() {
     Vec3 bestNormal; Vec3 bestTangent;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if(phoneTop<c.topY-LEDGE_GRAB_VERTICAL_BELOW||phoneTop>c.topY+LEDGE_GRAB_VERTICAL_ABOVE)continue;
         auto candidate=[&](float distance,const Vec3& normal,const Vec3& tangent,bool within){
             if(within&&distance>=-0.02f&&distance<bestDistance){best=i;bestDistance=distance;bestNormal=normal;bestTangent=tangent;}

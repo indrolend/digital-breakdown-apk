@@ -856,7 +856,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         }
     }
     for(int i=0;i<state.slopeSupportCount;++i)drawSlopeWedge(state.slopeSupports[i],z0,{0.39f,0.42f,0.36f});
-    for(int i=0;i<state.rockSupportCount;++i){const auto& rock=state.rockSupports[i];const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
+    if(state.slopeLab)for(int i=0;i<state.rockSupportCount;++i){const auto& rock=state.rockSupports[i];const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
     const auto traversalPresentation=early_browser_visuals::traversalPresentationFor(plan.setting,state.roomInspector||state.traversalLab);
     const auto geometry=state.slopeLab?early_browser_visuals::RoomGeometryCapacityPlan{}:early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
     for(int i=0;i<plan.traversal.surfaceCount;++i){const auto& surface=plan.traversal.surfaces[i];if(!geometry.traversalIncluded[i])continue;const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);
