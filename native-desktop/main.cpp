@@ -1618,7 +1618,10 @@ int runModelTest(const std::filesystem::path& root) {
     auto finite=[](const std::vector<float>& v){return !v.empty()&&std::all_of(v.begin(),v.end(),[](float x){return std::isfinite(x)&&std::abs(x)<100.0f;});};
     auto differs=[](const std::vector<float>& a,const std::vector<float>& b){if(a.size()!=b.size())return true;for(std::size_t i=0;i<a.size();++i)if(std::abs(a[i]-b[i])>0.00001f)return true;return false;};
     float minY=100,maxY=-100;for(std::size_t i=1;i<idle.size();i+=3){minY=std::min(minY,idle[i]);maxY=std::max(maxY,idle[i]);}
-    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phone.vertices.size()/3==253740&&phone.batches.size()==30&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&differs(idle,walk)&&differs(walk,attack)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
+    float phoneMin[3]{100,100,100},phoneMax[3]{-100,-100,-100};for(std::size_t i=0;i+2<phone.vertices.size();i+=3)for(int axis=0;axis<3;++axis){phoneMin[axis]=std::min(phoneMin[axis],phone.vertices[i+axis]);phoneMax[axis]=std::max(phoneMax[axis],phone.vertices[i+axis]);}
+    const std::size_t phoneVertexCount=phone.vertices.size()/3;const float phoneWidth=phoneMax[0]-phoneMin[0],phoneHeight=phoneMax[1]-phoneMin[1],phoneDepth=phoneMax[2]-phoneMin[2];
+    const bool phoneOk=phoneVertexCount>=100&&phoneVertexCount<=3000&&phoneVertexCount%3==0&&phone.batches.size()>=3&&phone.batches.size()<=8&&std::abs(phoneWidth-PHONE_BODY_WIDTH)<0.003f&&std::abs(phoneHeight-PHONE_BODY_HEIGHT)<0.003f&&phoneDepth>=PHONE_BODY_DEPTH&&phoneDepth<0.018f;
+    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phoneOk&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&differs(idle,walk)&&differs(walk,attack)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
     std::printf("MODEL_TEST_%s human=%zu bones=%zu frames=%u phone=%zu/%zu flower=%zu y=[%.4f,%.4f] walk=%d attack=%d\n",ok?"OK":"FAILED",human.vertices.size(),human.bones.size(),human.frameCount,phone.vertices.size()/3,phone.batches.size(),flower.vertices.size()/3,minY,maxY,differs(idle,walk)?1:0,differs(walk,attack)?1:0);return ok?0:1;
 }
 

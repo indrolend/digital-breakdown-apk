@@ -28,6 +28,64 @@ function writeModel(filename,model){
   return bytes.length;
 }
 
+// DATA's player is a fictional reconstruction device, not a branded consumer
+// phone. Keep its overall occupancy aligned with the gameplay/screen contract,
+// but build the visible shell from a small set of deliberately asymmetric,
+// readable masses. The luminous screen remains a separate runtime surface so
+// gameplay state can continue to drive it independently of this static mesh.
+function originalDataDevice() {
+  const materials = [
+    { color: [0.10, 0.15, 0.18, 1.0], vertices: [] }, // graphite shell
+    { color: [0.31, 0.52, 0.55, 1.0], vertices: [] }, // metallic teal rail
+    { color: [0.38, 0.25, 0.36, 1.0], vertices: [] }, // deep-plum reconstruction seam
+    { color: [0.47, 0.84, 0.88, 1.0], vertices: [] }, // cyan sensor
+    { color: [0.88, 0.72, 0.50, 1.0], vertices: [] }, // warm contact
+  ];
+  const tri=(material,a,b,c)=>materials[material].vertices.push(...a,...b,...c);
+  const quad=(material,a,b,c,d)=>{tri(material,a,b,c);tri(material,a,c,d);};
+  const box=(material,min,max)=>{
+    const [x0,y0,z0]=min,[x1,y1,z1]=max;
+    quad(material,[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);
+    quad(material,[x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);
+    quad(material,[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);
+    quad(material,[x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);
+    quad(material,[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]);
+    quad(material,[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]);
+  };
+  const prism=(material,outline,z0,z1)=>{
+    for(let i=1;i+1<outline.length;i++){
+      tri(material,[...outline[0],z1],[...outline[i],z1],[...outline[i+1],z1]);
+      tri(material,[...outline[0],z0],[...outline[i+1],z0],[...outline[i],z0]);
+    }
+    for(let i=0;i<outline.length;i++){
+      const a=outline[i],b=outline[(i+1)%outline.length];
+      quad(material,[...a,z0],[...b,z0],[...b,z1],[...a,z1]);
+    }
+  };
+
+  // Unequal corner cuts prevent the silhouette from reading as a familiar
+  // mass-market handset while retaining the instantly legible handheld slab.
+  prism(0,[[-0.039,-0.070],[-0.031,-0.080],[0.028,-0.080],[0.039,-0.069],
+           [0.039,0.064],[0.030,0.080],[-0.034,0.080],[-0.039,0.074]],-0.0055,0.0055);
+  // An offset structural rail and diagonal seam make orientation readable at
+  // gameplay distance, including when the screen is facing away from camera.
+  box(1,[-0.039,-0.052,-0.0065],[-0.034,0.057,0.0065]);
+  prism(2,[[-0.033,-0.071],[-0.027,-0.077],[0.031,0.066],[0.026,0.075]],-0.0060,-0.0054);
+  // Broad, non-camera-like sensor bar: this is the device's data aperture.
+  box(3,[-0.022,0.065,0.0056],[0.012,0.072,0.0070]);
+  // One exposed contact gives the otherwise cool object a small physical cue.
+  box(4,[0.017,-0.080,-0.0030],[0.029,-0.077,0.0030]);
+
+  const vertices=[];const batches=[];
+  for(const material of materials){
+    if(material.vertices.length===0)continue;
+    const start=vertices.length/3;
+    vertices.push(...material.vertices);
+    batches.push({start,count:material.vertices.length/3,color:material.color});
+  }
+  return {vertices,batches};
+}
+
 function humanBoneMetadata(name) {
   const lower=name.toLowerCase();
   let flags=0;
@@ -94,10 +152,10 @@ function writeHumanModel(filename) {
   fs.writeFileSync(path.join(outDir,filename),bytes);
   return {vertices:vertexCount,bones:boneCount,frames:frameCount,bytes:bytes.length,minY,unitScale,color};
 }
-const phone=flatten("IPHONE_GLB_BASE64",0.16),flower=flatten("PENTAGONAL_FLOWER_GLB_BASE64",null,0.72);
+const phone=originalDataDevice(),flower=flatten("PENTAGONAL_FLOWER_GLB_BASE64",null,0.72);
 fs.mkdirSync(outDir,{recursive:true});
 const phoneBytes=writeModel("phone.dbmesh",phone),flowerBytes=writeModel("flower.dbmesh",flower);
 const human=writeHumanModel("human.dbhuman");
-const manifest={format:"DBM1/DBH1",source:"reference/browser-pass7/assets/embedded-assets.js",phone:{vertices:phone.vertices.length/3,batches:phone.batches.length,bytes:phoneBytes},flower:{vertices:flower.vertices.length/3,batches:flower.batches.length,bytes:flowerBytes},human};
+const manifest={format:"DBM1/DBH1",source:"reference/browser-pass7/assets/embedded-assets.js",sources:{phone:"tools/pass7-oracle/generate-native-models.mjs:originalDataDevice",flower:"project-authored embedded flower",human:"open-source embedded human"},phone:{vertices:phone.vertices.length/3,batches:phone.batches.length,bytes:phoneBytes},flower:{vertices:flower.vertices.length/3,batches:flower.batches.length,bytes:flowerBytes},human};
 fs.writeFileSync(path.join(outDir,"manifest.json"),JSON.stringify(manifest,null,2)+"\n");
 console.log(JSON.stringify({output:outDir,...manifest},null,2));
