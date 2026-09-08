@@ -271,6 +271,10 @@ add_executable(MaterialResponseTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests
 target_include_directories(MaterialResponseTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(MaterialResponseTest PRIVATE cxx_std_17)
 
+add_executable(FacetedRockTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/faceted_rock_test.cpp")
+target_include_directories(FacetedRockTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(FacetedRockTest PRIVATE cxx_std_17)
+
 add_executable(RenderContractsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/render_contracts_test.cpp")
 target_include_directories(RenderContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(RenderContractsTest PRIVATE cxx_std_17)
@@ -353,6 +357,7 @@ add_test(NAME MenuNavigationTest COMMAND MenuNavigationTest)
 add_test(NAME PhoneDisplayStateTest COMMAND PhoneDisplayStateTest)
 add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME MaterialResponseTest COMMAND MaterialResponseTest)
+add_test(NAME FacetedRockTest COMMAND FacetedRockTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
 add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)
