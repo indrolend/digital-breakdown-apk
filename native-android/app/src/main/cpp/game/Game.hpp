@@ -348,6 +348,12 @@ struct SoulColliderHit {
     Vec3 position;
 };
 
+struct PlayerSupportSample {
+    float height=0.08f;
+    Vec3 normal{0.0f,1.0f,0.0f};
+    SupportClassification classification=SupportClassification::Ordinary;
+};
+
 struct RoomTopologyState {
     int currentTileIndex = 0;
     int previousTileIndex = 0;
@@ -866,7 +872,8 @@ private:
     float getRoomTileOriginZ(int tileIndex) const;
     float wrapZ(float z) const;
     float getPlayerCeilingLimit() const;
-    float getPlayerSupportY(float x, float z) const;
+    PlayerSupportSample getPlayerSupport(float x, float z) const;
+    float getPlayerSupportY(float x, float z) const { return getPlayerSupport(x,z).height; }
     void resolvePlayerObstacleCollisions();
     void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);

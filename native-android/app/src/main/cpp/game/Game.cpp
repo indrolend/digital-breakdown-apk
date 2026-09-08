@@ -1721,16 +1721,23 @@ float Game::getPlayerCeilingLimit() const {
     return ROOM_WALL_HEIGHT - GROUND_Y - CEILING_CLEARANCE - PLAYER_CEILING_BODY_CLEARANCE;
 }
 
-float Game::getPlayerSupportY(float x, float z) const {
-    float supportY = GROUND_Y;
+PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
+    PlayerSupportSample support{};
     const float radius = PLAYER_SUPPORT_RADIUS;
     const float localZ = wrapZ(z);
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
         if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius)
-            supportY = std::max(supportY, c.topY + GROUND_Y);
+            support.height = std::max(support.height, c.topY + GROUND_Y);
     }
-    return std::min(supportY, getPlayerCeilingLimit());
+    for(int i=0;i<state_.slopeSupportCount;++i){
+        const auto sample=sampleSlopeSupport(state_.slopeSupports[i],x,localZ);
+        if(!sample.inside||sample.classification==SupportClassification::Steep)continue;
+        const float candidate=sample.height+GROUND_Y;
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;}
+    }
+    support.height=std::min(support.height,getPlayerCeilingLimit());
+    return support;
 }
 
 void Game::resolvePlayerObstacleCollisions() {
