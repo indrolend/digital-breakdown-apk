@@ -529,9 +529,11 @@ void Game::debugStartSlopeLab(){
     reset();state_.slopeLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;
     state_.upgradeMenu.active=false;state_.cinematic.introActive=false;
     for(auto& target:state_.targets)target=TargetState{};for(auto& capture:state_.captures)capture=CapturePointState{};
-    for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
     state_.slopeSupports[0]={-3.0f,3.0f,2.0f,12.0f,0.0f,1.6f,SlopeAxis::NegativeZ};state_.slopeSupportCount=1;
     RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
+    const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,1.45f,3.0f},0.24f,0};
+    state_.rockSupports[0]={rock,73,4,0};state_.rockSupportCount=1;
     state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
 }
@@ -1747,11 +1749,16 @@ PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
         const float candidate=sample.height+GROUND_Y;
         if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;}
     }
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto sample=faceted_rock::sampleSupport(state_.rockSupports[i],x,localZ);
+        if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;}
+    }
     support.height=std::min(support.height,getPlayerCeilingLimit());
     return support;
 }
 
-void Game::resolvePlayerObstacleCollisions() {
+void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
     PlayerState& player = state_.player;
     const float radius = PLAYER_COLLISION_RADIUS;
     const float tileOriginZ = getRoomTileOriginZ(getRoomTileIndex(player.pos.z));
@@ -1784,6 +1791,12 @@ void Game::resolvePlayerObstacleCollisions() {
                 if(headOn>0.72f)state_.meleeVisual.wallGripTimer=AIR_MELEE_WALL_GRIP_TIME;
             }
         }
+    }
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto& rock=state_.rockSupports[i];const auto envelope=faceted_rock::sampleEnvelope(rock,player.pos.x,localPlayerZ);
+        if(!envelope.inside||player.pos.y>=envelope.height+GROUND_Y-0.08f)continue;
+        const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
+        player.pos.x=previousX;player.pos.z=previousZ;player.vel={};localPlayerZ=previousLocalZ;
     }
 }
 
@@ -2190,7 +2203,7 @@ void Game::updatePlayer(float dt) {
     }
     if (p.grounded && p.jumpBufferTimer > 0) startGroundJump();
     p.pos += p.vel * dt;
-    resolvePlayerObstacleCollisions();
+    resolvePlayerObstacleCollisions(previousX,previousZ);
     resolveDoorwayCollisions(previousX,previousZ);
     if(simulationPlayerId_==0) updateRoomTopology(previousZ, p.pos.z);
     if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }

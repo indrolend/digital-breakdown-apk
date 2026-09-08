@@ -11,10 +11,12 @@
 #include "EarlyBrowserVisuals.hpp"
 #include "MaterialResponse.hpp"
 #include "SlopeSupport.hpp"
+#include "FacetedRock.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
 constexpr int SLOPE_SUPPORT_COUNT = 2;
+constexpr int ROCK_SUPPORT_COUNT = 2;
 constexpr int BULLET_COUNT = 30;
 constexpr int FLOWER_POWERUP_COUNT = 32;
 constexpr int PARTICLE_COUNT = 256;
@@ -662,6 +664,8 @@ struct GameState {
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
     std::array<SlopeSupport, SLOPE_SUPPORT_COUNT> slopeSupports;
     int slopeSupportCount = 0;
+    std::array<faceted_rock::Support, ROCK_SUPPORT_COUNT> rockSupports;
+    int rockSupportCount = 0;
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
@@ -723,6 +727,7 @@ public:
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
     void debugFillBattery();
+    PlayerSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
     bool debugSetEnemies(int mode);
     void debugNextRoom();
     void debugRerollRoom();
@@ -876,7 +881,7 @@ private:
     float getPlayerCeilingLimit() const;
     PlayerSupportSample getPlayerSupport(float x, float z) const;
     float getPlayerSupportY(float x, float z) const { return getPlayerSupport(x,z).height; }
-    void resolvePlayerObstacleCollisions();
+    void resolvePlayerObstacleCollisions(float previousX, float previousZ);
     void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);
     void updateRoomTopology(float previousZ, float currentZ);

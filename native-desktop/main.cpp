@@ -1875,7 +1875,7 @@ int main(int argc, char** argv) {
             tv.entranceNormal.x,tv.entranceNormal.y,tv.entranceNormal.z);
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
-    if(slopeLab){host.game.debugStartSlopeLab();std::printf("SLOPE_LAB_READY low_z=12 high_z=2 rise=1.60 run=10.00 controls=standard\n");}
+    if(slopeLab){host.game.debugStartSlopeLab();std::printf("SLOPE_LAB_READY low_z=12 high_z=2 rise=1.60 run=10.00 rock=(6,7) controls=standard\n");}
     if(rallyLab){
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
