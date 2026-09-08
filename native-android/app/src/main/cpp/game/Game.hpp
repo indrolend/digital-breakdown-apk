@@ -10,9 +10,11 @@
 #include "PhoneDisplay.hpp"
 #include "EarlyBrowserVisuals.hpp"
 #include "MaterialResponse.hpp"
+#include "SlopeSupport.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
+constexpr int SLOPE_SUPPORT_COUNT = 2;
 constexpr int BULLET_COUNT = 30;
 constexpr int FLOWER_POWERUP_COUNT = 32;
 constexpr int PARTICLE_COUNT = 256;
@@ -652,6 +654,8 @@ struct GameState {
     AudioState audio;
     std::array<int, 5> captureSoundSlots{{0,1,2,3,4}};
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
+    std::array<SlopeSupport, SLOPE_SUPPORT_COUNT> slopeSupports;
+    int slopeSupportCount = 0;
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
