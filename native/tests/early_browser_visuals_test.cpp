@@ -18,7 +18,7 @@ int main(){
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
     bool sawPhysicalPlayground=false,sawPhysicalFunnel=false;
-    bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false;
+    bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false,sawFieldRock=false,sawCoastalRock=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
         assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.traversalIntent==b.traversalIntent&&a.obstacleCount==b.obstacleCount&&a.composition==b.composition);
@@ -94,14 +94,14 @@ int main(){
             if(a.obstacleCount+solidProps+physicalTraversalSurfaceCount(a)>15){sawCapacityPressure=true;assert(geometry.optionalTraversalColliderCount==0);}
         }
         int landmarks=0;
-        for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.role==propB.role&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(settingAllowsPrimitive(a.setting,propA.primitive));assert(std::abs(propA.center.x)>7.0f);if(a.setting==RoomSetting::Field)assert(propA.primitive!=EnvironmentPrimitive::MarkerPillar&&std::abs(propA.center.x)>8.4f);landmarks+=propA.role==EnvironmentRole::Landmark?1:0;}
+        for(int i=0;i<propCount;++i){const auto propA=environmentProp(a,seed,room,i),propB=environmentProp(a,seed,room,i);assert(propA.primitive==propB.primitive&&propA.role==propB.role&&propA.center.x==propB.center.x&&propA.size.y==propB.size.y);assert(settingAllowsPrimitive(a.setting,propA.primitive));assert(std::abs(propA.center.x)>7.0f);if(a.setting==RoomSetting::Field)assert(propA.primitive!=EnvironmentPrimitive::MarkerPillar&&std::abs(propA.center.x)>8.4f);if(propA.primitive==EnvironmentPrimitive::Rock){assert(a.setting==RoomSetting::Field||a.setting==RoomSetting::Coastal);assert(propA.role==EnvironmentRole::Mass||propA.role==EnvironmentRole::Landmark);sawFieldRock|=a.setting==RoomSetting::Field;sawCoastalRock|=a.setting==RoomSetting::Coastal;}landmarks+=propA.role==EnvironmentRole::Landmark?1:0;}
         assert(landmarks<=1);
     }
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
     assert(sawPhysicalPlayground&&sawPhysicalFunnel);
-    assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins&&sawCapacityPressure);
+    assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins&&sawFieldRock&&sawCoastalRock&&sawCapacityPressure);
     assert(roomScaleEncounterCandidateBias(RoomScale::Compact,{5.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Compact,{10.5f,0,0}));
     assert(roomScaleEncounterCandidateBias(RoomScale::Large,{10.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Large,{5.5f,0,0}));
     assert(roomScaleEncounterCandidateBias(RoomScale::Standard,{5.5f,0,0})==0.0f);
