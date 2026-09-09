@@ -2420,6 +2420,25 @@ void Game::updatePhoneActionPose(float dt, bool running, float forwardAxis, floa
         pose.screenForwardTurn=0.0f;
         return;
     }
+    if(state_.player.treeClimbing){
+        bool holdingTip=false;
+        const int colliderIndex=state_.player.treeCollider;
+        if(colliderIndex>=0&&colliderIndex<state_.debug.colliderCount){
+            const RoomCollider& tree=state_.roomColliders[colliderIndex];
+            holdingTip=tree.kind==RoomColliderKind::TreeTrunk&&state_.player.pos.y>=tree.climbTopY-TREE_TIP_HEIGHT_EPSILON;
+        }
+        const float climbEffort=clampf(std::abs(forwardAxis),0.0f,1.0f);
+        const float climbPulse=std::sin(state_.time*9.0f)*climbEffort;
+        const float orbitBank=holdingTip?clampf(strafeAxis,-1.0f,1.0f)*0.18f:0.0f;
+        pose.lift+=holdingTip?0.035f:climbPulse*0.012f;
+        pose.orientation=quatNormalized(
+            quatAxisAngle({0,1,0},state_.player.yaw)*
+            quatAxisAngle({1,0,0},holdingTip?0.08f:0.18f+climbPulse*0.025f)*
+            quatAxisAngle({0,0,1},-orbitBank));
+        pose.actionState=holdingTip?11:10;
+        pose.screenForwardTurn=0.0f;
+        return;
+    }
     if(state_.player.ledgeHanging){
         const float effort=clampf(std::abs(state_.player.ledgeShimmySpeed)/LEDGE_SHIMMY_MAX_SPEED,0.0f,1.0f);
         const float dangle=std::sin(state_.player.ledgeHangTime*5.2f)*0.055f;

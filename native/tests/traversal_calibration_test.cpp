@@ -102,9 +102,11 @@ bool runTreeClimbContract(){
         game.update(Dt);
     }
     const PlayerState& rotated=game.state().player;
+    const Vec3 rotatedScreenNormal=game.state().phoneTransform.screenNormal;
+    const Vec3 rotatedScreenHorizontal=normalized(Vec3{rotatedScreenNormal.x,0.0f,rotatedScreenNormal.z});
     const float tipLocalZ=rotated.pos.z;
     const float tipRadius=std::sqrt((rotated.pos.x-tree.center.x)*(rotated.pos.x-tree.center.x)+(tipLocalZ-tree.center.z)*(tipLocalZ-tree.center.z));
-    if(!rotated.treeClimbing||std::abs(rotated.pos.y-crownY)>0.001f||horizontalDot(rotated.treeNormal,initialTipNormal)>0.75f||std::abs(tipRadius-expectedRadius)>0.002f){std::fprintf(stderr,"TREE_CLIMB_STAGE tip orbit climbing=%d y=%.3f dot=%.3f radius=%.3f expected=%.3f\n",rotated.treeClimbing?1:0,rotated.pos.y,horizontalDot(rotated.treeNormal,initialTipNormal),tipRadius,expectedRadius);return false;}
+    if(!rotated.treeClimbing||std::abs(rotated.pos.y-crownY)>0.001f||horizontalDot(rotated.treeNormal,initialTipNormal)>0.75f||std::abs(tipRadius-expectedRadius)>0.002f||game.state().phonePose.actionState!=11||horizontalDot(rotatedScreenHorizontal,rotated.treeNormal)>-0.97f){std::fprintf(stderr,"TREE_CLIMB_STAGE tip orbit climbing=%d y=%.3f dot=%.3f radius=%.3f expected=%.3f action=%d facing=%.3f\n",rotated.treeClimbing?1:0,rotated.pos.y,horizontalDot(rotated.treeNormal,initialTipNormal),tipRadius,expectedRadius,game.state().phonePose.actionState,horizontalDot(rotatedScreenHorizontal,rotated.treeNormal));return false;}
     const Vec3 launchNormal=rotated.treeNormal;
     game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,true,false,false,false);
     game.update(Dt);
@@ -122,7 +124,7 @@ bool runTreeClimbContract(){
         descent.setTouchControls(0.0f,-1.0f,0.0f,0.0f,false,false,false,false,false,false);
         descent.update(Dt);
     }
-    if(!descent.state().player.treeClimbing||descent.state().player.pos.y>=crownY-0.20f){std::fprintf(stderr,"TREE_CLIMB_STAGE descend climbing=%d y=%.3f crown=%.3f\n",descent.state().player.treeClimbing?1:0,descent.state().player.pos.y,crownY);return false;}
+    if(!descent.state().player.treeClimbing||descent.state().player.pos.y>=crownY-0.20f||descent.state().phonePose.actionState!=10){std::fprintf(stderr,"TREE_CLIMB_STAGE descend climbing=%d y=%.3f crown=%.3f action=%d\n",descent.state().player.treeClimbing?1:0,descent.state().player.pos.y,crownY,descent.state().phonePose.actionState);return false;}
 
     Game offCenter;offCenter.reset();GameState& offCenterState=offCenter.networkMutableState();
     for(auto& target:offCenterState.targets)target={};
