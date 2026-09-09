@@ -1174,7 +1174,7 @@ void Game::buildRoomColliders() {
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
         if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Tree){
             c.kind=RoomColliderKind::TreeTrunk;
-            c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+prop.size.y*1.18f);
+            c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+tree_geometry::climbTopY(prop));
         }else if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Rock&&state_.rockSupportCount<ROCK_SUPPORT_COUNT){
             c.kind=RoomColliderKind::RockAuthoritySlot;
             state_.rockSupports[state_.rockSupportCount++]={prop,state_.roomSeed,state_.roomIndex,i};
