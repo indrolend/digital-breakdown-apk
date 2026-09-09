@@ -12,6 +12,8 @@ namespace {
 constexpr float Dt = 1.0f / 60.0f;
 constexpr float PlatformTop = 1.0f;
 
+float horizontalDot(const Vec3& a,const Vec3& b){return a.x*b.x+a.z*b.z;}
+
 void setBox(RoomCollider& box,float x,float z,float width,float depth,float height){
     box={};box.minX=x-width*0.5f;box.maxX=x+width*0.5f;
     box.minZ=z-depth*0.5f;box.maxZ=z+depth*0.5f;box.bottomY=0.0f;box.topY=height;
@@ -93,16 +95,34 @@ bool runTreeClimbContract(){
     const float crownY=game.state().player.pos.y;
     if(!game.state().player.treeClimbing||std::abs(crownY-tree.climbTopY)>0.001f){std::fprintf(stderr,"TREE_CLIMB_STAGE crown climbing=%d y=%.3f top=%.3f\n",game.state().player.treeClimbing?1:0,crownY,tree.climbTopY);return false;}
 
-    for(int frame=0;frame<15;++frame){
-        game.setTouchControls(0.0f,-1.0f,0.0f,0.0f,false,false,false,false,false,false);
+    const Vec3 initialTipNormal=game.state().player.treeNormal;
+    const float expectedRadius=std::sqrt((game.state().player.pos.x-tree.center.x)*(game.state().player.pos.x-tree.center.x)+(game.state().player.pos.z-tree.center.z)*(game.state().player.pos.z-tree.center.z));
+    for(int frame=0;frame<30;++frame){
+        game.setTouchControls(1.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);
         game.update(Dt);
     }
-    if(!game.state().player.treeClimbing||game.state().player.pos.y>=crownY-0.20f){std::fprintf(stderr,"TREE_CLIMB_STAGE descend climbing=%d y=%.3f crown=%.3f\n",game.state().player.treeClimbing?1:0,game.state().player.pos.y,crownY);return false;}
-
+    const PlayerState& rotated=game.state().player;
+    const float tipLocalZ=rotated.pos.z;
+    const float tipRadius=std::sqrt((rotated.pos.x-tree.center.x)*(rotated.pos.x-tree.center.x)+(tipLocalZ-tree.center.z)*(tipLocalZ-tree.center.z));
+    if(!rotated.treeClimbing||std::abs(rotated.pos.y-crownY)>0.001f||horizontalDot(rotated.treeNormal,initialTipNormal)>0.75f||std::abs(tipRadius-expectedRadius)>0.002f){std::fprintf(stderr,"TREE_CLIMB_STAGE tip orbit climbing=%d y=%.3f dot=%.3f radius=%.3f expected=%.3f\n",rotated.treeClimbing?1:0,rotated.pos.y,horizontalDot(rotated.treeNormal,initialTipNormal),tipRadius,expectedRadius);return false;}
+    const Vec3 launchNormal=rotated.treeNormal;
     game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,true,false,false,false);
     game.update(Dt);
     const PlayerState& launched=game.state().player;
-    if(launched.treeClimbing||launched.treeCollider!=-1||launched.treeClimbCooldown<=0.0f||launched.jumpVel<=4.0f||launched.vel.z<=4.0f){std::fprintf(stderr,"TREE_CLIMB_STAGE jump climbing=%d collider=%d cooldown=%.3f jump=%.3f outZ=%.3f\n",launched.treeClimbing?1:0,launched.treeCollider,launched.treeClimbCooldown,launched.jumpVel,launched.vel.z);return false;}
+    if(launched.treeClimbing||launched.treeCollider!=-1||launched.treeClimbCooldown<=0.0f||launched.jumpVel<=4.0f||horizontalDot(normalized(launched.vel),launchNormal)<0.99f){std::fprintf(stderr,"TREE_CLIMB_STAGE tip jump climbing=%d collider=%d cooldown=%.3f jump=%.3f alignment=%.3f\n",launched.treeClimbing?1:0,launched.treeCollider,launched.treeClimbCooldown,launched.jumpVel,horizontalDot(normalized(launched.vel),launchNormal));return false;}
+
+    Game descent;descent.reset();GameState& descentState=descent.networkMutableState();
+    for(auto& target:descentState.targets)target={};
+    for(auto& collider:descentState.roomColliders)collider={};
+    descentState.debug.colliderCount=1;setBox(descentState.roomColliders[0],0.0f,0.0f,0.80f,0.80f,3.20f);
+    descentState.roomColliders[0].kind=RoomColliderKind::TreeTrunk;descentState.roomColliders[0].climbTopY=5.60f;
+    descentState.player.pos={0.0f,crownY,-0.745f};descentState.player.vel={};descentState.player.grounded=false;
+    descentState.player.treeClimbing=true;descentState.player.treeCollider=0;descentState.player.treeNormal={0.0f,0.0f,-1.0f};descentState.camera.yaw=0.0f;
+    for(int frame=0;frame<15;++frame){
+        descent.setTouchControls(0.0f,-1.0f,0.0f,0.0f,false,false,false,false,false,false);
+        descent.update(Dt);
+    }
+    if(!descent.state().player.treeClimbing||descent.state().player.pos.y>=crownY-0.20f){std::fprintf(stderr,"TREE_CLIMB_STAGE descend climbing=%d y=%.3f crown=%.3f\n",descent.state().player.treeClimbing?1:0,descent.state().player.pos.y,crownY);return false;}
 
     Game offCenter;offCenter.reset();GameState& offCenterState=offCenter.networkMutableState();
     for(auto& target:offCenterState.targets)target={};
@@ -187,7 +207,7 @@ int main(){
         std::fprintf(stderr,"TREE_CLIMB_FAIL trunk grip, crown clamp, descent, jump-off, or generic-wall isolation regressed\n");
         return 1;
     }
-    std::printf("TREE_CLIMB_OK crown=reachable descent=controlled jump_off=outward generic_walls=unchanged\n");
+    std::printf("TREE_CLIMB_OK crown=reachable tip_orbit=controlled tip_jump=directional descent=controlled generic_walls=unchanged\n");
     gameplay::TraversalGraph graph;
     graph.surfaceCount=2;graph.edgeCount=1;
     graph.surfaces[0]={{0,1,0},{2.5f,0,3},true};
