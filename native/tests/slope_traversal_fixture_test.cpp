@@ -12,6 +12,19 @@ void placeOnSlope(Game& game,float x,float z){auto& state=game.networkMutableSta
 bool near(float a,float b,float tolerance=0.025f){return std::fabs(a-b)<=tolerance;}
 float horizontalSpeed(const Vec3& velocity){return std::sqrt(velocity.x*velocity.x+velocity.z*velocity.z);}
 float denseRockHeight(const faceted_rock::Support& rock,float x,float z,float radius){float height=-1.0f;for(int ring=0;ring<=3;++ring){const float r=radius*static_cast<float>(ring)/3.0f;const int steps=ring==0?1:96;for(int step=0;step<steps;++step){const float angle=6.283185307f*static_cast<float>(step)/static_cast<float>(steps);const auto sample=faceted_rock::sampleEnvelope(rock,x+std::cos(angle)*r,z+std::sin(angle)*r);if(sample.inside)height=std::max(height,sample.height);}}return height;}
+struct PhoneWorldBounds{float bottom=0.0f;float horizontalRadius=0.0f;};
+PhoneWorldBounds phoneWorldBounds(const GameState& state){
+    const Vec3 axisX=rotate(state.phoneTransform.orientation,{1,0,0});
+    const Vec3 axisY=rotate(state.phoneTransform.orientation,{0,1,0});
+    const Vec3 axisZ=rotate(state.phoneTransform.orientation,{0,0,1});
+    const float halfX=PHONE_BODY_WIDTH*state.phoneVisual.bodyScale.x*0.5f;
+    const float halfY=PHONE_BODY_HEIGHT*state.phoneVisual.bodyScale.y*0.5f;
+    const float halfZ=PHONE_BODY_DEPTH*state.phoneVisual.bodyScale.z*0.5f;
+    const float extentX=std::abs(axisX.x)*halfX+std::abs(axisY.x)*halfY+std::abs(axisZ.x)*halfZ;
+    const float extentY=std::abs(axisX.y)*halfX+std::abs(axisY.y)*halfY+std::abs(axisZ.y)*halfZ;
+    const float extentZ=std::abs(axisX.z)*halfX+std::abs(axisY.z)*halfY+std::abs(axisZ.z)*halfZ;
+    return {state.phoneTransform.position.y-extentY,std::sqrt(extentX*extentX+extentZ*extentZ)};
+}
 }
 
 int main(){
@@ -56,7 +69,7 @@ int main(){
         for(int direction=0;direction<8;++direction){
             auto generated=std::make_unique<Game>();generated->debugStartSlopeLab();auto& generatedState=generated->networkMutableState();auto& generatedRock=generatedState.rockSupports[0];generatedRock.roomSeed=73+variant*97;generatedRock.roomIndex=variant;generatedRock.propIndex=variant+3;generatedRock.prop.yaw=0.19f*variant;
             const float angle=6.283185307f*static_cast<float>(direction)/8.0f;const Vec3 travel{std::cos(angle),0,std::sin(angle)};const auto startSupport=generated->debugPlayerSupportAt(generatedRock.prop.center.x,generatedRock.prop.center.z);auto& generatedPlayer=generatedState.player;generatedPlayer.pos={generatedRock.prop.center.x,startSupport.height,generatedRock.prop.center.z};generatedPlayer.vel={};generatedPlayer.jumpVel=0;generatedPlayer.grounded=true;generatedPlayer.battery=100;generatedState.camera.yaw=std::atan2(-travel.x,-travel.z);
-            for(int frame=0;frame<150;++frame){input(*generated,0,1);const auto& current=generated->state();const float required=denseRockHeight(generatedRock,current.player.pos.x,current.player.pos.z,gameplay::PHONE_BODY.collisionRadius);if(required>=0.0f&&current.player.pos.y+0.012f<required+0.08f){std::fprintf(stderr,"GENERATED_SURFACE_FAIL body penetration variant=%d direction=%d frame=%d actual=%.3f required=%.3f\n",variant,direction,frame,current.player.pos.y,required+0.08f);return 1;}const float cameraSurface=denseRockHeight(generatedRock,current.camera.pos.x,current.camera.pos.z,0.0f);if(cameraSurface>=0.0f&&current.camera.pos.y<cameraSurface+0.02f){std::fprintf(stderr,"GENERATED_SURFACE_FAIL camera penetration variant=%d direction=%d frame=%d cameraY=%.3f surface=%.3f\n",variant,direction,frame,current.camera.pos.y,cameraSurface);return 1;}}
+            for(int frame=0;frame<150;++frame){const bool jumpPressed=frame==12;const bool meleePressed=frame==32;const bool vacuumHeld=frame>=52&&frame<76;input(*generated,0,1,vacuumHeld,jumpPressed,meleePressed);const auto& current=generated->state();const float required=denseRockHeight(generatedRock,current.player.pos.x,current.player.pos.z,gameplay::PHONE_BODY.collisionRadius);const float bodyBottom=current.player.pos.y-PHONE_BODY_HEIGHT*0.5f;if(required>=0.0f&&bodyBottom<required-0.001f){std::fprintf(stderr,"GENERATED_SURFACE_FAIL body penetration variant=%d direction=%d frame=%d bottom=%.3f surface=%.3f\n",variant,direction,frame,bodyBottom,required);return 1;}const auto visiblePhone=phoneWorldBounds(current);const float visibleSurface=denseRockHeight(generatedRock,current.phoneTransform.position.x,current.phoneTransform.position.z,visiblePhone.horizontalRadius);if(visibleSurface>=0.0f&&visiblePhone.bottom<visibleSurface-0.002f){std::fprintf(stderr,"GENERATED_SURFACE_FAIL visible phone penetration variant=%d direction=%d frame=%d bottom=%.3f surface=%.3f radius=%.3f\n",variant,direction,frame,visiblePhone.bottom,visibleSurface,visiblePhone.horizontalRadius);return 1;}const float cameraSurface=denseRockHeight(generatedRock,current.camera.pos.x,current.camera.pos.z,0.0f);if(cameraSurface>=0.0f&&current.camera.pos.y<cameraSurface+0.02f){std::fprintf(stderr,"GENERATED_SURFACE_FAIL camera penetration variant=%d direction=%d frame=%d cameraY=%.3f surface=%.3f\n",variant,direction,frame,current.camera.pos.y,cameraSurface);return 1;}}
         }
     }
 
@@ -72,6 +85,6 @@ int main(){
     int rockSlots=0;for(int i=0;i<normal.state().debug.colliderCount;++i)rockSlots+=normal.state().roomColliders[i].kind==RoomColliderKind::RockAuthoritySlot?1:0;
     if(rockSlots!=normal.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL capacity slots=%d supports=%d\n",rockSlots,normal.state().rockSupportCount);return 1;}
     for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupportFootprint(deployed,deployed.prop.center.x,deployed.prop.center.z,gameplay::PHONE_BODY.collisionRadius);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
-    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep body-clearance camera-clearance ruin-stepped-support ruin-ledge-mantle");
+    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep body-clearance visible-phone-clearance action-sweep camera-clearance ruin-stepped-support ruin-ledge-mantle");
     return 0;
 }
