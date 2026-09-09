@@ -106,8 +106,8 @@ inline bool sampleProjectedTriangle(const Vec3& a,const Vec3& b,const Vec3& c,fl
     return std::isfinite(height);
 }
 
-inline SurfaceSample sampleSurface(const Support& support,float x,float z,bool walkableOnly){
-    SurfaceSample result{};const auto mesh=makeMesh(support.prop,support.roomSeed,support.roomIndex,support.propIndex);
+inline SurfaceSample sampleSurface(const Mesh& mesh,float x,float z,bool walkableOnly){
+    SurfaceSample result{};
     for(int vertex=0;vertex+2<mesh.vertexCount;vertex+=3){
         const auto point=[&](int index){return Vec3{mesh.positions[index*3],mesh.positions[index*3+1],mesh.positions[index*3+2]};};
         const Vec3 a=point(vertex),b=point(vertex+1),c=point(vertex+2),normal=faceNormal(a,b,c);
@@ -118,27 +118,55 @@ inline SurfaceSample sampleSurface(const Support& support,float x,float z,bool w
     return result;
 }
 
+inline SurfaceSample sampleSurface(const Support& support,float x,float z,bool walkableOnly){
+    return sampleSurface(makeMesh(support.prop,support.roomSeed,support.roomIndex,support.propIndex),x,z,walkableOnly);
+}
+
 inline SurfaceSample sampleSupport(const Support& support,float x,float z){return sampleSurface(support,x,z,true);}
 inline SurfaceSample sampleEnvelope(const Support& support,float x,float z){return sampleSurface(support,x,z,false);}
 
-// A point sample is sufficient to decide whether the player's foot is over a
-// valid facet, but not whether the rest of its cylindrical body clears nearby
-// facets. Keep the center as the eligibility authority, then choose the
-// highest walkable surface under the bounded body footprint.
-inline SurfaceSample sampleSupportFootprint(const Support& support,float x,float z,float radius){
-    SurfaceSample result=sampleSupport(support,x,z);
-    if(!result.inside||radius<=0.0f)return result;
-    constexpr float diagonal=0.707106781f;
-    const Vec3 offsets[]={
-        {radius,0,0},{-radius,0,0},{0,0,radius},{0,0,-radius},
-        {radius*diagonal,0,radius*diagonal},{radius*diagonal,0,-radius*diagonal},
-        {-radius*diagonal,0,radius*diagonal},{-radius*diagonal,0,-radius*diagonal}
-    };
-    for(const Vec3& offset:offsets){
-        const auto sample=sampleSupport(support,x+offset.x,z+offset.z);
-        if(sample.inside&&sample.height>result.height){result.height=sample.height;result.normal=sample.normal;}
+inline bool projectedTriangleOverlapsCircle(const Vec3& a,const Vec3& b,const Vec3& c,float x,float z,float radius){
+    float ignored=0.0f;if(sampleProjectedTriangle(a,b,c,x,z,ignored))return true;
+    const float radiusSq=radius*radius;
+    const auto vertexInside=[&](const Vec3& p){const float dx=p.x-x,dz=p.z-z;return dx*dx+dz*dz<=radiusSq;};
+    if(vertexInside(a)||vertexInside(b)||vertexInside(c))return true;
+    const auto edgeNear=[&](const Vec3& p0,const Vec3& p1){const float dx=p1.x-p0.x,dz=p1.z-p0.z,lengthSq=dx*dx+dz*dz;if(lengthSq<0.0000001f)return vertexInside(p0);const float t=clampf(((x-p0.x)*dx+(z-p0.z)*dz)/lengthSq,0.0f,1.0f);const float qx=p0.x+dx*t-x,qz=p0.z+dz*t-z;return qx*qx+qz*qz<=radiusSq;};
+    return edgeNear(a,b)||edgeNear(b,c)||edgeNear(c,a);
+}
+
+inline SurfaceSample sampleMeshFootprint(const Mesh& mesh,float x,float z,float radius,bool requireWalkable){
+    SurfaceSample result{};bool eligible=!requireWalkable;
+    const auto point=[&](int index){return Vec3{mesh.positions[index*3],mesh.positions[index*3+1],mesh.positions[index*3+2]};};
+    if(requireWalkable)for(int vertex=0;vertex+2<mesh.vertexCount;vertex+=3){const Vec3 a=point(vertex),b=point(vertex+1),c=point(vertex+2),normal=faceNormal(a,b,c);if(triangleWalkable(normal)&&projectedTriangleOverlapsCircle(a,b,c,x,z,radius)){eligible=true;break;}}
+    if(!eligible)return result;
+    const float radiusSq=radius*radius;
+    for(int vertex=0;vertex+2<mesh.vertexCount;vertex+=3){
+        const Vec3 a=point(vertex),b=point(vertex+1),c=point(vertex+2),normal=faceNormal(a,b,c);if(normal.y<=0.0001f||!projectedTriangleOverlapsCircle(a,b,c,x,z,radius))continue;
+        const auto consider=[&](float px,float pz){const float dx=px-x,dz=pz-z;if(dx*dx+dz*dz>radiusSq+0.000001f)return;float height=0.0f;if(sampleProjectedTriangle(a,b,c,px,pz,height)&&(!result.inside||height>result.height)){result.inside=true;result.height=height;result.normal=normal;}};
+        consider(x,z);consider(a.x,a.z);consider(b.x,b.z);consider(c.x,c.z);
+        const float gradientX=-normal.x/normal.y,gradientZ=-normal.z/normal.y,gradientLength=std::sqrt(gradientX*gradientX+gradientZ*gradientZ);
+        if(gradientLength>0.000001f)consider(x+radius*gradientX/gradientLength,z+radius*gradientZ/gradientLength);
+        const auto edgeIntersections=[&](const Vec3& p0,const Vec3& p1){const float dx=p1.x-p0.x,dz=p1.z-p0.z,ox=p0.x-x,oz=p0.z-z;const float qa=dx*dx+dz*dz;if(qa<0.0000001f)return;const float qb=2.0f*(ox*dx+oz*dz),qc=ox*ox+oz*oz-radiusSq,disc=qb*qb-4.0f*qa*qc;if(disc<0.0f)return;const float root=std::sqrt(std::max(0.0f,disc));const float t0=(-qb-root)/(2.0f*qa),t1=(-qb+root)/(2.0f*qa);if(t0>=0.0f&&t0<=1.0f)consider(p0.x+dx*t0,p0.z+dz*t0);if(t1>=0.0f&&t1<=1.0f)consider(p0.x+dx*t1,p0.z+dz*t1);};
+        edgeIntersections(a,b);edgeIntersections(b,c);edgeIntersections(c,a);
     }
     return result;
+}
+
+// Treat the player as a bounded cylindrical footprint. Any upward walkable
+// facet beneath that footprint can support it, just as a real body remains on
+// an edge until its footprint clears. Once eligible, every upward neighboring
+// face contributes to the required clearance height.
+inline SurfaceSample sampleSupportFootprint(const Support& support,float x,float z,float radius){
+    const auto mesh=makeMesh(support.prop,support.roomSeed,support.roomIndex,support.propIndex);
+    return sampleMeshFootprint(mesh,x,z,radius,true);
+}
+
+inline SurfaceSample sampleEnvelopeFootprint(const Mesh& mesh,float x,float z,float radius){
+    return sampleMeshFootprint(mesh,x,z,radius,false);
+}
+
+inline SurfaceSample sampleEnvelopeFootprint(const Support& support,float x,float z,float radius){
+    return sampleEnvelopeFootprint(makeMesh(support.prop,support.roomSeed,support.roomIndex,support.propIndex),x,z,radius);
 }
 
 } // namespace faceted_rock
