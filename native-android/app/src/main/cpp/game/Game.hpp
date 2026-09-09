@@ -13,6 +13,7 @@
 #include "SlopeSupport.hpp"
 #include "FacetedRock.hpp"
 #include "RuinGeometry.hpp"
+#include "HouseGeometry.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;

@@ -871,7 +871,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         if(!geometry.propIncluded[i])continue;
         const auto prop=early_browser_visuals::environmentProp(plan,state.roomSeed,state.roomIndex,i);const Vec3 p=prop.center+Vec3{0,0,z0};
         using early_browser_visuals::EnvironmentPrimitive;
-        if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.40f,0.47f,0.50f);drawBox(p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},0,prop.yaw,0,0.30f,0.37f,0.41f);drawBox(p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},0,prop.yaw,0,0.26f,0.32f,0.36f);drawBox(p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},0,prop.yaw,0,0.05f,0.08f,0.09f);}
+        if(prop.primitive==EnvironmentPrimitive::House){for(const auto& part:house_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.40f,0.47f,0.50f}:(part.surface==3?VisualColor{0.05f,0.08f,0.09f}:VisualColor{part.surface==1?0.30f:0.26f,part.surface==1?0.37f:0.32f,part.surface==1?0.41f:0.36f});drawBox(part.center,part.size,0,part.yaw,0,color.r,color.g,color.b);}}
         else if(prop.primitive==EnvironmentPrimitive::Tree){
             drawBox(p+Vec3{-prop.size.x*0.018f,prop.size.y*0.18f,0},{prop.size.x*0.26f,prop.size.y*0.36f,prop.size.z*0.26f},0,prop.yaw-0.035f,0,0.25f,0.20f,0.14f);
             drawBox(p+Vec3{ prop.size.x*0.012f,prop.size.y*0.49f,0},{prop.size.x*0.21f,prop.size.y*0.30f,prop.size.z*0.21f},0,prop.yaw+0.025f,0,0.27f,0.21f,0.14f);
