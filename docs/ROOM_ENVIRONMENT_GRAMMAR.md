@@ -15,17 +15,32 @@ milestone does not alter their authority or the network protocol.
 
 ## Implemented grammar
 
-A room plan names five separate dimensions with deliberately narrow ownership:
+A room plan names four implemented dimensions with deliberately narrow ownership:
 
 - `RoomSetting`: Field, City, Sterile, Coastal
 - `RoomForm`: Open, Corridor, Courtyard, Canyon, Skyline, Shore, Chamber
 - `RoomScale`: Compact, Standard, Large, Arena
 - `RoomCondition`: Normal, Recovery
-- `RoomPlaystyle`: Playground, Funnel, Orbit, Vertical, Recovery
 
 Setting owns visual/environmental vocabulary. Form owns spatial composition.
 Scale owns footprint and distances, not object meaning. Condition owns encounter
-pressure and pacing. Playstyle owns optional traversal/combat affordance topology.
+pressure and pacing.
+
+Two traversal intents currently have production consequences:
+
+- Playground materializes one optional physical perch.
+- Funnel materializes one optional shortcut and biases every third enemy around
+  that shortcut's focus.
+
+Recovery is an implemented condition policy that suppresses optional traversal.
+
+## Represented traversal intent
+
+`RoomTraversalIntent` is deterministic generation metadata. Playground and
+Funnel are implemented as described above. Orbit and Vertical currently create
+only graph motifs for inspection; their names are displayed as `REPRESENTED`
+and do not promise physical surfaces. They remain useful bounded proposals, not
+runtime playstyles.
 
 ## World scale and semantic eligibility
 
@@ -105,12 +120,13 @@ comfortable clearance radius. The native collider builder rejects optional
 obstacles if a future plan fails this contract, leaving the stable room shell,
 objectives, and exit reachable.
 
-The route is now represented as a bounded action-labelled traversal graph.
-Surfaces are graph nodes; edges identify the intended verb (`Walk`, `Jump`,
-`DoubleJump`, `Lunge`, `JumpLunge`, `Drop`, or `LedgeRecover`) and an intended
-difficulty band (`Automatic` through `Expert`). Existing rooms currently use
-only required `Walk` edges, so this representation change does not silently
-turn scenery into mandatory parkour.
+The route is represented as a bounded action-labelled traversal graph. Surfaces
+are graph nodes; edges identify an intended verb (`Walk`, `Jump`, `DoubleJump`,
+`Lunge`, `JumpLunge`, `Drop`, or `LedgeRecover`) and only whether the edge is
+required or optional. These action labels are validation/tooling metadata until
+a production system consumes them. Existing required routes use only `Walk`.
+The former experiential difficulty labels were removed because controller
+measurements do not establish human categories such as comfortable or expert.
 
 ## Automated traversal calibration
 
@@ -162,8 +178,8 @@ later respawns.
 - Room advancement increments the index and advances the seed deterministically.
 - The host owns transitions and collider state; snapshots transfer that state.
 - Gravity, ground jump, double jump, air-lunge distance, and phone clearance are
-  native gameplay constants. They now share a canonical traversal capability
-  contract with generation validation.
+  native gameplay constants. Generation validation consumes their physical
+  quantities without assigning experiential difficulty labels.
 - Desktop and Android both render `GameState::roomColliders` and derive only
   presentation materials/grass/sidewalks from the deterministic plan.
 - The current room has a permanent floor and ground-level doorway/objective
@@ -173,9 +189,8 @@ later respawns.
 
 - `Scale` currently means usable layout footprint/density, not room tile depth.
   This avoids changing repeating topology, camera seams, and door ownership.
-- The comfortable traversal margin is 72 percent of the analytic maximum for
-  jump height and air-lunge distance. This is a conservative design margin, not
-  a measured human-input percentile.
+- Route clearance uses the existing conservative capability margin. It is a
+  physical generation bound, not a human difficulty rating.
 - City/Courtyard was chosen ahead of Rooftops/NoFloor because it proves
   independent composition and circulation without inventing fall behavior or
   moving required objectives.

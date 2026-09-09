@@ -11,7 +11,7 @@ int main(){
     const auto first=roomPlan(12345,1);
     assert(first.setting==RoomSetting::Field&&first.form==RoomForm::Open&&first.grass&&!first.sidewalks);
     assert(first.obstacleCount==0&&!first.recovery());
-    assert(first.playstyle==RoomPlaystyle::Playground);
+    assert(first.traversalIntent==RoomTraversalIntent::Playground);
     assert(requiredRouteIsTraversable(first,12345,1));
 
     bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false,sawCapacityPressure=false;
@@ -21,29 +21,29 @@ int main(){
     bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
-        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.playstyle==b.playstyle&&a.obstacleCount==b.obstacleCount&&a.composition==b.composition);
+        assert(a.setting==b.setting&&a.form==b.form&&a.scale==b.scale&&a.condition==b.condition&&a.traversalIntent==b.traversalIntent&&a.obstacleCount==b.obstacleCount&&a.composition==b.composition);
         assert(validFormForSetting(a.setting,a.form));
         assert(gameplay::validTraversalGraphTopology(a.traversal));
         assert(a.traversal.surfaceCount==b.traversal.surfaceCount&&a.traversal.edgeCount==b.traversal.edgeCount);
         for(int surface=0;surface<a.traversal.surfaceCount;++surface){const auto& x=a.traversal.surfaces[surface];const auto& y=b.traversal.surfaces[surface];assert(x.center.x==y.center.x&&x.center.y==y.center.y&&x.center.z==y.center.z&&x.halfSize.x==y.halfSize.x&&x.halfSize.y==y.halfSize.y&&x.halfSize.z==y.halfSize.z&&x.required==y.required);}
-        for(int edge=0;edge<a.traversal.edgeCount;++edge){const auto& x=a.traversal.edges[edge];const auto& y=b.traversal.edges[edge];assert(x.from==y.from&&x.to==y.to&&x.action==y.action&&x.difficulty==y.difficulty&&x.role==y.role);}
-        if(room>1){const auto previous=roomPlan(seed,room-1);if(!a.recovery()&&!previous.recovery())assert(a.playstyle!=previous.playstyle);}
+        for(int edge=0;edge<a.traversal.edgeCount;++edge){const auto& x=a.traversal.edges[edge];const auto& y=b.traversal.edges[edge];assert(x.from==y.from&&x.to==y.to&&x.action==y.action&&x.role==y.role);}
+        if(room>1){const auto previous=roomPlan(seed,room-1);if(!a.recovery()&&!previous.recovery())assert(a.traversalIntent!=previous.traversalIntent);}
         assert(requiredRouteIsTraversable(a,seed,room));
         int requiredEdges=0,optionalEdges=0,nonWalkOptionalEdges=0;
         for(int edge=0;edge<a.traversal.edgeCount;++edge){
             const auto& traversalEdge=a.traversal.edges[edge];
-            if(gameplay::isRequired(traversalEdge)){++requiredEdges;assert(traversalEdge.action==gameplay::TraversalAction::Walk);assert(traversalEdge.difficulty==gameplay::TraversalDifficulty::Automatic);}
+            if(gameplay::isRequired(traversalEdge)){++requiredEdges;assert(traversalEdge.action==gameplay::TraversalAction::Walk);}
             else {++optionalEdges;if(traversalEdge.action!=gameplay::TraversalAction::Walk)++nonWalkOptionalEdges;}
         }
         assert(requiredEdges==3);
-        if(a.recovery()){assert(a.playstyle==RoomPlaystyle::Recovery);assert(optionalEdges==0);}
+        if(a.recovery()){assert(optionalEdges==0);}
         else {assert(optionalEdges>=2);assert(nonWalkOptionalEdges==optionalEdges);}
-        sawPlayground|=a.playstyle==RoomPlaystyle::Playground;
-        sawFunnel|=a.playstyle==RoomPlaystyle::Funnel;
-        sawOrbit|=a.playstyle==RoomPlaystyle::Orbit;
-        sawVertical|=a.playstyle==RoomPlaystyle::Vertical;
-        sawPhysicalPlayground|=a.playstyle==RoomPlaystyle::Playground&&physicalTraversalSurfaceCount(a)==1;
-        sawPhysicalFunnel|=a.playstyle==RoomPlaystyle::Funnel&&physicalTraversalSurfaceCount(a)==1;
+        sawPlayground|=a.traversalIntent==RoomTraversalIntent::Playground;
+        sawFunnel|=a.traversalIntent==RoomTraversalIntent::Funnel;
+        sawOrbit|=a.traversalIntent==RoomTraversalIntent::Orbit;
+        sawVertical|=a.traversalIntent==RoomTraversalIntent::Vertical;
+        sawPhysicalPlayground|=a.traversalIntent==RoomTraversalIntent::Playground&&physicalTraversalSurfaceCount(a)==1;
+        sawPhysicalFunnel|=a.traversalIntent==RoomTraversalIntent::Funnel&&physicalTraversalSurfaceCount(a)==1;
         sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawCoastal|=a.setting==RoomSetting::Coastal;sawRecovery|=a.recovery();
         if(a.setting==RoomSetting::Field){
             assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks&&a.obstacleCount==0&&a.composition<3);
@@ -116,7 +116,7 @@ int main(){
     assert(cityTraversal.color.x!=debugTraversal.color.x&&sterileTraversal.color.x!=cityTraversal.color.x);
 
     RoomEnvironmentPlan full;
-    full.playstyle=RoomPlaystyle::Orbit;
+    full.traversalIntent=RoomTraversalIntent::Orbit;
     full.traversal.surfaceCount=gameplay::TraversalGraph::SurfaceCapacity-1;
     full.traversal.edgeCount=gameplay::TraversalGraph::EdgeCapacity-2;
     appendOptionalTraversal(full,roomKey(7,9));
@@ -124,7 +124,7 @@ int main(){
     assert(full.traversal.edgeCount==gameplay::TraversalGraph::EdgeCapacity-2);
 
     RoomEnvironmentPlan funnel;
-    funnel.playstyle=RoomPlaystyle::Funnel;
+    funnel.traversalIntent=RoomTraversalIntent::Funnel;
     funnel.traversal.surfaceCount=4;
     funnel.traversal.edgeCount=3;
     appendOptionalTraversal(funnel,roomKey(11,5));
@@ -134,7 +134,7 @@ int main(){
     assert(physicalTraversalSurfaceCount(funnel)==1);
     assert(funnelEncounterCandidateBias(funnel,0,preferred)>funnelEncounterCandidateBias(funnel,0,distant));
     assert(funnelEncounterCandidateBias(funnel,1,preferred)==0.0f);
-    funnel.playstyle=RoomPlaystyle::Orbit;
+    funnel.traversalIntent=RoomTraversalIntent::Orbit;
     assert(funnelEncounterCandidateBias(funnel,0,preferred)==0.0f);
 
     const auto capabilities=gameplay::TRAVERSAL_CAPABILITIES;
