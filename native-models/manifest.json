@@ -7,9 +7,9 @@
     "human": "open-source embedded human"
   },
   "phone": {
-    "vertices": 228,
-    "batches": 5,
-    "bytes": 2868
+    "vertices": 192,
+    "batches": 3,
+    "bytes": 2388
   },
   "flower": {
     "vertices": 11628,

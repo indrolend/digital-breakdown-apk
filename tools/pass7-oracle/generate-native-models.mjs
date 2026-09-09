@@ -28,18 +28,15 @@ function writeModel(filename,model){
   return bytes.length;
 }
 
-// DATA's player is a fictional reconstruction device, not a branded consumer
-// phone. Keep its overall occupancy aligned with the gameplay/screen contract,
-// but build the visible shell from a small set of deliberately asymmetric,
-// readable masses. The luminous screen remains a separate runtime surface so
-// gameplay state can continue to drive it independently of this static mesh.
+// DATA is a fictional manufactured device, not a branded consumer phone. Keep
+// its occupancy aligned with the gameplay/screen contract and its chassis
+// symmetrical, quiet, and screen-dominant. The luminous display remains a
+// separate runtime surface so gameplay state supplies its visual identity.
 function originalDataDevice() {
   const materials = [
-    { color: [0.10, 0.15, 0.18, 1.0], vertices: [] }, // graphite shell
-    { color: [0.31, 0.52, 0.55, 1.0], vertices: [] }, // metallic teal rail
-    { color: [0.38, 0.25, 0.36, 1.0], vertices: [] }, // deep-plum reconstruction seam
-    { color: [0.47, 0.84, 0.88, 1.0], vertices: [] }, // cyan sensor
-    { color: [0.88, 0.72, 0.50, 1.0], vertices: [] }, // warm contact
+    { color: [0.09, 0.13, 0.15, 1.0], vertices: [] }, // graphite chassis
+    { color: [0.24, 0.34, 0.36, 1.0], vertices: [] }, // restrained metal sides
+    { color: [0.07, 0.10, 0.11, 1.0], vertices: [] }, // centered rear inset
   ];
   const tri=(material,a,b,c)=>materials[material].vertices.push(...a,...b,...c);
   const quad=(material,a,b,c,d)=>{tri(material,a,b,c);tri(material,a,c,d);};
@@ -63,18 +60,15 @@ function originalDataDevice() {
     }
   };
 
-  // Unequal corner cuts prevent the silhouette from reading as a familiar
-  // mass-market handset while retaining the instantly legible handheld slab.
-  prism(0,[[-0.039,-0.070],[-0.031,-0.080],[0.028,-0.080],[0.039,-0.069],
-           [0.039,0.064],[0.030,0.080],[-0.034,0.080],[-0.039,0.074]],-0.0055,0.0055);
-  // An offset structural rail and diagonal seam make orientation readable at
-  // gameplay distance, including when the screen is facing away from camera.
-  box(1,[-0.039,-0.052,-0.0065],[-0.034,0.057,0.0065]);
-  prism(2,[[-0.033,-0.071],[-0.027,-0.077],[0.031,0.066],[0.026,0.075]],-0.0060,-0.0054);
-  // Broad, non-camera-like sensor bar: this is the device's data aperture.
-  box(3,[-0.022,0.065,0.0056],[0.012,0.072,0.0070]);
-  // One exposed contact gives the otherwise cool object a small physical cue.
-  box(4,[0.017,-0.080,-0.0030],[0.029,-0.077,0.0030]);
+  // Equal clipped corners retain a readable manufactured silhouette without
+  // copying a specific handset or adding decorative science-fiction detail.
+  prism(0,[[-0.039,-0.071],[-0.030,-0.080],[0.030,-0.080],[0.039,-0.071],
+           [0.039,0.071],[0.030,0.080],[-0.030,0.080],[-0.039,0.071]],-0.0055,0.0055);
+  // Matched side faces and one centered rear inset provide quiet material
+  // separation. There is deliberately no lens, sensor bar, seam, or contact.
+  box(1,[-0.039,-0.062,-0.0060],[-0.036,0.062,0.0060]);
+  box(1,[0.036,-0.062,-0.0060],[0.039,0.062,0.0060]);
+  box(2,[-0.025,-0.056,-0.0062],[0.025,0.056,-0.0056]);
 
   const vertices=[];const batches=[];
   for(const material of materials){
