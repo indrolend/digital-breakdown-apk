@@ -553,12 +553,10 @@ void Game::debugToggleRoomInspectorEnemies(){
 void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     if(!state_.roomInspector)return;
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
-    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.playstyle=plan.playstyle;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
+    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.traversalIntent=plan.traversalIntent;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
     report.requiredRouteValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
     report.traversalSurfaceCount=plan.traversal.surfaceCount;report.traversalEdgeCount=plan.traversal.edgeCount;
-    bool uncalibrated=false;gameplay::TraversalDifficulty band=gameplay::TraversalDifficulty::Automatic;
-    for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
-    report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
+    for(int i=0;i<plan.traversal.edgeCount;++i)if(gameplay::isRequired(plan.traversal.edges[i]))++report.requiredEdgeCount;
     report.colliderCount=state_.debug.colliderCount;
     const auto geometry=report.requiredRouteValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
     report.presentationPropCount=early_browser_visuals::selectedEnvironmentPropCount(plan,geometry);
@@ -576,7 +574,7 @@ std::string Game::debugRoomReviewLine(RoomReviewRating rating) const{
     const auto& r=state_.roomInspectorReport;std::ostringstream out;
     out<<"ROOM_REVIEW premise="<<early_browser_visuals::premiseName(r.premise)<<" seed="<<r.seed<<" room="<<r.roomIndex<<" rating="<<ratingName
        <<" setting="<<early_browser_visuals::settingName(r.setting)<<" form="<<early_browser_visuals::formName(r.form)<<" scale="<<early_browser_visuals::scaleName(r.scale)
-       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" playstyle="<<early_browser_visuals::playstyleName(r.playstyle)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
+       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" traversal_intent="<<early_browser_visuals::traversalIntentName(r.traversalIntent)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID");
     return out.str();
 }
 
@@ -3271,7 +3269,7 @@ Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
     const float playerLocalZ=wrapZ(state_.player.pos.z);
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
     const bool composeScaleFormation=plan.scale!=early_browser_visuals::RoomScale::Standard&&plan.scale!=early_browser_visuals::RoomScale::Arena;
-    const bool composeFunnelEncounter=plan.playstyle==early_browser_visuals::RoomPlaystyle::Funnel&&(index%3)==0;
+    const bool composeFunnelEncounter=plan.traversalIntent==early_browser_visuals::RoomTraversalIntent::Funnel&&(index%3)==0;
     Vec3 best{0.0f,GROUND_Y,tileOrigin+ROOM_MIN_SPAWN_Z+4.5f};
     float bestScore=-1.0e9f;
     for(int attempt=0;attempt<32;++attempt){

@@ -104,11 +104,11 @@ int main(){
     ok&=tb.alive&&tb.dropped&&tb.soul.id==483&&near(speed(tb.vel),0.0f);
 
     Game playground;playground.debugStartRoomInspector();playground.debugStepRoomInspector(1,false);
-    for(int attempt=0;attempt<64&&early_browser_visuals::roomPlan(playground.state().roomSeed,playground.state().roomIndex).playstyle!=early_browser_visuals::RoomPlaystyle::Playground;++attempt)playground.debugStepRoomInspector(0,true);
+    for(int attempt=0;attempt<64&&early_browser_visuals::roomPlan(playground.state().roomSeed,playground.state().roomIndex).traversalIntent!=early_browser_visuals::RoomTraversalIntent::Playground;++attempt)playground.debugStepRoomInspector(0,true);
     auto& ps=playground.networkMutableState();for(auto& target:ps.targets)target.alive=false;for(auto& bullet:ps.bullets)bullet=BulletState{};
     const auto playgroundPlan=early_browser_visuals::roomPlan(ps.roomSeed,ps.roomIndex);const int playgroundCollider=playgroundPlan.obstacleCount;const RoomCollider& platform=ps.roomColliders[playgroundCollider];
     auto& pb=soul(playground,484);pb.pos={platform.minX-1.0f,platform.center.y,platform.center.z};pb.vel={90,0,0};SoulProjectileLifecycleAccess::bullets(playground,1.0f/30.0f);
-    ok&=playgroundPlan.setting==early_browser_visuals::RoomSetting::City&&playgroundPlan.form==early_browser_visuals::RoomForm::Corridor&&playgroundPlan.playstyle==early_browser_visuals::RoomPlaystyle::Playground&&
+    ok&=playgroundPlan.setting==early_browser_visuals::RoomSetting::City&&playgroundPlan.form==early_browser_visuals::RoomForm::Corridor&&playgroundPlan.traversalIntent==early_browser_visuals::RoomTraversalIntent::Playground&&
         playgroundCollider<ps.debug.colliderCount&&pb.alive&&!pb.dropped&&pb.vel.x<0&&pb.soul.id==484;
 
     if(!ok){std::fprintf(stderr,"SOUL_PROJECTILE_LIFECYCLE_FAILED wall=%.2f ceiling=%.2f melee=%.2f lunge=%.2f recovered=%d replay=%llu/%llu\n",wb.vel.x,cb.vel.y,speed(mb.vel),speed(lb.vel),rs.player.souls,static_cast<unsigned long long>(a.soul.id),static_cast<unsigned long long>(b.soul.id));return 1;}
