@@ -21,7 +21,7 @@ int main(){
     const auto plan=roomPlan(seed,room);
     const auto prop=environmentProp(plan,seed,room,ruinIndex);
     const auto first=ruin_geometry::parts(prop),second=ruin_geometry::parts(prop);
-    assert(environmentPropColliderCount(prop)==ruin_geometry::PartCount);
+    assert(environmentPropColliderCount(plan.setting,prop)==ruin_geometry::PartCount);
     for(int i=0;i<ruin_geometry::PartCount;++i){
         assert(first[i].center.x==second[i].center.x&&first[i].center.y==second[i].center.y&&first[i].center.z==second[i].center.z);
         assert(first[i].size.x>0&&first[i].size.y>0&&first[i].size.z>0);

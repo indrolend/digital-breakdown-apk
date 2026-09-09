@@ -17,7 +17,7 @@ if (Test-Path -LiteralPath $cachePath) {
 }
 
 $timer.Restart()
-cmake --build $BuildDir --config Release --target DigitalBreakdown GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest MenuNavigationTest PhoneDisplayStateTest EarlyBrowserVisualsTest MaterialResponseTest FacetedRockTest SlopeSupportTest RuinGeometryTest SlopeTraversalFixtureTest RenderContractsTest DesktopPlaytestPolicyTest DeveloperCodecTest SoulEconomyTest SoulProjectileLifecycleTest TraversalCalibrationTest Pass7ParityTest MultiplayerProtocolTest MultiplayerDeterminismTest HostRemotePeerSimulationIsolationTest MultiplayerConnectionStateTest GameplayFlowProbe RoomProgressionProbe DeterministicInputSoak SecretTvPolicyTest --parallel
+cmake --build $BuildDir --config Release --target DigitalBreakdown GameplayRoleAndSoulMotionTest GameplayGeometryAndConfigTest TargetLifecycleTest GameplayStateContractsTest PhoneBodyContractTest PhoneMenuLayoutTest MenuNavigationTest PhoneDisplayStateTest EarlyBrowserVisualsTest MaterialResponseTest FacetedRockTest SlopeSupportTest RuinGeometryTest HouseGeometryTest SlopeTraversalFixtureTest RenderContractsTest DesktopPlaytestPolicyTest DeveloperCodecTest SoulEconomyTest SoulProjectileLifecycleTest TraversalCalibrationTest Pass7ParityTest MultiplayerProtocolTest MultiplayerDeterminismTest HostRemotePeerSimulationIsolationTest MultiplayerConnectionStateTest GameplayFlowProbe RoomProgressionProbe DeterministicInputSoak SecretTvPolicyTest --parallel
 if ($LASTEXITCODE -ne 0) { throw "Gameplay build failed with exit code $LASTEXITCODE" }
 $timer.Stop()
 Write-Output ("NATIVE_STAGE=PASS name=build durationSeconds={0:F3}" -f $timer.Elapsed.TotalSeconds)
