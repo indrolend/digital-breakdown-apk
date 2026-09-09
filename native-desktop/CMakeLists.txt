@@ -279,6 +279,10 @@ add_executable(SlopeSupportTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slo
 target_include_directories(SlopeSupportTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(SlopeSupportTest PRIVATE cxx_std_17)
 
+add_executable(BoundedSolidTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/bounded_solid_test.cpp")
+target_include_directories(BoundedSolidTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(BoundedSolidTest PRIVATE cxx_std_17)
+
 add_executable(SlopeTraversalFixtureTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_traversal_fixture_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
 target_include_directories(SlopeTraversalFixtureTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(SlopeTraversalFixtureTest PRIVATE cxx_std_17)
@@ -371,6 +375,7 @@ add_test(NAME EarlyBrowserVisualsTest COMMAND EarlyBrowserVisualsTest)
 add_test(NAME MaterialResponseTest COMMAND MaterialResponseTest)
 add_test(NAME FacetedRockTest COMMAND FacetedRockTest)
 add_test(NAME SlopeSupportTest COMMAND SlopeSupportTest)
+add_test(NAME BoundedSolidTest COMMAND BoundedSolidTest)
 add_test(NAME SlopeTraversalFixtureTest COMMAND SlopeTraversalFixtureTest)
 add_test(NAME RuinGeometryTest COMMAND RuinGeometryTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
