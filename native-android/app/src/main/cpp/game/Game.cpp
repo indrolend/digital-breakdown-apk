@@ -1743,28 +1743,14 @@ float Game::getPlayerCeilingLimit() const {
 }
 
 PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
-    PlayerSupportSample support{};
-    const float radius = PLAYER_SUPPORT_RADIUS;
     const float localZ = wrapZ(z);
-    for (int i = 0; i < state_.debug.colliderCount; ++i) {
-        const RoomCollider& c = state_.roomColliders[i];
-        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
-        if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius)
-            support.height = std::max(support.height, c.topY + GROUND_Y);
-    }
-    for(int i=0;i<state_.slopeSupportCount;++i){
-        const auto sample=sampleSlopeSupport(state_.slopeSupports[i],x,localZ);
-        if(!sample.inside||sample.classification==SupportClassification::Steep)continue;
-        const float candidate=sample.height+GROUND_Y;
-        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;}
-    }
-    for(int i=0;i<state_.rockSupportCount;++i){
-        const auto sample=faceted_rock::sampleSupport(state_.rockSupports[i],x,localZ);
-        if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
-        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;}
-    }
-    support.height=std::min(support.height,getPlayerCeilingLimit());
-    return support;
+    const WorldContactView world{
+        state_.roomColliders.data(), state_.debug.colliderCount,
+        state_.slopeSupports.data(), state_.slopeSupportCount,
+        state_.rockSupports.data(), state_.rockSupportCount
+    };
+    return queryPlayerSupport(world, x, localZ, PLAYER_SUPPORT_RADIUS,
+                              GROUND_Y, getPlayerCeilingLimit());
 }
 
 void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {

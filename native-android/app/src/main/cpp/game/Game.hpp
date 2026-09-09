@@ -13,6 +13,7 @@
 #include "SlopeSupport.hpp"
 #include "FacetedRock.hpp"
 #include "RuinGeometry.hpp"
+#include "WorldContact.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -326,35 +327,12 @@ struct ParticleState {
     ParticleMaterial material = ParticleMaterial::Impact;
 };
 
-enum class RoomColliderKind : unsigned char { Generic, TreeTrunk, RockAuthoritySlot };
-
-struct RoomCollider {
-    float minX = 0.0f;
-    float maxX = 0.0f;
-    float minZ = 0.0f;
-    float maxZ = 0.0f;
-    float bottomY = 0.0f;
-    float topY = 0.0f;
-    float width = 0.0f;
-    float depth = 0.0f;
-    float height = 0.0f;
-    Vec3 center;
-    RoomColliderKind kind = RoomColliderKind::Generic;
-    float climbTopY = 0.0f;
-};
-
 struct SoulColliderHit {
     bool hit = false;
     int colliderIndex = -1;
     float t = 1.0f;
     Vec3 normal;
     Vec3 position;
-};
-
-struct PlayerSupportSample {
-    float height=0.08f;
-    Vec3 normal{0.0f,1.0f,0.0f};
-    SupportClassification classification=SupportClassification::Ordinary;
 };
 
 struct RoomTopologyState {
