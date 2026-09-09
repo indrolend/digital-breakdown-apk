@@ -287,6 +287,10 @@ add_executable(HouseGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/ho
 target_include_directories(HouseGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(HouseGeometryTest PRIVATE cxx_std_17)
 
+add_executable(TreeGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/tree_geometry_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
+target_include_directories(TreeGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_compile_features(TreeGeometryTest PRIVATE cxx_std_17)
+
 add_executable(SlopeTraversalFixtureTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_traversal_fixture_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
 target_include_directories(SlopeTraversalFixtureTest PRIVATE "${DB_SHARED_ROOT}/game")
 target_compile_features(SlopeTraversalFixtureTest PRIVATE cxx_std_17)
@@ -377,6 +381,7 @@ add_test(NAME FacetedRockTest COMMAND FacetedRockTest)
 add_test(NAME SlopeSupportTest COMMAND SlopeSupportTest)
 add_test(NAME RuinGeometryTest COMMAND RuinGeometryTest)
 add_test(NAME HouseGeometryTest COMMAND HouseGeometryTest)
+add_test(NAME TreeGeometryTest COMMAND TreeGeometryTest)
 add_test(NAME SlopeTraversalFixtureTest COMMAND SlopeTraversalFixtureTest)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)

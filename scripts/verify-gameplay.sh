@@ -41,6 +41,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   SlopeSupportTest \
   RuinGeometryTest \
   HouseGeometryTest \
+  TreeGeometryTest \
   SlopeTraversalFixtureTest \
   RenderContractsTest \
   DesktopPlaytestPolicyTest \
