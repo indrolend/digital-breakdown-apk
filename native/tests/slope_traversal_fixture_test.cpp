@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 namespace {
 constexpr float Dt=1.0f/60.0f;

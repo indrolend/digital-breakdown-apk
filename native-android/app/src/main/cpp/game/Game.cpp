@@ -1774,7 +1774,27 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
         // Side blocking ends only once the phone's solid lower edge has cleared
         // the collider top.  Using the center height here allowed the phone to
         // move through the lip while its lower half still intersected it.
-        const bool onTop = player.pos.y - PHONE_SOLID_HALF_Y >= c.topY;
+        const float playerBottom=player.pos.y-PHONE_SOLID_HALF_Y;
+        bool enteringConnectedSlopeTop=false;
+        for(int slopeIndex=0;slopeIndex<state_.slopeSupportCount&&!enteringConnectedSlopeTop;++slopeIndex){
+            const SlopeSupport& slope=state_.slopeSupports[slopeIndex];
+            if(classifySupport(slope)!=SupportClassification::TraversableSlope)continue;
+            const auto sample=sampleSlopeSupport(slope,player.pos.x,localPlayerZ);
+            if(!sample.inside||std::abs(playerBottom-sample.height)>0.02f)continue;
+            const bool highAtMinX=slope.axis==SlopeAxis::NegativeX;
+            const bool highAtMaxX=slope.axis==SlopeAxis::PositiveX;
+            const bool highAtMinZ=slope.axis==SlopeAxis::NegativeZ;
+            const bool highAtMaxZ=slope.axis==SlopeAxis::PositiveZ;
+            const bool joinsCollider=(highAtMinX&&std::abs(slope.minX-c.maxX)<0.001f&&slope.maxZ>c.minZ&&slope.minZ<c.maxZ)
+                ||(highAtMaxX&&std::abs(slope.maxX-c.minX)<0.001f&&slope.maxZ>c.minZ&&slope.minZ<c.maxZ)
+                ||(highAtMinZ&&std::abs(slope.minZ-c.maxZ)<0.001f&&slope.maxX>c.minX&&slope.minX<c.maxX)
+                ||(highAtMaxZ&&std::abs(slope.maxZ-c.minZ)<0.001f&&slope.maxX>c.minX&&slope.minX<c.maxX);
+            if(!joinsCollider||std::abs(c.topY-slope.highHeight)>0.001f)continue;
+            const float horizontalNormal=std::sqrt(sample.normal.x*sample.normal.x+sample.normal.z*sample.normal.z);
+            const float reachableRise=radius*horizontalNormal/std::max(0.0001f,sample.normal.y)+0.002f;
+            enteringConnectedSlopeTop=c.topY-playerBottom<=reachableRise;
+        }
+        const bool onTop = playerBottom >= c.topY || enteringConnectedSlopeTop;
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {
