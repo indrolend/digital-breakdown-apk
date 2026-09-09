@@ -1786,8 +1786,8 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
         }
     }
     for(int i=0;i<state_.rockSupportCount;++i){
-        const auto& rock=state_.rockSupports[i];const auto envelope=faceted_rock::sampleEnvelope(rock,player.pos.x,localPlayerZ);
-        if(!envelope.inside||player.pos.y>=envelope.height+GROUND_Y-0.08f)continue;
+        const auto& rock=state_.rockSupports[i];const auto envelope=faceted_rock::sampleEnvelopeFootprint(rock,player.pos.x,localPlayerZ,radius);
+        if(!envelope.inside||player.pos.y+0.012f>=envelope.height+GROUND_Y)continue;
         const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
         player.pos.x=previousX;player.pos.z=previousZ;player.vel={};localPlayerZ=previousLocalZ;
     }
@@ -2559,6 +2559,26 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const float t = cameraHit(state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
         if (t >= 0.0f && t < nearestT) nearestT = t;
+    }
+    // Generated rocks use their faceted envelope rather than the retained
+    // capacity-slot AABB. March a small fixed number of samples along the
+    // camera boom, then refine the first contact. This is deterministic,
+    // bounded, and prevents the boom from entering a rock while DATA stands
+    // on or crosses its upper facets.
+    for(int rockIndex=0;rockIndex<state_.rockSupportCount;++rockIndex){
+        const auto& rock=state_.rockSupports[rockIndex];
+        const float c=std::abs(std::cos(rock.prop.yaw)),s=std::abs(std::sin(rock.prop.yaw));
+        const float halfX=(rock.prop.size.x*c+rock.prop.size.z*s)*0.5f+CAMERA_COLLISION_RADIUS;
+        const float halfZ=(rock.prop.size.x*s+rock.prop.size.z*c)*0.5f+CAMERA_COLLISION_RADIUS;
+        const float minSegmentX=std::min(localStart.x,localEnd.x),maxSegmentX=std::max(localStart.x,localEnd.x),minSegmentY=std::min(localStart.y,localEnd.y),maxSegmentY=std::max(localStart.y,localEnd.y),minSegmentZ=std::min(localStart.z,localEnd.z),maxSegmentZ=std::max(localStart.z,localEnd.z);
+        if(maxSegmentX<rock.prop.center.x-halfX||minSegmentX>rock.prop.center.x+halfX||maxSegmentZ<rock.prop.center.z-halfZ||minSegmentZ>rock.prop.center.z+halfZ||maxSegmentY<GROUND_Y-CAMERA_COLLISION_RADIUS||minSegmentY>rock.prop.center.y+rock.prop.size.y+GROUND_Y+CAMERA_COLLISION_RADIUS)continue;
+        const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
+        const auto blocked=[&](float t){const Vec3 point=localStart+segment*t;const auto surface=faceted_rock::sampleEnvelopeFootprint(mesh,point.x,point.z,CAMERA_COLLISION_RADIUS);return surface.inside&&point.y<surface.height+GROUND_Y+CAMERA_COLLISION_RADIUS&&point.y>GROUND_Y-CAMERA_COLLISION_RADIUS;};
+        constexpr int MarchSteps=20;
+        float previousT=0.0f;
+        bool previousBlocked=blocked(0.0f);
+        if(previousBlocked){nearestT=0.0f;continue;}
+        for(int step=1;step<=MarchSteps;++step){const float t=static_cast<float>(step)/MarchSteps;if(t>=nearestT)break;const bool currentBlocked=blocked(t);if(currentBlocked&&!previousBlocked){float low=previousT,high=t;for(int refine=0;refine<6;++refine){const float middle=(low+high)*0.5f;if(blocked(middle))high=middle;else low=middle;}nearestT=std::min(nearestT,high);break;}previousT=t;previousBlocked=currentBlocked;}
     }
 
     const float doorX0 = -2.1f;
