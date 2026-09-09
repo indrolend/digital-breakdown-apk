@@ -525,6 +525,19 @@ void Game::debugStartTraversalLab() {
     updatePhoneDisplay(0.0f);
 }
 
+void Game::debugStartSlopeLab(){
+    reset();state_.slopeLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;
+    state_.upgradeMenu.active=false;state_.cinematic.introActive=false;
+    for(auto& target:state_.targets)target=TargetState{};for(auto& capture:state_.captures)capture=CapturePointState{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
+    state_.slopeSupports[0]={-3.0f,3.0f,2.0f,12.0f,0.0f,1.6f,SlopeAxis::NegativeZ};state_.slopeSupportCount=1;
+    RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
+    const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,1.45f,3.0f},0.24f,0};
+    state_.rockSupports[0]={rock,73,4,0};state_.rockSupportCount=1;
+    state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
+    state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
+}
+
 void Game::debugStartRoomInspector(){
     reset();state_.roomInspector=true;state_.roomInspectorPremise=early_browser_visuals::RoomPremise::FieldOpen;state_.roomInspectorEnemies=false;
     debugStepRoomInspector(0,false);
@@ -1112,6 +1125,7 @@ void Game::buildRoomColliders() {
     const auto geometry=routeValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
     state_.debug.colliderCount=geometry.authoredColliderCount;
     for (auto& c : state_.roomColliders) c = RoomCollider{};
+    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};state_.rockSupportCount=0;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);
         const float px=spec.center.x,pz=spec.center.z,w=spec.size.x,h=spec.size.y,d=spec.size.z;
@@ -1137,6 +1151,9 @@ void Game::buildRoomColliders() {
         if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Tree){
             c.kind=RoomColliderKind::TreeTrunk;
             c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+prop.size.y*1.18f);
+        }else if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Rock&&state_.rockSupportCount<ROCK_SUPPORT_COUNT){
+            c.kind=RoomColliderKind::RockAuthoritySlot;
+            state_.rockSupports[state_.rockSupportCount++]={prop,state_.roomSeed,state_.roomIndex,i};
         }
     }
 }
@@ -1721,29 +1738,63 @@ float Game::getPlayerCeilingLimit() const {
     return ROOM_WALL_HEIGHT - GROUND_Y - CEILING_CLEARANCE - PLAYER_CEILING_BODY_CLEARANCE;
 }
 
-float Game::getPlayerSupportY(float x, float z) const {
-    float supportY = GROUND_Y;
+PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
+    PlayerSupportSample support{};
     const float radius = PLAYER_SUPPORT_RADIUS;
     const float localZ = wrapZ(z);
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius)
-            supportY = std::max(supportY, c.topY + GROUND_Y);
+            support.height = std::max(support.height, c.topY + GROUND_Y);
     }
-    return std::min(supportY, getPlayerCeilingLimit());
+    for(int i=0;i<state_.slopeSupportCount;++i){
+        const auto sample=sampleSlopeSupport(state_.slopeSupports[i],x,localZ);
+        if(!sample.inside||sample.classification==SupportClassification::Steep)continue;
+        const float candidate=sample.height+GROUND_Y;
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;}
+    }
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto sample=faceted_rock::sampleSupportFootprint(state_.rockSupports[i],x,localZ,PLAYER_COLLISION_RADIUS);
+        if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;}
+    }
+    support.height=std::min(support.height,getPlayerCeilingLimit());
+    return support;
 }
 
-void Game::resolvePlayerObstacleCollisions() {
+void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
     PlayerState& player = state_.player;
     const float radius = PLAYER_COLLISION_RADIUS;
     const float tileOriginZ = getRoomTileOriginZ(getRoomTileIndex(player.pos.z));
     float localPlayerZ = player.pos.z - tileOriginZ;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         // Side blocking ends only once the phone's solid lower edge has cleared
         // the collider top.  Using the center height here allowed the phone to
         // move through the lip while its lower half still intersected it.
-        const bool onTop = player.pos.y - PHONE_SOLID_HALF_Y >= c.topY;
+        const float playerBottom=player.pos.y-PHONE_SOLID_HALF_Y;
+        bool enteringConnectedSlopeTop=false;
+        for(int slopeIndex=0;slopeIndex<state_.slopeSupportCount&&!enteringConnectedSlopeTop;++slopeIndex){
+            const SlopeSupport& slope=state_.slopeSupports[slopeIndex];
+            if(classifySupport(slope)!=SupportClassification::TraversableSlope)continue;
+            const auto sample=sampleSlopeSupport(slope,player.pos.x,localPlayerZ);
+            if(!sample.inside||std::abs(playerBottom-sample.height)>0.02f)continue;
+            const bool highAtMinX=slope.axis==SlopeAxis::NegativeX;
+            const bool highAtMaxX=slope.axis==SlopeAxis::PositiveX;
+            const bool highAtMinZ=slope.axis==SlopeAxis::NegativeZ;
+            const bool highAtMaxZ=slope.axis==SlopeAxis::PositiveZ;
+            const bool joinsCollider=(highAtMinX&&std::abs(slope.minX-c.maxX)<0.001f&&slope.maxZ>c.minZ&&slope.minZ<c.maxZ)
+                ||(highAtMaxX&&std::abs(slope.maxX-c.minX)<0.001f&&slope.maxZ>c.minZ&&slope.minZ<c.maxZ)
+                ||(highAtMinZ&&std::abs(slope.minZ-c.maxZ)<0.001f&&slope.maxX>c.minX&&slope.minX<c.maxX)
+                ||(highAtMaxZ&&std::abs(slope.maxZ-c.minZ)<0.001f&&slope.maxX>c.minX&&slope.minX<c.maxX);
+            if(!joinsCollider||std::abs(c.topY-slope.highHeight)>0.001f)continue;
+            const float horizontalNormal=std::sqrt(sample.normal.x*sample.normal.x+sample.normal.z*sample.normal.z);
+            const float reachableRise=radius*horizontalNormal/std::max(0.0001f,sample.normal.y)+0.002f;
+            enteringConnectedSlopeTop=c.topY-playerBottom<=reachableRise;
+        }
+        const bool onTop = playerBottom >= c.topY || enteringConnectedSlopeTop;
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {
@@ -1766,6 +1817,16 @@ void Game::resolvePlayerObstacleCollisions() {
                 if(headOn>0.72f)state_.meleeVisual.wallGripTimer=AIR_MELEE_WALL_GRIP_TIME;
             }
         }
+    }
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto& rock=state_.rockSupports[i];const auto envelope=faceted_rock::sampleEnvelopeFootprint(rock,player.pos.x,localPlayerZ,radius);
+        // PlayerState::pos is the center of the upright gameplay body. A rock
+        // is only beneath the player when the body's bottom clears its visible
+        // envelope; PHONE_BODY_DEPTH is not a vertical clearance.
+        const float playerBottom=player.pos.y-PHONE_SOLID_HALF_Y;
+        if(!envelope.inside||playerBottom>=envelope.height-0.001f)continue;
+        const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
+        player.pos.x=previousX;player.pos.z=previousZ;player.vel={};localPlayerZ=previousLocalZ;
     }
 }
 
@@ -1815,6 +1876,7 @@ bool Game::tryBeginTreeClimb(const Vec3& move) {
     int best=-1;float bestGap=PLAYER_COLLISION_RADIUS+0.10f;Vec3 bestNormal;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if(c.kind!=RoomColliderKind::TreeTrunk||p.pos.y<c.bottomY+GROUND_Y-0.10f||p.pos.y>c.climbTopY+0.10f)continue;
         const float centerLane=std::min(TREE_CLIMB_CENTER_LANE_MAX,std::min(c.width,c.depth)*0.30f);
         const auto candidate=[&](float gap,const Vec3& normal,bool within){
@@ -1999,6 +2061,7 @@ bool Game::tryBeginLedgeHang() {
     Vec3 bestNormal; Vec3 bestTangent;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
+        if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if(phoneTop<c.topY-LEDGE_GRAB_VERTICAL_BELOW||phoneTop>c.topY+LEDGE_GRAB_VERTICAL_ABOVE)continue;
         auto candidate=[&](float distance,const Vec3& normal,const Vec3& tangent,bool within){
             if(within&&distance>=-0.02f&&distance<bestDistance){best=i;bestDistance=distance;bestNormal=normal;bestTangent=tangent;}
@@ -2172,7 +2235,7 @@ void Game::updatePlayer(float dt) {
     }
     if (p.grounded && p.jumpBufferTimer > 0) startGroundJump();
     p.pos += p.vel * dt;
-    resolvePlayerObstacleCollisions();
+    resolvePlayerObstacleCollisions(previousX,previousZ);
     resolveDoorwayCollisions(previousX,previousZ);
     if(simulationPlayerId_==0) updateRoomTopology(previousZ, p.pos.z);
     if (p.pos.y > getPlayerCeilingLimit()) { p.pos.y = getPlayerCeilingLimit(); if (p.jumpVel > 0) p.jumpVel = 0; }
@@ -2533,6 +2596,26 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const float t = cameraHit(state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
         if (t >= 0.0f && t < nearestT) nearestT = t;
+    }
+    // Generated rocks use their faceted envelope rather than the retained
+    // capacity-slot AABB. March a small fixed number of samples along the
+    // camera boom, then refine the first contact. This is deterministic,
+    // bounded, and prevents the boom from entering a rock while DATA stands
+    // on or crosses its upper facets.
+    for(int rockIndex=0;rockIndex<state_.rockSupportCount;++rockIndex){
+        const auto& rock=state_.rockSupports[rockIndex];
+        const float c=std::abs(std::cos(rock.prop.yaw)),s=std::abs(std::sin(rock.prop.yaw));
+        const float halfX=(rock.prop.size.x*c+rock.prop.size.z*s)*0.5f+CAMERA_COLLISION_RADIUS;
+        const float halfZ=(rock.prop.size.x*s+rock.prop.size.z*c)*0.5f+CAMERA_COLLISION_RADIUS;
+        const float minSegmentX=std::min(localStart.x,localEnd.x),maxSegmentX=std::max(localStart.x,localEnd.x),minSegmentY=std::min(localStart.y,localEnd.y),maxSegmentY=std::max(localStart.y,localEnd.y),minSegmentZ=std::min(localStart.z,localEnd.z),maxSegmentZ=std::max(localStart.z,localEnd.z);
+        if(maxSegmentX<rock.prop.center.x-halfX||minSegmentX>rock.prop.center.x+halfX||maxSegmentZ<rock.prop.center.z-halfZ||minSegmentZ>rock.prop.center.z+halfZ||maxSegmentY<GROUND_Y-CAMERA_COLLISION_RADIUS||minSegmentY>rock.prop.center.y+rock.prop.size.y+GROUND_Y+CAMERA_COLLISION_RADIUS)continue;
+        const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
+        const auto blocked=[&](float t){const Vec3 point=localStart+segment*t;const auto surface=faceted_rock::sampleEnvelopeFootprint(mesh,point.x,point.z,CAMERA_COLLISION_RADIUS);return surface.inside&&point.y<surface.height+GROUND_Y+CAMERA_COLLISION_RADIUS&&point.y>GROUND_Y-CAMERA_COLLISION_RADIUS;};
+        constexpr int MarchSteps=20;
+        float previousT=0.0f;
+        bool previousBlocked=blocked(0.0f);
+        if(previousBlocked){nearestT=0.0f;continue;}
+        for(int step=1;step<=MarchSteps;++step){const float t=static_cast<float>(step)/MarchSteps;if(t>=nearestT)break;const bool currentBlocked=blocked(t);if(currentBlocked&&!previousBlocked){float low=previousT,high=t;for(int refine=0;refine<6;++refine){const float middle=(low+high)*0.5f;if(blocked(middle))high=middle;else low=middle;}nearestT=std::min(nearestT,high);break;}previousT=t;previousBlocked=currentBlocked;}
     }
 
     const float doorX0 = -2.1f;

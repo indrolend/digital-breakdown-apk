@@ -10,9 +10,13 @@
 #include "PhoneDisplay.hpp"
 #include "EarlyBrowserVisuals.hpp"
 #include "MaterialResponse.hpp"
+#include "SlopeSupport.hpp"
+#include "FacetedRock.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
+constexpr int SLOPE_SUPPORT_COUNT = 2;
+constexpr int ROCK_SUPPORT_COUNT = 2;
 constexpr int BULLET_COUNT = 30;
 constexpr int FLOWER_POWERUP_COUNT = 32;
 constexpr int PARTICLE_COUNT = 256;
@@ -321,7 +325,7 @@ struct ParticleState {
     ParticleMaterial material = ParticleMaterial::Impact;
 };
 
-enum class RoomColliderKind : unsigned char { Generic, TreeTrunk };
+enum class RoomColliderKind : unsigned char { Generic, TreeTrunk, RockAuthoritySlot };
 
 struct RoomCollider {
     float minX = 0.0f;
@@ -344,6 +348,12 @@ struct SoulColliderHit {
     float t = 1.0f;
     Vec3 normal;
     Vec3 position;
+};
+
+struct PlayerSupportSample {
+    float height=0.08f;
+    Vec3 normal{0.0f,1.0f,0.0f};
+    SupportClassification classification=SupportClassification::Ordinary;
 };
 
 struct RoomTopologyState {
@@ -652,6 +662,10 @@ struct GameState {
     AudioState audio;
     std::array<int, 5> captureSoundSlots{{0,1,2,3,4}};
     std::array<RoomCollider, ROOM_COLLIDER_COUNT> roomColliders;
+    std::array<SlopeSupport, SLOPE_SUPPORT_COUNT> slopeSupports;
+    int slopeSupportCount = 0;
+    std::array<faceted_rock::Support, ROCK_SUPPORT_COUNT> rockSupports;
+    int rockSupportCount = 0;
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
@@ -679,6 +693,7 @@ struct GameState {
     bool attractMode = false;
     bool rallyLab = false;
     bool traversalLab = false;
+    bool slopeLab = false;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
     early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
@@ -708,9 +723,11 @@ public:
     void debugStartSecretTvTest(bool enterRoom);
     void debugStartRallyLab();
     void debugStartTraversalLab();
+    void debugStartSlopeLab();
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
     void debugFillBattery();
+    PlayerSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
     bool debugSetEnemies(int mode);
     void debugNextRoom();
     void debugRerollRoom();
@@ -862,8 +879,9 @@ private:
     float getRoomTileOriginZ(int tileIndex) const;
     float wrapZ(float z) const;
     float getPlayerCeilingLimit() const;
-    float getPlayerSupportY(float x, float z) const;
-    void resolvePlayerObstacleCollisions();
+    PlayerSupportSample getPlayerSupport(float x, float z) const;
+    float getPlayerSupportY(float x, float z) const { return getPlayerSupport(x,z).height; }
+    void resolvePlayerObstacleCollisions(float previousX, float previousZ);
     void resolveDoorwayCollisions(float previousX, float previousZ);
     void applyWallClimb(float dt);
     void updateRoomTopology(float previousZ, float currentZ);

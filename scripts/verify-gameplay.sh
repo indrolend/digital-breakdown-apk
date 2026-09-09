@@ -37,6 +37,9 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   PhoneDisplayStateTest \
   EarlyBrowserVisualsTest \
   MaterialResponseTest \
+  FacetedRockTest \
+  SlopeSupportTest \
+  SlopeTraversalFixtureTest \
   RenderContractsTest \
   DesktopPlaytestPolicyTest \
   DeveloperCodecTest \

@@ -19,6 +19,8 @@ public:
     void draw(const GameState& state, const DeveloperCodecState* codec=nullptr) const;
 
 private:
+    static void drawFacetedRock(const early_browser_visuals::EnvironmentPropSpec& prop, int roomSeed, int roomIndex, int propIndex, float zOffset, const VisualColor& color);
+    static void drawSlopeWedge(const SlopeSupport& slope, float zOffset, const VisualColor& color);
     TvGifWall tvGifWall_;
     mutable int width_ = 1280;
     mutable int height_ = 720;

@@ -51,7 +51,7 @@ struct RoomEnvironmentPlan {
 };
 
 struct ObstacleSpec { Vec3 center; Vec3 size; };
-enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin };
+enum class EnvironmentPrimitive : unsigned char { House, Tree, LawnFragment, MarkerPillar, Ruin, Rock };
 enum class EnvironmentRole : unsigned char { Boundary, Mass, Landmark, Traversal, Detail, Count };
 inline const char* environmentRoleName(EnvironmentRole role){switch(role){case EnvironmentRole::Boundary:return "BOUNDARY";case EnvironmentRole::Mass:return "MASS";case EnvironmentRole::Landmark:return "LANDMARK";case EnvironmentRole::Traversal:return "TRAVERSAL";case EnvironmentRole::Detail:return "DETAIL";case EnvironmentRole::Count:break;}return "UNKNOWN";}
 struct EnvironmentPropSpec { EnvironmentPrimitive primitive=EnvironmentPrimitive::MarkerPillar;EnvironmentRole role=EnvironmentRole::Detail;Vec3 center{};Vec3 size{1,1,1};float yaw=0;unsigned char variant=0; };
@@ -123,10 +123,10 @@ constexpr bool validFormForSetting(RoomSetting setting,RoomForm form){
 
 constexpr bool settingAllowsPrimitive(RoomSetting setting,EnvironmentPrimitive primitive){
     switch(setting){
-        case RoomSetting::Field:return primitive==EnvironmentPrimitive::House||primitive==EnvironmentPrimitive::Tree||primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+        case RoomSetting::Field:return primitive==EnvironmentPrimitive::House||primitive==EnvironmentPrimitive::Tree||primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin||primitive==EnvironmentPrimitive::Rock;
         case RoomSetting::City:return primitive==EnvironmentPrimitive::House;
         case RoomSetting::Sterile:return primitive==EnvironmentPrimitive::MarkerPillar;
-        case RoomSetting::Coastal:return primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin;
+        case RoomSetting::Coastal:return primitive==EnvironmentPrimitive::LawnFragment||primitive==EnvironmentPrimitive::Ruin||primitive==EnvironmentPrimitive::Rock;
     }
     return false;
 }
@@ -326,7 +326,7 @@ inline int environmentPropCount(const RoomEnvironmentPlan& plan){
 inline bool environmentPropSolid(const EnvironmentPropSpec& prop){return prop.primitive!=EnvironmentPrimitive::LawnFragment;}
 inline ObstacleSpec environmentPropCollider(const EnvironmentPropSpec& prop){
     if(prop.primitive==EnvironmentPrimitive::Tree)return {prop.center+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.28f,prop.size.y*0.70f,prop.size.z*0.28f}};
-    if(prop.primitive==EnvironmentPrimitive::House||prop.primitive==EnvironmentPrimitive::Ruin)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
+    if(prop.primitive==EnvironmentPrimitive::House||prop.primitive==EnvironmentPrimitive::Ruin||prop.primitive==EnvironmentPrimitive::Rock)return {prop.center+Vec3{0,prop.size.y*0.52f,0},{prop.size.x,prop.size.y*1.04f,prop.size.z}};
     return {prop.center+Vec3{0,prop.size.y*0.5f,0},prop.size};
 }
 
@@ -339,7 +339,7 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
         if(plan.recovery())return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{landmarkSide*10.8f,0.035f,8.5f},{human*2.8f,0.07f,human*3.8f},landmarkSide*0.05f,0};
         if(plan.composition==0){
             if(index==0)return {EnvironmentPrimitive::Tree,EnvironmentRole::Landmark,{landmarkSide*10.6f,0,4.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.5f,human*4.2f,human*2.5f},0,0};
-            if(index==1)return {EnvironmentPrimitive::Ruin,EnvironmentRole::Mass,{-landmarkSide*9.4f,0,-8.0f+(unit(key+2u)-0.5f)*1.5f},{human*2.2f,gameplay::WORLD_SCALE.highCoverHeight,human*1.8f},landmarkSide*0.18f,1};
+            if(index==1)return {EnvironmentPrimitive::Rock,EnvironmentRole::Mass,{-landmarkSide*9.4f,0,-8.0f+(unit(key+2u)-0.5f)*1.5f},{human*2.2f,gameplay::WORLD_SCALE.highCoverHeight,human*1.8f},landmarkSide*0.18f,1};
         } else if(plan.composition==1){
             if(index==0)return {EnvironmentPrimitive::House,EnvironmentRole::Landmark,{landmarkSide*10.5f,0,-2.0f+(unit(key+2u)-0.5f)*2.0f},{human*2.6f,gameplay::WORLD_SCALE.storyHeight,human*3.2f},landmarkSide*1.5707963f,static_cast<unsigned char>(roomKey(roomSeed,roomIndex)%3u)};
         } else {
@@ -355,7 +355,7 @@ inline EnvironmentPropSpec environmentProp(const RoomEnvironmentPlan& plan,int r
     if(plan.setting==RoomSetting::Coastal){
         const float x=side*(10.7f+unit(key+1u)*0.8f),z=-12.0f+static_cast<float>(index)*8.0f;
         if(index==1||index==3)return {EnvironmentPrimitive::LawnFragment,EnvironmentRole::Detail,{x,0.035f,z},{2.4f+unit(key+3u)*1.2f,0.07f,3.0f+unit(key+4u)*1.6f},unit(key+5u)*0.10f,static_cast<unsigned char>(index)};
-        return {EnvironmentPrimitive::Ruin,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{1.7f+unit(key+3u)*0.5f,1.05f+unit(key+4u)*0.45f,1.6f+unit(key+5u)*0.6f},side*1.5707963f,static_cast<unsigned char>(index)};
+        return {EnvironmentPrimitive::Rock,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{1.7f+unit(key+3u)*0.5f,1.05f+unit(key+4u)*0.45f,1.6f+unit(key+5u)*0.6f},side*1.5707963f,static_cast<unsigned char>(index)};
     }
     const float x=side*(9.6f+unit(key+1u)*1.8f),z=-12.0f+static_cast<float>(index/2)*16.0f;
     return {EnvironmentPrimitive::MarkerPillar,index==0?EnvironmentRole::Landmark:EnvironmentRole::Mass,{x,0,z},{0.55f+unit(key+2u)*0.25f,2.0f+unit(key+3u)*1.6f,0.55f+unit(key+4u)*0.25f},unit(key+5u)*0.35f,static_cast<unsigned char>(index%3)};
