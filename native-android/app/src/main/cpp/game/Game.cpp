@@ -68,6 +68,8 @@ constexpr float TREE_CLIMB_JUMP_UP_SPEED = 5.4f;
 constexpr float TREE_CLIMB_JUMP_OUT_SPEED = 5.8f;
 constexpr float TREE_CLIMB_REGRAB_COOLDOWN = 0.30f;
 constexpr float TREE_CLIMB_CENTER_LANE_MAX = 0.28f;
+constexpr float TREE_TIP_ORBIT_SPEED = 2.35f;
+constexpr float TREE_TIP_HEIGHT_EPSILON = 0.001f;
 constexpr float CAMERA_COLLISION_RADIUS = gameplay::PHONE_BODY.cameraCollisionRadius;
 constexpr float CAMERA_COLLISION_BACKOFF = gameplay::PHONE_BODY.cameraCollisionBackoff;
 constexpr float INTRO_CAMERA_DURATION = 1.15f;
@@ -1942,7 +1944,6 @@ void Game::releaseTreeClimb(bool jumpAway){
 }
 
 bool Game::updateTreeClimb(float dt,float forwardAxis,float strafeAxis){
-    (void)strafeAxis;
     PlayerState& p=state_.player;
     if(!p.treeClimbing)return false;
     if(p.treeCollider<0||p.treeCollider>=state_.debug.colliderCount||state_.roomColliders[p.treeCollider].kind!=RoomColliderKind::TreeTrunk){releaseTreeClimb(false);return false;}
@@ -1951,6 +1952,18 @@ bool Game::updateTreeClimb(float dt,float forwardAxis,float strafeAxis){
     p.pos.y=clampf(p.pos.y+vertical*dt,GROUND_Y,c.climbTopY);
     p.vel={};p.jumpVel=0.0f;p.grounded=false;
     const float tileOriginZ=getRoomTileOriginZ(getRoomTileIndex(p.pos.z));
+    const bool holdingTip=p.pos.y>=c.climbTopY-TREE_TIP_HEIGHT_EPSILON&&forwardAxis>=0.0f;
+    if(holdingTip){
+        const float turn=strafeAxis*TREE_TIP_ORBIT_SPEED*dt;
+        const float cosine=std::cos(turn),sine=std::sin(turn);
+        const Vec3 normal=p.treeNormal;
+        p.treeNormal=normalized(Vec3{normal.x*cosine+normal.z*sine,0.0f,normal.z*cosine-normal.x*sine});
+        const float gripRadius=std::max(c.width,c.depth)*0.5f+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET;
+        p.pos.x=c.center.x+p.treeNormal.x*gripRadius;
+        p.pos.z=tileOriginZ+c.center.z+p.treeNormal.z*gripRadius;
+        p.yaw=p.targetYaw=std::atan2(-p.treeNormal.x,-p.treeNormal.z);
+        return true;
+    }
     if(std::abs(p.treeNormal.x)>0.5f){
         p.pos.x=(p.treeNormal.x<0.0f?c.minX-PLAYER_COLLISION_RADIUS-TREE_CLIMB_GRIP_INSET:c.maxX+PLAYER_COLLISION_RADIUS+TREE_CLIMB_GRIP_INSET);
         p.pos.z=tileOriginZ+c.center.z;
