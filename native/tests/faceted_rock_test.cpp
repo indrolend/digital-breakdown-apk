@@ -35,6 +35,12 @@ int main(){
     assert(supportFirst.height==supportAgain.height&&supportFirst.normal.x==supportAgain.normal.x&&supportFirst.normal.y==supportAgain.normal.y&&supportFirst.normal.z==supportAgain.normal.z);
     assert(supportFirst.normal.y>=faceted_rock::WalkableNormalY&&std::isfinite(supportFirst.height));
     assert(!faceted_rock::sampleSupport(support,20.0f,-3.0f).inside);
+    const auto footprint=faceted_rock::sampleSupportFootprint(support,8.0f,-3.0f,0.34f);
+    assert(footprint.inside&&footprint.height>=supportFirst.height);
+    constexpr float diagonal=0.707106781f;
+    const Vec3 offsets[]={{0.34f,0,0},{-0.34f,0,0},{0,0,0.34f},{0,0,-0.34f},{0.34f*diagonal,0,0.34f*diagonal},{0.34f*diagonal,0,-0.34f*diagonal},{-0.34f*diagonal,0,0.34f*diagonal},{-0.34f*diagonal,0,-0.34f*diagonal}};
+    for(const Vec3& offset:offsets){const auto underBody=faceted_rock::sampleSupport(support,8.0f+offset.x,-3.0f+offset.z);assert(!underBody.inside||underBody.height<=footprint.height+0.0001f);}
+    assert(!faceted_rock::sampleSupportFootprint(support,20.0f,-3.0f,4.0f).inside);
     bool sawRejectedSteepFace=false;
     for(int vertex=0;vertex+2<a.vertexCount;vertex+=3){const Vec3 n{a.normals[vertex*3],a.normals[vertex*3+1],a.normals[vertex*3+2]};sawRejectedSteepFace|=n.y>0.0f&&!faceted_rock::triangleWalkable(n);}
     assert(sawRejectedSteepFace);

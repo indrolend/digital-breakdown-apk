@@ -1749,7 +1749,7 @@ PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
         state_.slopeSupports.data(), state_.slopeSupportCount,
         state_.rockSupports.data(), state_.rockSupportCount
     };
-    return queryPlayerSupport(world, x, localZ, PLAYER_SUPPORT_RADIUS,
+    return queryPlayerSupport(world, x, localZ, PLAYER_SUPPORT_RADIUS, PLAYER_COLLISION_RADIUS,
                               GROUND_Y, getPlayerCeilingLimit());
 }
 

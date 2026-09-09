@@ -44,6 +44,7 @@ struct WorldContactView {
 inline PlayerSupportSample queryPlayerSupport(const WorldContactView& world,
                                               float x, float localZ,
                                               float supportRadius,
+                                              float bodyRadius,
                                               float groundHeight,
                                               float ceilingLimit) {
     PlayerSupportSample result{};
@@ -75,7 +76,7 @@ inline PlayerSupportSample queryPlayerSupport(const WorldContactView& world,
                SupportSource::Slope, i);
     }
     for (int i = 0; i < world.rockCount; ++i) {
-        const auto sample = faceted_rock::sampleSupport(world.rocks[i], x, localZ);
+        const auto sample = faceted_rock::sampleSupportFootprint(world.rocks[i], x, localZ, bodyRadius);
         if (!sample.inside) continue;
         accept(sample.height + groundHeight, sample.normal,
                SupportClassification::TraversableSlope, SupportSource::RockFacet, i);
