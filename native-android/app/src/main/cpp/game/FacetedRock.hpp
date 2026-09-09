@@ -121,4 +121,24 @@ inline SurfaceSample sampleSurface(const Support& support,float x,float z,bool w
 inline SurfaceSample sampleSupport(const Support& support,float x,float z){return sampleSurface(support,x,z,true);}
 inline SurfaceSample sampleEnvelope(const Support& support,float x,float z){return sampleSurface(support,x,z,false);}
 
+// A point sample is sufficient to decide whether the player's foot is over a
+// valid facet, but not whether the rest of its cylindrical body clears nearby
+// facets. Keep the center as the eligibility authority, then choose the
+// highest walkable surface under the bounded body footprint.
+inline SurfaceSample sampleSupportFootprint(const Support& support,float x,float z,float radius){
+    SurfaceSample result=sampleSupport(support,x,z);
+    if(!result.inside||radius<=0.0f)return result;
+    constexpr float diagonal=0.707106781f;
+    const Vec3 offsets[]={
+        {radius,0,0},{-radius,0,0},{0,0,radius},{0,0,-radius},
+        {radius*diagonal,0,radius*diagonal},{radius*diagonal,0,-radius*diagonal},
+        {-radius*diagonal,0,radius*diagonal},{-radius*diagonal,0,-radius*diagonal}
+    };
+    for(const Vec3& offset:offsets){
+        const auto sample=sampleSupport(support,x+offset.x,z+offset.z);
+        if(sample.inside&&sample.height>result.height){result.height=sample.height;result.normal=sample.normal;}
+    }
+    return result;
+}
+
 } // namespace faceted_rock

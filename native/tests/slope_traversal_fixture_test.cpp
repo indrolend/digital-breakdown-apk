@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "gameplay/PhoneBody.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -33,7 +34,7 @@ int main(){
 
     Game rock;rock.debugStartSlopeLab();const auto rockAuthority=rock.state().rockSupports[0];const auto& rockProp=rockAuthority.prop;
     if(rock.state().rockSupportCount!=1){std::fprintf(stderr,"ROCK_SUPPORT_FAIL fixture authority\n");return 1;}
-    const auto centerSurface=faceted_rock::sampleSupport(rockAuthority,rockProp.center.x,rockProp.center.z);
+    const auto centerSurface=faceted_rock::sampleSupportFootprint(rockAuthority,rockProp.center.x,rockProp.center.z,gameplay::PHONE_BODY.collisionRadius);
     const auto centerGameplay=rock.debugPlayerSupportAt(rockProp.center.x,rockProp.center.z);
     if(!centerSurface.inside||!near(centerGameplay.height,centerSurface.height+0.08f)||centerGameplay.normal.y<faceted_rock::WalkableNormalY){std::fprintf(stderr,"ROCK_SUPPORT_FAIL shared facet support\n");return 1;}
     const float emptyX=rockProp.center.x+rockProp.size.x*0.49f,emptyZ=rockProp.center.z+rockProp.size.z*0.49f;
@@ -51,7 +52,7 @@ int main(){
     if(normal.state().rockSupportCount<=0||normal.state().rockSupportCount>ROCK_SUPPORT_COUNT||normal.state().rockSupportCount!=ascent.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL deterministic room deployment count=%d repeat=%d\n",normal.state().rockSupportCount,ascent.state().rockSupportCount);return 1;}
     int rockSlots=0;for(int i=0;i<normal.state().debug.colliderCount;++i)rockSlots+=normal.state().roomColliders[i].kind==RoomColliderKind::RockAuthoritySlot?1:0;
     if(rockSlots!=normal.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL capacity slots=%d supports=%d\n",rockSlots,normal.state().rockSupportCount);return 1;}
-    for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupport(deployed,deployed.prop.center.x,deployed.prop.center.z);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
+    for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupportFootprint(deployed,deployed.prop.center.x,deployed.prop.center.z,gameplay::PHONE_BODY.collisionRadius);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
     std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment");
     return 0;
 }
