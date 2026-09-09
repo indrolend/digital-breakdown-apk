@@ -534,6 +534,8 @@ void Game::debugStartSlopeLab(){
     RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
     const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,1.45f,3.0f},0.24f,0};
     state_.rockSupports[0]={rock,73,4,0};state_.rockSupportCount=1;
+    state_.geometryProofRuin={early_browser_visuals::EnvironmentPrimitive::Ruin,early_browser_visuals::EnvironmentRole::Mass,{-6.0f,0.0f,7.0f},{3.2f,2.0f,3.0f},0.0f,0};state_.geometryProofRuinActive=true;
+    for(const auto& part:ruin_geometry::parts(state_.geometryProofRuin)){const auto bounds=ruin_geometry::bounds(part);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];c.minX=bounds.minX;c.maxX=bounds.maxX;c.minZ=bounds.minZ;c.maxZ=bounds.maxZ;c.bottomY=bounds.bottomY;c.topY=bounds.topY;c.width=c.maxX-c.minX;c.depth=c.maxZ-c.minZ;c.height=c.topY-c.bottomY;c.center={(c.minX+c.maxX)*0.5f,(c.bottomY+c.topY)*0.5f,(c.minZ+c.maxZ)*0.5f};}
     state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
 }

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 namespace {
 constexpr float Dt=1.0f/60.0f;
@@ -13,7 +14,7 @@ float horizontalSpeed(const Vec3& velocity){return std::sqrt(velocity.x*velocity
 
 int main(){
     Game ascent;ascent.debugStartSlopeLab();const auto fixture=ascent.state().slopeSupports[0];
-    if(!ascent.state().slopeLab||ascent.state().slopeSupportCount!=1||ascent.state().debug.colliderCount!=1||classifySupport(fixture)!=SupportClassification::TraversableSlope){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL authority\n");return 1;}
+    if(!ascent.state().slopeLab||ascent.state().slopeSupportCount!=1||ascent.state().debug.colliderCount!=3||classifySupport(fixture)!=SupportClassification::TraversableSlope){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL authority\n");return 1;}
     bool crossedSlope=false,reachedPlateau=false;float previousY=ascent.state().player.pos.y;Vec3 previousCamera=ascent.state().camera.pos;
     for(int frame=0;frame<600;++frame){input(ascent,0,1);const auto& p=ascent.state().player;const Vec3 cameraDelta=ascent.state().camera.pos-previousCamera;if(!std::isfinite(ascent.state().camera.pos.x)||!std::isfinite(ascent.state().camera.pos.y)||!std::isfinite(ascent.state().camera.pos.z)||(frame>0&&length(cameraDelta)>1.0f)||horizontalSpeed(p.vel)>7.0f){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL bounded camera/speed frame=%d\n",frame);return 1;}previousCamera=ascent.state().camera.pos;if(p.pos.z<fixture.maxZ&&p.pos.z>fixture.minZ){const auto support=sampleSlopeSupport(fixture,p.pos.x,p.pos.z);crossedSlope=true;if(!p.grounded||!near(p.pos.y,support.height+0.08f)||p.pos.y+0.001f<previousY){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL ascent frame=%d pos=(%.3f,%.3f,%.3f)\n",frame,p.pos.x,p.pos.y,p.pos.z);return 1;}}previousY=p.pos.y;if(p.pos.z<fixture.minZ-0.3f){reachedPlateau=p.grounded&&near(p.pos.y,1.68f);break;}}
     if(!crossedSlope||!reachedPlateau){const auto& p=ascent.state().player;std::fprintf(stderr,"SLOPE_FIXTURE_FAIL seam ascent crossed=%d plateau=%d pos=(%.3f,%.3f,%.3f) grounded=%d\n",crossedSlope?1:0,reachedPlateau?1:0,p.pos.x,p.pos.y,p.pos.z,p.grounded?1:0);return 1;}
@@ -47,11 +48,18 @@ int main(){
     Game rockCombat;rockCombat.debugStartSlopeLab();auto& combatPlayer=rockCombat.networkMutableState().player;combatPlayer.pos={rockProp.center.x,centerGameplay.height,rockProp.center.z};combatPlayer.vel={};combatPlayer.grounded=true;combatPlayer.battery=100;input(rockCombat,0,0,false,false,true);if(rockCombat.state().meleeVisual.visualTimer<=0){std::fprintf(stderr,"ROCK_SUPPORT_FAIL combat authority\n");return 1;}
     rockCombat.debugStartSlopeLab();auto& vacuumPlayer=rockCombat.networkMutableState().player;vacuumPlayer.pos={rockProp.center.x,centerGameplay.height,rockProp.center.z};vacuumPlayer.vel={};vacuumPlayer.grounded=true;vacuumPlayer.battery=100;input(rockCombat,0,0,true);if(!rockCombat.state().vacuum.active){std::fprintf(stderr,"ROCK_SUPPORT_FAIL vacuum authority\n");return 1;}
 
+    auto ruin=std::make_unique<Game>();ruin->debugStartSlopeLab();const auto ruinParts=ruin_geometry::parts(ruin->state().geometryProofRuin);const auto bodyBounds=ruin_geometry::bounds(ruinParts[0]),remnantBounds=ruin_geometry::bounds(ruinParts[1]);
+    const auto bodySupport=ruin->debugPlayerSupportAt(ruinParts[0].center.x,ruinParts[0].center.z);const auto remnantSupport=ruin->debugPlayerSupportAt(ruinParts[1].center.x,ruinParts[1].center.z);const auto absentUpperSupport=ruin->debugPlayerSupportAt(bodyBounds.minX+0.15f,ruinParts[0].center.z);
+    if(!near(bodySupport.height,bodyBounds.topY+0.08f)||!near(remnantSupport.height,remnantBounds.topY+0.08f)||!near(absentUpperSupport.height,bodyBounds.topY+0.08f)){std::fprintf(stderr,"RUIN_GEOMETRY_FAIL stepped support body=%.3f remnant=%.3f absent=%.3f\n",bodySupport.height,remnantSupport.height,absentUpperSupport.height);return 1;}
+    auto& ruinPlayer=ruin->networkMutableState().player;ruinPlayer.pos={remnantBounds.maxX+0.34f,remnantBounds.topY-PHONE_MODEL_HEIGHT*0.5f,ruinParts[1].center.z};ruinPlayer.vel={0,0,1.6f};ruinPlayer.jumpVel=-0.8f;ruinPlayer.grounded=false;input(*ruin,0,0);
+    if(!ruin->state().player.ledgeHanging||ruin->state().player.ledgeCollider!=2){std::fprintf(stderr,"RUIN_GEOMETRY_FAIL visible remnant ledge catch collider=%d\n",ruin->state().player.ledgeCollider);return 1;}
+    ruin->networkMutableState().camera.yaw=1.5707963f;input(*ruin,0,1,false,true);if(ruin->state().player.ledgeHanging||!ruin->state().player.grounded||!near(ruin->state().player.pos.y,remnantBounds.topY+0.08f)||ruin->state().player.ledgeMantleTimer<=0){std::fprintf(stderr,"RUIN_GEOMETRY_FAIL mantle\n");return 1;}
+
     Game normal;normal.reset();ascent.reset();if(normal.state().slopeLab||normal.state().slopeSupportCount!=0){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL leaked into normal rooms\n");return 1;}
     if(normal.state().rockSupportCount<=0||normal.state().rockSupportCount>ROCK_SUPPORT_COUNT||normal.state().rockSupportCount!=ascent.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL deterministic room deployment count=%d repeat=%d\n",normal.state().rockSupportCount,ascent.state().rockSupportCount);return 1;}
     int rockSlots=0;for(int i=0;i<normal.state().debug.colliderCount;++i)rockSlots+=normal.state().roomColliders[i].kind==RoomColliderKind::RockAuthoritySlot?1:0;
     if(rockSlots!=normal.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL capacity slots=%d supports=%d\n",rockSlots,normal.state().rockSupportCount);return 1;}
     for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupport(deployed,deployed.prop.center.x,deployed.prop.center.z);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
-    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment");
+    std::puts("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment ruin-stepped-support ruin-ledge-mantle");
     return 0;
 }

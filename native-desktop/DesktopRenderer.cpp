@@ -846,7 +846,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     }
     drawBox({-ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     drawBox({ ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
-    const int authoredObstacleCount=(state.traversalLab||state.slopeLab)?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount);
+    const int authoredObstacleCount=state.slopeLab?1:(state.traversalLab?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount));
     for (int i=0;i<authoredObstacleCount;++i) {
         const RoomCollider& c=state.roomColliders[i];
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
@@ -894,10 +894,11 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
             }
         }
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(p,prop.size,0,prop.yaw,0,0.20f,0.39f,0.23f);
-        else if(prop.primitive==EnvironmentPrimitive::Ruin){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.38f,0.36f,0.30f);drawBox(p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},0,prop.yaw,0,0.29f,0.28f,0.25f);}
+        else if(prop.primitive==EnvironmentPrimitive::Ruin){for(const auto& part:ruin_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.38f,0.36f,0.30f}:VisualColor{0.29f,0.28f,0.25f};drawBox(part.center,part.size,0,part.yaw,0,color.r,color.g,color.b);}}
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(prop,state.roomSeed,state.roomIndex,i,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
         else {drawBox(p+Vec3{0,prop.size.y*0.5f,0},prop.size,0,prop.yaw,0,0.48f,0.55f,0.58f);drawBox(p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},0,prop.yaw,0,0.72f,0.90f,0.94f);}
     }
+    if(state.slopeLab&&state.geometryProofRuinActive)for(const auto& part:ruin_geometry::parts(state.geometryProofRuin,z0)){const VisualColor color=part.surface==0?VisualColor{0.38f,0.36f,0.30f}:VisualColor{0.29f,0.28f,0.25f};drawBox(part.center,part.size,0,part.yaw,0,color.r,color.g,color.b);}
     if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glDisable(GL_LIGHTING);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();glEnable(GL_LIGHTING);}
 }
 

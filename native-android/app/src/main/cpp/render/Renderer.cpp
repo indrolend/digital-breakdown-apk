@@ -517,10 +517,11 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
         if(prop.primitive==EnvironmentPrimitive::House){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,structure);drawBox(viewProj,p+Vec3{0,h*0.86f,0},{w*0.88f,h*0.20f,d*0.90f},prop.yaw,roof);drawBox(viewProj,p+Vec3{0,h*1.03f,0},{w*0.62f,h*0.16f,d*0.72f},prop.yaw,roof);drawBox(viewProj,p+Vec3{std::sin(prop.yaw)*d*0.505f,h*0.25f,std::cos(prop.yaw)*d*0.505f},{w*0.22f,h*0.42f,0.035f},prop.yaw,dark);}
         else if(prop.primitive==EnvironmentPrimitive::Tree){drawBox(viewProj,p+Vec3{0,prop.size.y*0.35f,0},{prop.size.x*0.20f,prop.size.y*0.70f,prop.size.z*0.20f},prop.yaw,trunk);drawBox(viewProj,p+Vec3{0,prop.size.y*0.88f,0},{prop.size.x,prop.size.y*0.72f,prop.size.z},prop.yaw,leaf);}
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(viewProj,p,prop.size,prop.yaw,lawn);
-        else if(prop.primitive==EnvironmentPrimitive::Ruin){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(viewProj,p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},prop.yaw,ruin);drawBox(viewProj,p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},prop.yaw,ruinTop);}
+        else if(prop.primitive==EnvironmentPrimitive::Ruin){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};for(const auto& part:ruin_geometry::parts(prop,z0))drawBox(viewProj,part.center,part.size,part.yaw,part.surface==0?ruin:ruinTop);}
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);const float rock[4]={substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f,1};drawFacetedRock(viewProj,prop,state.roomSeed,state.roomIndex,i,z0,rock);}
         else {drawBox(viewProj,p+Vec3{0,prop.size.y*0.5f,0},prop.size,prop.yaw,marker);drawBox(viewProj,p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},prop.yaw,cap);}
     }
+    if(state.slopeLab&&state.geometryProofRuinActive){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};for(const auto& part:ruin_geometry::parts(state.geometryProofRuin,z0))drawBox(viewProj,part.center,part.size,part.yaw,part.surface==0?ruin:ruinTop);}
     if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);
 }
 

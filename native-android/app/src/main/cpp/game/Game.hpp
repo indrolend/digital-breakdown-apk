@@ -12,6 +12,7 @@
 #include "MaterialResponse.hpp"
 #include "SlopeSupport.hpp"
 #include "FacetedRock.hpp"
+#include "RuinGeometry.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -667,6 +668,8 @@ struct GameState {
     int slopeSupportCount = 0;
     std::array<faceted_rock::Support, ROCK_SUPPORT_COUNT> rockSupports;
     int rockSupportCount = 0;
+    early_browser_visuals::EnvironmentPropSpec geometryProofRuin;
+    bool geometryProofRuinActive = false;
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;

@@ -56,3 +56,18 @@ reserved `RoomCollider` entry remains as a capacity/accounting and non-player
 query slot, but player support, obstruction and ledge discovery skip its box;
 those player-contact answers now come from the rock mesh. Houses, ruins, trees,
 markers and procedural traversal placement remain deferred.
+
+## Compound ruin proof
+
+The controlled geometry fixture also contains one yaw-zero ruin whose two
+visible parts come from shared `ruin_geometry::parts()` authority. The exact
+same part specifications feed desktop rendering, Android rendering and two
+ordinary `RoomCollider` fixtures. This proves a stepped support where the body
+top, offset remnant top and absent upper volume are distinct, and the existing
+descending catch, hang and mantle verbs discover the remnant's real visible
+ledge without movement changes.
+
+Normal generated ruin collision remains the previous single conservative box.
+Deploying compound ruin collision requires an explicit capacity-cost decision
+because a truthful ruin consumes two bounded collider entries instead of one.
+That policy change is deliberately not hidden inside this proof.
