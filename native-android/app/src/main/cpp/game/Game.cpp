@@ -1741,7 +1741,10 @@ void Game::resolvePlayerObstacleCollisions() {
     float localPlayerZ = player.pos.z - tileOriginZ;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
-        const bool onTop = player.pos.y >= c.topY + GROUND_Y - 0.08f;
+        // Side blocking ends only once the phone's solid lower edge has cleared
+        // the collider top.  Using the center height here allowed the phone to
+        // move through the lip while its lower half still intersected it.
+        const bool onTop = player.pos.y - PHONE_SOLID_HALF_Y >= c.topY;
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {

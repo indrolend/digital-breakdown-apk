@@ -2,6 +2,7 @@
 #include "EarlyBrowserVisuals.hpp"
 #include "gameplay/TraversalGraph.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "gameplay/PhoneBody.hpp"
 
 #include <array>
 #include <cstdio>
@@ -122,9 +123,66 @@ bool runTreeClimbContract(){
     return true;
 }
 
+bool runRaisedSupportContract(){
+    Game game;game.reset();
+    GameState& state=game.networkMutableState();
+    for(auto& target:state.targets)target={};
+    for(auto& collider:state.roomColliders)collider={};
+    state.debug.colliderCount=1;
+    RoomCollider& platform=state.roomColliders[0];
+    setBox(platform,0.0f,0.0f,2.0f,4.0f,PlatformTop);
+
+    // A rising phone whose center has passed the top has not physically
+    // cleared the lip until its lower edge has also passed the top.
+    state.player.pos={platform.minX-gameplay::PHONE_BODY.supportRadius-0.01f,platform.topY+0.02f,0.0f};
+    state.player.vel={2.0f,0.0f,0.0f};state.player.jumpVel=1.0f;state.player.grounded=false;
+    state.player.airJumpsRemaining=1;state.player.battery=100.0f;
+    game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);
+    game.update(Dt);
+    const float blockedX=platform.minX-gameplay::PHONE_BODY.collisionRadius;
+    if(game.state().player.pos.x>blockedX+0.001f){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE rising lip penetrated x=%.3f blocked=%.3f y=%.3f top=%.3f\n",game.state().player.pos.x,blockedX,game.state().player.pos.y,platform.topY);
+        return false;
+    }
+
+    // Falling inside the visible footprint must settle on the exact physical
+    // top and become grounded through the normal controller update.
+    state.player.pos={0.0f,platform.topY+0.34f,0.0f};state.player.vel={};state.player.jumpVel=-3.0f;state.player.grounded=false;
+    for(int frame=0;frame<30&&!game.state().player.grounded;++frame){
+        game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+    }
+    const float expectedSupportY=platform.topY+PHONE_BODY_HEIGHT*0.5f;
+    if(!game.state().player.grounded||std::abs(game.state().player.pos.y-expectedSupportY)>0.001f){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE landing grounded=%d y=%.3f expected=%.3f\n",game.state().player.grounded?1:0,game.state().player.pos.y,expectedSupportY);
+        return false;
+    }
+
+    // Ordinary input can carry the grounded phone off the support; once the
+    // visible support footprint clears the edge, it must become airborne.
+    state.player.pos.x=platform.maxX-0.02f;state.player.vel={};
+    state.camera.yaw=-1.57079632679f;
+    bool leftSupport=false;
+    for(int frame=0;frame<45;++frame){
+        game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+        if(game.state().player.pos.x>platform.maxX+gameplay::PHONE_BODY.supportRadius){leftSupport=true;break;}
+    }
+    if(!leftSupport||game.state().player.grounded){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE edge left=%d grounded=%d x=%.3f edge=%.3f\n",leftSupport?1:0,game.state().player.grounded?1:0,game.state().player.pos.x,platform.maxX);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main(){
+    if(!runRaisedSupportContract()){
+        std::fprintf(stderr,"RAISED_SUPPORT_FAIL lip blocking, landing, or edge departure regressed\n");
+        return 1;
+    }
+    std::printf("RAISED_SUPPORT_OK lip=blocked landing=grounded edge_departure=airborne\n");
     if(!runTreeClimbContract()){
         std::fprintf(stderr,"TREE_CLIMB_FAIL trunk grip, crown clamp, descent, jump-off, or generic-wall isolation regressed\n");
         return 1;
