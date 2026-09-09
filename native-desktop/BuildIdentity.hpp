@@ -15,6 +15,7 @@ struct BuildIdentity {
     std::string buildConfiguration;
     std::string buildTime;
     std::string channel;
+    bool sourceDirty = false;
     bool storefrontRelease = false;
     bool developerConsole = false;
 };

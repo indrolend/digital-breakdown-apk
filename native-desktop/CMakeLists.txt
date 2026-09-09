@@ -18,22 +18,9 @@ set(DB_SAVE_FORMAT_VERSION "4" CACHE STRING "Digital Breakdown persistent save f
 option(DB_STOREFRONT_RELEASE "Build the locked-down solo storefront player surface" ON)
 option(DB_ENABLE_DEVELOPER_CONSOLE "Enable the interactive in-game developer console" OFF)
 string(TIMESTAMP DB_BUILD_DATE "%Y.%m.%d" UTC)
-string(TIMESTAMP DB_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 if(NOT DEFINED DB_HUMAN_VERSION)
     set(DB_HUMAN_VERSION "experimental-${DB_BUILD_DATE}")
 endif()
-if(NOT DEFINED DB_COMMIT_SHA)
-    execute_process(
-        COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}/.." rev-parse HEAD
-        OUTPUT_VARIABLE DB_COMMIT_SHA
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-endif()
-if(NOT DB_COMMIT_SHA)
-    set(DB_COMMIT_SHA "unknown")
-endif()
-string(SUBSTRING "${DB_COMMIT_SHA}" 0 7 DB_COMMIT_SHORT)
 if(WIN32)
     set(DB_PLATFORM "windows")
 elseif(APPLE)
@@ -48,10 +35,23 @@ elseif(DB_ARCHITECTURE MATCHES "^(aarch64|arm64)$")
     set(DB_ARCHITECTURE "arm64")
 endif()
 
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/BuildIdentity.cpp.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
-    @ONLY
+set(DB_GENERATED_BUILD_IDENTITY "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp")
+add_custom_target(
+    DesktopBuildIdentity ALL
+    COMMAND "${CMAKE_COMMAND}"
+        "-DDB_SOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "-DDB_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/BuildIdentity.cpp.in"
+        "-DDB_OUTPUT=${DB_GENERATED_BUILD_IDENTITY}"
+        "-DDB_HUMAN_VERSION=${DB_HUMAN_VERSION}"
+        "-DDB_COMMIT_OVERRIDE=${DB_COMMIT_SHA}"
+        "-DDB_SAVE_FORMAT_VERSION=${DB_SAVE_FORMAT_VERSION}"
+        "-DDB_PLATFORM=${DB_PLATFORM}"
+        "-DDB_ARCHITECTURE=${DB_ARCHITECTURE}"
+        "-DDB_CHANNEL=${DB_CHANNEL}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/GenerateBuildIdentity.cmake"
+    BYPRODUCTS "${DB_GENERATED_BUILD_IDENTITY}"
+    COMMENT "Refreshing desktop build provenance"
+    VERBATIM
 )
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -108,11 +108,12 @@ add_executable(
     DesktopAudio.cpp
     DesktopMultiplayer.cpp
     DesktopUpdateService.cpp
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
+    "${DB_GENERATED_BUILD_IDENTITY}"
     "${miniaudio_SOURCE_DIR}/miniaudio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
     "${DB_SHARED_ROOT}/game/Game.cpp"
 )
+add_dependencies(DigitalBreakdown DesktopBuildIdentity)
 if(WIN32)
     target_sources(DigitalBreakdown PRIVATE ControllerInputWin.cpp ControllerRumbleWin.cpp)
 elseif(APPLE)

@@ -27,6 +27,7 @@ const BuildIdentity& desktopBuildIdentity() {
         DB_BUILD_CONFIGURATION,
         "@DB_BUILD_TIME@",
         "@DB_CHANNEL@",
+        @DB_SOURCE_DIRTY@,
         DB_STOREFRONT_RELEASE != 0,
         DB_ENABLE_DEVELOPER_CONSOLE != 0
     };
@@ -38,6 +39,7 @@ std::string desktopBuildIdentityLine() {
     std::ostringstream out;
     out << identity.humanVersion
         << " " << identity.commitShort
+        << (identity.sourceDirty ? "+dirty" : "")
         << " " << identity.platform << "/" << identity.architecture
         << " protocol " << identity.protocolVersion
         << " gameplay " << identity.gameplayVersion

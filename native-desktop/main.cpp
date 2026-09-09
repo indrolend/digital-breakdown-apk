@@ -1470,6 +1470,7 @@ void printBuildIdentityJson() {
         "{\"commit\":\"%s\",\"commit_short\":\"%s\",\"protocol\":%u,"
         "\"gameplay\":%u,\"save_format\":%d,\"platform\":\"%s\","
         "\"architecture\":\"%s\",\"configuration\":\"%s\","
+        "\"source_dirty\":%s,\"build_time\":\"%s\","
         "\"storefront_release\":%s,\"developer_console\":%s}\n",
         identity.commit.c_str(),
         identity.commitShort.c_str(),
@@ -1479,6 +1480,8 @@ void printBuildIdentityJson() {
         identity.platform.c_str(),
         identity.architecture.c_str(),
         identity.buildConfiguration.c_str(),
+        identity.sourceDirty ? "true" : "false",
+        identity.buildTime.c_str(),
         identity.storefrontRelease ? "true" : "false",
         identity.developerConsole ? "true" : "false"
     );

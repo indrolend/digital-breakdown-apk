@@ -14,7 +14,8 @@ release authority and must not be treated as a source for `latest-native`.
 
 ## Build identity
 
-Desktop builds generate `BuildIdentity` at CMake configure time. It reports:
+Desktop builds refresh `BuildIdentity` on every build, so a reused build directory
+cannot silently retain an older source revision. It reports:
 
 - channel: `desktop-candidate` in release-contract CI
 - human version: `experimental-YYYY.MM.DD` unless overridden by CI
@@ -24,6 +25,7 @@ Desktop builds generate `BuildIdentity` at CMake configure time. It reports:
 - save-format version
 - platform and architecture
 - build timestamp
+- whether the local source tree was dirty when the executable was built
 
 Protocol and gameplay compatibility are still defined in
 `native-network/MultiplayerProtocol.hpp`. The Worker declaration in
