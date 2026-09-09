@@ -36,6 +36,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   MenuNavigationTest \
   PhoneDisplayStateTest \
   EarlyBrowserVisualsTest \
+  MaterialResponseTest \
   RenderContractsTest \
   DesktopPlaytestPolicyTest \
   DeveloperCodecTest \

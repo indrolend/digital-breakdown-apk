@@ -983,7 +983,7 @@ void executeDeveloperCodec(HostState& host){
             const auto& state=host.game.state();const auto& build=desktopBuildIdentity();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
             host.codec.write("build "+build.commitShort+"  version "+build.humanVersion);
             host.codec.write("room "+std::to_string(state.roomIndex)+" seed "+std::to_string(state.roomSeed));
-            host.codec.write(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / "+early_browser_visuals::playstyleName(plan.playstyle));
+            host.codec.write(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / intent "+early_browser_visuals::traversalIntentName(plan.traversalIntent));
             std::ostringstream status;status<<"souls "<<state.player.souls<<" battery "<<std::fixed<<std::setprecision(1)<<state.player.battery;host.codec.write(status.str());
             host.codec.write(std::string("mode ")+(state.rallyLab?"rally":(state.traversalLab?"traversal":(state.roomInspector?"rooms":"game"))));break;}
         case DeveloperCodecCommand::SoulSpawn:host.codec.write(host.game.debugSpawnStoredSoul()?"SOUL SPAWNED":"SOUL WALLET FULL");break;
@@ -1262,7 +1262,7 @@ struct RuntimePerfTrace {
         if(std::chrono::duration<double>(now-windowStarted).count()<1.0)return;
         int humans=0,souls=0,particles=0,fragments=0,respawns=0;
         for(const auto& target:state.targets){if(gameplay::isActiveHuman(target))++humans;if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;}
-        for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& particle:state.particles)if(particle.life>0.0f){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}
         for(const auto& request:state.respawnQueue)if(request.active)++respawns;
         const Stats totalStats=stats(totalMs),updateStats=stats(updateMs),audioStats=stats(audioMs),renderStats=stats(renderMs),swapStats=stats(swapMs);
         output<<std::fixed<<std::setprecision(3)<<std::chrono::duration<double>(now-started).count()<<','<<state.frame<<','<<state.roomIndex<<','<<totalMs.size()<<','
@@ -1302,7 +1302,7 @@ int runCombatRenderStress(GLFWwindow* window,HostState& host){
         samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());
         glfwSwapBuffers(window);glfwPollEvents();
         int particles=0,fragments=0,souls=0;
-        for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}
+        for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}
         for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
         peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
     };
@@ -1382,7 +1382,7 @@ int runCombatCrowdStress(GLFWwindow* window,HostState& host){
         const auto audioBegin=std::chrono::steady_clock::now();host.audio.update(host.game.state());const auto audioEnd=std::chrono::steady_clock::now();audioSamples.push_back(std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count());
         const auto begin=std::chrono::steady_clock::now();host.renderer.draw(host.game.state());glFinish();const auto end=std::chrono::steady_clock::now();
         samples.push_back(std::chrono::duration<double,std::milli>(end-begin).count());glfwSwapBuffers(window);glfwPollEvents();
-        int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.kind==1)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
+        int particles=0,fragments=0,souls=0;for(const auto& particle:host.game.state().particles)if(particle.life>0){++particles;if(particle.material==ParticleMaterial::Environment)++fragments;}for(const auto& target:host.game.state().targets)if(target.alive&&target.slurpable&&target.soulCubeAmount>0.001f)++souls;
         if(particles>peakParticles)peakLoadState=std::make_unique<GameState>(host.game.state());peakParticles=std::max(peakParticles,particles);peakFragments=std::max(peakFragments,fragments);peakSouls=std::max(peakSouls,souls);
     };
     for(int wave=0;wave<waves;++wave){
@@ -1618,7 +1618,10 @@ int runModelTest(const std::filesystem::path& root) {
     auto finite=[](const std::vector<float>& v){return !v.empty()&&std::all_of(v.begin(),v.end(),[](float x){return std::isfinite(x)&&std::abs(x)<100.0f;});};
     auto differs=[](const std::vector<float>& a,const std::vector<float>& b){if(a.size()!=b.size())return true;for(std::size_t i=0;i<a.size();++i)if(std::abs(a[i]-b[i])>0.00001f)return true;return false;};
     float minY=100,maxY=-100;for(std::size_t i=1;i<idle.size();i+=3){minY=std::min(minY,idle[i]);maxY=std::max(maxY,idle[i]);}
-    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phone.vertices.size()/3==253740&&phone.batches.size()==30&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&differs(idle,walk)&&differs(walk,attack)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
+    float phoneMin[3]{100,100,100},phoneMax[3]{-100,-100,-100};for(std::size_t i=0;i+2<phone.vertices.size();i+=3)for(int axis=0;axis<3;++axis){phoneMin[axis]=std::min(phoneMin[axis],phone.vertices[i+axis]);phoneMax[axis]=std::max(phoneMax[axis],phone.vertices[i+axis]);}
+    const std::size_t phoneVertexCount=phone.vertices.size()/3;const float phoneWidth=phoneMax[0]-phoneMin[0],phoneHeight=phoneMax[1]-phoneMin[1],phoneDepth=phoneMax[2]-phoneMin[2];
+    const bool phoneOk=phoneVertexCount>=100&&phoneVertexCount<=3000&&phoneVertexCount%3==0&&phone.batches.size()>=3&&phone.batches.size()<=8&&std::abs(phoneWidth-PHONE_BODY_WIDTH)<0.003f&&std::abs(phoneHeight-PHONE_BODY_HEIGHT)<0.003f&&phoneDepth>=PHONE_BODY_DEPTH&&phoneDepth<0.018f;
+    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phoneOk&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&differs(idle,walk)&&differs(walk,attack)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
     std::printf("MODEL_TEST_%s human=%zu bones=%zu frames=%u phone=%zu/%zu flower=%zu y=[%.4f,%.4f] walk=%d attack=%d\n",ok?"OK":"FAILED",human.vertices.size(),human.bones.size(),human.frameCount,phone.vertices.size()/3,phone.batches.size(),flower.vertices.size()/3,minY,maxY,differs(idle,walk)?1:0,differs(walk,attack)?1:0);return ok?0:1;
 }
 
@@ -1697,7 +1700,7 @@ int runRoomInspectorSmoke(Game& game){
             const auto& state=game.state();const auto& r=state.roomInspectorReport;
             const bool playable=state.player.alive&&std::isfinite(state.player.pos.x)&&std::isfinite(state.player.pos.y)&&std::isfinite(state.player.pos.z)&&length(state.player.pos-start)>0.0001f;
             ok&=r.seedSelectionValid&&r.requiredRouteValid&&playable&&r.premise==static_cast<early_browser_visuals::RoomPremise>(premiseIndex);
-            std::printf("ROOM_INSPECT premise=%s playstyle=%s seed=%d room=%d route=%s band=%s surfaces=%d edges=%d colliders=%d props=%d mass=%d landmark=%d traversal=%d detail=%d enemies=%d/%d playable=%s\n",early_browser_visuals::premiseName(r.premise),early_browser_visuals::playstyleName(r.playstyle),r.seed,r.roomIndex,r.requiredRouteValid?"VALID":"INVALID",gameplay::traversalDifficultyName(r.requiredBand),r.traversalSurfaceCount,r.traversalEdgeCount,r.colliderCount,r.presentationPropCount,r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Mass)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Landmark)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Traversal)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Detail)],r.enemyCount,r.enemyBudget,playable?"YES":"NO");
+            std::printf("ROOM_INSPECT premise=%s traversal_intent=%s seed=%d room=%d route=%s surfaces=%d edges=%d colliders=%d props=%d mass=%d landmark=%d traversal=%d detail=%d enemies=%d/%d playable=%s\n",early_browser_visuals::premiseName(r.premise),early_browser_visuals::traversalIntentName(r.traversalIntent),r.seed,r.roomIndex,r.requiredRouteValid?"VALID":"INVALID",r.traversalSurfaceCount,r.traversalEdgeCount,r.colliderCount,r.presentationPropCount,r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Mass)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Landmark)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Traversal)],r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Detail)],r.enemyCount,r.enemyBudget,playable?"YES":"NO");
             const RoomReviewRating rating=sample==0?RoomReviewRating::Keep:(sample==1?RoomReviewRating::Tune:RoomReviewRating::Redesign);
             std::printf("%s\n",game.debugRoomReviewLine(rating).c_str());
             if(sample==0){game.debugToggleRoomInspectorEnemies();ok&=game.state().roomInspectorReport.enemyCount>0;game.debugToggleRoomInspectorEnemies();}

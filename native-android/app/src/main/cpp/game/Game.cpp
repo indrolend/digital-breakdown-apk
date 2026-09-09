@@ -553,12 +553,10 @@ void Game::debugToggleRoomInspectorEnemies(){
 void Game::refreshRoomInspectorReport(bool seedSelectionValid){
     if(!state_.roomInspector)return;
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
-    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.playstyle=plan.playstyle;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
+    RoomInspectorReport report{};report.premise=state_.roomInspectorPremise;report.setting=plan.setting;report.form=plan.form;report.scale=plan.scale;report.condition=plan.condition;report.traversalIntent=plan.traversalIntent;report.seed=state_.roomSeed;report.roomIndex=state_.roomIndex;report.seedSelectionValid=seedSelectionValid;
     report.requiredRouteValid=early_browser_visuals::requiredRouteIsTraversable(plan,state_.roomSeed,state_.roomIndex);
     report.traversalSurfaceCount=plan.traversal.surfaceCount;report.traversalEdgeCount=plan.traversal.edgeCount;
-    bool uncalibrated=false;gameplay::TraversalDifficulty band=gameplay::TraversalDifficulty::Automatic;
-    for(int i=0;i<plan.traversal.edgeCount;++i){const auto& edge=plan.traversal.edges[i];if(!gameplay::isRequired(edge))continue;++report.requiredEdgeCount;const auto difficulty=gameplay::resolvedTraversalDifficulty(plan.traversal,edge,gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);if(difficulty==gameplay::TraversalDifficulty::Unknown)uncalibrated=true;else if(static_cast<int>(difficulty)>static_cast<int>(band))band=difficulty;}
-    report.requiredBand=uncalibrated?gameplay::TraversalDifficulty::Unknown:band;
+    for(int i=0;i<plan.traversal.edgeCount;++i)if(gameplay::isRequired(plan.traversal.edges[i]))++report.requiredEdgeCount;
     report.colliderCount=state_.debug.colliderCount;
     const auto geometry=report.requiredRouteValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
     report.presentationPropCount=early_browser_visuals::selectedEnvironmentPropCount(plan,geometry);
@@ -576,7 +574,7 @@ std::string Game::debugRoomReviewLine(RoomReviewRating rating) const{
     const auto& r=state_.roomInspectorReport;std::ostringstream out;
     out<<"ROOM_REVIEW premise="<<early_browser_visuals::premiseName(r.premise)<<" seed="<<r.seed<<" room="<<r.roomIndex<<" rating="<<ratingName
        <<" setting="<<early_browser_visuals::settingName(r.setting)<<" form="<<early_browser_visuals::formName(r.form)<<" scale="<<early_browser_visuals::scaleName(r.scale)
-       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" playstyle="<<early_browser_visuals::playstyleName(r.playstyle)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID")<<" band="<<gameplay::traversalDifficultyName(r.requiredBand);
+       <<" condition="<<early_browser_visuals::conditionName(r.condition)<<" traversal_intent="<<early_browser_visuals::traversalIntentName(r.traversalIntent)<<" route="<<(r.requiredRouteValid?"VALID":"INVALID");
     return out.str();
 }
 
@@ -837,12 +835,12 @@ void Game::updateFlowerPowerups(float dt) {
     }
 }
 
-void Game::spawnParticleBurst(const Vec3& position) {
+void Game::spawnParticleBurst(const Vec3& position,ParticleMaterial material) {
     for(int n=0;n<22;++n) {
         ParticleState& particle=state_.particles[state_.nextParticle];
         state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
         const float life=0.55f+nextFlowerRandom()*0.35f;
-        particle=ParticleState{}; particle.pos=position;
+        particle=ParticleState{}; particle.pos=position; particle.material=material;
         particle.vel={(nextFlowerRandom()-0.5f)*5.0f,nextFlowerRandom()*4.0f,(nextFlowerRandom()-0.5f)*5.0f};
         particle.life=life; particle.maxLife=life;
     }
@@ -853,7 +851,7 @@ void Game::spawnFlameBurst(const Vec3& position,float strength) {
     for(int n=0;n<count;++n) {
         ParticleState& particle=state_.particles[state_.nextParticle]; state_.nextParticle=(state_.nextParticle+1)%PARTICLE_COUNT;
         const float angle=nextFlowerRandom()*DB_PI*2.0f,radial=1.2f+nextFlowerRandom()*5.4f*strength,life=0.42f+nextFlowerRandom()*0.32f;
-        particle=ParticleState{}; particle.pos=position+Vec3{0,0.06f,0};
+        particle=ParticleState{}; particle.pos=position+Vec3{0,0.06f,0}; particle.material=ParticleMaterial::Impact;
         particle.vel={std::cos(angle)*radial,2.4f+nextFlowerRandom()*5.0f*strength,std::sin(angle)*radial}; particle.life=life; particle.maxLife=life;
     }
 }
@@ -871,7 +869,7 @@ void Game::spawnShellShatter(const TargetState& target) {
         const float radial=0.45f+visualRandom()*1.55f;
         const float life=0.72f+visualRandom()*0.38f;
         particle=ParticleState{};
-        particle.kind=1;
+        particle.material=ParticleMaterial::Environment;
         particle.size=(0.055f+visualRandom()*0.075f)*target.scale;
         particle.pos=target.pos+Vec3{std::cos(angle)*bodyWidth*visualRandom(),height,std::sin(angle)*bodyWidth*visualRandom()};
         particle.vel={std::cos(angle)*radial,0.45f+visualRandom()*2.25f,std::sin(angle)*radial};
@@ -882,9 +880,10 @@ void Game::spawnShellShatter(const TargetState& target) {
 void Game::updateParticles(float dt) {
     for(auto& particle:state_.particles) {
         if(particle.life<=0.0f) continue;
-        particle.vel.y-=(particle.kind==1?10.5f:8.0f)*dt;
+        const bool reclaimed=particle.material==ParticleMaterial::Environment;
+        particle.vel.y-=(reclaimed?10.5f:8.0f)*dt;
         particle.pos+=particle.vel*dt;
-        if(particle.kind==1&&particle.pos.y<=0.025f){
+        if(reclaimed&&particle.pos.y<=0.025f){
             particle.pos.y=0.025f;particle.vel.y=0.0f;
             const float settle=std::exp(-16.0f*dt);particle.vel.x*=settle;particle.vel.z*=settle;
             particle.life=std::max(0.0f,particle.life-dt*1.25f);
@@ -1741,7 +1740,10 @@ void Game::resolvePlayerObstacleCollisions() {
     float localPlayerZ = player.pos.z - tileOriginZ;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
-        const bool onTop = player.pos.y >= c.topY + GROUND_Y - 0.08f;
+        // Side blocking ends only once the phone's solid lower edge has cleared
+        // the collider top.  Using the center height here allowed the phone to
+        // move through the lip while its lower half still intersected it.
+        const bool onTop = player.pos.y - PHONE_SOLID_HALF_Y >= c.topY;
         if (onTop) continue;
         if (player.pos.y < c.bottomY - 0.4f || player.pos.y > c.topY + GROUND_Y + 0.4f) continue;
         if (player.pos.x > c.minX - radius && player.pos.x < c.maxX + radius && localPlayerZ > c.minZ - radius && localPlayerZ < c.maxZ + radius) {
@@ -3030,7 +3032,7 @@ void Game::rewardHeadshot(const Vec3& position, bool critical, bool fromLunge, f
     state_.hud.headshotKillCharge=clampf(std::max(state_.hud.headshotKillCharge,killCharge),0.0f,1.0f);
     if(perfect)state_.hud.perfectPulse=1.0f;
     spawnFlameBurst(position,1.35f);
-    spawnParticleBurst(position);
+    spawnParticleBurst(position,ParticleMaterial::Flesh);
     emitAudio(critical?AudioCue::HeadshotCritical:AudioCue::Headshot,critical?0.86f:0.72f);
     emitAudio(AudioCue::RewardWoah,0.42f);
     if(precision>0){
@@ -3059,7 +3061,7 @@ bool Game::damageSoulShell(int index, float amount) {
     Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
     t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
     feedSupplementalBattery(FLOWER_ATTACK_FEED);
-    spawnParticleBurst(t.pos+Vec3{0,0.65f,0});
+    spawnParticleBurst(t.pos+Vec3{0,0.65f,0},ParticleMaterial::Flesh);
     return true;
 }
 
@@ -3150,7 +3152,7 @@ void Game::processPendingShots(float dt) {
         slot->vel=direction*(slot->brute?BULLET_BRUTE_SPEED:BULLET_SPEED);
         slot->vel.y+=BULLET_VERTICAL_LIFT;
         emitAudio(AudioCue::SentMessage,0.62f);
-        spawnParticleBurst(slot->pos);
+        spawnParticleBurst(slot->pos,ParticleMaterial::Data);
         pending=PendingShotState{};
     }
 }
@@ -3212,7 +3214,7 @@ void Game::captureSoul(int index) {
     emitAudio(AudioCue::ReceivedMessage,0.58f);
     emitAudio(AudioCue::RewardNice,0.30f);
     t.captureQueued=false; t.captureCommitted=false; t.soulState=SoulState::Free; t.networkOwnerPlayerId=-1;
-    spawnParticleBurst(capturedAt);
+    spawnParticleBurst(capturedAt,ParticleMaterial::Data);
     queueHumanRespawn(capturedAt);
 }
 
@@ -3271,7 +3273,7 @@ Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
     const float playerLocalZ=wrapZ(state_.player.pos.z);
     const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
     const bool composeScaleFormation=plan.scale!=early_browser_visuals::RoomScale::Standard&&plan.scale!=early_browser_visuals::RoomScale::Arena;
-    const bool composeFunnelEncounter=plan.playstyle==early_browser_visuals::RoomPlaystyle::Funnel&&(index%3)==0;
+    const bool composeFunnelEncounter=plan.traversalIntent==early_browser_visuals::RoomTraversalIntent::Funnel&&(index%3)==0;
     Vec3 best{0.0f,GROUND_Y,tileOrigin+ROOM_MIN_SPAWN_Z+4.5f};
     float bestScore=-1.0e9f;
     for(int attempt=0;attempt<32;++attempt){
@@ -3708,8 +3710,8 @@ void Game::updateBullets(float dt) {
                 int filledSlot=0;
                 for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
                 emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);emitAudio(AudioCue::RewardNice,0.28f);
-                spawnParticleBurst(b.pos);
-                spawnParticleBurst(goal);
+                spawnParticleBurst(b.pos,ParticleMaterial::Soul);
+                spawnParticleBurst(goal,ParticleMaterial::Soul);
                 b.alive=false; deposited=true; break;
             }
             if(!deposited&&!b.depositNearMissPlayed){

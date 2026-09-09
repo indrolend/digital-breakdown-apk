@@ -591,7 +591,7 @@ void Renderer::drawHud(const GameState& state) {
     glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::drawHumanModel(const float* viewProj,const TargetState& target,float time,bool shadow){
+void Renderer::drawHumanModel(const float* viewProj,const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow){
     humanModel_.skin(target.humanAnimationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty()||!humanVbo_)return;
     const float thinning=humanShellThinningAmount(target.armor,target.brute?4.0f:2.0f,target.slurpable);
     if(thinning>0.0f)for(std::size_t i=0;i+8<humanVertices_.size();i+=9){const std::size_t triangle=i/9;const Vec3 a{humanVertices_[i],humanVertices_[i+1],humanVertices_[i+2]},b{humanVertices_[i+3],humanVertices_[i+4],humanVertices_[i+5]},c{humanVertices_[i+6],humanVertices_[i+7],humanVertices_[i+8]},center=(a+b+c)*(1.0f/3.0f);if(humanShellTriangleMissingTowardCrit(triangle,thinning,center)){for(int vertex=1;vertex<3;++vertex)for(int axis=0;axis<3;++axis)humanVertices_[i+vertex*3+axis]=humanVertices_[i+axis];continue;}for(int vertex=0;vertex<3;++vertex){const Vec3 p{humanVertices_[i+vertex*3],humanVertices_[i+vertex*3+1],humanVertices_[i+vertex*3+2]},absorbed=humanShellAbsorbTowardCrit(p,triangle,thinning);humanVertices_[i+vertex*3]=absorbed.x;humanVertices_[i+vertex*3+1]=absorbed.y;humanVertices_[i+vertex*3+2]=absorbed.z;}}
@@ -602,7 +602,8 @@ void Renderer::drawHumanModel(const float* viewProj,const TargetState& target,fl
     const Vec3 attackForward=lengthSq(target.attackDirection)>0.001f?normalized(target.attackDirection):Vec3{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
     const Vec3 root{target.pos.x+attackLunge.x,target.attackTimer>0?std::sin(t*DB_PI)*0.024f*low:0,target.pos.z+attackLunge.z};float model[16],mvp[16];modelBox(model,root,{pose.scale,pose.scale,pose.scale},q);multiply(mvp,viewProj,model);
-    const float shadowColor[4]={0.012f,0.018f,0.022f,0.28f};const bool parryCue=target.attackTimer>0&&t>=0.22f&&t<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={humanModel_.color[0]+(0.55f-humanModel_.color[0])*cue,humanModel_.color[1]+(0.96f-humanModel_.color[1])*cue,humanModel_.color[2]+(1.0f-humanModel_.color[2])*cue,humanModel_.color[3]};
+    const VisualColor base{humanModel_.color[0],humanModel_.color[1],humanModel_.color[2]};const VisualColor damageColor=humanDamageSurfaceColor(base,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
+    const float shadowColor[4]={0.012f,0.018f,0.022f,0.28f};const bool parryCue=target.attackTimer>0&&t>=0.22f&&t<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={damageColor.r+(0.55f-damageColor.r)*cue,damageColor.g+(0.96f-damageColor.g)*cue,damageColor.b+(1.0f-damageColor.b)*cue,humanModel_.color[3]};
     glUseProgram(program_);glUniform1f(uUseNormal_,shadow?-1.0f:1.0f);glUniform1f(uTextureEnabled_,0.0f);glUniformMatrix4fv(uModel_,1,GL_FALSE,model);glBindBuffer(GL_ARRAY_BUFFER,humanVbo_);glBufferData(GL_ARRAY_BUFFER,humanVertices_.size()*sizeof(float),humanVertices_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aPos_));glVertexAttribPointer(static_cast<GLuint>(aPos_),3,GL_FLOAT,GL_FALSE,0,nullptr);glBindBuffer(GL_ARRAY_BUFFER,humanNormalVbo_);glBufferData(GL_ARRAY_BUFFER,humanNormals_.size()*sizeof(float),humanNormals_.data(),GL_DYNAMIC_DRAW);glEnableVertexAttribArray(static_cast<GLuint>(aNormal_));glVertexAttribPointer(static_cast<GLuint>(aNormal_),3,GL_FLOAT,GL_FALSE,0,nullptr);glUniformMatrix4fv(uMvp_,1,GL_FALSE,mvp);glUniform4fv(uColor_,1,shadow?shadowColor:cueColor);glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(humanVertices_.size()/3u));
 }
 
@@ -718,7 +719,6 @@ void Renderer::draw(const GameState& state) {
     struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
     std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
     int translucentSoulCount=0;
-    const float targetColor[4] = {Pass7Visual::NormalEnemy.r, Pass7Visual::NormalEnemy.g, Pass7Visual::NormalEnemy.b, 1.0f};
     const float targetTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
     for(int offset=-1;offset<=1;++offset)for (auto target : state.targets) {
         if (!target.alive) continue;
@@ -728,9 +728,11 @@ void Renderer::draw(const GameState& state) {
         const float mirrorShift=target.pos.z-originalZ;
         target.tetherAnchor.z+=mirrorShift;target.tetherDestination.z+=mirrorShift;target.latchPoint.z+=mirrorShift;
         if (!target.slurpable) {
-            if(cheapVisuals)drawCheapHuman(viewProj,target,targetColor);
-            else if(humanModel_.valid())drawHumanModel(viewProj,target,state.time);
-            else drawProceduralHuman(viewProj, target, state.time, targetColor);
+            const VisualColor damageColor=humanDamageSurfaceColor(Pass7Visual::NormalEnemy,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
+            const float semanticTargetColor[4]={damageColor.r,damageColor.g,damageColor.b,1.0f};
+            if(cheapVisuals)drawCheapHuman(viewProj,target,semanticTargetColor);
+            else if(humanModel_.valid())drawHumanModel(viewProj,target,state.time,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting);
+            else drawProceduralHuman(viewProj,target,state.time,semanticTargetColor);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             if (!target.soulVisual.visible) continue;
@@ -777,9 +779,8 @@ void Renderer::draw(const GameState& state) {
     if(state.localSettings.particles)for(const auto& particle:state.particles) if(particle.life>0.0f) {
         const float t=particle.maxLife>0.0f?clampf(particle.life/particle.maxLife,0.0f,1.0f):0.0f;
         const float size=particle.size*t;
-        const float flameColor[4]={1.0f,0.267f,0.267f,0.9f};
-        const float shellColor[4]={0.16f,0.39f,0.42f,0.82f*t};
-        const float* particleColor=particle.kind==1?shellColor:flameColor;
+        const VisualColor semanticColor=particleMaterialColor(particle.material,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,t);
+        const float particleColor[4]={semanticColor.r,semanticColor.g,semanticColor.b,particle.material==ParticleMaterial::Environment?0.82f*t:0.9f};
         drawBox(viewProj,particle.pos,{size,size,size},particle.life*4.0f,particleColor);
     }
     if(state.localSettings.portalWindow)drawDoorDataMosh(state);

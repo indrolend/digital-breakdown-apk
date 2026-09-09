@@ -9,6 +9,7 @@
 #include "Math.hpp"
 #include "PhoneDisplay.hpp"
 #include "EarlyBrowserVisuals.hpp"
+#include "MaterialResponse.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -317,7 +318,7 @@ struct ParticleState {
     float life = 0.0f;
     float maxLife = 0.0f;
     float size = 0.08f;
-    unsigned char kind = 0;
+    ParticleMaterial material = ParticleMaterial::Impact;
 };
 
 enum class RoomColliderKind : unsigned char { Generic, TreeTrunk };
@@ -552,8 +553,7 @@ struct RoomInspectorReport {
     early_browser_visuals::RoomForm form=early_browser_visuals::RoomForm::Open;
     early_browser_visuals::RoomScale scale=early_browser_visuals::RoomScale::Standard;
     early_browser_visuals::RoomCondition condition=early_browser_visuals::RoomCondition::Normal;
-    early_browser_visuals::RoomPlaystyle playstyle=early_browser_visuals::RoomPlaystyle::Playground;
-    gameplay::TraversalDifficulty requiredBand=gameplay::TraversalDifficulty::Unknown;
+    early_browser_visuals::RoomTraversalIntent traversalIntent=early_browser_visuals::RoomTraversalIntent::Playground;
     int seed=0;
     int roomIndex=0;
     int traversalSurfaceCount=0;
@@ -810,7 +810,7 @@ private:
     void updateFlowerPowerups(float dt);
     void refreshRoomInspectorReport(bool seedSelectionValid=true);
     void updateParticles(float dt);
-    void spawnParticleBurst(const Vec3& position);
+    void spawnParticleBurst(const Vec3& position, ParticleMaterial material);
     void spawnFlameBurst(const Vec3& position, float strength);
     void spawnShellShatter(const TargetState& target);
 

@@ -2,6 +2,7 @@
 #include "EarlyBrowserVisuals.hpp"
 #include "gameplay/TraversalGraph.hpp"
 #include "gameplay/TargetRoles.hpp"
+#include "gameplay/PhoneBody.hpp"
 
 #include <array>
 #include <cstdio>
@@ -122,9 +123,66 @@ bool runTreeClimbContract(){
     return true;
 }
 
+bool runRaisedSupportContract(){
+    Game game;game.reset();
+    GameState& state=game.networkMutableState();
+    for(auto& target:state.targets)target={};
+    for(auto& collider:state.roomColliders)collider={};
+    state.debug.colliderCount=1;
+    RoomCollider& platform=state.roomColliders[0];
+    setBox(platform,0.0f,0.0f,2.0f,4.0f,PlatformTop);
+
+    // A rising phone whose center has passed the top has not physically
+    // cleared the lip until its lower edge has also passed the top.
+    state.player.pos={platform.minX-gameplay::PHONE_BODY.supportRadius-0.01f,platform.topY+0.02f,0.0f};
+    state.player.vel={2.0f,0.0f,0.0f};state.player.jumpVel=1.0f;state.player.grounded=false;
+    state.player.airJumpsRemaining=1;state.player.battery=100.0f;
+    game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);
+    game.update(Dt);
+    const float blockedX=platform.minX-gameplay::PHONE_BODY.collisionRadius;
+    if(game.state().player.pos.x>blockedX+0.001f){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE rising lip penetrated x=%.3f blocked=%.3f y=%.3f top=%.3f\n",game.state().player.pos.x,blockedX,game.state().player.pos.y,platform.topY);
+        return false;
+    }
+
+    // Falling inside the visible footprint must settle on the exact physical
+    // top and become grounded through the normal controller update.
+    state.player.pos={0.0f,platform.topY+0.34f,0.0f};state.player.vel={};state.player.jumpVel=-3.0f;state.player.grounded=false;
+    for(int frame=0;frame<30&&!game.state().player.grounded;++frame){
+        game.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+    }
+    const float expectedSupportY=platform.topY+PHONE_BODY_HEIGHT*0.5f;
+    if(!game.state().player.grounded||std::abs(game.state().player.pos.y-expectedSupportY)>0.001f){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE landing grounded=%d y=%.3f expected=%.3f\n",game.state().player.grounded?1:0,game.state().player.pos.y,expectedSupportY);
+        return false;
+    }
+
+    // Ordinary input can carry the grounded phone off the support; once the
+    // visible support footprint clears the edge, it must become airborne.
+    state.player.pos.x=platform.maxX-0.02f;state.player.vel={};
+    state.camera.yaw=-1.57079632679f;
+    bool leftSupport=false;
+    for(int frame=0;frame<45;++frame){
+        game.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);
+        game.update(Dt);
+        if(game.state().player.pos.x>platform.maxX+gameplay::PHONE_BODY.supportRadius){leftSupport=true;break;}
+    }
+    if(!leftSupport||game.state().player.grounded){
+        std::fprintf(stderr,"RAISED_SUPPORT_STAGE edge left=%d grounded=%d x=%.3f edge=%.3f\n",leftSupport?1:0,game.state().player.grounded?1:0,game.state().player.pos.x,platform.maxX);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main(){
+    if(!runRaisedSupportContract()){
+        std::fprintf(stderr,"RAISED_SUPPORT_FAIL lip blocking, landing, or edge departure regressed\n");
+        return 1;
+    }
+    std::printf("RAISED_SUPPORT_OK lip=blocked landing=grounded edge_departure=airborne\n");
     if(!runTreeClimbContract()){
         std::fprintf(stderr,"TREE_CLIMB_FAIL trunk grip, crown clamp, descent, jump-off, or generic-wall isolation regressed\n");
         return 1;
@@ -134,15 +192,15 @@ int main(){
     graph.surfaceCount=2;graph.edgeCount=1;
     graph.surfaces[0]={{0,1,0},{2.5f,0,3},true};
     graph.surfaces[1]={{0,1,-7},{2.5f,0,3},true};
-    graph.edges[0]={0,1,gameplay::TraversalAction::Jump,gameplay::TraversalDifficulty::Comfortable,gameplay::TraversalRole::Required};
+    graph.edges[0]={0,1,gameplay::TraversalAction::Jump,gameplay::TraversalRole::Required};
     if(!gameplay::validTraversalGraphTopology(graph))return 1;
     const auto measured=gameplay::measureTraversalEdge(graph,graph.edges[0],gameplay::TRAVERSAL_CAPABILITIES.comfortableClearanceRadius);
-    if(std::abs(measured.gap-1.0f)>0.001f||std::abs(measured.landingWidth-5.0f)>0.001f||measured.movement!=gameplay::TraversalAction::Jump||!gameplay::isRequired(graph.edges[0])||gameplay::resolvedTraversalDifficulty(graph,graph.edges[0],0.55f)!=gameplay::TraversalDifficulty::Comfortable){
+    if(std::abs(measured.gap-1.0f)>0.001f||std::abs(measured.landingWidth-5.0f)>0.001f||measured.movement!=gameplay::TraversalAction::Jump||!gameplay::isRequired(graph.edges[0])){
         std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL edge semantics or measurements are inconsistent\n");return 1;
     }
-    gameplay::TraversalEdge uncalibrated=graph.edges[0];uncalibrated.difficulty=gameplay::TraversalDifficulty::Unknown;uncalibrated.role=gameplay::TraversalRole::Shortcut;
-    if(gameplay::isRequired(uncalibrated)||gameplay::resolvedTraversalDifficulty(graph,uncalibrated,0.55f)!=gameplay::TraversalDifficulty::Unknown){
-        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL optional uncalibrated edge semantics collapsed into required traversal\n");return 1;
+    gameplay::TraversalEdge optional=graph.edges[0];optional.role=gameplay::TraversalRole::Optional;
+    if(gameplay::isRequired(optional)){
+        std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL optional edge collapsed into required traversal\n");return 1;
     }
 
     const int easy=successes(1.50f),medium=successes(2.00f),hard=successes(2.50f);
@@ -190,19 +248,19 @@ int main(){
         const int physicalSurfaces=geometry.optionalTraversalColliderCount;
         const int expectedColliders=geometry.totalColliderCount;
         if(!state.roomInspector||state.roomInspectorPremise!=premise||!early_browser_visuals::matchesInspectorPremise(plan,premise)||!state.roomClear||state.requiredSouls!=0||!report.seedSelectionValid||
-           report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||report.playstyle!=plan.playstyle||
+           report.seed!=state.roomSeed||report.roomIndex!=state.roomIndex||report.setting!=plan.setting||report.form!=plan.form||report.scale!=plan.scale||report.condition!=plan.condition||report.traversalIntent!=plan.traversalIntent||
            !report.requiredRouteValid||report.traversalSurfaceCount!=plan.traversal.surfaceCount||report.traversalEdgeCount!=plan.traversal.edgeCount||report.requiredEdgeCount!=expectedRequiredEdges||
-           report.colliderCount!=state.debug.colliderCount||report.colliderCount!=expectedColliders||report.presentationPropCount!=expectedProps||report.enemyCount!=0||report.requiredBand!=gameplay::TraversalDifficulty::Automatic){
+           report.colliderCount!=state.debug.colliderCount||report.colliderCount!=expectedColliders||report.presentationPropCount!=expectedProps||report.enemyCount!=0){
             std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s report does not match production state\n",early_browser_visuals::premiseName(premise));return 1;
         }
         if(physicalSurfaces){
-            if(plan.playstyle==early_browser_visuals::RoomPlaystyle::Playground){sawPhysicalPlayground=true;physicalPlaygroundSeed=state.roomSeed;}
-            if(plan.playstyle==early_browser_visuals::RoomPlaystyle::Funnel){sawPhysicalFunnel=true;physicalFunnelSeed=state.roomSeed;}
+            if(plan.traversalIntent==early_browser_visuals::RoomTraversalIntent::Playground){sawPhysicalPlayground=true;physicalPlaygroundSeed=state.roomSeed;}
+            if(plan.traversalIntent==early_browser_visuals::RoomTraversalIntent::Funnel){sawPhysicalFunnel=true;physicalFunnelSeed=state.roomSeed;}
             const auto& surface=plan.traversal.surfaces[plan.traversal.surfaceCount-1];const auto expected=early_browser_visuals::physicalTraversalObstacle(surface);const RoomCollider& collider=state.roomColliders[plan.obstacleCount];
-            if((plan.playstyle!=early_browser_visuals::RoomPlaystyle::Playground&&plan.playstyle!=early_browser_visuals::RoomPlaystyle::Funnel)||surface.required||collider.bottomY!=0.0f||collider.topY!=expected.size.y||collider.center.x!=expected.center.x||collider.center.y!=expected.center.y||collider.center.z!=expected.center.z||collider.width!=expected.size.x||collider.height!=expected.size.y||collider.depth!=expected.size.z){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL optional traversal surface was not materialized as one ground-supported shape\n");return 1;}
+            if((plan.traversalIntent!=early_browser_visuals::RoomTraversalIntent::Playground&&plan.traversalIntent!=early_browser_visuals::RoomTraversalIntent::Funnel)||surface.required||collider.bottomY!=0.0f||collider.topY!=expected.size.y||collider.center.x!=expected.center.x||collider.center.y!=expected.center.y||collider.center.z!=expected.center.z||collider.width!=expected.size.x||collider.height!=expected.size.y||collider.depth!=expected.size.z){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL optional traversal surface was not materialized as one ground-supported shape\n");return 1;}
         }
         const std::string review=inspector.debugRoomReviewLine(RoomReviewRating::Tune);
-        if(review!=inspector.debugRoomReviewLine(RoomReviewRating::Tune)||review.find(std::string("premise=")+early_browser_visuals::premiseName(premise))==std::string::npos||review.find("rating=TUNE")==std::string::npos||review.find("route=VALID band=AUTOMATIC")==std::string::npos){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL deterministic review record incomplete\n");return 1;}
+        if(review!=inspector.debugRoomReviewLine(RoomReviewRating::Tune)||review.find(std::string("premise=")+early_browser_visuals::premiseName(premise))==std::string::npos||review.find("rating=TUNE")==std::string::npos||review.find("route=VALID")==std::string::npos){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL deterministic review record incomplete\n");return 1;}
         inspector.debugToggleRoomInspectorEnemies();
         if(activeEnemyIntersectsCollider(inspector.state())){std::fprintf(stderr,"TRAVERSAL_CALIBRATION_FAIL room inspector premise %s placed an enemy inside production geometry\n",early_browser_visuals::premiseName(premise));return 1;}
         inspector.debugToggleRoomInspectorEnemies();

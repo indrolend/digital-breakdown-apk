@@ -45,7 +45,7 @@ private:
     void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
-    void drawHumanModel(const TargetState& target, float time, bool shadow = false) const;
+    void drawHumanModel(const TargetState& target, float time, early_browser_visuals::RoomSetting setting, bool shadow = false) const;
     static void drawSoulFlesh(const TargetState& target,const Vec3& center);
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
     void drawPhoneDisplayTexture(const GameState& state) const;
