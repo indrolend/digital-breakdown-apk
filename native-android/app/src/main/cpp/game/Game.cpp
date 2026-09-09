@@ -538,6 +538,13 @@ void Game::debugStartSlopeLab(){
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
 }
 
+void Game::debugStartGeneratedRoomFixture(int roomSeed,int roomIndex){
+    reset();
+    state_.roomSeed=roomSeed;
+    state_.roomIndex=roomIndex;
+    buildRoomColliders();
+}
+
 void Game::debugStartRoomInspector(){
     reset();state_.roomInspector=true;state_.roomInspectorPremise=early_browser_visuals::RoomPremise::FieldOpen;state_.roomInspectorEnemies=false;
     debugStepRoomInspector(0,false);
@@ -1145,6 +1152,14 @@ void Game::buildRoomColliders() {
     }
     for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!geometry.propIncluded[i]||!early_browser_visuals::environmentPropSolid(prop))continue;
+        if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Ruin){
+            for(const auto& part:ruin_geometry::parts(prop)){
+                const auto spec=ruin_geometry::collider(part);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
+                c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
+                c.bottomY=spec.center.y-spec.size.y*0.5f;c.topY=spec.center.y+spec.size.y*0.5f;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
+            }
+            continue;
+        }
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;

@@ -894,7 +894,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
             }
         }
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(p,prop.size,0,prop.yaw,0,0.20f,0.39f,0.23f);
-        else if(prop.primitive==EnvironmentPrimitive::Ruin){const float w=prop.size.x,h=prop.size.y,d=prop.size.z;drawBox(p+Vec3{0,h*0.38f,0},{w,h*0.76f,d},0,prop.yaw,0,0.38f,0.36f,0.30f);drawBox(p+Vec3{w*0.28f,h*0.88f,0},{w*0.34f,h*0.24f,d*0.82f},0,prop.yaw,0,0.29f,0.28f,0.25f);}
+        else if(prop.primitive==EnvironmentPrimitive::Ruin){for(const auto& part:ruin_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.38f,0.36f,0.30f}:VisualColor{0.29f,0.28f,0.25f};drawBox(part.center,part.size,0,0,0,color.r,color.g,color.b);}}
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(prop,state.roomSeed,state.roomIndex,i,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
         else {drawBox(p+Vec3{0,prop.size.y*0.5f,0},prop.size,0,prop.yaw,0,0.48f,0.55f,0.58f);drawBox(p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},0,prop.yaw,0,0.72f,0.90f,0.94f);}
     }

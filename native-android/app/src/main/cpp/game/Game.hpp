@@ -12,6 +12,7 @@
 #include "MaterialResponse.hpp"
 #include "SlopeSupport.hpp"
 #include "FacetedRock.hpp"
+#include "RuinGeometry.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -724,6 +725,7 @@ public:
     void debugStartRallyLab();
     void debugStartTraversalLab();
     void debugStartSlopeLab();
+    void debugStartGeneratedRoomFixture(int roomSeed,int roomIndex);
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
     void debugFillBattery();
