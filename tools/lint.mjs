@@ -2,8 +2,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const windows = process.platform === 'win32';
-
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', windowsHide: true });
   if (result.stdout) process.stdout.write(result.stdout);
@@ -27,9 +25,12 @@ for (const path of javascript) {
   }
 }
 
-const typescriptStatus = windows
-  ? run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd --prefix multiplayer-server exec -- tsc --noEmit --project multiplayer-server/tsconfig.json'])
-  : run('npm', ['--prefix', 'multiplayer-server', 'exec', '--', 'tsc', '--noEmit', '--project', 'multiplayer-server/tsconfig.json']);
+const typescriptStatus = run(process.execPath, [
+  'multiplayer-server/node_modules/typescript/bin/tsc',
+  '--noEmit',
+  '--project',
+  'multiplayer-server/tsconfig.json',
+]);
 if (typescriptStatus !== 0) {
   console.log('LINT=FAIL check=typescript');
   process.exit(1);

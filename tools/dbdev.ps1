@@ -13,12 +13,7 @@ param(
         'desktop-smoke',
         'playtest',
         'room-smoke',
-        'android-build',
-        'android-install',
-        'android-stream',
         'release-windows',
-        'release-android',
-        'release-all',
         'diagnostics'
     )]
     [string]$Command = 'status',
@@ -34,12 +29,10 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $DesktopScript = Join-Path $RepoRoot 'tools\desktop\run-desktop.ps1'
 $ReleaseScript = Join-Path $RepoRoot 'tools\release\get-latest-native.ps1'
-$AndroidDeployScript = Join-Path $RepoRoot 'tools\device\deploy-local.ps1'
 $DevUiBuildScript = Join-Path $RepoRoot 'tools\dev-ui\build-dev-ui.ps1'
 $EnvironmentResolver = Join-Path $RepoRoot 'tools\environment\resolve-dev-environment.ps1'
 $EnvironmentRepair = Join-Path $RepoRoot 'tools\environment\repair-dev-environment.ps1'
 $GameplayVerifier = Join-Path $RepoRoot 'scripts\verify-gameplay.ps1'
-$NativeAndroidRoot = Join-Path $RepoRoot 'native-android'
 
 function Invoke-Checked {
     param(
@@ -93,7 +86,11 @@ function Start-DesktopGame {
     # Windows PowerShell 5.1 can concatenate a string array passed through a
     # function boundary. These are closed-set, repo-owned flags, so construct
     # one explicit command line for Start-Process.
-    Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -ArgumentList ($GameArguments -join ' ')
+    if ($GameArguments.Count -gt 0) {
+        Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -ArgumentList ($GameArguments -join ' ')
+    } else {
+        Start-Process -FilePath $exe -WorkingDirectory $RepoRoot
+    }
     Write-Host "PLAYTEST_READY mode=$Mode automation=$($Automation.IsPresent) executable=$exe" -ForegroundColor Green
     if ($Automation) {
         $capture = Join-Path $env:LOCALAPPDATA 'DigitalBreakdownDev\captures\automation-latest.ppm'
@@ -108,8 +105,7 @@ function Show-Help {
     Write-Host '  desktop-run   [-Configuration Debug|Release] [-Reconfigure]'
     Write-Host '  desktop-test | desktop-smoke | room-smoke'
     Write-Host '  playtest -Mode game|rally|traversal|rooms|tv-room|tv-enter [-Automation]'
-    Write-Host '  android-build | android-install | android-stream'
-    Write-Host '  ui | release-windows | release-android | release-all | diagnostics'
+    Write-Host '  ui | release-windows | diagnostics'
 }
 
 function Get-Environment {
@@ -117,25 +113,6 @@ function Get-Environment {
     if (-not (Test-Path $EnvironmentResolver)) { throw "Missing $EnvironmentResolver" }
     if ($ProvisionCMake) { return & $EnvironmentResolver -ProvisionCMake }
     return & $EnvironmentResolver
-}
-
-function Ensure-NativeAndroidSdk {
-    $localProperties = Join-Path $NativeAndroidRoot 'local.properties'
-    if (Test-Path $localProperties) { return }
-
-    $sdkCandidates = @(
-        $env:ANDROID_HOME,
-        $env:ANDROID_SDK_ROOT,
-        $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Android\Sdk' })
-    ) | Where-Object { $_ -and (Test-Path $_) }
-    $sdk = @($sdkCandidates | Select-Object -First 1)
-    if ($sdk.Count -eq 0) {
-        throw 'Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT.'
-    }
-
-    $escapedSdk = $sdk[0].Replace('\', '\\')
-    "sdk.dir=$escapedSdk" | Set-Content -LiteralPath $localProperties -Encoding ASCII
-    Write-Host "Created machine-local Android SDK configuration: $localProperties"
 }
 
 function Show-Status {
@@ -149,8 +126,6 @@ function Show-Status {
     $desktopExe = Get-DesktopExe 'Release'
     Write-Host "Desktop    : $(if ($desktopExe) { $desktopExe } else { 'not built' })"
 
-    $environment = Get-Environment
-    Write-Host "Android    : $(if ($environment.android.authorizedDevice) { 'authorized device connected' } elseif ($environment.android.adbAvailable) { 'no authorized device' } else { 'adb not found' })"
 }
 
 function Show-Doctor {
@@ -164,10 +139,6 @@ function Show-Doctor {
     Write-Host ("{0,-18} {1}" -f 'CMake', $(if ($environment.cmake.available) { "$($environment.cmake.version) [$($environment.cmake.source)]" } else { 'missing; repairable' }))
     Write-Host ("{0,-18} {1}" -f 'C++ compiler', $(if ($environment.compiler.available) { $environment.compiler.generator } else { 'missing; manual install required' }))
     Write-Host ("{0,-18} {1}" -f 'Desktop build', $(if ($desktopExe) { 'ready' } else { 'not built' }))
-    Write-Host ("{0,-18} {1}" -f 'ADB', $(if ($environment.android.adbAvailable) { 'ready' } else { 'missing' }))
-    Write-Host ("{0,-18} {1}" -f 'Stylo 4', $(if ($environment.android.authorizedDevice) { 'authorized' } else { 'not authorized/connected' }))
-    Write-Host ("{0,-18} {1}" -f 'scrcpy', $(if ($environment.android.scrcpyAvailable) { 'ready' } else { 'missing' }))
-    Write-Host ("{0,-18} {1}" -f 'Java', $(if ($environment.android.javaAvailable) { 'ready' } else { 'missing' }))
     Write-Host ("{0,-18} {1}" -f 'Working tree', $(if ($gitState.Dirty) { "$($gitState.DirtyCount) local changes" } else { 'clean' }))
 }
 
@@ -235,25 +206,7 @@ switch ($Command) {
         $exe = Get-DesktopExe $Configuration
         Invoke-Checked $exe @('--room-inspector-smoke')
     }
-    'android-build' {
-        Ensure-NativeAndroidSdk
-        Invoke-Checked (Join-Path $RepoRoot 'android\gradlew.bat') @('-p', (Join-Path $RepoRoot 'native-android'), 'assembleDebug', '--stacktrace')
-    }
-    'android-install' {
-        Ensure-NativeAndroidSdk
-        if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
-        & $AndroidDeployScript -NoMirror -NoLogs
-        if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
-    }
-    'android-stream' {
-        Ensure-NativeAndroidSdk
-        if (-not (Test-Path $AndroidDeployScript)) { throw "Missing $AndroidDeployScript" }
-        & $AndroidDeployScript
-        if ($LASTEXITCODE -ne 0) { throw 'Android deploy failed.' }
-    }
     'release-windows' { & $ReleaseScript -Platform Windows -Launch }
-    'release-android' { & $ReleaseScript -Platform Android }
-    'release-all' { & $ReleaseScript -Platform All }
     'diagnostics' {
         Show-Status
         Write-Host ''

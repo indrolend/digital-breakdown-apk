@@ -5,7 +5,6 @@ on:
     paths:
       - "multiplayer-server/**"
       - "native-network/**"
-      - "native-android/app/src/main/java/com/indrolend/digitalbreakdown/MultiplayerClient.java"
       - "tools/release/protocol-consistency.mjs"
       - ".github/workflows/multiplayer-server.yml"
   push:
@@ -13,7 +12,6 @@ on:
     paths:
       - "multiplayer-server/**"
       - "native-network/**"
-      - "native-android/app/src/main/java/com/indrolend/digitalbreakdown/MultiplayerClient.java"
       - "tools/release/protocol-consistency.mjs"
       - ".github/workflows/multiplayer-server.yml"
 

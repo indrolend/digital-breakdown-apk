@@ -12,7 +12,6 @@ internal sealed class DevForm : Form
     private readonly string dbdevPath;
     private readonly Label sourceLabel = new Label();
     private readonly Label desktopLabel = new Label();
-    private readonly Label androidLabel = new Label();
     private readonly Label releaseLabel = new Label();
     private readonly Label operationLabel = new Label();
     private readonly Label percentLabel = new Label();
@@ -53,7 +52,7 @@ internal sealed class DevForm : Form
 
         var subtitle = new Label
         {
-            Text = "local iteration / device test / published release",
+            Text = "local iteration / verification / published release",
             AutoSize = true,
             ForeColor = Color.FromArgb(110, 175, 125),
             Location = new Point(27, 57)
@@ -71,20 +70,18 @@ internal sealed class DevForm : Form
 
         ConfigureStatusLabel(sourceLabel, "LOCAL", 12);
         ConfigureStatusLabel(desktopLabel, "DESKTOP", 39);
-        ConfigureStatusLabel(androidLabel, "STYLO 4", 66);
-        ConfigureStatusLabel(releaseLabel, "RELEASE", 93);
+        ConfigureStatusLabel(releaseLabel, "RELEASE", 66);
         statusPanel.Controls.Add(sourceLabel);
         statusPanel.Controls.Add(desktopLabel);
-        statusPanel.Controls.Add(androidLabel);
         statusPanel.Controls.Add(releaseLabel);
 
         var runDesktop = MakePrimaryButton("RUN LOCAL DESKTOP", 238);
         runDesktop.Click += async delegate { await RunCommandAsync("desktop-run", "Starting local desktop workflow..."); };
         Controls.Add(runDesktop);
 
-        var testAndroid = MakePrimaryButton("TEST ON STYLO 4", 302);
-        testAndroid.Click += async delegate { await RunCommandAsync("android-stream", "Starting Stylo 4 workflow..."); };
-        Controls.Add(testAndroid);
+        var testDesktop = MakePrimaryButton("VERIFY DESKTOP", 302);
+        testDesktop.Click += async delegate { await RunCommandAsync("desktop-test", "Verifying native desktop gameplay..."); };
+        Controls.Add(testDesktop);
 
         var runRelease = MakePrimaryButton("RUN LATEST RELEASE", 366);
         runRelease.Click += async delegate { await RunCommandAsync("release-windows", "Checking latest published release..."); };
@@ -208,7 +205,6 @@ internal sealed class DevForm : Form
         {
             sourceLabel.Text = "LOCAL     repository not found";
             desktopLabel.Text = "DESKTOP   unavailable";
-            androidLabel.Text = "STYLO 4   unavailable";
             releaseLabel.Text = "RELEASE   unavailable";
             operationLabel.Text = "Place DigitalBreakdownDev.exe inside the repository or a child folder.";
             return;
@@ -224,11 +220,9 @@ internal sealed class DevForm : Form
     {
         string commit = ValueFor(output, "Commit");
         string desktop = ValueFor(output, "Desktop");
-        string android = ValueFor(output, "Android");
 
         sourceLabel.Text = "LOCAL     " + (string.IsNullOrEmpty(commit) ? "unknown" : commit);
         desktopLabel.Text = "DESKTOP   " + (string.IsNullOrEmpty(desktop) ? "unknown" : (desktop == "not built" ? "not built" : "ready"));
-        androidLabel.Text = "STYLO 4   " + (string.IsNullOrEmpty(android) ? "unknown" : android);
 
         string statePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DigitalBreakdown", "release-state.json");
         releaseLabel.Text = "RELEASE   " + (File.Exists(statePath) ? "downloaded" : "available online");

@@ -6,7 +6,6 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,"../..");
 const sourcePath=path.join(root,"native-models/source/DATA_phone_release.glb");
 const desktopPath=path.join(root,"native-models/phone.dbmesh");
-const androidPath=path.join(root,"native-android/app/src/main/res/raw/phone.dbmesh");
 const manifestPath=path.join(root,"native-models/manifest.json");
 
 function parseGlb(bytes){let at=12,json,bin;while(at<bytes.length){const len=bytes.readUInt32LE(at),type=bytes.toString("ascii",at+4,at+8),data=bytes.subarray(at+8,at+8+len);if(type==="JSON")json=JSON.parse(data.toString("utf8").replace(/\0+$/," ").trim());if(type==="BIN\0")bin=data;at+=8+len;}if(!json||!bin)throw new Error("Invalid DATA phone GLB");return{json,bin};}
@@ -24,11 +23,10 @@ function encode(model){const bytes=Buffer.alloc(12+model.vertices.length*4+model
 const model=bake(fs.readFileSync(sourcePath));
 const encoded=encode(model);
 fs.writeFileSync(desktopPath,encoded);
-fs.writeFileSync(androidPath,encoded);
 const manifest=JSON.parse(fs.readFileSync(manifestPath,"utf8"));
 manifest.source="native-models/source/DATA_phone_release.glb";
 manifest.sources={...(manifest.sources??{}),phone:"native-models/source/DATA_phone_release.glb"};
 delete manifest.referenceSource;
 manifest.phone={vertices:model.vertices.length/3,batches:model.batches.length,bytes:encoded.length};
 fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2)+"\n");
-console.log(JSON.stringify({source:path.relative(root,sourcePath).replaceAll("\\","/"),vertices:model.vertices.length/3,batches:model.batches.length,bytes:encoded.length,mirrors:[path.relative(root,desktopPath),path.relative(root,androidPath)]},null,2));
+console.log(JSON.stringify({source:path.relative(root,sourcePath).replaceAll("\\","/"),vertices:model.vertices.length/3,batches:model.batches.length,bytes:encoded.length,output:path.relative(root,desktopPath)},null,2));

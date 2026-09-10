@@ -113,18 +113,11 @@ test('Windows environment resolver treats an empty vswhere result as no compiler
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
-test('Windows environment resolver tolerates normal ADB daemon startup stderr', () => {
-  const source = readFileSync(join(root, 'tools', 'environment', 'resolve-dev-environment.ps1'), 'utf8');
-  assert.match(source, /\$previousErrorActionPreference = \$ErrorActionPreference/);
-  assert.match(source, /\$ErrorActionPreference = 'Continue'[\s\S]*& \$adb devices 2>\$null[\s\S]*finally/);
-  assert.match(source, /\$ErrorActionPreference = \$previousErrorActionPreference/);
-});
-
 test('the approved DATA source model is the single phone-generation authority', () => {
   const generalGenerator = readFileSync(join(root, 'tools', 'pass7-oracle', 'generate-native-models.mjs'), 'utf8');
   const phoneGenerator = readFileSync(join(root, 'tools', 'assets', 'generate-phone-model.mjs'), 'utf8');
   assert.doesNotMatch(generalGenerator, /originalDataDevice/);
   assert.match(generalGenerator, /tools\/assets\/generate-phone-model\.mjs/);
   assert.match(phoneGenerator, /native-models\/source\/DATA_phone_release\.glb/);
-  assert.match(phoneGenerator, /native-android\/app\/src\/main\/res\/raw\/phone\.dbmesh/);
+  assert.doesNotMatch(phoneGenerator, /native-android|androidPath/);
 });
