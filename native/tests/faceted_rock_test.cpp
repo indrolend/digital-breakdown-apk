@@ -37,6 +37,10 @@ int main(){
     assert(!faceted_rock::sampleSupport(support,20.0f,-3.0f).inside);
     const auto footprint=faceted_rock::sampleSupportFootprint(support,8.0f,-3.0f,0.34f);
     assert(footprint.inside&&footprint.height>=supportFirst.height);
+    for(int xi=-12;xi<=12;++xi)for(int zi=-12;zi<=12;++zi){
+        const auto sampled=faceted_rock::sampleSupportFootprint(support,8.0f+mass.size.x*xi/24.0f,-3.0f+mass.size.z*zi/24.0f,0.34f);
+        assert(!sampled.inside||faceted_rock::triangleWalkable(sampled.normal));
+    }
     constexpr float diagonal=0.707106781f;
     const Vec3 offsets[]={{0.34f,0,0},{-0.34f,0,0},{0,0,0.34f},{0,0,-0.34f},{0.34f*diagonal,0,0.34f*diagonal},{0.34f*diagonal,0,-0.34f*diagonal},{-0.34f*diagonal,0,0.34f*diagonal},{-0.34f*diagonal,0,-0.34f*diagonal}};
     for(const Vec3& offset:offsets){const auto underBody=faceted_rock::sampleSupport(support,8.0f+offset.x,-3.0f+offset.z);assert(!underBody.inside||underBody.height<=footprint.height+0.0001f);}
