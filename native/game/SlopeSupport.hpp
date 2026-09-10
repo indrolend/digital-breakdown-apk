@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Math.hpp"
+#include "SurfaceGeometry.hpp"
 
 #include <array>
 #include <cmath>
@@ -19,6 +20,11 @@ struct SlopeSupportSample {
     float height=0.0f;
     Vec3 normal{0.0f,1.0f,0.0f};
     SupportClassification classification=SupportClassification::Ordinary;
+};
+
+struct SlopeTopMesh {
+    std::array<float,18> positions{};
+    int vertexCount=6;
 };
 
 inline float slopeRun(const SlopeSupport& slope){
@@ -45,9 +51,7 @@ inline SupportClassification classifySupport(const SlopeSupport& slope){
         ?SupportClassification::TraversableSlope:SupportClassification::Steep;
 }
 
-inline SlopeSupportSample sampleSlopeSupport(const SlopeSupport& slope,float x,float z){
-    SlopeSupportSample sample{};
-    if(x<slope.minX||x>slope.maxX||z<slope.minZ||z>slope.maxZ)return sample;
+inline float slopeHeightAt(const SlopeSupport& slope,float x,float z){
     const float run=std::max(0.0001f,slopeRun(slope));
     float t=0.0f;
     switch(slope.axis){
@@ -56,8 +60,26 @@ inline SlopeSupportSample sampleSlopeSupport(const SlopeSupport& slope,float x,f
         case SlopeAxis::PositiveZ:t=(z-slope.minZ)/run;break;
         case SlopeAxis::NegativeZ:t=(slope.maxZ-z)/run;break;
     }
-    sample.inside=true;sample.height=slope.lowHeight+(slope.highHeight-slope.lowHeight)*clampf(t,0.0f,1.0f);
-    sample.normal=slopeSupportNormal(slope);sample.classification=classifySupport(slope);
+    return slope.lowHeight+(slope.highHeight-slope.lowHeight)*clampf(t,0.0f,1.0f);
+}
+
+inline SlopeTopMesh makeSlopeTopMesh(const SlopeSupport& slope){
+    SlopeTopMesh mesh{};
+    const Vec3 a{slope.minX,slopeHeightAt(slope,slope.minX,slope.minZ),slope.minZ};
+    const Vec3 b{slope.maxX,slopeHeightAt(slope,slope.maxX,slope.minZ),slope.minZ};
+    const Vec3 c{slope.maxX,slopeHeightAt(slope,slope.maxX,slope.maxZ),slope.maxZ};
+    const Vec3 d{slope.minX,slopeHeightAt(slope,slope.minX,slope.maxZ),slope.maxZ};
+    int vertex=0;const auto emit=[&](const Vec3& p){mesh.positions[vertex*3]=p.x;mesh.positions[vertex*3+1]=p.y;mesh.positions[vertex*3+2]=p.z;++vertex;};
+    emit(a);emit(d);emit(c);emit(a);emit(c);emit(b);
+    return mesh;
+}
+
+inline SlopeSupportSample sampleSlopeSupport(const SlopeSupport& slope,float x,float z){
+    SlopeSupportSample sample{};
+    if(x<slope.minX||x>slope.maxX||z<slope.minZ||z>slope.maxZ)return sample;
+    const auto geometry=surface_geometry::sample(makeSlopeTopMesh(slope),x,z,0.0f,0.0f);
+    sample.inside=geometry.inside;sample.height=geometry.height;
+    sample.normal=geometry.normal;sample.classification=classifySupport(slope);
     return sample;
 }
 
@@ -70,7 +92,7 @@ inline Vec3 slopeFaceNormal(const Vec3& a,const Vec3& b,const Vec3& c){
 
 inline SlopeWedgeMesh makeSlopeWedgeMesh(const SlopeSupport& slope,float zOffset=0.0f){
     SlopeWedgeMesh mesh{};
-    const auto heightAt=[&](float x,float z){return sampleSlopeSupport(slope,x,z).height;};
+    const auto heightAt=[&](float x,float z){return slopeHeightAt(slope,x,z);};
     const Vec3 a{slope.minX,heightAt(slope.minX,slope.minZ),slope.minZ+zOffset},b{slope.maxX,heightAt(slope.maxX,slope.minZ),slope.minZ+zOffset};
     const Vec3 c{slope.maxX,heightAt(slope.maxX,slope.maxZ),slope.maxZ+zOffset},d{slope.minX,heightAt(slope.minX,slope.maxZ),slope.maxZ+zOffset};
     const Vec3 ab{slope.minX,0.0f,slope.minZ+zOffset},bb{slope.maxX,0.0f,slope.minZ+zOffset},cb{slope.maxX,0.0f,slope.maxZ+zOffset},db{slope.minX,0.0f,slope.maxZ+zOffset};
