@@ -195,6 +195,14 @@ inline ObstacleSpec physicalTraversalObstacle(const gameplay::TraversalSurface& 
     return {{surface.center.x,top*0.5f,surface.center.z},{surface.halfSize.x*2.0f,top,surface.halfSize.z*2.0f}};
 }
 
+// First production use of inclined generated geometry. It deliberately
+// replaces (rather than supplements) one already-budgeted optional Playground
+// surface in sparse Field ruins, and rises away from the required center route.
+inline bool usesShallowElevation(const RoomEnvironmentPlan& plan,const gameplay::TraversalSurface& surface){
+    return physicalTraversalSurface(plan,surface)&&plan.setting==RoomSetting::Field&&
+           plan.composition==2&&plan.traversalIntent==RoomTraversalIntent::Playground;
+}
+
 inline float funnelEncounterCandidateBias(const RoomEnvironmentPlan& plan,int targetIndex,const Vec3& candidate){
     if(plan.traversalIntent!=RoomTraversalIntent::Funnel||targetIndex<0||(targetIndex%3)!=0||plan.traversal.surfaceCount<=4)return 0.0f;
     constexpr float PreferredRadius=3.4f;
