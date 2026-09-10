@@ -113,3 +113,9 @@ test('Windows environment resolver treats an empty vswhere result as no compiler
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
+test('Windows environment resolver tolerates normal ADB daemon startup stderr', () => {
+  const source = readFileSync(join(root, 'tools', 'environment', 'resolve-dev-environment.ps1'), 'utf8');
+  assert.match(source, /\$previousErrorActionPreference = \$ErrorActionPreference/);
+  assert.match(source, /\$ErrorActionPreference = 'Continue'[\s\S]*& \$adb devices 2>\$null[\s\S]*finally/);
+  assert.match(source, /\$ErrorActionPreference = \$previousErrorActionPreference/);
+});

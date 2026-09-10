@@ -115,7 +115,17 @@ $git = Resolve-CommandPath 'git'
 
 $authorizedDevices = @()
 if ($adb) {
-    $authorizedDevices = @(& $adb devices 2>$null | Select-String '\sdevice$')
+    # Windows PowerShell promotes native stderr to an ErrorRecord. ADB writes
+    # its normal first-run daemon startup notice there, which must not abort an
+    # otherwise desktop-only environment probe under ErrorActionPreference=Stop.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $adbDevices = @(& $adb devices 2>$null)
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    $authorizedDevices = @($adbDevices | Select-String '\sdevice$')
 }
 
 $result = [pscustomobject]@{
