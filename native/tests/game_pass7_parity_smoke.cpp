@@ -343,6 +343,19 @@ int main() {
     game.reset();
     {
         GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets)target.alive=false;
+        setup.debug.colliderCount=1;
+        RoomCollider& tree=setup.roomColliders[0];tree={};tree.kind=RoomColliderKind::TreeTrunk;tree.minX=-0.18f;tree.maxX=0.18f;tree.minZ=-0.18f;tree.maxZ=0.18f;tree.width=0.36f;tree.depth=0.36f;tree.bottomY=0.0f;tree.topY=2.2f;tree.climbTopY=2.2f;tree.center={0.0f,1.1f,0.0f};
+        setup.player.treeClimbing=true;setup.player.treeCollider=0;setup.player.treeNormal={1,0,0};setup.player.pos={0.54f,tree.climbTopY,0.0f};setup.player.vel={};setup.player.jumpVel=0.0f;setup.player.grounded=false;
+        TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={setup.player.pos.x,PHONE_MODEL_HEIGHT*0.5f,setup.player.pos.z-1.0f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=0.0f;
+    }
+    step(game,90);
+    ok &= expect(game.state().player.treeClimbing&&game.state().targets[0].attackTimer<=0.0f&&!game.state().targets[0].attackHit&&game.state().player.grabbedByTarget<0,
+        "tree-tip elevation keeps DATA outside a ground-bound human's physical attack reach");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets) target.alive=false;
         setup.targets[0]=TargetState{}; setup.targets[0].alive=true; setup.targets[0].pos=setup.player.pos+Vec3{0,0,-1.5f}; setup.targets[0].armor=4;
         setup.targets[1]=TargetState{}; setup.targets[1].alive=true; setup.targets[1].pos=setup.player.pos+Vec3{0,0,1.5f}; setup.targets[1].armor=4;
