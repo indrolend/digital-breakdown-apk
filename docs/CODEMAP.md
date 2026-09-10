@@ -5,9 +5,9 @@ This document identifies the current gameplay ownership boundaries and the inten
 ## Authoritative behavior
 
 - Browser parity reference: `reference/browser-pass7/index_module.mjs`
-- Shared native gameplay: `native-android/app/src/main/cpp/game/`
-- Current orchestration and most gameplay behavior: `native-android/app/src/main/cpp/game/Game.cpp`
-- Shared state and public game interface: `native-android/app/src/main/cpp/game/Game.hpp`
+- Shared native gameplay: `native/game/`
+- Current orchestration and most gameplay behavior: `native/game/Game.cpp`
+- Shared state and public game interface: `native/game/Game.hpp`
 
 ## Experimental release ownership
 
@@ -61,7 +61,7 @@ Do not split this into dynamically allocated human and soul entities.
 The migration should be incremental. A module is added only when its behavior can be extracted without changing update order or protocol layout.
 
 ```text
-native-android/app/src/main/cpp/game/
+native/game/
   Game.cpp                         orchestration and legacy implementations
   Game.hpp                         shared state and public interface
   gameplay/

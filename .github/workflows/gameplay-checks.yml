@@ -3,7 +3,7 @@ name: Gameplay checks
 on:
   pull_request:
     paths:
-      - "native-android/app/src/main/cpp/game/**"
+      - "native/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
       - "native-desktop/**.cpp"
@@ -22,7 +22,7 @@ on:
       - agent/loose-soul-normalization
       - agent/experimental-release-coherence
     paths:
-      - "native-android/app/src/main/cpp/game/**"
+      - "native/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
       - "native-desktop/**.cpp"

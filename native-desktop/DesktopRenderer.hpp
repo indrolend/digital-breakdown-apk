@@ -7,7 +7,7 @@
 
 #include <filesystem>
 #include <vector>
-#include "../native-android/app/src/main/cpp/game/TvGifWall.hpp"
+#include "../native/game/TvGifWall.hpp"
 
 class DesktopRenderer {
 public:

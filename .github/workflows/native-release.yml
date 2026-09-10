@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
-    paths: ['native-desktop/**', 'native-android/app/src/main/cpp/game/**', 'native-network/**', 'multiplayer-server/src/protocol.ts', 'native-models/**', 'native-tv-gifs/**', 'tools/release/**', '.github/workflows/native-release.yml']
+    paths: ['native-desktop/**', 'native/game/**', 'native-network/**', 'multiplayer-server/src/protocol.ts', 'native-models/**', 'native-tv-gifs/**', 'tools/release/**', '.github/workflows/native-release.yml']
   push:
     branches: [main]
-    paths: ['native-desktop/**', 'native-android/app/src/main/cpp/game/**', 'native-network/**', 'multiplayer-server/src/protocol.ts', 'native-models/**', 'native-tv-gifs/**', 'tools/release/**', '.github/workflows/native-release.yml']
+    paths: ['native-desktop/**', 'native/game/**', 'native-network/**', 'multiplayer-server/src/protocol.ts', 'native-models/**', 'native-tv-gifs/**', 'tools/release/**', '.github/workflows/native-release.yml']
 
 permissions:
   contents: read

@@ -31,7 +31,7 @@ EXPLICIT_FILES = [
 
 TREE_RULES = [
     ("native/core", {".hpp", ".h", ".cpp", ".cc", ".cxx"}),
-    ("native-android/app/src/main/cpp/game", {".hpp", ".h", ".cpp", ".cc", ".cxx"}),
+    ("native/game", {".hpp", ".h", ".cpp", ".cc", ".cxx"}),
     ("native-android/app/src/main/cpp/render", {".hpp", ".h", ".cpp", ".cc", ".cxx", ".glsl", ".vert", ".frag"}),
     ("native-android/app/src/main/java/com/indrolend/digitalbreakdown", {".java"}),
     ("native-android/app/src/main/res/values", {".xml"}),

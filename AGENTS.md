@@ -110,7 +110,7 @@ Before working, verify the current remote branch tip rather than assuming this S
 ## Architecture
 
 - Native desktop client is Windows-focused.
-- Gameplay code is shared under `native-android/app/src/main/cpp/game`.
+- Gameplay code is shared under `native/game`.
 - Desktop transport, rendering, menus, input, and window behavior are under `native-desktop`.
 - Binary multiplayer protocol is under `native-network`.
 - Cloudflare relay Worker is under `multiplayer-server`.

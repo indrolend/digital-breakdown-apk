@@ -8,8 +8,8 @@ describe the repository's scope.
 
 | Subsystem | Canonical location | Platform adapters or legacy overlap | Action |
 | --- | --- | --- | --- |
-| Gameplay, game state, saves, menus | `native-android/app/src/main/cpp/game/` | Desktop compiles `Game.cpp` from this path | Keep shared; move only in a separately validated migration |
-| Focused gameplay contracts | `native-android/app/src/main/cpp/game/gameplay/` | Older logic remains orchestrated by `Game.cpp` | Continue incremental extraction |
+| Gameplay, game state, saves, menus | `native/game/` | Desktop compiles `Game.cpp` from this path | Keep shared; move only in a separately validated migration |
+| Focused gameplay contracts | `native/game/gameplay/` | Older logic remains orchestrated by `Game.cpp` | Continue incremental extraction |
 | Desktop runtime, renderer, audio, updates | `native-desktop/` | No interchangeable Android implementation | Keep platform-specific |
 | Android runtime and renderer | `native-android/app/src/main/` | `android/` is the Capacitor WebView wrapper | Keep the native and WebView targets distinct |
 | Multiplayer protocol | `native-network/` | Worker protocol mirror in `multiplayer-server/src/protocol.ts` | Verify with `protocol-consistency.mjs` |

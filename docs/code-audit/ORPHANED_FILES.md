@@ -4,7 +4,7 @@ Audit date: 2026-07-25
 
 ## Removed
 
-- `native-android/app/src/main/cpp/game/PhoneMenuLayout.hpp`
+- `native/game/PhoneMenuLayout.hpp`
 
 Reason: superseded by `PhoneDisplayLayout.hpp`. Current desktop rendering,
 desktop hit-testing, and updated layout tests use the physical phone display
@@ -28,7 +28,7 @@ audit packet where the old wording no longer matches the current source.
 
 ## Not Orphaned
 
-- Android shared game headers under `native-android/app/src/main/cpp/game` remain
+- Android shared game headers under `native/game` remain
   source-of-truth shared code for both desktop and Android. Android renderer
   parity is not audited in this desktop-focused pass, so Android render files are
   not pruned.
