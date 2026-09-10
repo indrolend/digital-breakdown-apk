@@ -6,6 +6,7 @@
 #include "../game/FieldGrassTexture.hpp"
 #include "../game/CitySurfaceTexture.hpp"
 #include "../game/FacetedRock.hpp"
+#include "../game/MarkerPillarGeometry.hpp"
 
 #include <GLES2/gl2.h>
 #include <android/log.h>
@@ -524,7 +525,7 @@ void Renderer::drawRoomTile(const float* viewProj, const GameState& state, int t
         else if(prop.primitive==EnvironmentPrimitive::LawnFragment)drawBox(viewProj,p,prop.size,prop.yaw,lawn);
         else if(prop.primitive==EnvironmentPrimitive::Ruin){const float ruin[4]={0.38f,0.36f,0.30f,1},ruinTop[4]={0.29f,0.28f,0.25f,1};for(const auto& part:ruin_geometry::parts(prop,z0))drawBox(viewProj,part.center,part.size,0.0f,part.surface==0?ruin:ruinTop);}
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);const float rock[4]={substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f,1};drawFacetedRock(viewProj,prop,state.roomSeed,state.roomIndex,i,z0,rock);}
-        else {drawBox(viewProj,p+Vec3{0,prop.size.y*0.5f,0},prop.size,prop.yaw,marker);drawBox(viewProj,p+Vec3{0,prop.size.y+0.08f,0},{prop.size.x*1.28f,0.16f,prop.size.z*1.28f},prop.yaw,cap);}
+        else {for(const auto& part:marker_pillar_geometry::parts(prop,z0))drawBox(viewProj,part.center,part.size,0.0f,part.surface==0?marker:cap);}
     }
     if(plan.grass) drawGrassBatch(viewProj,state,tileIndex);
 }

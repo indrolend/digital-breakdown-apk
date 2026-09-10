@@ -15,6 +15,7 @@
 #include "RuinGeometry.hpp"
 #include "HouseGeometry.hpp"
 #include "TreeGeometry.hpp"
+#include "MarkerPillarGeometry.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;

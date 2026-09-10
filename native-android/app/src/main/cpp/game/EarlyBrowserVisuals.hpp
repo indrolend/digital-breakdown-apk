@@ -327,6 +327,7 @@ inline bool environmentPropSolid(const EnvironmentPropSpec& prop){return prop.pr
 inline int environmentPropColliderCount(RoomSetting setting,const EnvironmentPropSpec& prop){
     if(!environmentPropSolid(prop))return 0;
     if(setting==RoomSetting::Field&&prop.primitive==EnvironmentPrimitive::House)return 3;
+    if(prop.primitive==EnvironmentPrimitive::MarkerPillar)return 2;
     return prop.primitive==EnvironmentPrimitive::Ruin?2:1;
 }
 inline ObstacleSpec environmentPropCollider(const EnvironmentPropSpec& prop){
