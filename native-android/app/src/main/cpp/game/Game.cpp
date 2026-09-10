@@ -2109,7 +2109,34 @@ bool Game::tryBeginLedgeHang() {
         if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
         if(phoneTop<c.topY-LEDGE_GRAB_VERTICAL_BELOW||phoneTop>c.topY+LEDGE_GRAB_VERTICAL_ABOVE)continue;
         auto candidate=[&](float distance,const Vec3& normal,const Vec3& tangent,bool within){
-            if(within&&distance>=-0.02f&&distance<bestDistance){best=i;bestDistance=distance;bestNormal=normal;bestTangent=tangent;}
+            if(!within||distance<-0.02f||distance>=bestDistance)return;
+
+            // A collider component does not own a usable ledge where another
+            // component covers either the grip side or the phone's mantle
+            // space. This keeps compound props from exposing their internal
+            // AABB seams as traversal geometry.
+            Vec3 edge=p.pos;
+            if(normal.x<0)edge.x=c.minX; else if(normal.x>0)edge.x=c.maxX;
+            else if(normal.z<0)edge.z=tileOriginZ+c.minZ; else edge.z=tileOriginZ+c.maxZ;
+            const Vec3 outside=edge+normal*0.025f;
+            const Vec3 landing=edge-normal*(PLAYER_SUPPORT_RADIUS+PHONE_BODY_DEPTH*0.5f+0.08f);
+            auto containsXZ=[&](const RoomCollider& other,const Vec3& point,float padding){
+                const float pointLocalZ=point.z-tileOriginZ;
+                return point.x>other.minX-padding&&point.x<other.maxX+padding&&
+                       pointLocalZ>other.minZ-padding&&pointLocalZ<other.maxZ+padding;
+            };
+            for(int j=0;j<state_.debug.colliderCount;++j){
+                if(j==i)continue;
+                const RoomCollider& other=state_.roomColliders[j];
+                if(other.kind==RoomColliderKind::RockAuthoritySlot)continue;
+                const bool coversGrip=other.bottomY<c.topY-0.01f&&other.topY>c.topY-0.04f&&
+                                      containsXZ(other,outside,0.0f);
+                const bool blocksMantle=other.bottomY<c.topY+PHONE_BODY_HEIGHT-0.01f&&
+                                         other.topY>c.topY+0.01f&&
+                                         containsXZ(other,landing,PLAYER_SUPPORT_RADIUS);
+                if(coversGrip||blocksMantle)return;
+            }
+            best=i;bestDistance=distance;bestNormal=normal;bestTangent=tangent;
         };
         candidate(c.minX-p.pos.x,{-1,0,0},{0,0,1},localZ>c.minZ+LEDGE_CORNER_INSET&&localZ<c.maxZ-LEDGE_CORNER_INSET);
         candidate(p.pos.x-c.maxX,{1,0,0},{0,0,1},localZ>c.minZ+LEDGE_CORNER_INSET&&localZ<c.maxZ-LEDGE_CORNER_INSET);

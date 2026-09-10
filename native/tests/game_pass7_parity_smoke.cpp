@@ -93,6 +93,17 @@ int main() {
     const float caughtTop=ledgeHangGame->state().player.pos.y+PHONE_MODEL_HEIGHT*0.5f;
     ok &= expect(ledgeHangGame->state().player.ledgeHanging&&near(caughtTop,ledgeHangGame->state().roomColliders[0].topY+0.008f,0.002f),
         "descending phone catches the obstacle lip with its visible top edge instead of its collision capsule");
+    auto coveredLedgeGame=std::make_unique<Game>();coveredLedgeGame->reset();
+    {
+        GameState& ledge=const_cast<GameState&>(coveredLedgeGame->state());
+        ledge.debug.colliderCount=2;
+        RoomCollider& base=ledge.roomColliders[0];base={};base.minX=-0.30f;base.maxX=0.30f;base.minZ=-0.30f;base.maxZ=0.30f;base.bottomY=0.0f;base.topY=1.0f;
+        RoomCollider& upper=ledge.roomColliders[1];upper={};upper.minX=-0.42f;upper.maxX=0.42f;upper.minZ=-0.42f;upper.maxZ=0.42f;upper.bottomY=1.0f;upper.topY=1.50f;
+        ledge.player.pos={base.maxX+0.34f,base.topY-PHONE_MODEL_HEIGHT*0.5f,0.0f};ledge.player.vel={};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;
+    }
+    step(*coveredLedgeGame);
+    ok &= expect(!coveredLedgeGame->state().player.ledgeHanging,
+        "compound geometry does not expose a hidden component seam as a grabbable ledge");
     auto lungeLedgeGame=std::make_unique<Game>();lungeLedgeGame->reset();
     {
         GameState& ledge=const_cast<GameState&>(lungeLedgeGame->state());const RoomCollider& platform=ledge.roomColliders[0];
