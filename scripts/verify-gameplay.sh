@@ -39,6 +39,7 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   MaterialResponseTest \
   FacetedRockTest \
   SlopeSupportTest \
+  SurfaceGeometryTest \
   RuinGeometryTest \
   HouseGeometryTest \
   TreeGeometryTest \
