@@ -1,10 +1,10 @@
 {
   "format": "DBM1/DBH1",
-  "source": "native-models/source/DATA_phone_release.glb",
+  "source": "native-models/source",
   "sources": {
     "phone": "native-models/source/DATA_phone_release.glb",
-    "flower": "project-authored embedded flower",
-    "human": "open-source embedded human"
+    "flower": "native-models/source/legacy_embedded_assets.js:PENTAGONAL_FLOWER_GLB_BASE64",
+    "human": "native-models/source/legacy_embedded_assets.js:HUMAN_FBX_BASE64"
   },
   "phone": {
     "vertices": 11820,

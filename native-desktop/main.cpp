@@ -48,16 +48,16 @@ namespace {
 constexpr double SIMULATION_STEP_SECONDS = 1.0 / 60.0;
 constexpr double MAX_FRAME_DELTA_SECONDS = 0.10;
 constexpr int MAX_SIMULATION_STEPS_PER_FRAME = 4;
-constexpr int KEY_W_ANDROID = 51;
-constexpr int KEY_A_ANDROID = 29;
-constexpr int KEY_S_ANDROID = 47;
-constexpr int KEY_D_ANDROID = 32;
-constexpr int KEY_Q_ANDROID = 45;
-constexpr int KEY_C_ANDROID = 31;
-constexpr int KEY_F_ANDROID = 34;
-constexpr int KEY_SHIFT_LEFT_ANDROID = 59;
-constexpr int KEY_SHIFT_RIGHT_ANDROID = 60;
-constexpr int KEY_SPACE_ANDROID = 62;
+constexpr int GAME_KEY_W = 51;
+constexpr int GAME_KEY_A = 29;
+constexpr int GAME_KEY_S = 47;
+constexpr int GAME_KEY_D = 32;
+constexpr int GAME_KEY_Q = 45;
+constexpr int GAME_KEY_C = 31;
+constexpr int GAME_KEY_F = 34;
+constexpr int GAME_KEY_SHIFT_LEFT = 59;
+constexpr int GAME_KEY_SHIFT_RIGHT = 60;
+constexpr int GAME_KEY_SPACE = 62;
 
 constexpr std::array<int,10> DEFAULT_KEYBOARD_BINDINGS{{87,83,65,68,340,32,70,81,67,0}};
 
@@ -73,7 +73,7 @@ bool migrateLegacyKeyboardBindings(std::array<int,10>& bindings){
     return false;
 }
 
-int androidKeyForGlfw(const LocalSettingsState& settings,int key);
+int gameKeyForGlfw(const LocalSettingsState& settings,int key);
 
 bool samePersistentSettings(const LocalSettingsState& a,const LocalSettingsState& b){
     return a.musicVolume==b.musicVolume&&a.sfxVolume==b.sfxVolume&&
@@ -341,9 +341,9 @@ int runSaveRoundtripTest(){
         migratedShiftedDefaults.state().localSettings.keyboardBindings==DEFAULT_KEYBOARD_BINDINGS;
     LocalSettingsState routedDefaults;
     const bool defaultActionsRouted=
-        androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[6])==KEY_F_ANDROID&&
-        androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[7])==KEY_Q_ANDROID&&
-        androidKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[8])==KEY_C_ANDROID;
+        gameKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[6])==GAME_KEY_F&&
+        gameKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[7])==GAME_KEY_Q&&
+        gameKeyForGlfw(routedDefaults,routedDefaults.keyboardBindings[8])==GAME_KEY_C;
     {std::ofstream corrupt(path,std::ios::trunc);corrupt<<"DBPROG 4 999 5";}
     Game rejected;rejected.setPersistentProgression(11,1,1,1);
     const bool corruptRejected=!loadProgression(rejected,path)&&rejected.state().progression.permanent.tokens==11;
@@ -358,10 +358,10 @@ int runSaveRoundtripTest(){
     return allValid?0:1;
 }
 
-int androidKeyForGlfw(const LocalSettingsState& settings,int key) {
-    const int semantic[9]={KEY_W_ANDROID,KEY_S_ANDROID,KEY_A_ANDROID,KEY_D_ANDROID,KEY_SHIFT_LEFT_ANDROID,KEY_SPACE_ANDROID,KEY_F_ANDROID,KEY_Q_ANDROID,KEY_C_ANDROID};
+int gameKeyForGlfw(const LocalSettingsState& settings,int key) {
+    const int semantic[9]={GAME_KEY_W,GAME_KEY_S,GAME_KEY_A,GAME_KEY_D,GAME_KEY_SHIFT_LEFT,GAME_KEY_SPACE,GAME_KEY_F,GAME_KEY_Q,GAME_KEY_C};
     for(int i=0;i<9;++i)if(settings.keyboardBindings[i]==key)return semantic[i];
-    return key==GLFW_KEY_RIGHT_SHIFT?KEY_SHIFT_RIGHT_ANDROID:-1;
+    return key==GLFW_KEY_RIGHT_SHIFT?GAME_KEY_SHIFT_RIGHT:-1;
 }
 
 HostState* stateFor(GLFWwindow* window) {
@@ -1105,9 +1105,9 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         return;
     }
 
-    const int androidKey = androidKeyForGlfw(host->game.state().localSettings,key);
-    if (androidKey >= 0) {
-        host->game.setKey(androidKey, action != GLFW_RELEASE);
+    const int gameKey = gameKeyForGlfw(host->game.state().localSettings,key);
+    if (gameKey >= 0) {
+        host->game.setKey(gameKey, action != GLFW_RELEASE);
     }
 }
 

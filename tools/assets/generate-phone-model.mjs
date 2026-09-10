@@ -24,7 +24,7 @@ const model=bake(fs.readFileSync(sourcePath));
 const encoded=encode(model);
 fs.writeFileSync(desktopPath,encoded);
 const manifest=JSON.parse(fs.readFileSync(manifestPath,"utf8"));
-manifest.source="native-models/source/DATA_phone_release.glb";
+manifest.source="native-models/source";
 manifest.sources={...(manifest.sources??{}),phone:"native-models/source/DATA_phone_release.glb"};
 delete manifest.referenceSource;
 manifest.phone={vertices:model.vertices.length/3,batches:model.batches.length,bytes:encoded.length};

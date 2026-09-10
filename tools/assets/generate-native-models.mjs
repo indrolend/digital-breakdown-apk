@@ -7,7 +7,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,"../..");
-const source=fs.readFileSync(path.join(root,"reference/browser-pass7/assets/embedded-assets.js"),"utf8");
+const source=fs.readFileSync(path.join(root,"native-models/source/legacy_embedded_assets.js"),"utf8");
 const outDir=path.join(root,"native-models");
 
 function embedded(name){const match=source.match(new RegExp("const\\s+"+name+"\\s*=\\s*`([\\s\\S]*?)`;"));if(!match)throw new Error(`Missing ${name}`);return Buffer.from(match[1].replace(/\s/g,""),"base64");}
@@ -99,7 +99,7 @@ const flower=flatten("PENTAGONAL_FLOWER_GLB_BASE64",null,0.72);
 fs.mkdirSync(outDir,{recursive:true});
 const flowerBytes=writeModel("flower.dbmesh",flower);
 const human=writeHumanModel("human.dbhuman");
-const manifest={format:"DBM1/DBH1",source:"native-models/source/DATA_phone_release.glb",sources:{phone:"native-models/source/DATA_phone_release.glb",flower:"project-authored embedded flower",human:"open-source embedded human"},phone:{vertices:11820,batches:7,bytes:142020},flower:{vertices:flower.vertices.length/3,batches:flower.batches.length,bytes:flowerBytes},human};
+const manifest={format:"DBM1/DBH1",source:"native-models/source",sources:{phone:"native-models/source/DATA_phone_release.glb",flower:"native-models/source/legacy_embedded_assets.js:PENTAGONAL_FLOWER_GLB_BASE64",human:"native-models/source/legacy_embedded_assets.js:HUMAN_FBX_BASE64"},phone:{vertices:11820,batches:7,bytes:142020},flower:{vertices:flower.vertices.length/3,batches:flower.batches.length,bytes:flowerBytes},human};
 fs.writeFileSync(path.join(outDir,"manifest.json"),JSON.stringify(manifest,null,2)+"\n");
 const phoneGenerator=path.join(root,"tools/assets/generate-phone-model.mjs");
 const phoneResult=spawnSync(process.execPath,[phoneGenerator],{stdio:"inherit"});

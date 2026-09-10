@@ -1332,7 +1332,7 @@ void Game::setTouch(int action, float x, float y, int pointerCount) {
     (void)x;
     (void)y;
     (void)pointerCount;
-    // Android's role-based controls own gameplay input. The raw channel remains
+    // Role-based controls own gameplay input. The raw channel remains
     // only as the platform gesture used to dismiss the title showcase.
 }
 
