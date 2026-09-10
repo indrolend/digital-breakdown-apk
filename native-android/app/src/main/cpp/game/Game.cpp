@@ -113,6 +113,7 @@ constexpr float HUMAN_WALK_RANGE = 5.5f;
 constexpr float HUMAN_ATTACK_NOTICE_RANGE = 5.6f;
 constexpr float HUMAN_ATTACK_START_RANGE = 1.55f;
 constexpr float HUMAN_ATTACK_HIT_RANGE = 1.85f;
+constexpr float HUMAN_ATTACK_VERTICAL_MARGIN = 0.18f;
 constexpr float HUMAN_ATTACK_DURATION = HUMAN_SWING_ATTACK_DURATION;
 constexpr float HUMAN_ATTACK_COOLDOWN = 1.15f;
 constexpr float HUMAN_ATTACK_KNOCKBACK = 3.0f;
@@ -3540,6 +3541,14 @@ void Game::updateTargets(float dt) {
             if(state_.multiplayer.authoritativeHost){for(int id=1;id<NETWORK_PLAYER_COUNT;++id){const auto& peer=state_.multiplayer.peers[id];if(!peer.active||!peer.player.alive||peer.player.downed)continue;const float distance=horizontalLength(Vec3{peer.player.pos.x-t.pos.x,0,peer.player.pos.z-t.pos.z});if(distance<nearestPlayerDistance){nearestPlayerDistance=distance;attackedPlayerId=id;attackedPlayerPos=peer.player.pos;}}}
             Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
             float playerDist=horizontalLength(toPlayer);
+            const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
+                const float humanBottom=t.pos.y;
+                const float humanTop=t.pos.y+PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale;
+                const float playerBottom=playerPosition.y-PHONE_SOLID_HALF_Y;
+                const float playerTop=playerPosition.y+PHONE_SOLID_HALF_Y;
+                return playerBottom<=humanTop+HUMAN_ATTACK_VERTICAL_MARGIN&&
+                       playerTop>=humanBottom-HUMAN_ATTACK_VERTICAL_MARGIN;
+            };
             if(playerDist>0.001f && playerDist<HUMAN_ATTACK_NOTICE_RANGE) t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
             if(t.attackTimer>0.0f){
                 t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
@@ -3559,7 +3568,7 @@ void Game::updateTargets(float dt) {
                 const Vec3 swingDir{t.attackDirection.x*cs-t.attackDirection.z*sn,0,t.attackDirection.x*sn+t.attackDirection.z*cs};
                 const Vec3 liveToPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};const float liveDist=horizontalLength(liveToPlayer);
                 const float sweepFacing=liveDist>0.001f?dot3(liveToPlayer*(1.0f/liveDist),swingDir):-1.0f;
-                if(!t.attackHit && progress>=HUMAN_SWING_COMMIT_PHASE && progress<=HUMAN_SWING_END_PHASE && liveDist<=HUMAN_ATTACK_HIT_RANGE+0.18f && sweepFacing>=0.90f){
+                if(!t.attackHit && progress>=HUMAN_SWING_COMMIT_PHASE && progress<=HUMAN_SWING_END_PHASE && liveDist<=HUMAN_ATTACK_HIT_RANGE+0.18f && sweepFacing>=0.90f&&canReachPlayerVertically(attackedPlayerPos)){
                     const Vec3 away=liveDist>0.001f?liveToPlayer*(-1.0f/liveDist):Vec3{0,0,1};
                     PlayerState* victim=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
                     if(victim->battery<22.0f&&!victim->downed&&victim->grabbedByTarget<0&&t.grabCooldown<=0.0f){victim->grabbedByTarget=i;victim->grabEscape=0;victim->grabLastDirection=0;t.grabbedPlayerId=attackedPlayerId;t.attackTimer=0.0f;state_.enemyAttackOwner=-1;}
@@ -3569,7 +3578,7 @@ void Game::updateTargets(float dt) {
                     t.attackHit=true;
                 }
                 if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=0.34f;}
-            } else if(playerDist<HUMAN_ATTACK_START_RANGE && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+            } else if(playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
                 t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=HUMAN_ATTACK_COOLDOWN;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
