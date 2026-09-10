@@ -17,7 +17,6 @@ EXPLICIT_FILES = [
     "capacitor.config.json",
     "www/android-entry.mjs",
     "www/runtimes/stylo-v2.mjs",
-    "native/tests/sim_smoke_test.cpp",
     "native-android/app/build.gradle",
     "native-android/build.gradle",
     "native-android/settings.gradle",
@@ -25,12 +24,9 @@ EXPLICIT_FILES = [
     "native-android/app/src/main/cpp/CMakeLists.txt",
     "native-android/app/src/main/cpp/native_bridge.cpp",
     "scripts/native-android.sh",
-    "scripts/dev-menu.mjs",
-    "research/RESEARCH_PROMPT.md",
 ]
 
 TREE_RULES = [
-    ("native/core", {".hpp", ".h", ".cpp", ".cc", ".cxx"}),
     ("native/game", {".hpp", ".h", ".cpp", ".cc", ".cxx"}),
     ("native-android/app/src/main/cpp/render", {".hpp", ".h", ".cpp", ".cc", ".cxx", ".glsl", ".vert", ".frag"}),
     ("native-android/app/src/main/java/com/indrolend/digitalbreakdown", {".java"}),
