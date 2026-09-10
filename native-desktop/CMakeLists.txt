@@ -99,7 +99,7 @@ if(UNIX AND NOT WIN32)
 endif()
 find_package(OpenGL REQUIRED)
 
-set(DB_SHARED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native-android/app/src/main/cpp")
+set(DB_GAME_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../native/game")
 
 add_executable(
     DigitalBreakdown
@@ -111,7 +111,7 @@ add_executable(
     "${CMAKE_CURRENT_BINARY_DIR}/generated/BuildIdentity.cpp"
     "${miniaudio_SOURCE_DIR}/miniaudio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
 if(WIN32)
     target_sources(DigitalBreakdown PRIVATE ControllerInputWin.cpp ControllerRumbleWin.cpp)
@@ -125,7 +125,7 @@ endif()
 target_include_directories(
     DigitalBreakdown
     PRIVATE
-    "${DB_SHARED_ROOT}/game"
+    "${DB_GAME_ROOT}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network"
@@ -168,35 +168,35 @@ endif()
 add_executable(
     Pass7ParityTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/game_pass7_parity_smoke.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(Pass7ParityTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(Pass7ParityTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
 
 add_executable(
     MultiplayerProtocolTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
+target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_GAME_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
 
 add_executable(
     MultiplayerDeterminismTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_determinism_test.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_SHARED_ROOT}/game" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(MultiplayerDeterminismTest PRIVATE "${DB_GAME_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(MultiplayerDeterminismTest PRIVATE cxx_std_17)
 
 add_executable(
     HostRemotePeerSimulationIsolationTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/host_remote_peer_simulation_isolation_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(HostRemotePeerSimulationIsolationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(HostRemotePeerSimulationIsolationTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(HostRemotePeerSimulationIsolationTest PRIVATE cxx_std_17)
 
 add_executable(
@@ -210,42 +210,42 @@ add_executable(
     GameplayRoleAndSoulMotionTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_role_and_soul_motion_test.cpp"
 )
-target_include_directories(GameplayRoleAndSoulMotionTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(GameplayRoleAndSoulMotionTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(GameplayRoleAndSoulMotionTest PRIVATE cxx_std_17)
 
 add_executable(
     GameplayGeometryAndConfigTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_geometry_and_config_test.cpp"
 )
-target_include_directories(GameplayGeometryAndConfigTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(GameplayGeometryAndConfigTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(GameplayGeometryAndConfigTest PRIVATE cxx_std_17)
 
 add_executable(
     TargetLifecycleTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/target_lifecycle_test.cpp"
 )
-target_include_directories(TargetLifecycleTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(TargetLifecycleTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(TargetLifecycleTest PRIVATE cxx_std_17)
 
 add_executable(
     GameplayStateContractsTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_state_contracts_test.cpp"
 )
-target_include_directories(GameplayStateContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(GameplayStateContractsTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(GameplayStateContractsTest PRIVATE cxx_std_17)
 
 add_executable(
     PhoneBodyContractTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_body_contract_test.cpp"
 )
-target_include_directories(PhoneBodyContractTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(PhoneBodyContractTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(PhoneBodyContractTest PRIVATE cxx_std_17)
 
 add_executable(
     PhoneMenuLayoutTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_menu_layout_test.cpp"
 )
-target_include_directories(PhoneMenuLayoutTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(PhoneMenuLayoutTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(PhoneMenuLayoutTest PRIVATE cxx_std_17)
 
 add_executable(
@@ -258,49 +258,49 @@ target_compile_features(MenuNavigationTest PRIVATE cxx_std_17)
 add_executable(
     PhoneDisplayStateTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/phone_display_state_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(PhoneDisplayStateTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(PhoneDisplayStateTest PRIVATE cxx_std_17)
 
 add_executable(EarlyBrowserVisualsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/early_browser_visuals_test.cpp")
-target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(EarlyBrowserVisualsTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(EarlyBrowserVisualsTest PRIVATE cxx_std_17)
 
 add_executable(MaterialResponseTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/material_response_test.cpp")
-target_include_directories(MaterialResponseTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(MaterialResponseTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(MaterialResponseTest PRIVATE cxx_std_17)
 
 add_executable(FacetedRockTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/faceted_rock_test.cpp")
-target_include_directories(FacetedRockTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(FacetedRockTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(FacetedRockTest PRIVATE cxx_std_17)
 
 add_executable(SlopeSupportTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_support_test.cpp")
-target_include_directories(SlopeSupportTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(SlopeSupportTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SlopeSupportTest PRIVATE cxx_std_17)
 
-add_executable(RuinGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/ruin_geometry_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(RuinGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
+add_executable(RuinGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/ruin_geometry_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
+target_include_directories(RuinGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(RuinGeometryTest PRIVATE cxx_std_17)
 
-add_executable(HouseGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/house_geometry_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(HouseGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
+add_executable(HouseGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/house_geometry_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
+target_include_directories(HouseGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(HouseGeometryTest PRIVATE cxx_std_17)
 
-add_executable(TreeGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/tree_geometry_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(TreeGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
+add_executable(TreeGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/tree_geometry_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
+target_include_directories(TreeGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(TreeGeometryTest PRIVATE cxx_std_17)
 
-add_executable(MarkerPillarGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/marker_pillar_geometry_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(MarkerPillarGeometryTest PRIVATE "${DB_SHARED_ROOT}/game")
+add_executable(MarkerPillarGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/marker_pillar_geometry_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
+target_include_directories(MarkerPillarGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(MarkerPillarGeometryTest PRIVATE cxx_std_17)
 
-add_executable(SlopeTraversalFixtureTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_traversal_fixture_test.cpp" "${DB_SHARED_ROOT}/game/Game.cpp")
-target_include_directories(SlopeTraversalFixtureTest PRIVATE "${DB_SHARED_ROOT}/game")
+add_executable(SlopeTraversalFixtureTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/slope_traversal_fixture_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
+target_include_directories(SlopeTraversalFixtureTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SlopeTraversalFixtureTest PRIVATE cxx_std_17)
 
 add_executable(RenderContractsTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/render_contracts_test.cpp")
-target_include_directories(RenderContractsTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(RenderContractsTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(RenderContractsTest PRIVATE cxx_std_17)
 
 add_executable(DesktopPlaytestPolicyTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/desktop_playtest_policy_test.cpp")
@@ -314,57 +314,57 @@ target_compile_features(DeveloperCodecTest PRIVATE cxx_std_17)
 add_executable(
     SoulEconomyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(SoulEconomyTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(SoulEconomyTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SoulEconomyTest PRIVATE cxx_std_17)
 
 add_executable(
     SoulProjectileLifecycleTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_projectile_lifecycle_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(SoulProjectileLifecycleTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(SoulProjectileLifecycleTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SoulProjectileLifecycleTest PRIVATE cxx_std_17)
 
 add_executable(
     TraversalCalibrationTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/traversal_calibration_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(TraversalCalibrationTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(TraversalCalibrationTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(TraversalCalibrationTest PRIVATE cxx_std_17)
 
 add_executable(
     GameplayFlowProbe
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_flow_probe.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(GameplayFlowProbe PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(GameplayFlowProbe PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(GameplayFlowProbe PRIVATE cxx_std_17)
 
 add_executable(
     RoomProgressionProbe
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/room_progression_probe.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(RoomProgressionProbe PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(RoomProgressionProbe PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(RoomProgressionProbe PRIVATE cxx_std_17)
 
 add_executable(
     DeterministicInputSoak
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/deterministic_input_soak.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(DeterministicInputSoak PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(DeterministicInputSoak PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(DeterministicInputSoak PRIVATE cxx_std_17)
 
 add_executable(
     SecretTvPolicyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/secret_tv_policy_test.cpp"
-    "${DB_SHARED_ROOT}/game/Game.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
 )
-target_include_directories(SecretTvPolicyTest PRIVATE "${DB_SHARED_ROOT}/game")
+target_include_directories(SecretTvPolicyTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SecretTvPolicyTest PRIVATE cxx_std_17)
 
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)

@@ -3,7 +3,7 @@ name: Gameplay checks
 on:
   pull_request:
     paths:
-      - "native-android/app/src/main/cpp/game/**"
+      - "native/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
       - "native-desktop/**.cpp"
@@ -11,9 +11,8 @@ on:
       - "native-network/**"
       - "native-models/**"
       - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
       - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
+      - "tools/verify_assets.py"
       - ".github/workflows/gameplay-checks.yml"
   push:
     branches:
@@ -22,7 +21,7 @@ on:
       - agent/loose-soul-normalization
       - agent/experimental-release-coherence
     paths:
-      - "native-android/app/src/main/cpp/game/**"
+      - "native/game/**"
       - "native/tests/**"
       - "native-desktop/CMakeLists.txt"
       - "native-desktop/**.cpp"
@@ -30,9 +29,8 @@ on:
       - "native-network/**"
       - "native-models/**"
       - "native-desktop/audio/**"
-      - "native-android/app/src/main/res/raw/**"
       - "scripts/verify-gameplay.*"
-      - "tools/verify_asset_mirrors.py"
+      - "tools/verify_assets.py"
       - ".github/workflows/gameplay-checks.yml"
 
 permissions:
@@ -48,8 +46,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify platform asset mirrors
-        run: python3 tools/verify_asset_mirrors.py
+      - name: Verify native runtime assets
+        run: python3 tools/verify_assets.py
       - name: Verify gameplay contracts
         run: bash scripts/verify-gameplay.sh
       - name: Upload verification logs

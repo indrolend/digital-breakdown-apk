@@ -108,40 +108,13 @@ if ($cmakePath) {
 }
 
 $visualStudio = Resolve-VisualStudio
-$adb = Resolve-CommandPath 'adb'
-$scrcpy = Resolve-CommandPath 'scrcpy'
-$java = Resolve-CommandPath 'java'
 $git = Resolve-CommandPath 'git'
-
-$authorizedDevices = @()
-if ($adb) {
-    # Windows PowerShell promotes native stderr to an ErrorRecord. ADB writes
-    # its normal first-run daemon startup notice there, which must not abort an
-    # otherwise desktop-only environment probe under ErrorActionPreference=Stop.
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        $adbDevices = @(& $adb devices 2>$null)
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    $authorizedDevices = @($adbDevices | Select-String '\sdevice$')
-}
 
 $result = [pscustomobject]@{
     repository = [pscustomobject]@{ available = (Test-Path (Join-Path $RepoRoot '.git')); path = $RepoRoot }
     git = [pscustomobject]@{ available = [bool]$git; path = $git }
     cmake = [pscustomobject]@{ available = [bool]$cmakePath; path = $cmakePath; version = $cmakeVersion; source = $(if ($cmakePath -eq $PrivateCMake) { 'private' } elseif ($cmakePath) { 'system' } else { 'missing' }) }
     compiler = $visualStudio
-    android = [pscustomobject]@{
-        adbAvailable = [bool]$adb
-        adbPath = $adb
-        authorizedDevice = ($authorizedDevices.Count -gt 0)
-        scrcpyAvailable = [bool]$scrcpy
-        scrcpyPath = $scrcpy
-        javaAvailable = [bool]$java
-        javaPath = $java
-    }
 }
 
 if ($AsJson) {

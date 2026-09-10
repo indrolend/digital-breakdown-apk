@@ -14,8 +14,7 @@
   "channel": "latest-native",
   "manifest": "https://github.com/indrolend/Digital-breakdown-dev/releases/download/latest-native/build-manifest.json",
   "channels": {
-    "latest-native": "Canonical downloadable native application artifacts",
-    "latest-dev": "Development portal, WebAssembly, reference, and research artifacts"
+    "latest-native": "Canonical downloadable native desktop application artifacts"
   },
   "developmentRepository": "indrolend/Digital-breakdown-dev",
   "commandHud": {
@@ -42,7 +41,7 @@
               "tools/verify.test.mjs",
               "tools/lint.mjs",
               "tools/run-native-tests.mjs",
-              "tools/verify_asset_mirrors.py",
+              "tools/verify_assets.py",
               "scripts/verify-gameplay.ps1",
               "scripts/verify-gameplay.sh",
               "multiplayer-server/package.json"
@@ -58,10 +57,9 @@
               "distribution/project.json",
               "package.json",
               "tools/verify.mjs",
-              "tools/verify_asset_mirrors.py",
+              "tools/verify_assets.py",
               "native-models",
-              "native-desktop/audio",
-              "native-android/app/src/main/res/raw"
+              "native-desktop/audio"
             ]
           },
           {
@@ -74,10 +72,8 @@
               "scripts/verify-gameplay.ps1",
               "scripts/verify-gameplay.sh",
               "native",
-              "native-android/app/src/main/cpp",
               "native-desktop",
-              "native-network",
-              "reference/browser-pass7"
+              "native-network"
             ]
           },
           {
@@ -102,12 +98,12 @@
       },
       {
         "name": "assets",
-        "command": "python tools/verify_asset_mirrors.py",
-        "argv": ["python", "tools/verify_asset_mirrors.py"],
-        "owner": "tools/verify_asset_mirrors.py",
+        "command": "python tools/verify_assets.py",
+        "argv": ["python", "tools/verify_assets.py"],
+        "owner": "tools/verify_assets.py",
         "resultMarkers": true,
         "successMarkers": [
-          {"contains": "ASSET_MIRRORS=PASS", "summary": "asset mirrors"}
+          {"contains": "ASSETS=PASS", "summary": "native runtime assets"}
         ]
       },
       {

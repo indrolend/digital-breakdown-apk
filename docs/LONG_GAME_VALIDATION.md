@@ -17,5 +17,5 @@ fresh-room reset behavior.
 
 These tests establish deterministic longevity and obvious state validity. They
 do not claim that a random controller can complete combat, that every room is
-fun, or that a physical Android device can sustain the run at target frame
-rate. Those remain human and device playtest responsibilities.
+fun, or that every supported desktop meets its frame-rate target. Those remain
+human and hardware playtest responsibilities.

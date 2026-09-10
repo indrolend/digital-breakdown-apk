@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Windows','Android','All')]
+    [ValidateSet('Windows')]
     [string]$Platform = 'Windows',
     [switch]$Launch,
     [switch]$Force
@@ -48,7 +48,6 @@ function Get-Artifact {
         } else {
             $artifactKey = switch ($Platform) {
                 'windows' { 'windows-x64' }
-                'android' { 'android-armeabi-v7a' }
                 default { $null }
             }
             if ($artifactKey) {
@@ -56,7 +55,7 @@ function Get-Artifact {
                 if ($property -and $property.Value.available) {
                     $artifact = $property.Value
                     if (-not $artifact.PSObject.Properties['architecture']) {
-                        $architecture = if ($Platform -eq 'windows') { 'x64' } else { 'armeabi-v7a' }
+                        $architecture = 'x64'
                         $artifact | Add-Member -NotePropertyName architecture -NotePropertyValue $architecture
                     }
                     return $artifact
@@ -73,17 +72,6 @@ function Get-Artifact {
             sha256 = [string]$Manifest.windows.sha256
             package = 'zip'
             architecture = [string]$Manifest.windows.architecture
-        }
-    }
-    if ($Platform -eq 'android' -and $Manifest.android -and $Manifest.android.available) {
-        return [pscustomobject]@{
-            platform = 'android'
-            filename = 'DigitalBreakdown-Android.apk'
-            url = [string]$Manifest.android.url
-            sha256 = [string]$Manifest.android.sha256
-            package = 'apk'
-            architecture = [string]$Manifest.android.architecture
-            applicationId = [string]$Manifest.android.applicationId
         }
     }
     return $null
@@ -143,7 +131,7 @@ $manifest = Get-Manifest
 Write-ProgressEvent 14 "Release $($manifest.shortCommit) found"
 $installed = @{}
 
-if ($Platform -in @('Windows','All')) {
+if ($Platform -eq 'Windows') {
     $windowsArtifact = Get-Artifact -Manifest $manifest -Platform 'windows'
     if (-not $windowsArtifact) { throw 'Windows release is not available.' }
 
@@ -179,23 +167,6 @@ if ($Platform -in @('Windows','All')) {
     if ($Launch) {
         Write-ProgressEvent 92 'Launching latest Windows release'
         Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe)
-    }
-}
-
-if ($Platform -in @('Android','All')) {
-    $androidArtifact = Get-Artifact -Manifest $manifest -Platform 'android'
-    if (-not $androidArtifact) { throw 'Android release is not available.' }
-
-    $apk = Join-Path $DownloadRoot "DigitalBreakdown-Android-$($manifest.shortCommit).apk"
-    $start = if ($Platform -eq 'All') { 60 } else { 20 }
-    $end = if ($Platform -eq 'All') { 88 } else { 86 }
-    Get-VerifiedFile -Url ([string]$androidArtifact.url) -ExpectedSha256 ([string]$androidArtifact.sha256) -Destination $apk -StartPercent $start -EndPercent $end -Label 'Android release' | Out-Null
-
-    $installed.android = [pscustomobject]@{
-        path = $apk
-        sha256 = [string]$androidArtifact.sha256
-        applicationId = if ($androidArtifact.applicationId) { [string]$androidArtifact.applicationId } else { [string]$manifest.android.applicationId }
-        architecture = [string]$androidArtifact.architecture
     }
 }
 
