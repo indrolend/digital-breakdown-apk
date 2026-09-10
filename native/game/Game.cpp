@@ -1780,29 +1780,33 @@ PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
         if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
-        if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius)
-            support.height = std::max(support.height, c.topY + GROUND_Y);
+        if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius){const float candidate=c.topY+GROUND_Y;if(candidate>support.height){support.height=candidate;support.normal={0,1,0};support.classification=SupportClassification::Ordinary;support.identity={SupportSource::Collider,i};}}
     }
     for(int i=0;i<state_.slopeSupportCount;++i){
         const auto sample=sampleSlopeSupport(state_.slopeSupports[i],x,localZ);
         if(!sample.inside||sample.classification==SupportClassification::Steep)continue;
         const float candidate=sample.height+GROUND_Y;
-        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;}
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;support.identity={SupportSource::Slope,i};}
     }
     for(int i=0;i<state_.rockSupportCount;++i){
         const auto sample=faceted_rock::sampleSupportFootprint(state_.rockSupports[i],x,localZ,PLAYER_COLLISION_RADIUS);
         if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
-        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;}
+        if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;support.identity={SupportSource::Generated,i};}
     }
     support.height=std::min(support.height,getPlayerCeilingLimit());
     return support;
 }
+
+static void adoptSupportIdentity(PlayerState& player,const PlayerSupportSample& support){if(support.identity.source!=SupportSource::Ground||player.supportIdentity.source==SupportSource::Ground)player.supportIdentity=support.identity;}
 
 void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
     PlayerState& player = state_.player;
     const float radius = PLAYER_COLLISION_RADIUS;
     const float tileOriginZ = getRoomTileOriginZ(getRoomTileIndex(player.pos.z));
     float localPlayerZ = player.pos.z - tileOriginZ;
+    const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
+    if(player.supportIdentity.source==SupportSource::Generated){const int index=player.supportIdentity.index;if(index<0||index>=state_.rockSupportCount||!faceted_rock::sampleEnvelopeFootprint(state_.rockSupports[index],previousX,previousLocalZ,radius).inside)player.supportIdentity={};}
+    else if(player.supportIdentity.source==SupportSource::Slope){const int index=player.supportIdentity.index;if(index<0||index>=state_.slopeSupportCount||!surface_geometry::sample(makeSlopeWedgeMesh(state_.slopeSupports[index]),previousX,previousLocalZ,radius,0.819152f).inside)player.supportIdentity={};}
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
         if(c.kind==RoomColliderKind::RockAuthoritySlot)continue;
@@ -1853,14 +1857,15 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
             }
         }
     }
+    for(int i=0;i<state_.slopeSupportCount;++i){const auto mesh=makeSlopeWedgeMesh(state_.slopeSupports[i]);const bool departing=player.supportIdentity==SupportIdentity{SupportSource::Slope,i};const auto resolved=surface_geometry::resolveBoundedHorizontal(mesh,previousX,previousLocalZ,player.pos.x,localPlayerZ,player.pos.y-PHONE_SOLID_HALF_Y,player.pos.y+PHONE_SOLID_HALF_Y,radius,0.819152f,departing);if(!resolved.blocked)continue;player.pos.x=resolved.x;localPlayerZ=resolved.z;player.pos.z=tileOriginZ+localPlayerZ;const float into=dotXZ(player.vel,resolved.normal);if(into<0.0f)player.vel-=resolved.normal*into;}
     for(int i=0;i<state_.rockSupportCount;++i){
         const auto& rock=state_.rockSupports[i];const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
         // PlayerState::pos is the center of the upright gameplay body. A rock
         // is only beneath the player when the body's bottom clears its visible
         // envelope; PHONE_BODY_DEPTH is not a vertical clearance.
         const float playerBottom=player.pos.y-PHONE_SOLID_HALF_Y;
-        const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
-        const auto resolved=surface_geometry::resolveHorizontal(mesh,previousX,previousLocalZ,player.pos.x,localPlayerZ,playerBottom,radius);
+        const bool departing=player.supportIdentity==SupportIdentity{SupportSource::Generated,i};
+        const auto resolved=surface_geometry::resolveBoundedHorizontal(mesh,previousX,previousLocalZ,player.pos.x,localPlayerZ,playerBottom,player.pos.y+PHONE_SOLID_HALF_Y,radius,faceted_rock::WalkableNormalY,departing);
         if(!resolved.blocked)continue;
         player.pos.x=resolved.x;localPlayerZ=resolved.z;player.pos.z=tileOriginZ+localPlayerZ;
         const float into=dotXZ(player.vel,resolved.normal);if(into<0.0f)player.vel-=resolved.normal*into;
@@ -2302,7 +2307,7 @@ void Game::updatePlayer(float dt) {
         const float support = getPlayerSupportY(p.pos.x, p.pos.z);
         if (p.pos.y <= support) {
             const float impactSpeed=std::max(0.0f,-p.jumpVel);
-            p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
+            p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));
             state_.phonePose.doubleJumpTimer = 0.0f;
             if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
             else if (horizontalLength(p.vel) > 1.2f) p.vel *= LANDING_MOMENTUM_BOOST;
@@ -2317,10 +2322,10 @@ void Game::updatePlayer(float dt) {
     const bool caughtLedge=tryBeginLedgeHang();
     const float supportAfter = getPlayerSupportY(p.pos.x, p.pos.z);
     if (!caughtLedge&&p.grounded) {
-        if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else p.pos.y = supportAfter;
+        if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else {p.pos.y = supportAfter;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));}
     } else if (!caughtLedge&&p.jumpVel <= 0 && p.pos.y <= supportAfter) {
         const float impactSpeed=std::max(0.0f,-p.jumpVel);
-        p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;
+        p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));
         state_.phonePose.doubleJumpTimer = 0.0f;
         if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
     }

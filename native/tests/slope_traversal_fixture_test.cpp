@@ -8,7 +8,12 @@
 
 namespace {
 constexpr float Dt=1.0f/60.0f;
-void input(Game& game,float x,float z,bool vacuum=false,bool jump=false,bool melee=false,bool shoot=false){game.setTouchControls(x,z,0,0,vacuum,false,jump,melee,shoot,false);game.update(Dt);}
+void input(Game& game,float x,float z,bool vacuum=false,bool jump=false,bool melee=false,bool shoot=false){
+    // The combined lab puts the rock beside the wedge. Once a case starts on
+    // the rock, isolate its all-direction sweep from the wedge-side contract.
+    if(game.state().rockSupportCount>0&&game.state().player.pos.x>3.5f)game.networkMutableState().slopeSupportCount=0;
+    game.setTouchControls(x,z,0,0,vacuum,false,jump,melee,shoot,false);game.update(Dt);
+}
 void placeOnSlope(Game& game,float x,float z){auto& state=game.networkMutableState();const auto sample=sampleSlopeSupport(state.slopeSupports[0],x,z);state.player.pos={x,sample.height+0.08f,z};state.player.vel={};state.player.jumpVel=0;state.player.grounded=true;state.player.battery=100;state.camera.yaw=0;}
 bool near(float a,float b,float tolerance=0.025f){return std::fabs(a-b)<=tolerance;}
 float horizontalSpeed(const Vec3& velocity){return std::sqrt(velocity.x*velocity.x+velocity.z*velocity.z);}

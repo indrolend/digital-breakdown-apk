@@ -1,4 +1,5 @@
 #include "SurfaceGeometry.hpp"
+#include "SlopeSupport.hpp"
 
 #include <array>
 #include <cassert>
@@ -29,6 +30,10 @@ int main(){
     assert(!free.blocked&&std::abs(free.x+0.5f)<0.0001f);
     const auto stopped=surface_geometry::resolveHorizontal(steep,-1,0,0,0,0.5f,0.1f);
     assert(stopped.blocked&&stopped.x<-0.19f&&stopped.x>-1.0f&&std::isfinite(stopped.normal.x));
+    const SlopeSupport wedge{-2,2,-2,2,0,1.0f,SlopeAxis::PositiveZ};const auto wedgeMesh=makeSlopeWedgeMesh(wedge);
+    assert(surface_geometry::sample(wedgeMesh,0,0,0,0.819152f).inside);
+    assert(surface_geometry::resolveBoundedHorizontal(wedgeMesh,-3,0,-1.9f,0,0.08f,0.24f,0.08f,0.819152f,false).blocked);
+    assert(!surface_geometry::resolveBoundedHorizontal(wedgeMesh,-1.9f,0,-2.1f,0,0.48f,0.64f,0.08f,0.819152f,true).blocked);
     std::puts("SURFACE_GEOMETRY_OK bounded walkable footprint steep-rejection envelope");
     return 0;
 }

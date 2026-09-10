@@ -100,6 +100,10 @@ struct SoulRecord {
     int originRoom = 0;
 };
 
+enum class SupportSource : unsigned char { Ground, Collider, Slope, Generated };
+struct SupportIdentity { SupportSource source=SupportSource::Ground;int index=-1; };
+inline bool operator==(const SupportIdentity& a,const SupportIdentity& b){return a.source==b.source&&a.index==b.index;}
+
 struct PlayerState {
     Vec3 pos {0.0f, 0.08f, 0.0f};
     Vec3 vel {0.0f, 0.0f, 0.0f};
@@ -107,6 +111,7 @@ struct PlayerState {
     float yaw = 0.0f;
     float targetYaw = 0.0f;
     bool grounded = true;
+    SupportIdentity supportIdentity{};
     float battery = 100.0f;
     int souls = 0;
     std::array<bool, PHONE_CAPACITY> storedSoulBrute{};
@@ -358,6 +363,7 @@ struct PlayerSupportSample {
     float height=0.08f;
     Vec3 normal{0.0f,1.0f,0.0f};
     SupportClassification classification=SupportClassification::Ordinary;
+    SupportIdentity identity{};
 };
 
 struct RoomTopologyState {

@@ -81,4 +81,25 @@ HorizontalResolution resolveHorizontal(const Mesh& mesh,float previousX,float pr
     return result;
 }
 
+template<class Mesh>
+bool obstructsBody(const Mesh& mesh,float x,float z,float bottom,float top,float radius,float walkableNormalY,Vec3* contactNormal=nullptr){
+    const auto point=[&](int index){return Vec3{mesh.positions[index*3],mesh.positions[index*3+1],mesh.positions[index*3+2]};};
+    Vec3 center{};for(int i=0;i<mesh.vertexCount;++i)center+=point(i);if(mesh.vertexCount>0)center*=1.0f/static_cast<float>(mesh.vertexCount);
+    bool hit=false;float nearest=1.0e30f;
+    for(int vertex=0;vertex+2<mesh.vertexCount;vertex+=3){
+        const Vec3 a=point(vertex),b=point(vertex+1),c=point(vertex+2),normal=faceNormal(a,b,c);if(normal.y>=walkableNormalY)continue;
+        const float low=std::min(a.y,std::min(b.y,c.y)),high=std::max(a.y,std::max(b.y,c.y));if(top<=low+0.001f||bottom>=high-0.001f||!projectedTriangleOverlapsCircle(a,b,c,x,z,radius))continue;
+        hit=true;if(!contactNormal)continue;const Vec3 faceCenter=(a+b+c)*(1.0f/3.0f);const float dx=faceCenter.x-x,dz=faceCenter.z-z,distance=dx*dx+dz*dz;
+        if(distance<nearest){Vec3 outward=normal;if(outward.x*(faceCenter.x-center.x)+outward.z*(faceCenter.z-center.z)<0.0f)outward*=-1.0f;*contactNormal=normalized(Vec3{outward.x,0,outward.z});nearest=distance;}
+    }
+    return hit;
+}
+
+template<class Mesh>
+HorizontalResolution resolveBoundedHorizontal(const Mesh& mesh,float previousX,float previousZ,float desiredX,float desiredZ,float bottom,float top,float radius,float walkableNormalY,bool departingSupport){
+    HorizontalResolution result{desiredX,desiredZ,{},false};if(departingSupport||!obstructsBody(mesh,desiredX,desiredZ,bottom,top,radius,walkableNormalY,&result.normal))return result;
+    result.blocked=true;const auto blockedAt=[&](float x,float z){return obstructsBody(mesh,x,z,bottom,top,radius,walkableNormalY);};if(blockedAt(previousX,previousZ)){result.x=previousX;result.z=previousZ;return result;}
+    float safe=0.0f,blocked=1.0f;for(int iteration=0;iteration<12;++iteration){const float t=(safe+blocked)*0.5f,x=previousX+(desiredX-previousX)*t,z=previousZ+(desiredZ-previousZ)*t;if(blockedAt(x,z))blocked=t;else safe=t;}result.x=previousX+(desiredX-previousX)*safe;result.z=previousZ+(desiredZ-previousZ)*safe;return result;
+}
+
 } // namespace surface_geometry
