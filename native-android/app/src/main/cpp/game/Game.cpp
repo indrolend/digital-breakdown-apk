@@ -1171,6 +1171,14 @@ void Game::buildRoomColliders() {
             }
             continue;
         }
+        if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::MarkerPillar){
+            for(const auto& part:marker_pillar_geometry::parts(prop)){
+                const auto spec=marker_pillar_geometry::collider(part);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
+                c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
+                c.bottomY=spec.center.y-spec.size.y*0.5f;c.topY=spec.center.y+spec.size.y*0.5f;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
+            }
+            continue;
+        }
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
