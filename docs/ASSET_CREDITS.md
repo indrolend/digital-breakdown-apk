@@ -14,7 +14,7 @@ These local source assets were provided during development. Their source pages a
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CRT TV model | `/Users/joelgutierrez/Downloads/crt-tv/source/model.zip` | DAE + textures | Candidate secret TV room model | Timothy Ahene | https://sketchfab.com/3d-models/crt-tv-9ba4baa106e64319a0b540cf0af5aa9e | Sketchfab Free Standard | DAE metadata lists Assimp as exporter only; source attribution comes from Sketchfab page/API. |
 | Wires model | `/Users/joelgutierrez/Downloads/wires/source/wires.fbx` | FBX + textures | Candidate secret TV room cable dressing | Bulat.Shakirov | https://sketchfab.com/3d-models/wires-fca671dcab294aff97fc422915e791ef | Creative Commons Attribution 4.0 International (CC BY 4.0) | FBX strings list texture names only; source attribution comes from Sketchfab page/API. |
-| Walk Cycle human model | `reference/browser-pass7/assets/embedded-assets.js` (`HUMAN_FBX_BASE64`) | FBX embedded as base64; baked to DBH1 | Human/enemy model and walk animation | Niraj Ekaant | https://sketchfab.com/3d-models/walk-cycle-05c7560e49c1441aa0c70d3dc7bc710b | Creative Commons Attribution 4.0 International (CC BY 4.0) | Source comment exists in browser reference; Sketchfab API verified creator/license on 2026-07-24. |
+| Walk Cycle human model | `native-models/source/legacy_embedded_assets.js` (`HUMAN_FBX_BASE64`) | FBX embedded as base64; baked to DBH1 | Human/enemy model and walk animation | Niraj Ekaant | https://sketchfab.com/3d-models/walk-cycle-05c7560e49c1441aa0c70d3dc7bc710b | Creative Commons Attribution 4.0 International (CC BY 4.0) | Sketchfab API verified creator/license on 2026-07-24. |
 
 ## User-Provided Source Assets
 
@@ -22,16 +22,16 @@ These assets are recorded as user-provided/original unless a third-party source 
 
 | Working Name | Local Source | Format | Current Use | Creator / Owner | Source URL | License | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Historical iPhone 17 Pro phone model | `reference/browser-pass7/assets/embedded-assets.js` (`IPHONE_GLB_BASE64`) | GLB embedded as base64 | Historical browser reference only; not used by the native runtime | Joel Gutierrez / project-provided | N/A | Pending confirmation; excluded from the shipping native model | Browser reference comment says “iPhone 17 Pro model uploaded by user”; embedded GLB metadata only lists Blender glTF exporter and no external creator/license/source URL. |
-| Pentagonal flower model | `reference/browser-pass7/assets/embedded-assets.js` (`PENTAGONAL_FLOWER_GLB_BASE64`) | GLB embedded as base64; baked to DBM1 | Authored flower source and native model | Digital Breakdown project | N/A | Project-owned | Original project design, preserved as the authored physical flower representation. |
+| Historical iPhone 17 Pro phone model | `native-models/source/legacy_embedded_assets.js` (`IPHONE_GLB_BASE64`) | GLB embedded as base64 | Historical source reference only; not used by the native runtime | Joel Gutierrez / project-provided | N/A | Pending confirmation; excluded from the shipping native model | Embedded GLB metadata lists Blender glTF exporter and no external creator/license/source URL. |
+| Pentagonal flower model | `native-models/source/legacy_embedded_assets.js` (`PENTAGONAL_FLOWER_GLB_BASE64`) | GLB embedded as base64; baked to DBM1 | Authored flower source and native model | Digital Breakdown project | N/A | Project-owned | Original project design, preserved as the authored physical flower representation. |
 
 ## Current Native Runtime Assets
 
 | Asset | Repository Path | Source / Attribution Status | Notes |
 | --- | --- | --- | --- |
-| Phone model | `native-models/source/DATA_phone_release.glb`, baked to `native-models/phone.dbmesh` | Project-owned original DATA release device. | Camera-free clean-room source; `tools/assets/generate-phone-model.mjs` deterministically produces both native runtime mirrors. The historical iPhone GLB remains reference-only. |
+| Phone model | `native-models/source/DATA_phone_release.glb`, baked to `native-models/phone.dbmesh` | Project-owned original DATA release device. | Camera-free clean-room source; `tools/assets/generate-phone-model.mjs` deterministically produces the desktop runtime mesh. The historical iPhone GLB remains reference-only. |
 | Flower model | `native-models/flower.dbmesh` | Project-owned original design. | Baked native runtime mesh generated from the checked-in authored flower source. |
-| Human model | `native-models/human.dbhuman` | Baked derivative of “Walk Cycle” by Niraj Ekaant, CC BY 4.0. | Baked native runtime model generated from `HUMAN_FBX_BASE64`. |
+| Human model | `native-models/human.dbhuman` | Baked derivative of “Walk Cycle” by Niraj Ekaant, CC BY 4.0. | Baked native runtime model generated from `HUMAN_FBX_BASE64` by `tools/assets/generate-native-models.mjs`. |
 | TV GIF clips | `native-tv-gifs/*.dbgif` | Curated from the allowlist in `tools/build_tv_gifs.py`; each source URL should be reviewed before release. | Baked 12x8 runtime clips. |
 
 ## Release Rule
