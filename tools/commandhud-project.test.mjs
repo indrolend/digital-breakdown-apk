@@ -119,3 +119,12 @@ test('Windows environment resolver tolerates normal ADB daemon startup stderr', 
   assert.match(source, /\$ErrorActionPreference = 'Continue'[\s\S]*& \$adb devices 2>\$null[\s\S]*finally/);
   assert.match(source, /\$ErrorActionPreference = \$previousErrorActionPreference/);
 });
+
+test('the approved DATA source model is the single phone-generation authority', () => {
+  const generalGenerator = readFileSync(join(root, 'tools', 'pass7-oracle', 'generate-native-models.mjs'), 'utf8');
+  const phoneGenerator = readFileSync(join(root, 'tools', 'assets', 'generate-phone-model.mjs'), 'utf8');
+  assert.doesNotMatch(generalGenerator, /originalDataDevice/);
+  assert.match(generalGenerator, /tools\/assets\/generate-phone-model\.mjs/);
+  assert.match(phoneGenerator, /native-models\/source\/DATA_phone_release\.glb/);
+  assert.match(phoneGenerator, /native-android\/app\/src\/main\/res\/raw\/phone\.dbmesh/);
+});

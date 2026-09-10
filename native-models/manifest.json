@@ -1,15 +1,15 @@
 {
   "format": "DBM1/DBH1",
-  "source": "reference/browser-pass7/assets/embedded-assets.js",
+  "source": "native-models/source/DATA_phone_release.glb",
   "sources": {
-    "phone": "tools/pass7-oracle/generate-native-models.mjs:originalDataDevice",
+    "phone": "native-models/source/DATA_phone_release.glb",
     "flower": "project-authored embedded flower",
     "human": "open-source embedded human"
   },
   "phone": {
-    "vertices": 192,
-    "batches": 3,
-    "bytes": 2388
+    "vertices": 11820,
+    "batches": 7,
+    "bytes": 142020
   },
   "flower": {
     "vertices": 11628,
