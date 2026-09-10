@@ -1854,14 +1854,16 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
         }
     }
     for(int i=0;i<state_.rockSupportCount;++i){
-        const auto& rock=state_.rockSupports[i];const auto envelope=faceted_rock::sampleEnvelopeFootprint(rock,player.pos.x,localPlayerZ,radius);
+        const auto& rock=state_.rockSupports[i];const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
         // PlayerState::pos is the center of the upright gameplay body. A rock
         // is only beneath the player when the body's bottom clears its visible
         // envelope; PHONE_BODY_DEPTH is not a vertical clearance.
         const float playerBottom=player.pos.y-PHONE_SOLID_HALF_Y;
-        if(!envelope.inside||playerBottom>=envelope.height-0.001f)continue;
         const float previousLocalZ=previousZ-getRoomTileOriginZ(getRoomTileIndex(previousZ));
-        player.pos.x=previousX;player.pos.z=previousZ;player.vel={};localPlayerZ=previousLocalZ;
+        const auto resolved=surface_geometry::resolveHorizontal(mesh,previousX,previousLocalZ,player.pos.x,localPlayerZ,playerBottom,radius);
+        if(!resolved.blocked)continue;
+        player.pos.x=resolved.x;localPlayerZ=resolved.z;player.pos.z=tileOriginZ+localPlayerZ;
+        const float into=dotXZ(player.vel,resolved.normal);if(into<0.0f)player.vel-=resolved.normal*into;
     }
 }
 

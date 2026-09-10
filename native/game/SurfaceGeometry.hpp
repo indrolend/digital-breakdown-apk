@@ -12,6 +12,13 @@ struct Sample {
     Vec3 normal{0.0f,1.0f,0.0f};
 };
 
+struct HorizontalResolution {
+    float x=0.0f;
+    float z=0.0f;
+    Vec3 normal{};
+    bool blocked=false;
+};
+
 inline Vec3 faceNormal(const Vec3& a,const Vec3& b,const Vec3& c){
     const Vec3 u=b-a,v=c-a;
     return normalized({u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x});
@@ -55,6 +62,22 @@ Sample sample(const Mesh& mesh,float x,float z,float radius,float minimumNormalY
         const auto edgeIntersections=[&](const Vec3& p0,const Vec3& p1){const float dx=p1.x-p0.x,dz=p1.z-p0.z,ox=p0.x-x,oz=p0.z-z;const float qa=dx*dx+dz*dz;if(qa<0.0000001f)return;const float qb=2.0f*(ox*dx+oz*dz),qc=ox*ox+oz*oz-radiusSq,disc=qb*qb-4.0f*qa*qc;if(disc<0.0f)return;const float root=std::sqrt(std::max(0.0f,disc));const float t0=(-qb-root)/(2.0f*qa),t1=(-qb+root)/(2.0f*qa);if(t0>=0.0f&&t0<=1.0f)consider(p0.x+dx*t0,p0.z+dz*t0);if(t1>=0.0f&&t1<=1.0f)consider(p0.x+dx*t1,p0.z+dz*t1);};
         edgeIntersections(a,b);edgeIntersections(b,c);edgeIntersections(c,a);
     }
+    return result;
+}
+
+template<class Mesh>
+HorizontalResolution resolveHorizontal(const Mesh& mesh,float previousX,float previousZ,float desiredX,float desiredZ,float bodyBottom,float radius){
+    HorizontalResolution result{desiredX,desiredZ,{},false};
+    const auto blockedAt=[&](float x,float z){const auto envelope=sample(mesh,x,z,radius,0.0f);return envelope.inside&&bodyBottom<envelope.height-0.001f;};
+    if(!blockedAt(desiredX,desiredZ))return result;
+    result.blocked=true;
+    if(blockedAt(previousX,previousZ)){result.x=previousX;result.z=previousZ;return result;}
+    float safe=0.0f,blocked=1.0f;
+    for(int iteration=0;iteration<12;++iteration){const float t=(safe+blocked)*0.5f;const float x=previousX+(desiredX-previousX)*t,z=previousZ+(desiredZ-previousZ)*t;if(blockedAt(x,z))blocked=t;else safe=t;}
+    result.x=previousX+(desiredX-previousX)*safe;result.z=previousZ+(desiredZ-previousZ)*safe;
+    const auto contact=sample(mesh,desiredX,desiredZ,radius,0.0f);
+    Vec3 horizontal{contact.normal.x,0.0f,contact.normal.z};
+    if(lengthSq(horizontal)>0.000001f)result.normal=normalized(horizontal);
     return result;
 }
 

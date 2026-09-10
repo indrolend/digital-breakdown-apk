@@ -25,6 +25,10 @@ int main(){
     assert(!surface_geometry::sample(steep,0,0,0.1f,0.819152f).inside);
     const auto envelope=surface_geometry::sample(steep,0,0,0.1f,0.0f);
     assert(envelope.inside&&std::isfinite(envelope.height));
+    const auto free=surface_geometry::resolveHorizontal(steep,-1,0,-0.5f,0,0.5f,0.1f);
+    assert(!free.blocked&&std::abs(free.x+0.5f)<0.0001f);
+    const auto stopped=surface_geometry::resolveHorizontal(steep,-1,0,0,0,0.5f,0.1f);
+    assert(stopped.blocked&&stopped.x<-0.19f&&stopped.x>-1.0f&&std::isfinite(stopped.normal.x));
     std::puts("SURFACE_GEOMETRY_OK bounded walkable footprint steep-rejection envelope");
     return 0;
 }
