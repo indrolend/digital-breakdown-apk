@@ -135,6 +135,25 @@ bool runTreeClimbContract(){
     offCenter.setTouchControls(0.0f,1.0f,0.0f,0.0f,false,false,false,false,false,false);offCenter.update(Dt);
     if(offCenter.state().player.treeClimbing){std::fprintf(stderr,"TREE_CLIMB_STAGE off-center grip incorrectly attached x=%.3f\n",offCenter.state().player.pos.x);return false;}
 
+    Game lungeGrip;lungeGrip.reset();GameState& lungeGripState=lungeGrip.networkMutableState();
+    for(auto& target:lungeGripState.targets)target={};
+    for(auto& collider:lungeGripState.roomColliders)collider={};
+    lungeGripState.debug.colliderCount=1;setBox(lungeGripState.roomColliders[0],0.0f,0.0f,0.80f,0.80f,3.20f);
+    lungeGripState.roomColliders[0].kind=RoomColliderKind::TreeTrunk;lungeGripState.roomColliders[0].climbTopY=5.60f;
+    lungeGripState.player.pos={0.0f,1.20f,0.80f};lungeGripState.player.vel={0.0f,0.0f,-5.0f};lungeGripState.player.jumpVel=-0.2f;lungeGripState.player.grounded=false;lungeGripState.camera.yaw=0.0f;
+    lungeGripState.meleeVisual.locomotionLunge=true;lungeGripState.meleeVisual.airLungeTimer=0.20f;lungeGripState.meleeVisual.airLungeLandingPending=true;
+    lungeGrip.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);lungeGrip.update(Dt);
+    if(!lungeGrip.state().player.treeClimbing||lungeGrip.state().player.treeCollider!=0){std::fprintf(stderr,"TREE_CLIMB_STAGE lunge grip failed climbing=%d collider=%d\n",lungeGrip.state().player.treeClimbing?1:0,lungeGrip.state().player.treeCollider);return false;}
+
+    Game passiveContact;passiveContact.reset();GameState& passiveState=passiveContact.networkMutableState();
+    for(auto& target:passiveState.targets)target={};
+    for(auto& collider:passiveState.roomColliders)collider={};
+    passiveState.debug.colliderCount=1;setBox(passiveState.roomColliders[0],0.0f,0.0f,0.80f,0.80f,3.20f);
+    passiveState.roomColliders[0].kind=RoomColliderKind::TreeTrunk;passiveState.roomColliders[0].climbTopY=5.60f;
+    passiveState.player.pos={0.0f,1.20f,0.80f};passiveState.player.vel={0.0f,0.0f,-5.0f};passiveState.player.jumpVel=-0.2f;passiveState.player.grounded=false;passiveState.camera.yaw=0.0f;
+    passiveContact.setTouchControls(0.0f,0.0f,0.0f,0.0f,false,false,false,false,false,false);passiveContact.update(Dt);
+    if(passiveContact.state().player.treeClimbing){std::fprintf(stderr,"TREE_CLIMB_STAGE passive airborne contact became magnetic\n");return false;}
+
     Game wall;wall.reset();GameState& wallState=wall.networkMutableState();
     for(auto& target:wallState.targets)target={};
     for(auto& collider:wallState.roomColliders)collider={};
