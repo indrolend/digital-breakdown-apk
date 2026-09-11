@@ -2277,6 +2277,10 @@ void Game::updatePlayer(float dt) {
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
     Vec3 treeMove=cameraForwardFlat()*forwardAxis+cameraRightFlat()*strafeAxis;
     if(lengthSq(treeMove)>1.0f)treeMove=normalized(treeMove);
+    // A committed lunge is also deliberate traversal intent. Let its actual
+    // horizontal motion acquire a climbable trunk when directional input has
+    // been released, without making ordinary airborne contact magnetic.
+    if(lengthSq(treeMove)<0.01f&&committedLunge){treeMove={p.vel.x,0.0f,p.vel.z};if(lengthSq(treeMove)>1.0f)treeMove=normalized(treeMove);}
     if(!p.treeClimbing)tryBeginTreeClimb(treeMove);
     if(updateTreeClimb(dt,forwardAxis,strafeAxis)){
         updatePhoneGait(dt,false);updatePhoneActionPose(dt,false,forwardAxis,strafeAxis);
