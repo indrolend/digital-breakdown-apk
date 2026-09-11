@@ -370,13 +370,37 @@ int main() {
         GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets)target.alive=false;
         setup.debug.colliderCount=1;
-        RoomCollider& tree=setup.roomColliders[0];tree={};tree.kind=RoomColliderKind::TreeTrunk;tree.minX=-0.18f;tree.maxX=0.18f;tree.minZ=-0.18f;tree.maxZ=0.18f;tree.width=0.36f;tree.depth=0.36f;tree.bottomY=0.0f;tree.topY=2.2f;tree.climbTopY=2.2f;tree.center={0.0f,1.1f,0.0f};
+        RoomCollider& tree=setup.roomColliders[0];tree={};tree.kind=RoomColliderKind::TreeTrunk;tree.minX=-0.18f;tree.maxX=0.18f;tree.minZ=-0.18f;tree.maxZ=0.18f;tree.width=0.36f;tree.depth=0.36f;tree.bottomY=0.0f;tree.topY=4.0f;tree.climbTopY=4.0f;tree.center={0.0f,2.0f,0.0f};
         setup.player.treeClimbing=true;setup.player.treeCollider=0;setup.player.treeNormal={1,0,0};setup.player.pos={0.54f,tree.climbTopY,0.0f};setup.player.vel={};setup.player.jumpVel=0.0f;setup.player.grounded=false;
         TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={setup.player.pos.x,PHONE_MODEL_HEIGHT*0.5f,setup.player.pos.z-1.0f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=0.0f;
     }
     step(game,90);
     ok &= expect(game.state().player.treeClimbing&&game.state().targets[0].attackTimer<=0.0f&&!game.state().targets[0].attackHit&&game.state().player.grabbedByTarget<0,
         "tree-tip elevation keeps DATA outside a ground-bound human's physical attack reach");
+
+    game.reset();
+    float enemyTreeStartY=0.0f,enemyTreeHighestY=0.0f,enemyTreeMaximumRise=0.0f;
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets)target.alive=false;
+        setup.debug.colliderCount=1;
+        RoomCollider& tree=setup.roomColliders[0];tree={};tree.kind=RoomColliderKind::TreeTrunk;tree.minX=-0.18f;tree.maxX=0.18f;tree.minZ=-0.18f;tree.maxZ=0.18f;tree.width=0.36f;tree.depth=0.36f;tree.bottomY=0.0f;tree.topY=4.0f;tree.climbTopY=4.0f;tree.center={0.0f,2.0f,0.0f};
+        setup.player.treeClimbing=true;setup.player.treeCollider=0;setup.player.treeNormal={1,0,0};setup.player.pos={0.54f,tree.climbTopY,0.0f};setup.player.vel={};setup.player.jumpVel=0.0f;setup.player.grounded=false;
+        TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={0.0f,PHONE_MODEL_HEIGHT*0.5f,-2.0f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=999.0f;
+        enemyTreeStartY=enemyTreeHighestY=enemy.pos.y;
+    }
+    int enemyTreeHeldFrames=0;
+    for(int frame=0;frame<240;++frame){const float before=game.state().targets[0].pos.y;step(game);const float after=game.state().targets[0].pos.y;enemyTreeHighestY=std::max(enemyTreeHighestY,after);enemyTreeMaximumRise=std::max(enemyTreeMaximumRise,after-before);if(game.state().player.treeClimbing)++enemyTreeHeldFrames;}
+    const TargetState& climbedEnemy=game.state().targets[0];
+    const bool outsideTree=climbedEnemy.pos.z<=-0.18f-0.42f||climbedEnemy.pos.z>=0.18f+0.42f||climbedEnemy.pos.x<=-0.18f-0.42f||climbedEnemy.pos.x>=0.18f+0.42f;
+    if(!(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.015f&&outsideTree&&climbedEnemy.attackTimer<=0.0f))std::fprintf(stderr,"ENEMY_TREE_OBSERVED startY=%.3f highY=%.3f maxRise=%.4f final=(%.3f, %.3f, %.3f) attack=%.3f outside=%d heldFrames=%d playerTree=%d playerY=%.3f colliderTop=%.3f\n",enemyTreeStartY,enemyTreeHighestY,enemyTreeMaximumRise,climbedEnemy.pos.x,climbedEnemy.pos.y,climbedEnemy.pos.z,climbedEnemy.attackTimer,outsideTree?1:0,enemyTreeHeldFrames,game.state().player.treeClimbing?1:0,game.state().player.pos.y,game.state().roomColliders[0].climbTopY);
+    ok &= expect(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.015f&&outsideTree&&climbedEnemy.attackTimer<=0.0f,
+        "enemy approaches a real trunk face and gains height continuously without attacking through the tree");
+    const_cast<GameState&>(game.state()).targets[0].attackCooldown=0.0f;
+    bool elevatedAttack=false;
+    for(int frame=0;frame<180&&!elevatedAttack;++frame){step(game);const TargetState& enemy=game.state().targets[0];elevatedAttack=(enemy.attackTimer>0.0f||enemy.attackHit||enemy.grabbedPlayerId>=0)&&enemy.pos.y>enemyTreeStartY+0.20f;}
+    ok &= expect(elevatedAttack,
+        "enemy can begin combat only after physically climbing into vertical reach of tree-held DATA");
 
     game.reset();
     {
