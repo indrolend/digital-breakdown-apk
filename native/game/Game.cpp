@@ -3600,13 +3600,60 @@ void Game::updateTargets(float dt) {
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=HUMAN_ATTACK_NOTICE_RANGE){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
-                    const Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<HUMAN_ATTACK_NOTICE_RANGE?1.28f:1.0f;
+                    Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<HUMAN_ATTACK_NOTICE_RANGE?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float speed=HUMAN_WALK_SPEED*aggro*(t.brute?0.56f:1.0f)*variation;
-                    const float step=std::min(dist,speed*dt); const Vec3 next=t.pos+dir*step;
-                    if(isHumanPointBlocked(next.x,next.z,0.42f)) chooseHumanWalkTarget(i);
-                    else {t.pos=next; t.visualYaw=std::atan2(-dir.x,-dir.z); t.visualWalkPhase+=step*HUMAN_WALK_PHASE_PER_METER;}
-                    t.locomotionAmount=step>0.00001f?1.0f:0.0f;
+                    const float step=std::min(dist,speed*dt);Vec3 next=t.pos+dir*step;
+                    bool pursuitBlocked=false;Vec3 obstructionNormal{};int obstructionCollider=-1;
+                    if(playerDist<HUMAN_ATTACK_NOTICE_RANGE){
+                        const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
+                        for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
+                            const float bounds[4]={c.minX-0.42f,c.maxX+0.42f,tileOrigin+c.minZ-0.42f,tileOrigin+c.maxZ+0.42f};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
+                            const float origins[2]={t.pos.x,t.pos.z},directions[2]={dir.x,dir.z};
+                            for(int axis=0;axis<2;++axis){
+                                const float minimum=bounds[axis*2],maximum=bounds[axis*2+1],origin=origins[axis],direction=directions[axis];
+                                if(std::abs(direction)<0.00001f){if(origin<=minimum||origin>=maximum){intersects=false;break;}continue;}
+                                float nearDistance=(minimum-origin)/direction,farDistance=(maximum-origin)/direction;Vec3 nearNormal=axis==0?Vec3{-1,0,0}:Vec3{0,0,-1};
+                                if(nearDistance>farDistance){std::swap(nearDistance,farDistance);nearNormal=nearNormal*-1.0f;}
+                                if(nearDistance>enter){enter=nearDistance;entryNormal=nearNormal;}exit=std::min(exit,farDistance);if(enter>=exit){intersects=false;break;}
+                            }
+                            if(intersects&&enter>=0.0f&&enter<nearestEntry){
+                                nearestEntry=enter;obstructionNormal=entryNormal;obstructionCollider=colliderIndex;
+                                if(t.pos.x<=bounds[0])obstructionNormal={-1,0,0};else if(t.pos.x>=bounds[1])obstructionNormal={1,0,0};else if(t.pos.z<=bounds[2])obstructionNormal={0,0,-1};else if(t.pos.z>=bounds[3])obstructionNormal={0,0,1};
+                            }
+                        }
+                        pursuitBlocked=obstructionCollider>=0;
+                    }
+                    if(pursuitBlocked){
+                        // Pursuit remains direct whenever possible. At a local
+                        // obstruction, commit to a deterministic tangent until
+                        // the direct line clears. Shallow steering can converge
+                        // against an inflated collider face without ever making
+                        // enough lateral progress to route around it.
+                        const float preferredSide=(i&1)?-1.0f:1.0f;
+                        bool found=false;
+                        if(obstructionCollider>=0){
+                            const RoomCollider& c=state_.roomColliders[obstructionCollider];const Vec3 tangent{obstructionNormal.z*preferredSide,0,-obstructionNormal.x*preferredSide};
+                            const float clearance=0.90f;const float cornerX=tangent.x>0.0f?c.maxX+clearance:(tangent.x<0.0f?c.minX-clearance:clampf(t.pos.x,c.minX-clearance,c.maxX+clearance));
+                            const float cornerLocalZ=tangent.z>0.0f?c.maxZ+clearance:(tangent.z<0.0f?c.minZ-clearance:clampf(wrapZ(t.pos.z),c.minZ-clearance,c.maxZ+clearance));
+                            Vec3 around{cornerX-t.pos.x,0,getRoomTileOriginZ(getRoomTileIndex(t.pos.z))+cornerLocalZ-t.pos.z};const float aroundLength=horizontalLength(around);
+                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanPointBlocked(candidateNext.x,candidateNext.z,0.42f)){dir=candidate;next=candidateNext;found=true;}}
+                        }
+                        constexpr float offsets[]={1.5707963f,1.05f,2.10f};
+                        for(float offset:offsets){
+                            if(found)break;
+                            for(float side:{preferredSide,-preferredSide}){
+                                const float angle=offset*side,cs=std::cos(angle),sn=std::sin(angle);const Vec3 candidate{dir.x*cs-dir.z*sn,0,dir.x*sn+dir.z*cs};
+                                const Vec3 candidateNext=t.pos+candidate*step;
+                                if(isHumanPointBlocked(candidateNext.x,candidateNext.z,0.42f))continue;
+                                dir=candidate;next=candidateNext;found=true;break;
+                            }
+                            if(found)break;
+                        }
+                        if(!found)next=t.pos;
+                    }else if(isHumanPointBlocked(next.x,next.z,0.42f)){chooseHumanWalkTarget(i);next=t.pos;}
+                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
+                    t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
                 } else t.locomotionAmount=0.0f;
             }
         }

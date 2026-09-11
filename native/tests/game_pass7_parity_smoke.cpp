@@ -331,6 +331,31 @@ int main() {
     step(game,30);
     ok &= expect(game.state().targets[0].pos.x < enemyStartX-0.15f && near(game.state().targets[0].pos.y,spawn.player.pos.y,0.001f),
         "enemy stays grounded and pursues the player inside notice range");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets)target.alive=false;
+        for(auto& collider:setup.roomColliders)collider={};setup.debug.colliderCount=1;
+        RoomCollider& building=setup.roomColliders[0];building.minX=-1.0f;building.maxX=1.0f;building.minZ=-1.0f;building.maxZ=1.0f;building.bottomY=0.0f;building.topY=2.5f;building.width=2.0f;building.depth=2.0f;building.height=2.5f;building.center={0,1.25f,0};
+        setup.player.pos={0,PHONE_MODEL_HEIGHT*0.5f,-2.5f};setup.player.vel={};setup.player.grounded=true;
+        TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={0,PHONE_MODEL_HEIGHT*0.5f,2.5f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=999.0f;
+    }
+    float maximumDetour=0.0f;bool penetratedBuilding=false;
+    for(int frame=0;frame<420;++frame){step(game);const auto& enemy=game.state().targets[0];maximumDetour=std::max(maximumDetour,std::abs(enemy.pos.x));penetratedBuilding|=enemy.pos.x>-1.42f&&enemy.pos.x<1.42f&&enemy.pos.z>-1.42f&&enemy.pos.z<1.42f;}
+    const Vec3 routedDelta=game.state().targets[0].pos-game.state().player.pos;
+    if(penetratedBuilding||maximumDetour<=1.40f||horizontalSpeed(routedDelta)>=2.0f){const Vec3& observed=game.state().targets[0].pos;std::fprintf(stderr,"ENEMY_ROUTE_OBSERVED penetrated=%d maxDetour=%.3f finalDistance=%.3f final=(%.3f, %.3f)\n",penetratedBuilding?1:0,maximumDetour,horizontalSpeed(routedDelta),observed.x,observed.z);}
+    ok &= expect(!penetratedBuilding&&maximumDetour>1.40f&&horizontalSpeed(routedDelta)<2.0f,
+        "relentless pursuit deterministically routes around a blocking building without penetrating or forgetting DATA");
+
+    game.reset();
+    {
+        GameState& setup=const_cast<GameState&>(game.state());
+        for(auto& target:setup.targets) target.alive=false;
+        TargetState& enemy=setup.targets[0]; enemy=TargetState{}; enemy.alive=true; enemy.pos=setup.player.pos+Vec3{4,0,0};
+        enemy.walkTarget=enemy.pos+Vec3{2,0,0}; enemy.armor=2.0f;
+    }
+    step(game,30);
     {
         GameState& setup=const_cast<GameState&>(game.state()); setup.targets[0].pos=setup.player.pos+Vec3{0,0,-1.0f};
         setup.targets[0].attackCooldown=0; setup.targets[0].attackTimer=0;
