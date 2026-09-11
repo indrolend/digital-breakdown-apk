@@ -1152,15 +1152,16 @@ void Game::buildRoomColliders() {
     }
     if(routeValid)for(int i=0;i<plan.traversal.surfaceCount&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto& surface=plan.traversal.surfaces[i];if(!geometry.traversalIncluded[i])continue;
-        const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
+        const auto spec=early_browser_visuals::physicalTraversalObstacle(surface);
+        if(early_browser_visuals::usesShallowElevation(plan,surface)&&state_.slopeSupportCount<SLOPE_SUPPORT_COUNT){
+            state_.slopeSupports[state_.slopeSupportCount++]={spec.center.x-spec.size.x*0.5f,spec.center.x+spec.size.x*0.5f,spec.center.z-spec.size.z*0.5f,spec.center.z+spec.size.z*0.5f,0.0f,spec.size.y,surface.center.x<0.0f?SlopeAxis::NegativeX:SlopeAxis::PositiveX};
+            continue;
+        }
+        RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;
         c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0.0f;c.topY=spec.size.y;
         c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
-        if(early_browser_visuals::usesShallowElevation(plan,surface)&&state_.slopeSupportCount<SLOPE_SUPPORT_COUNT){
-            c.kind=RoomColliderKind::SlopeAuthoritySlot;
-            state_.slopeSupports[state_.slopeSupportCount++]={c.minX,c.maxX,c.minZ,c.maxZ,0.0f,c.topY,surface.center.x<0.0f?SlopeAxis::NegativeX:SlopeAxis::PositiveX};
-        }
     }
     for(int i=0;i<early_browser_visuals::environmentPropCount(plan)&&state_.debug.colliderCount<ROOM_COLLIDER_COUNT;++i){
         const auto prop=early_browser_visuals::environmentProp(plan,state_.roomSeed,state_.roomIndex,i);if(!geometry.propIncluded[i]||!early_browser_visuals::environmentPropSolid(prop))continue;
@@ -1189,15 +1190,16 @@ void Game::buildRoomColliders() {
             }
             continue;
         }
+        if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Rock&&state_.rockSupportCount<ROCK_SUPPORT_COUNT){
+            state_.rockSupports[state_.rockSupportCount++]={prop,state_.roomSeed,state_.roomIndex,i};
+            continue;
+        }
         const auto spec=early_browser_visuals::environmentPropCollider(prop);RoomCollider& c=state_.roomColliders[state_.debug.colliderCount++];
         c.minX=spec.center.x-spec.size.x*0.5f;c.maxX=spec.center.x+spec.size.x*0.5f;c.minZ=spec.center.z-spec.size.z*0.5f;c.maxZ=spec.center.z+spec.size.z*0.5f;
         c.bottomY=0;c.topY=spec.size.y;c.width=spec.size.x;c.depth=spec.size.z;c.height=spec.size.y;c.center=spec.center;
         if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Tree){
             c.kind=RoomColliderKind::TreeTrunk;
             c.climbTopY=std::min(getPlayerCeilingLimit(),GROUND_Y+tree_geometry::climbTopY(prop));
-        }else if(prop.primitive==early_browser_visuals::EnvironmentPrimitive::Rock&&state_.rockSupportCount<ROCK_SUPPORT_COUNT){
-            c.kind=RoomColliderKind::RockAuthoritySlot;
-            state_.rockSupports[state_.rockSupportCount++]={prop,state_.roomSeed,state_.roomIndex,i};
         }
     }
 }
@@ -1787,7 +1789,6 @@ WorldSupportSample Game::getWorldSupport(float x,float z,float radius) const {
     const float localZ = wrapZ(z);
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
-        if(isGeneratedSurfaceAuthoritySlot(c.kind))continue;
         if (x > c.minX - radius && x < c.maxX + radius && localZ > c.minZ - radius && localZ < c.maxZ + radius){const float candidate=c.topY+GROUND_Y;if(candidate>support.height){support.height=candidate;support.normal={0,1,0};support.classification=SupportClassification::Ordinary;support.identity={SupportSource::Collider,i};}}
     }
     for(int i=0;i<state_.slopeSupportCount;++i){
@@ -1819,7 +1820,6 @@ void Game::resolvePlayerObstacleCollisions(float previousX,float previousZ) {
     else if(player.supportIdentity.source==SupportSource::Slope){const int index=player.supportIdentity.index;if(index<0||index>=state_.slopeSupportCount||!surface_geometry::sample(makeSlopeWedgeMesh(state_.slopeSupports[index]),previousX,previousLocalZ,radius,0.819152f).inside)player.supportIdentity={};}
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const RoomCollider& c = state_.roomColliders[i];
-        if(isGeneratedSurfaceAuthoritySlot(c.kind))continue;
         // Side blocking ends only once the phone's solid lower edge has cleared
         // the collider top.  Using the center height here allowed the phone to
         // move through the lip while its lower half still intersected it.
@@ -1928,7 +1928,6 @@ bool Game::tryBeginTreeClimb(const Vec3& move) {
     int best=-1;float bestGap=PLAYER_COLLISION_RADIUS+0.10f;Vec3 bestNormal;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
-        if(isGeneratedSurfaceAuthoritySlot(c.kind))continue;
         if(c.kind!=RoomColliderKind::TreeTrunk||p.pos.y<c.bottomY+GROUND_Y-0.10f||p.pos.y>c.climbTopY+0.10f)continue;
         const float centerLane=std::min(TREE_CLIMB_CENTER_LANE_MAX,std::min(c.width,c.depth)*0.30f);
         const auto candidate=[&](float gap,const Vec3& normal,bool within){
@@ -2124,7 +2123,6 @@ bool Game::tryBeginLedgeHang() {
     Vec3 bestNormal; Vec3 bestTangent;
     for(int i=0;i<state_.debug.colliderCount;++i){
         const RoomCollider& c=state_.roomColliders[i];
-        if(isGeneratedSurfaceAuthoritySlot(c.kind))continue;
         if(phoneTop<c.topY-LEDGE_GRAB_VERTICAL_BELOW||phoneTop>c.topY+LEDGE_GRAB_VERTICAL_ABOVE)continue;
         auto candidate=[&](float distance,const Vec3& normal,const Vec3& tangent,bool within){
             if(!within||distance<-0.02f||distance>=bestDistance)return;
@@ -2146,7 +2144,6 @@ bool Game::tryBeginLedgeHang() {
             for(int j=0;j<state_.debug.colliderCount;++j){
                 if(j==i)continue;
                 const RoomCollider& other=state_.roomColliders[j];
-                if(isGeneratedSurfaceAuthoritySlot(other.kind))continue;
                 const bool coversGrip=other.bottomY<c.topY-0.01f&&other.topY>c.topY-0.04f&&
                                       containsXZ(other,outside,0.0f);
                 const bool blocksMantle=other.bottomY<c.topY+PHONE_BODY_HEIGHT-0.01f&&
@@ -2703,7 +2700,6 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
 
     float nearestT = 1.0f;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
-        if(isGeneratedSurfaceAuthoritySlot(state_.roomColliders[i].kind))continue;
         const float t = cameraHit(state_.roomColliders[i], CAMERA_COLLISION_RADIUS);
         if (t >= 0.0f && t < nearestT) nearestT = t;
     }
@@ -3505,17 +3501,15 @@ Vec3 Game::chooseHumanSpawnPoint(int index, const Vec3* avoid) const {
     return best;
 }
 
-bool Game::isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const {
-    if(collider.kind!=RoomColliderKind::SlopeAuthoritySlot)return false;
-    for(int i=0;i<state_.slopeSupportCount;++i){const auto& slope=state_.slopeSupports[i];if(classifySupport(slope)==SupportClassification::TraversableSlope&&std::abs(slope.minX-collider.minX)<0.001f&&std::abs(slope.maxX-collider.maxX)<0.001f&&std::abs(slope.minZ-collider.minZ)<0.001f&&std::abs(slope.maxZ-collider.maxZ)<0.001f)return true;}
-    return false;
-}
-
 bool Game::isHumanPointBlocked(float x,float z,float radius) const {
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius) return true;
     for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
         if(x>c.minX-radius && x<c.maxX+radius && localZ>c.minZ-radius && localZ<c.maxZ+radius) return true;}
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto& rock=state_.rockSupports[i];const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
+        if(surface_geometry::obstructsBody(mesh,x,localZ,0.0f,PASS7_HUMAN_VISUAL_SPEC.totalHeight,radius,faceted_rock::WalkableNormalY))return true;
+    }
     return false;
 }
 
@@ -3523,7 +3517,7 @@ bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius,Vec3*
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius)return true;
     for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
-        if(isTraversableSlopeAuthoritySlot(c)||c.kind==RoomColliderKind::RockAuthoritySlot||feetY>=c.topY+GROUND_Y-0.06f)continue;
+        if(feetY>=c.topY+GROUND_Y-0.06f)continue;
         if(x>c.minX-radius&&x<c.maxX+radius&&localZ>c.minZ-radius&&localZ<c.maxZ+radius)return true;
     }
     for(int i=0;i<state_.rockSupportCount;++i){
@@ -3690,7 +3684,7 @@ void Game::updateTargets(float dt) {
                     if(playerDist<HUMAN_ATTACK_NOTICE_RANGE){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
-                            if(isTraversableSlopeAuthoritySlot(c)||c.kind==RoomColliderKind::RockAuthoritySlot||t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
+                            if(t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
                             const float bounds[4]={c.minX-HUMAN_BODY_RADIUS,c.maxX+HUMAN_BODY_RADIUS,tileOrigin+c.minZ-HUMAN_BODY_RADIUS,tileOrigin+c.maxZ+HUMAN_BODY_RADIUS};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
                             const float origins[2]={t.pos.x,t.pos.z},directions[2]={dir.x,dir.z};
                             for(int axis=0;axis<2;++axis){

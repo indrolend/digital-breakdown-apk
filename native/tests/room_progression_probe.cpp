@@ -60,9 +60,10 @@ bool freshRoomGeometryValid(const GameState& state){
     if(!early_browser_visuals::requiredRouteIsTraversable(plan,state.roomSeed,state.roomIndex))return false;
     const auto geometry=early_browser_visuals::roomGeometryCapacityPlan(plan,state.roomSeed,state.roomIndex,ROOM_COLLIDER_COUNT);
     const int expected=geometry.totalColliderCount;
-    if(state.debug.colliderCount!=expected)return false;
+    if(state.debug.colliderCount+state.slopeSupportCount+state.rockSupportCount!=expected)return false;
     for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(!std::isfinite(c.center.x)||!std::isfinite(c.center.y)||!std::isfinite(c.center.z)||c.minX>=c.maxX||c.minZ>=c.maxZ||c.width<=0||c.height<=0||c.depth<=0)return false;if(state.player.pos.x>c.minX-0.20f&&state.player.pos.x<c.maxX+0.20f&&state.player.pos.z>c.minZ-0.20f&&state.player.pos.z<c.maxZ+0.20f)return false;}
     for(const TargetState& target:state.targets)if(gameplay::isActiveHuman(target))for(int i=0;i<state.debug.colliderCount;++i){const RoomCollider& c=state.roomColliders[i];if(target.pos.x>c.minX-0.20f&&target.pos.x<c.maxX+0.20f&&target.pos.z>c.minZ-0.20f&&target.pos.z<c.maxZ+0.20f)return false;}
+    for(const TargetState& target:state.targets)if(gameplay::isActiveHuman(target))for(int i=0;i<state.rockSupportCount;++i)if(faceted_rock::sampleEnvelopeFootprint(state.rockSupports[i],target.pos.x,target.pos.z,0.20f).inside)return false;
     return true;
 }
 
