@@ -539,7 +539,7 @@ void Game::debugStartSlopeLab(){
     for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
     state_.slopeSupports[0]={-3.0f,3.0f,2.0f,12.0f,0.0f,1.6f,SlopeAxis::NegativeZ};state_.slopeSupportCount=1;
     RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
-    const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,1.45f,3.0f},0.24f,0};
+    const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,0.62f,3.0f},0.24f,0};
     state_.rockSupports[0]={rock,73,4,0};state_.rockSupportCount=1;
     state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
@@ -2720,12 +2720,21 @@ void Game::constrainThirdPersonCamera(Vec3& desired, const Vec3& lookBase) const
         const float minSegmentX=std::min(localStart.x,localEnd.x),maxSegmentX=std::max(localStart.x,localEnd.x),minSegmentY=std::min(localStart.y,localEnd.y),maxSegmentY=std::max(localStart.y,localEnd.y),minSegmentZ=std::min(localStart.z,localEnd.z),maxSegmentZ=std::max(localStart.z,localEnd.z);
         if(maxSegmentX<rock.prop.center.x-halfX||minSegmentX>rock.prop.center.x+halfX||maxSegmentZ<rock.prop.center.z-halfZ||minSegmentZ>rock.prop.center.z+halfZ||maxSegmentY<GROUND_Y-CAMERA_COLLISION_RADIUS||minSegmentY>rock.prop.center.y+rock.prop.size.y+GROUND_Y+CAMERA_COLLISION_RADIUS)continue;
         const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
-        const auto blocked=[&](float t){const Vec3 point=localStart+segment*t;const auto surface=faceted_rock::sampleEnvelopeFootprint(mesh,point.x,point.z,CAMERA_COLLISION_RADIUS);return surface.inside&&point.y<surface.height+GROUND_Y+CAMERA_COLLISION_RADIUS&&point.y>GROUND_Y-CAMERA_COLLISION_RADIUS;};
+        // A camera-boom sample is a point along a ray, not a grounded body
+        // footprint. Taking the highest facet beneath the whole camera radius
+        // can select an adjacent uphill face and report a false overlap that
+        // collapses the boom while DATA is standing on the rock.
+        const auto blocked=[&](float t){const Vec3 point=localStart+segment*t;const auto surface=faceted_rock::sampleSurface(mesh,point.x,point.z,false);return surface.inside&&point.y<surface.height+GROUND_Y+CAMERA_COLLISION_RADIUS&&point.y>GROUND_Y-CAMERA_COLLISION_RADIUS;};
         constexpr int MarchSteps=20;
         float previousT=0.0f;
         bool previousBlocked=blocked(0.0f);
-        if(previousBlocked){nearestT=0.0f;continue;}
-        for(int step=1;step<=MarchSteps;++step){const float t=static_cast<float>(step)/MarchSteps;if(t>=nearestT)break;const bool currentBlocked=blocked(t);if(currentBlocked&&!previousBlocked){float low=previousT,high=t;for(int refine=0;refine<6;++refine){const float middle=(low+high)*0.5f;if(blocked(middle))high=middle;else low=middle;}nearestT=std::min(nearestT,high);break;}previousT=t;previousBlocked=currentBlocked;}
+        int firstStep=1;
+        if(previousBlocked){
+            bool exited=false;
+            for(int step=1;step<=MarchSteps;++step){const float t=static_cast<float>(step)/MarchSteps;if(!blocked(t)){previousT=t;previousBlocked=false;firstStep=step+1;exited=true;break;}}
+            if(!exited){nearestT=0.0f;continue;}
+        }
+        for(int step=firstStep;step<=MarchSteps;++step){const float t=static_cast<float>(step)/MarchSteps;if(t>=nearestT)break;const bool currentBlocked=blocked(t);if(currentBlocked&&!previousBlocked){float low=previousT,high=t;for(int refine=0;refine<6;++refine){const float middle=(low+high)*0.5f;if(blocked(middle))high=middle;else low=middle;}nearestT=std::min(nearestT,high);break;}previousT=t;previousBlocked=currentBlocked;}
     }
 
     const float doorX0 = -2.1f;
@@ -3515,12 +3524,16 @@ bool Game::isHumanPointBlocked(float x,float z,float radius) const {
     return false;
 }
 
-bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius,const SupportIdentity& support) const {
+bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius) const {
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius)return true;
     for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
-        if(isTraversableSlopeAuthoritySlot(c)||isSupportedRockAuthoritySlot(c,support)||feetY>=c.topY+GROUND_Y-0.06f)continue;
+        if(isTraversableSlopeAuthoritySlot(c)||c.kind==RoomColliderKind::RockAuthoritySlot||feetY>=c.topY+GROUND_Y-0.06f)continue;
         if(x>c.minX-radius&&x<c.maxX+radius&&localZ>c.minZ-radius&&localZ<c.maxZ+radius)return true;
+    }
+    for(int i=0;i<state_.rockSupportCount;++i){
+        const auto& rock=state_.rockSupports[i];const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
+        if(surface_geometry::obstructsBody(mesh,x,localZ,feetY-GROUND_Y,feetY-GROUND_Y+PASS7_HUMAN_VISUAL_SPEC.totalHeight,radius,faceted_rock::WalkableNormalY))return true;
     }
     return false;
 }
@@ -3678,7 +3691,7 @@ void Game::updateTargets(float dt) {
                     if(playerDist<HUMAN_ATTACK_NOTICE_RANGE){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
-                            if(isTraversableSlopeAuthoritySlot(c)||isSupportedRockAuthoritySlot(c,supportBefore.identity)||t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
+                            if(isTraversableSlopeAuthoritySlot(c)||c.kind==RoomColliderKind::RockAuthoritySlot||t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
                             const float bounds[4]={c.minX-HUMAN_BODY_RADIUS,c.maxX+HUMAN_BODY_RADIUS,tileOrigin+c.minZ-HUMAN_BODY_RADIUS,tileOrigin+c.maxZ+HUMAN_BODY_RADIUS};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
                             const float origins[2]={t.pos.x,t.pos.z},directions[2]={dir.x,dir.z};
                             for(int axis=0;axis<2;++axis){
@@ -3708,7 +3721,7 @@ void Game::updateTargets(float dt) {
                             const float clearance=0.90f;const float cornerX=tangent.x>0.0f?c.maxX+clearance:(tangent.x<0.0f?c.minX-clearance:clampf(t.pos.x,c.minX-clearance,c.maxX+clearance));
                             const float cornerLocalZ=tangent.z>0.0f?c.maxZ+clearance:(tangent.z<0.0f?c.minZ-clearance:clampf(wrapZ(t.pos.z),c.minZ-clearance,c.maxZ+clearance));
                             Vec3 around{cornerX-t.pos.x,0,getRoomTileOriginZ(getRoomTileIndex(t.pos.z))+cornerLocalZ-t.pos.z};const float aroundLength=horizontalLength(around);
-                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity)){dir=candidate;next=candidateNext;found=true;}}
+                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS)){dir=candidate;next=candidateNext;found=true;}}
                         }
                         constexpr float offsets[]={1.5707963f,1.05f,2.10f};
                         for(float offset:offsets){
@@ -3716,13 +3729,13 @@ void Game::updateTargets(float dt) {
                             for(float side:{preferredSide,-preferredSide}){
                                 const float angle=offset*side,cs=std::cos(angle),sn=std::sin(angle);const Vec3 candidate{dir.x*cs-dir.z*sn,0,dir.x*sn+dir.z*cs};
                                 const Vec3 candidateNext=t.pos+candidate*step;
-                                if(isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity))continue;
+                                if(isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS))continue;
                                 dir=candidate;next=candidateNext;found=true;break;
                             }
                             if(found)break;
                         }
                         if(!found)next=t.pos;
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity)){chooseHumanWalkTarget(i);next=t.pos;}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;}
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
                     t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
                 } else t.locomotionAmount=0.0f;

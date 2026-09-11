@@ -67,14 +67,14 @@ inline Mesh makeMesh(const early_browser_visuals::EnvironmentPropSpec& prop,
         const float phase=6.283185307f*static_cast<float>(i)/RingVertexCount;
         const float angle=phase+(early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u)-0.5f)*(landmark?0.18f:0.10f);
         const float baseRadius=0.88f+early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u+1u)*0.08f;
-        const float shoulderRadius=(landmark?0.55f:0.63f)+early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u+2u)*(landmark?0.20f:0.10f);
+        const float shoulderRadius=(landmark?0.42f:0.46f)+early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u+2u)*0.05f;
         base[i]=place(std::cos(angle)*halfX*baseRadius,0.0f,std::sin(angle)*halfZ*baseRadius);
         shoulder[i]=place(std::cos(angle)*halfX*shoulderRadius,
-            prop.size.y*(0.58f+early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u+3u)*0.12f),
+            prop.size.y*(0.29f+early_browser_visuals::unit(key+static_cast<std::uint32_t>(i)*11u+3u)*0.04f),
             std::sin(angle)*halfZ*shoulderRadius);
     }
     const Vec3 crown=place((early_browser_visuals::unit(key+101u)-0.5f)*halfX*(landmark?0.28f:0.14f),
-                           prop.size.y*(0.91f+early_browser_visuals::unit(key+103u)*0.08f),
+                           prop.size.y*(0.69f+early_browser_visuals::unit(key+103u)*0.04f),
                            (early_browser_visuals::unit(key+107u)-0.5f)*halfZ*(landmark?0.28f:0.14f));
     const auto emit=[&](const Vec3& a,const Vec3& b,const Vec3& c){
         const Vec3 normal=faceNormal(a,b,c);
