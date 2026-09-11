@@ -3511,11 +3511,6 @@ bool Game::isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const {
     return false;
 }
 
-bool Game::isSupportedRockAuthoritySlot(const RoomCollider& collider,const SupportIdentity& support) const {
-    if(collider.kind!=RoomColliderKind::RockAuthoritySlot||support.source!=SupportSource::Generated||support.index<0||support.index>=state_.rockSupportCount)return false;
-    const auto& prop=state_.rockSupports[support.index].prop;return std::abs(collider.minX-(prop.center.x-prop.size.x*0.5f))<0.001f&&std::abs(collider.maxX-(prop.center.x+prop.size.x*0.5f))<0.001f&&std::abs(collider.minZ-(prop.center.z-prop.size.z*0.5f))<0.001f&&std::abs(collider.maxZ-(prop.center.z+prop.size.z*0.5f))<0.001f;
-}
-
 bool Game::isHumanPointBlocked(float x,float z,float radius) const {
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius) return true;
@@ -3524,7 +3519,7 @@ bool Game::isHumanPointBlocked(float x,float z,float radius) const {
     return false;
 }
 
-bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius) const {
+bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius,Vec3* obstructionNormal) const {
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius)return true;
     for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
@@ -3533,7 +3528,11 @@ bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius) cons
     }
     for(int i=0;i<state_.rockSupportCount;++i){
         const auto& rock=state_.rockSupports[i];const auto mesh=faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex);
-        if(surface_geometry::obstructsBody(mesh,x,localZ,feetY-GROUND_Y,feetY-GROUND_Y+PASS7_HUMAN_VISUAL_SPEC.totalHeight,radius,faceted_rock::WalkableNormalY))return true;
+        Vec3 normal{};
+        if(surface_geometry::obstructsBody(mesh,x,localZ,feetY-GROUND_Y,feetY-GROUND_Y+PASS7_HUMAN_VISUAL_SPEC.totalHeight,radius,faceted_rock::WalkableNormalY,obstructionNormal?&normal:nullptr)){
+            if(obstructionNormal)*obstructionNormal=normal;
+            return true;
+        }
     }
     return false;
 }
@@ -3707,6 +3706,10 @@ void Game::updateTargets(float dt) {
                             }
                         }
                         pursuitBlocked=obstructionCollider>=0;
+                        if(!pursuitBlocked){
+                            const Vec3 probe=t.pos+dir*step;
+                            pursuitBlocked=isHumanMovementBlocked(probe.x,probe.z,t.pos.y,HUMAN_BODY_RADIUS,&obstructionNormal);
+                        }
                     }
                     if(pursuitBlocked){
                         // Pursuit remains direct whenever possible. At a local
