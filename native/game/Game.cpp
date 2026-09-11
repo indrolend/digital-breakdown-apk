@@ -112,6 +112,9 @@ constexpr float HUMAN_WALK_TARGET_RADIUS = 0.55f;
 constexpr float HUMAN_WALK_RANGE = 5.5f;
 constexpr float HUMAN_ATTACK_NOTICE_RANGE = 5.6f;
 constexpr float HUMAN_SUPPORT_RADIUS = 0.10f;
+constexpr float HUMAN_BODY_RADIUS = 0.42f;
+constexpr float HUMAN_TREE_CLIMB_SPEED = 0.82f;
+constexpr float HUMAN_TREE_GRIP_CLEARANCE = 0.02f;
 constexpr float HUMAN_ATTACK_START_RANGE = 1.55f;
 constexpr float HUMAN_ATTACK_HIT_RANGE = 1.85f;
 constexpr float HUMAN_ATTACK_VERTICAL_MARGIN = 0.18f;
@@ -3588,8 +3591,49 @@ void Game::updateTargets(float dt) {
                 return playerBottom<=humanTop+HUMAN_ATTACK_VERTICAL_MARGIN&&
                        playerTop>=humanBottom-HUMAN_ATTACK_VERTICAL_MARGIN;
             };
-            if(playerDist>0.001f && playerDist<HUMAN_ATTACK_NOTICE_RANGE) t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
-            if(t.attackTimer>0.0f){
+            const PlayerState* attackedPlayer=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
+            const RoomCollider* pursuedTree=nullptr;
+            Vec3 treeGripPoint{};
+            if(attackedPlayer->treeClimbing&&
+               attackedPlayer->treeCollider>=0&&attackedPlayer->treeCollider<state_.debug.colliderCount){
+                const RoomCollider& tree=state_.roomColliders[attackedPlayer->treeCollider];
+                if(tree.kind==RoomColliderKind::TreeTrunk){
+                    pursuedTree=&tree;
+                    const float treeOriginZ=getRoomTileOriginZ(getRoomTileIndex(attackedPlayerPos.z));
+                    const float centerX=(tree.minX+tree.maxX)*0.5f;
+                    const float centerZ=treeOriginZ+(tree.minZ+tree.maxZ)*0.5f;
+                    const float dx=t.pos.x-centerX,dz=t.pos.z-centerZ;
+                    if(std::abs(dx)>=std::abs(dz)){
+                        const float side=dx<0.0f?-1.0f:1.0f;
+                        treeGripPoint={side<0.0f?tree.minX-HUMAN_BODY_RADIUS-HUMAN_TREE_GRIP_CLEARANCE:tree.maxX+HUMAN_BODY_RADIUS+HUMAN_TREE_GRIP_CLEARANCE,t.pos.y,centerZ};
+                    }else{
+                        const float side=dz<0.0f?-1.0f:1.0f;
+                        treeGripPoint={centerX,t.pos.y,treeOriginZ+(side<0.0f?tree.minZ-HUMAN_BODY_RADIUS-HUMAN_TREE_GRIP_CLEARANCE:tree.maxZ+HUMAN_BODY_RADIUS+HUMAN_TREE_GRIP_CLEARANCE)};
+                    }
+                }
+            }
+            bool attachedToTreeThisFrame=false;
+            bool climbedTreeThisFrame=false;
+            if(pursuedTree){
+                const Vec3 gripDelta{treeGripPoint.x-t.pos.x,0,treeGripPoint.z-t.pos.z};
+                if(horizontalLength(gripDelta)<=0.035f){
+                    t.pos.x=treeGripPoint.x;t.pos.z=treeGripPoint.z;
+                    attachedToTreeThisFrame=true;
+                    if(!canReachPlayerVertically(attackedPlayerPos)){
+                        t.pos.y=std::min(pursuedTree->climbTopY,t.pos.y+HUMAN_TREE_CLIMB_SPEED*dt);
+                        t.vel.y=HUMAN_TREE_CLIMB_SPEED;t.locomotionAmount=1.0f;climbedTreeThisFrame=true;
+                    }else t.vel.y=0.001f;
+                    const Vec3 towardTree{pursuedTree->center.x-t.pos.x,0,getRoomTileOriginZ(getRoomTileIndex(attackedPlayerPos.z))+wrapZ(pursuedTree->center.z)-t.pos.z};
+                    const float towardLength=horizontalLength(towardTree);
+                    if(towardLength>0.001f)t.visualYaw=std::atan2(-towardTree.x/towardLength,-towardTree.z/towardLength);
+                }
+            }
+            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<HUMAN_ATTACK_NOTICE_RANGE)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(climbedTreeThisFrame){
+                // Tree climbing is physical pursuit, not an attack shortcut.
+                // The existing vertical-overlap contract decides when combat
+                // becomes possible on a later update.
+            } else if(t.attackTimer>0.0f){
                 t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
                 const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
                 if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
@@ -3622,7 +3666,7 @@ void Game::updateTargets(float dt) {
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
-                Vec3 destination=(playerDist<HUMAN_ATTACK_NOTICE_RANGE && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget;
+                Vec3 destination=pursuedTree?treeGripPoint:((playerDist<HUMAN_ATTACK_NOTICE_RANGE && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=HUMAN_ATTACK_NOTICE_RANGE){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
@@ -3635,7 +3679,7 @@ void Game::updateTargets(float dt) {
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
                             if(isTraversableSlopeAuthoritySlot(c)||isSupportedRockAuthoritySlot(c,supportBefore.identity)||t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
-                            const float bounds[4]={c.minX-0.42f,c.maxX+0.42f,tileOrigin+c.minZ-0.42f,tileOrigin+c.maxZ+0.42f};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
+                            const float bounds[4]={c.minX-HUMAN_BODY_RADIUS,c.maxX+HUMAN_BODY_RADIUS,tileOrigin+c.minZ-HUMAN_BODY_RADIUS,tileOrigin+c.maxZ+HUMAN_BODY_RADIUS};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
                             const float origins[2]={t.pos.x,t.pos.z},directions[2]={dir.x,dir.z};
                             for(int axis=0;axis<2;++axis){
                                 const float minimum=bounds[axis*2],maximum=bounds[axis*2+1],origin=origins[axis],direction=directions[axis];
@@ -3664,7 +3708,7 @@ void Game::updateTargets(float dt) {
                             const float clearance=0.90f;const float cornerX=tangent.x>0.0f?c.maxX+clearance:(tangent.x<0.0f?c.minX-clearance:clampf(t.pos.x,c.minX-clearance,c.maxX+clearance));
                             const float cornerLocalZ=tangent.z>0.0f?c.maxZ+clearance:(tangent.z<0.0f?c.minZ-clearance:clampf(wrapZ(t.pos.z),c.minZ-clearance,c.maxZ+clearance));
                             Vec3 around{cornerX-t.pos.x,0,getRoomTileOriginZ(getRoomTileIndex(t.pos.z))+cornerLocalZ-t.pos.z};const float aroundLength=horizontalLength(around);
-                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,0.42f,supportBefore.identity)){dir=candidate;next=candidateNext;found=true;}}
+                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity)){dir=candidate;next=candidateNext;found=true;}}
                         }
                         constexpr float offsets[]={1.5707963f,1.05f,2.10f};
                         for(float offset:offsets){
@@ -3672,20 +3716,22 @@ void Game::updateTargets(float dt) {
                             for(float side:{preferredSide,-preferredSide}){
                                 const float angle=offset*side,cs=std::cos(angle),sn=std::sin(angle);const Vec3 candidate{dir.x*cs-dir.z*sn,0,dir.x*sn+dir.z*cs};
                                 const Vec3 candidateNext=t.pos+candidate*step;
-                                if(isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,0.42f,supportBefore.identity))continue;
+                                if(isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity))continue;
                                 dir=candidate;next=candidateNext;found=true;break;
                             }
                             if(found)break;
                         }
                         if(!found)next=t.pos;
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,0.42f,supportBefore.identity)){chooseHumanWalkTarget(i);next=t.pos;}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS,supportBefore.identity)){chooseHumanWalkTarget(i);next=t.pos;}
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
                     t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
                 } else t.locomotionAmount=0.0f;
             }
-            const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
-            if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
-            else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
+            if(!attachedToTreeThisFrame){
+                const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
+                if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
+                else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
+            }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
         if ((!t.slurpable || t.soulMorph < 0.995f) && t.ingestProgress < 0.01f) t.humanAnimationTime += dt;
