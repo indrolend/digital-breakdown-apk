@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "gameplay/PhoneBody.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -39,9 +40,32 @@ int main(){
     assert(bodySupport.height<prop.size.y+GROUND_Y);
     assert(remnantSupport.height>bodySupport.height);
 
+    int remnantCollider=-1;
+    for(int i=0;i<game.state().debug.colliderCount;++i){
+        const auto& collider=game.state().roomColliders[i];
+        if(near(collider.center.x,remnant.center.x)&&near(collider.center.z,remnant.center.z)&&near(collider.topY,remnantTop)){
+            remnantCollider=i;
+            break;
+        }
+    }
+    assert(remnantCollider>=0);
+    {
+        auto& state=game.networkMutableState();
+        for(auto& target:state.targets)target=TargetState{};
+        const auto& ledge=state.roomColliders[remnantCollider];
+        state.player.pos={ledge.maxX+gameplay::PHONE_BODY.collisionRadius,ledge.topY-PHONE_BODY_HEIGHT*0.5f,ledge.center.z};
+        state.player.vel={};
+        state.player.jumpVel=-0.8f;
+        state.player.grounded=false;
+        state.player.ledgeGrabCooldown=0.0f;
+    }
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);
+    game.update(1.0f/60.0f);
+    assert(game.state().player.ledgeHanging&&game.state().player.ledgeCollider==remnantCollider);
+
     const auto geometry=roomGeometryCapacityPlan(plan,seed,room,ROOM_COLLIDER_COUNT);
     assert(geometry.totalColliderCount<=ROOM_COLLIDER_COUNT);
     assert(geometry.identityColliderCount>=ruin_geometry::PartCount);
-    std::puts("RUIN_GEOMETRY_OK deterministic-parts exact-body-support exact-remnant-support no-invisible-envelope-top bounded-capacity");
+    std::puts("RUIN_GEOMETRY_OK deterministic-parts exact-body-support exact-remnant-support exterior-remnant-ledge no-invisible-envelope-top bounded-capacity");
     return 0;
 }

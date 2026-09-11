@@ -93,6 +93,11 @@ int main() {
     const float caughtTop=ledgeHangGame->state().player.pos.y+PHONE_MODEL_HEIGHT*0.5f;
     ok &= expect(ledgeHangGame->state().player.ledgeHanging&&near(caughtTop,ledgeHangGame->state().roomColliders[0].topY+0.008f,0.002f),
         "descending phone catches the obstacle lip with its visible top edge instead of its collision capsule");
+    auto lowLedgeGame=std::make_unique<Game>();lowLedgeGame->reset();
+    {GameState& ledge=const_cast<GameState&>(lowLedgeGame->state());for(auto& collider:ledge.roomColliders)collider=RoomCollider{};ledge.debug.colliderCount=1;RoomCollider& trim=ledge.roomColliders[0];trim.minX=-0.4f;trim.maxX=0.4f;trim.minZ=-0.4f;trim.maxZ=0.4f;trim.bottomY=0.0f;trim.topY=0.18f;trim.width=0.8f;trim.height=0.18f;trim.depth=0.8f;trim.center={0,0.09f,0};ledge.player.pos={trim.maxX+0.34f,trim.topY-PHONE_MODEL_HEIGHT*0.5f,0};ledge.player.vel={};ledge.player.jumpVel=-0.8f;ledge.player.grounded=false;}
+    step(*lowLedgeGame);
+    ok &= expect(!lowLedgeGame->state().player.ledgeHanging,
+        "floor-height trim below the meaningful elevation contract does not become a magnetic ledge");
     auto coveredLedgeGame=std::make_unique<Game>();coveredLedgeGame->reset();
     {
         GameState& ledge=const_cast<GameState&>(coveredLedgeGame->state());

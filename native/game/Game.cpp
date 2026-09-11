@@ -52,6 +52,7 @@ constexpr float PLAYER_SUPPORT_RADIUS = gameplay::PHONE_BODY.supportRadius;
 constexpr float LEDGE_GRAB_VERTICAL_BELOW = gameplay::PHONE_BODY.ledgeGrabVerticalBelow;
 constexpr float LEDGE_GRAB_VERTICAL_ABOVE = gameplay::PHONE_BODY.ledgeGrabVerticalAbove;
 constexpr float LEDGE_GRAB_REACH = gameplay::PHONE_BODY.ledgeGrabReach;
+constexpr float MINIMUM_LEDGE_ELEVATION = gameplay::PHONE_BODY.minimumLedgeElevation;
 constexpr float LEDGE_PHONE_FACE_GAP = gameplay::PHONE_BODY.ledgeFaceGap;
 constexpr float LEDGE_CORNER_INSET = gameplay::PHONE_BODY.ledgeCornerInset;
 constexpr float LEDGE_SHIMMY_ACCEL = 14.0f;
@@ -2136,6 +2137,11 @@ bool Game::tryBeginLedgeHang() {
             else if(normal.z<0)edge.z=tileOriginZ+c.minZ; else edge.z=tileOriginZ+c.maxZ;
             const Vec3 outside=edge+normal*0.025f;
             const Vec3 landing=edge-normal*(PLAYER_SUPPORT_RADIUS+PHONE_BODY_DEPTH*0.5f+0.08f);
+            const Vec3 lowerProbe=edge+normal*(PLAYER_SUPPORT_RADIUS+0.03f);
+            const WorldSupportSample lowerSupport=getPlayerSupport(lowerProbe.x,lowerProbe.z);
+            const WorldSupportSample landingSupport=getPlayerSupport(landing.x,landing.z);
+            const float candidateTop=c.topY+GROUND_Y;
+            if(candidateTop-lowerSupport.height<MINIMUM_LEDGE_ELEVATION||std::abs(landingSupport.height-candidateTop)>0.02f)return;
             auto containsXZ=[&](const RoomCollider& other,const Vec3& point,float padding){
                 const float pointLocalZ=point.z-tileOriginZ;
                 return point.x>other.minX-padding&&point.x<other.maxX+padding&&

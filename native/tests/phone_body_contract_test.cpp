@@ -24,6 +24,7 @@ int main() {
     assert(near(PHONE_BODY.cameraCollisionRadius, 0.42f));
     assert(near(PHONE_BODY.cameraCollisionBackoff, 0.16f));
     assert(near(PHONE_BODY.ledgeGrabReach, 0.48f));
+    assert(near(PHONE_BODY.minimumLedgeElevation, 0.24f));
     assert(near(PHONE_BODY.airMeleeRadius + PHONE_BODY.airMeleeBodyForgiveness, 0.17f));
 
     gameplay::PhoneBodyGeometry invalid = PHONE_BODY;

@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "gameplay/PhoneBody.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -32,8 +33,14 @@ int main(){
     assert(near(lowerRoofSupport.height,lowerRoofTop));
     assert(near(upperRoofSupport.height,upperRoofTop));
     assert(bodySupport.height<lowerRoofSupport.height&&lowerRoofSupport.height<upperRoofSupport.height);
+    const auto upperSpec=house_geometry::collider(parts[2]);int upperCollider=-1;
+    for(int i=0;i<game.state().debug.colliderCount;++i){const auto& collider=game.state().roomColliders[i];if(near(collider.center.x,upperSpec.center.x)&&near(collider.center.z,upperSpec.center.z)&&near(collider.topY,upperSpec.center.y+upperSpec.size.y*0.5f)){upperCollider=i;break;}}
+    assert(upperCollider>=0);
+    {auto& state=game.networkMutableState();for(auto& target:state.targets)target=TargetState{};const auto& roof=state.roomColliders[upperCollider];state.player.pos={roof.maxX+gameplay::PHONE_BODY.collisionRadius,roof.topY-PHONE_BODY_HEIGHT*0.5f,roof.center.z};state.player.vel={};state.player.jumpVel=-0.8f;state.player.grounded=false;state.player.ledgeGrabCooldown=0.0f;}
+    game.setTouchControls(0,0,0,0,false,false,false,false,false,false);game.update(1.0f/60.0f);
+    assert(game.state().player.ledgeHanging&&game.state().player.ledgeCollider==upperCollider);
     const auto geometry=roomGeometryCapacityPlan(plan,seed,room,ROOM_COLLIDER_COUNT);
     assert(geometry.totalColliderCount<=ROOM_COLLIDER_COUNT);
-    std::puts("HOUSE_GEOMETRY_OK deterministic-parts body-support stepped-roof-support decorative-door bounded-capacity");
+    std::puts("HOUSE_GEOMETRY_OK deterministic-parts body-support stepped-roof-support exterior-roof-ledge decorative-door bounded-capacity");
     return 0;
 }

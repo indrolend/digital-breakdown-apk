@@ -17,6 +17,7 @@ struct PhoneBodyGeometry {
     float ledgeGrabVerticalBelow = 0.24f;
     float ledgeGrabVerticalAbove = 0.13f;
     float ledgeGrabReach = 0.48f;
+    float minimumLedgeElevation = 0.24f;
     float ledgeFaceGap = 0.025f;
     float ledgeCornerInset = 0.10f;
 
@@ -37,6 +38,7 @@ constexpr bool validPhoneBodyGeometry(const PhoneBodyGeometry& body) noexcept {
            body.ledgeGrabVerticalBelow >= 0.0f &&
            body.ledgeGrabVerticalAbove >= 0.0f &&
            body.ledgeGrabReach >= body.collisionRadius &&
+           body.minimumLedgeElevation > 0.0f &&
            body.ledgeFaceGap >= 0.0f &&
            body.ledgeCornerInset >= 0.0f &&
            body.airMeleeRadius > 0.0f &&
