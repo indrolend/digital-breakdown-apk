@@ -360,7 +360,7 @@ struct SoulColliderHit {
     Vec3 position;
 };
 
-struct PlayerSupportSample {
+struct WorldSupportSample {
     float height=0.08f;
     Vec3 normal{0.0f,1.0f,0.0f};
     SupportClassification classification=SupportClassification::Ordinary;
@@ -739,7 +739,7 @@ public:
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
     void debugFillBattery();
-    PlayerSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
+    WorldSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
     bool debugSetEnemies(int mode);
     void debugNextRoom();
     void debugRerollRoom();
@@ -818,7 +818,8 @@ private:
     void updateTargets(float dt);
     void chooseHumanWalkTarget(int index);
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;
-    bool isHumanPointBlocked(float x, float z, float radius) const;
+    bool isHumanPointBlocked(float x, float z, float radius, bool allowTraversableSlopes=false) const;
+    bool isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const;
     void updateMeleeDash(float dt);
     void finishAirLungeLanding(float impactSpeed);
     int applyMeleeHits();
@@ -891,7 +892,8 @@ private:
     float getRoomTileOriginZ(int tileIndex) const;
     float wrapZ(float z) const;
     float getPlayerCeilingLimit() const;
-    PlayerSupportSample getPlayerSupport(float x, float z) const;
+    WorldSupportSample getWorldSupport(float x,float z,float radius) const;
+    WorldSupportSample getPlayerSupport(float x, float z) const;
     float getPlayerSupportY(float x, float z) const { return getPlayerSupport(x,z).height; }
     void resolvePlayerObstacleCollisions(float previousX, float previousZ);
     void resolveDoorwayCollisions(float previousX, float previousZ);
