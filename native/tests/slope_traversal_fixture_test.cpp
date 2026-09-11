@@ -69,6 +69,14 @@ int main(){
         if(!sampledIncline||(ascending?extremeY<0.60f:extremeY>1.10f)){std::fprintf(stderr,"ENEMY_SLOPE_FAIL progress direction=%s extremeY=%.3f\n",ascending?"up":"down",extremeY);return false;}return true;
     };
     if(!runEnemySlope(11.5f,7.0f,true)||!runEnemySlope(3.0f,7.5f,false))return 1;
+    {
+        auto edgeRun=std::make_unique<Game>();edgeRun->debugStartSlopeLab();auto& state=edgeRun->networkMutableState();for(auto& target:state.targets)target=TargetState{};for(auto& collider:state.roomColliders)collider=RoomCollider{};
+        RoomCollider& slopeSlot=state.roomColliders[0];slopeSlot.minX=fixture.minX;slopeSlot.maxX=fixture.maxX;slopeSlot.minZ=fixture.minZ;slopeSlot.maxZ=fixture.maxZ;slopeSlot.bottomY=0.0f;slopeSlot.topY=fixture.highHeight;slopeSlot.kind=RoomColliderKind::SlopeAuthoritySlot;state.debug.colliderCount=1;
+        state.player.pos={0.0f,0.08f,0.0f};state.player.vel={};state.player.grounded=true;TargetState& enemy=state.targets[0];enemy.alive=true;enemy.pos={0.0f,slopeHeightAt(fixture,0.0f,5.0f)+0.08f,5.0f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=999.0f;
+        bool departedHighEdge=false,airborne=false,landed=false;float maximumY=enemy.pos.y;
+        for(int frame=0;frame<420;++frame){edgeRun->setTouchControls(0,0,0,0,false,false,false,false,false,false);edgeRun->update(Dt);const auto& observed=edgeRun->state().targets[0];maximumY=std::max(maximumY,observed.pos.y);departedHighEdge|=observed.pos.z<fixture.minZ;airborne|=departedHighEdge&&observed.pos.y>0.10f&&observed.vel.y<0.0f;landed|=departedHighEdge&&near(observed.pos.y,0.08f,0.002f)&&near(observed.vel.y,0.0f,0.002f);}
+        if(!departedHighEdge||!airborne||!landed||maximumY<1.45f){std::fprintf(stderr,"ENEMY_SLOPE_FAIL high-edge fall departed=%d airborne=%d landed=%d maxY=%.3f\n",departedHighEdge?1:0,airborne?1:0,landed?1:0,maximumY);return 1;}
+    }
 
     Game rock;rock.debugStartSlopeLab();const auto rockAuthority=rock.state().rockSupports[0];const auto& rockProp=rockAuthority.prop;
     if(rock.state().rockSupportCount!=1){std::fprintf(stderr,"ROCK_SUPPORT_FAIL fixture authority\n");return 1;}
@@ -121,6 +129,6 @@ int main(){
     int rockSlots=0;for(int i=0;i<normal.state().debug.colliderCount;++i)rockSlots+=normal.state().roomColliders[i].kind==RoomColliderKind::RockAuthoritySlot?1:0;
     if(rockSlots!=normal.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL capacity slots=%d supports=%d\n",rockSlots,normal.state().rockSupportCount);return 1;}
     for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupportFootprint(deployed,deployed.prop.center.x,deployed.prop.center.z,gameplay::PHONE_BODY.supportRadius);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
-    std::printf("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge enemy-ascent enemy-descent camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep facet-start-controller-sweep body-clearance visible-phone-clearance action-sweep camera-clearance production-elevation seed=%d room=%d\n",productionSeed,productionRoom);
+    std::printf("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge enemy-ascent enemy-descent enemy-high-edge-fall camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep facet-start-controller-sweep body-clearance visible-phone-clearance action-sweep camera-clearance production-elevation seed=%d room=%d\n",productionSeed,productionRoom);
     return 0;
 }

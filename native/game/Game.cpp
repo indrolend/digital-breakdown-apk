@@ -3544,6 +3544,9 @@ void Game::updateTargets(float dt) {
             t.locomotionAmount = 0.0f;
         } else {
             t.soulMorph = 0.0f;
+            const WorldSupportSample supportBefore=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
+            const bool supportedBefore=std::abs(t.pos.y-supportBefore.height)<=0.06f&&t.vel.y<=0.0f;
+            if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
             t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
             if(t.armorRegenDelay<=0.0f){
                 const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
@@ -3556,7 +3559,7 @@ void Game::updateTargets(float dt) {
             const float currentTileOrigin=getRoomTileOriginZ(state_.topology.currentTileIndex);
             const float targetTileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));
             if(std::abs(currentTileOrigin-targetTileOrigin)>0.001f){const float shift=currentTileOrigin-targetTileOrigin; t.pos.z+=shift; t.walkTarget.z+=shift;}
-            t.pos.y=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS).height; t.attackCooldown=std::max(0.0f,t.attackCooldown-dt);
+            t.attackCooldown=std::max(0.0f,t.attackCooldown-dt);
             int attackedPlayerId=0;
             Vec3 attackedPlayerPos=state_.player.pos;
             float nearestPlayerDistance=state_.player.downed?9999.0f:horizontalLength(Vec3{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z});
@@ -3663,10 +3666,12 @@ void Game::updateTargets(float dt) {
                         if(!found)next=t.pos;
                     }else if(isHumanPointBlocked(next.x,next.z,0.42f,true)){chooseHumanWalkTarget(i);next=t.pos;}
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
-                    t.pos.y=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS).height;
                     t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
                 } else t.locomotionAmount=0.0f;
             }
+            const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
+            if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
+            else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
         if ((!t.slurpable || t.soulMorph < 0.995f) && t.ingestProgress < 0.01f) t.humanAnimationTime += dt;
