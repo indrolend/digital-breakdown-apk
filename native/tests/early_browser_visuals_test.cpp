@@ -17,7 +17,7 @@ int main(){
     bool sawField=false,sawCity=false,sawSterile=false,sawCoastal=false,sawRecovery=false,sawCourtyard=false,sawCanyon=false,sawSkyline=false,sawChamber=false,sawCapacityPressure=false;
     bool sawCompactCourtyard=false,sawStandardCourtyard=false,sawLargeCourtyard=false;
     bool sawPlayground=false,sawFunnel=false,sawOrbit=false,sawVertical=false;
-    bool sawPhysicalPlayground=false,sawPhysicalFunnel=false;
+    bool sawPhysicalPlayground=false,sawPhysicalFunnel=false,sawShallowElevation=false;
     bool sawFieldTree=false,sawFieldHouse=false,sawFieldRuins=false,sawFieldRock=false,sawCoastalRock=false;
     for(int seed=1;seed<=128;++seed) for(int room=1;room<=32;++room){
         const auto a=roomPlan(seed,room),b=roomPlan(seed,room);
@@ -44,6 +44,10 @@ int main(){
         sawVertical|=a.traversalIntent==RoomTraversalIntent::Vertical;
         sawPhysicalPlayground|=a.traversalIntent==RoomTraversalIntent::Playground&&physicalTraversalSurfaceCount(a)==1;
         sawPhysicalFunnel|=a.traversalIntent==RoomTraversalIntent::Funnel&&physicalTraversalSurfaceCount(a)==1;
+        for(int surface=0;surface<a.traversal.surfaceCount;++surface)if(usesShallowElevation(a,a.traversal.surfaces[surface])){
+            sawShallowElevation=true;
+            assert(a.setting==RoomSetting::Field&&a.form==RoomForm::Open&&!a.recovery()&&a.composition==2&&a.traversalIntent==RoomTraversalIntent::Playground&&!a.traversal.surfaces[surface].required);
+        }
         sawField|=a.setting==RoomSetting::Field;sawCity|=a.setting==RoomSetting::City;sawSterile|=a.setting==RoomSetting::Sterile;sawCoastal|=a.setting==RoomSetting::Coastal;sawRecovery|=a.recovery();
         if(a.setting==RoomSetting::Field){
             assert(a.form==RoomForm::Open&&a.grass&&!a.sidewalks&&a.obstacleCount==0&&a.composition<3);
@@ -100,7 +104,7 @@ int main(){
     assert(sawField&&sawCity&&sawSterile&&sawCoastal&&sawRecovery&&sawCourtyard&&sawCanyon&&sawSkyline&&sawChamber);
     assert(sawCompactCourtyard&&sawStandardCourtyard&&sawLargeCourtyard);
     assert(sawPlayground&&sawFunnel&&sawOrbit&&sawVertical);
-    assert(sawPhysicalPlayground&&sawPhysicalFunnel);
+    assert(sawPhysicalPlayground&&sawPhysicalFunnel&&sawShallowElevation);
     assert(sawFieldTree&&sawFieldHouse&&sawFieldRuins&&sawFieldRock&&sawCoastalRock&&sawCapacityPressure);
     assert(roomScaleEncounterCandidateBias(RoomScale::Compact,{5.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Compact,{10.5f,0,0}));
     assert(roomScaleEncounterCandidateBias(RoomScale::Large,{10.5f,0,0})>roomScaleEncounterCandidateBias(RoomScale::Large,{5.5f,0,0}));

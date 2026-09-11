@@ -334,7 +334,8 @@ struct ParticleState {
     ParticleMaterial material = ParticleMaterial::Impact;
 };
 
-enum class RoomColliderKind : unsigned char { Generic, TreeTrunk, RockAuthoritySlot };
+enum class RoomColliderKind : unsigned char { Generic, TreeTrunk, RockAuthoritySlot, SlopeAuthoritySlot };
+constexpr bool isGeneratedSurfaceAuthoritySlot(RoomColliderKind kind){return kind==RoomColliderKind::RockAuthoritySlot||kind==RoomColliderKind::SlopeAuthoritySlot;}
 
 struct RoomCollider {
     float minX = 0.0f;
