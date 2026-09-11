@@ -740,6 +740,7 @@ public:
     bool debugSpawnStoredSoul();
     void debugFillBattery();
     WorldSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
+    WorldSupportSample debugWorldSupportAt(float x,float z,float radius) const { return getWorldSupport(x,z,radius); }
     bool debugSetEnemies(int mode);
     void debugNextRoom();
     void debugRerollRoom();
@@ -819,8 +820,9 @@ private:
     void chooseHumanWalkTarget(int index);
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;
     bool isHumanPointBlocked(float x, float z, float radius) const;
-    bool isHumanMovementBlocked(float x,float z,float feetY,float radius) const;
+    bool isHumanMovementBlocked(float x,float z,float feetY,float radius,const SupportIdentity& support) const;
     bool isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const;
+    bool isSupportedRockAuthoritySlot(const RoomCollider& collider,const SupportIdentity& support) const;
     void updateMeleeDash(float dt);
     void finishAirLungeLanding(float impactSpeed);
     int applyMeleeHits();
