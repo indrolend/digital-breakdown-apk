@@ -283,6 +283,10 @@ add_executable(SurfaceGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/
 target_include_directories(SurfaceGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SurfaceGeometryTest PRIVATE cxx_std_17)
 
+add_executable(SoulIdentityTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_identity_test.cpp")
+target_include_directories(SoulIdentityTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(SoulIdentityTest PRIVATE cxx_std_17)
+
 add_executable(RuinGeometryTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/ruin_geometry_test.cpp" "${DB_GAME_ROOT}/Game.cpp")
 target_include_directories(RuinGeometryTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(RuinGeometryTest PRIVATE cxx_std_17)
@@ -388,6 +392,7 @@ add_test(NAME MaterialResponseTest COMMAND MaterialResponseTest)
 add_test(NAME FacetedRockTest COMMAND FacetedRockTest)
 add_test(NAME SlopeSupportTest COMMAND SlopeSupportTest)
 add_test(NAME SurfaceGeometryTest COMMAND SurfaceGeometryTest)
+add_test(NAME SoulIdentityTest COMMAND SoulIdentityTest)
 add_test(NAME RuinGeometryTest COMMAND RuinGeometryTest)
 add_test(NAME HouseGeometryTest COMMAND HouseGeometryTest)
 add_test(NAME TreeGeometryTest COMMAND TreeGeometryTest)
