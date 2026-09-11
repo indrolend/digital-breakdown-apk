@@ -71,7 +71,7 @@ jobs:
           $models = & "$extract/DigitalBreakdown/DigitalBreakdown.exe" --model-test 2>&1
           if ($LASTEXITCODE -ne 0 -or ($models -join "`n") -notmatch 'MODEL_TEST_OK') { throw 'Extracted asset decode failed.' }
           'WINDOWS_STAGE_COMPLETE=PASS'; 'WINDOWS_DEPENDENCIES=PASS'; 'WINDOWS_SMOKE_EXTRACTED=PASS'; 'WINDOWS_ASSETS_EXTRACTED=PASS'
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-windows-x64
           path: dist/DigitalBreakdown-Windows.zip
@@ -116,7 +116,7 @@ jobs:
           "$RUNNER_TEMP/db-macos/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown" --smoke-test | grep -q SMOKE_TEST_OK
           "$RUNNER_TEMP/db-macos/DigitalBreakdown.app/Contents/MacOS/DigitalBreakdown" --model-test | grep -q MODEL_TEST_OK
           echo MACOS_STAGE_COMPLETE=PASS; echo MACOS_DEPENDENCIES=PASS; echo MACOS_SMOKE_EXTRACTED=PASS; echo MACOS_ASSETS_EXTRACTED=PASS
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-macos-universal
           path: dist/DigitalBreakdown-macOS-Universal.zip
@@ -166,7 +166,7 @@ jobs:
           "$RUNNER_TEMP/db-linux/DigitalBreakdown/DigitalBreakdown" --smoke-test | grep -q SMOKE_TEST_OK
           "$RUNNER_TEMP/db-linux/DigitalBreakdown/DigitalBreakdown" --model-test | grep -q MODEL_TEST_OK
           echo LINUX_STAGE_COMPLETE=PASS; echo LINUX_DEPENDENCIES=PASS; echo LINUX_SMOKE_EXTRACTED=PASS; echo LINUX_ASSETS_EXTRACTED=PASS
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-linux-x86-64
           path: dist/DigitalBreakdown-Linux-x86_64.tar.gz
@@ -191,7 +191,7 @@ jobs:
           GITHUB_SHA="${{ github.sha }}" DB_HUMAN_VERSION="desktop-candidate-${{ github.sha }}" node tools/release/write-native-manifest.mjs release
           node tools/release/verify-native-manifest.mjs release/build-manifest.json release
           echo DESKTOP_ARTIFACT_CONTRACT=PASS
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-release-contract
           path: release
