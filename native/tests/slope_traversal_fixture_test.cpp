@@ -58,6 +58,18 @@ int main(){
     Game shot;shot.debugStartSlopeLab();placeOnSlope(shot,0,7);if(!shot.debugSpawnStoredSoul()){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL shot setup\n");return 1;}input(shot,0,0,false,false,false,true);bool pending=false;for(const auto& request:shot.state().pendingShots)pending|=request.active;if(!pending){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL shot\n");return 1;}
     Game lunge;lunge.debugStartSlopeLab();placeOnSlope(lunge,0,7);input(lunge,0,0,false,true);input(lunge,0,0,false,false,true);if(!lunge.state().meleeVisual.airLungeLandingPending){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL lunge\n");return 1;}
 
+    const auto runEnemySlope=[&](float enemyZ,float playerZ,bool ascending){
+        auto enemyRun=std::make_unique<Game>();enemyRun->debugStartSlopeLab();auto& state=enemyRun->networkMutableState();
+        for(auto& target:state.targets)target=TargetState{};
+        RoomCollider& slopeSlot=state.roomColliders[1];slopeSlot.minX=fixture.minX;slopeSlot.maxX=fixture.maxX;slopeSlot.minZ=fixture.minZ;slopeSlot.maxZ=fixture.maxZ;slopeSlot.bottomY=0.0f;slopeSlot.topY=fixture.highHeight;slopeSlot.kind=RoomColliderKind::SlopeAuthoritySlot;state.debug.colliderCount=2;
+        const auto playerSupport=sampleSlopeSupport(fixture,0.0f,playerZ);state.player.pos={0.0f,playerSupport.height+0.08f,playerZ};state.player.vel={};state.player.grounded=true;
+        TargetState& enemy=state.targets[0];enemy.alive=true;enemy.pos={0.0f,0.08f,enemyZ};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=999.0f;
+        float extremeY=ascending?enemy.pos.y:fixture.highHeight+0.08f;bool sampledIncline=false;
+        for(int frame=0;frame<240;++frame){enemyRun->setTouchControls(0,0,0,0,false,false,false,false,false,false);enemyRun->update(Dt);const auto& observed=enemyRun->state().targets[0];const auto support=sampleSlopeSupport(fixture,observed.pos.x,observed.pos.z);if(support.inside){sampledIncline=true;const float expected=support.height+0.08f;if(!near(observed.pos.y,expected,0.002f)||!std::isfinite(observed.pos.y)){std::fprintf(stderr,"ENEMY_SLOPE_FAIL support direction=%s frame=%d y=%.3f expected=%.3f\n",ascending?"up":"down",frame,observed.pos.y,expected);return false;}extremeY=ascending?std::max(extremeY,observed.pos.y):std::min(extremeY,observed.pos.y);}}
+        if(!sampledIncline||(ascending?extremeY<0.60f:extremeY>1.10f)){std::fprintf(stderr,"ENEMY_SLOPE_FAIL progress direction=%s extremeY=%.3f\n",ascending?"up":"down",extremeY);return false;}return true;
+    };
+    if(!runEnemySlope(11.5f,7.0f,true)||!runEnemySlope(3.0f,7.5f,false))return 1;
+
     Game rock;rock.debugStartSlopeLab();const auto rockAuthority=rock.state().rockSupports[0];const auto& rockProp=rockAuthority.prop;
     if(rock.state().rockSupportCount!=1){std::fprintf(stderr,"ROCK_SUPPORT_FAIL fixture authority\n");return 1;}
     const auto centerSurface=faceted_rock::sampleSupportFootprint(rockAuthority,rockProp.center.x,rockProp.center.z,gameplay::PHONE_BODY.supportRadius);
@@ -109,6 +121,6 @@ int main(){
     int rockSlots=0;for(int i=0;i<normal.state().debug.colliderCount;++i)rockSlots+=normal.state().roomColliders[i].kind==RoomColliderKind::RockAuthoritySlot?1:0;
     if(rockSlots!=normal.state().rockSupportCount){std::fprintf(stderr,"ROCK_SUPPORT_FAIL capacity slots=%d supports=%d\n",rockSlots,normal.state().rockSupportCount);return 1;}
     for(int i=0;i<normal.state().rockSupportCount;++i){const auto& deployed=normal.state().rockSupports[i];const auto plan=early_browser_visuals::roomPlan(normal.state().roomSeed,normal.state().roomIndex);if(!faceted_rock::eligible(plan.setting,deployed.prop.role)||deployed.roomSeed!=normal.state().roomSeed||deployed.roomIndex!=normal.state().roomIndex){std::fprintf(stderr,"ROCK_SUPPORT_FAIL room authority\n");return 1;}const auto visual=faceted_rock::sampleSupportFootprint(deployed,deployed.prop.center.x,deployed.prop.center.z,gameplay::PHONE_BODY.supportRadius);const auto gameplaySupport=normal.debugPlayerSupportAt(deployed.prop.center.x,deployed.prop.center.z);if(!visual.inside||!near(gameplaySupport.height,visual.height+0.08f)){std::fprintf(stderr,"ROCK_SUPPORT_FAIL generated shared facet\n");return 1;}}
-    std::printf("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep facet-start-controller-sweep body-clearance visible-phone-clearance action-sweep camera-clearance production-elevation seed=%d room=%d\n",productionSeed,productionRoom);
+    std::printf("SLOPE_FIXTURE_OK approach ascent plateau descent lateral stop reversal jump double-jump landing melee vacuum shot lunge enemy-ascent enemy-descent camera bounded-speed rock-facet-support rock-jump rock-fall rock-side-obstruction rock-combat no-box-top deterministic-room-rock-deployment generated-surface-controller-sweep facet-start-controller-sweep body-clearance visible-phone-clearance action-sweep camera-clearance production-elevation seed=%d room=%d\n",productionSeed,productionRoom);
     return 0;
 }
