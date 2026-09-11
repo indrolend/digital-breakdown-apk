@@ -818,7 +818,8 @@ private:
     void updateTargets(float dt);
     void chooseHumanWalkTarget(int index);
     Vec3 chooseHumanSpawnPoint(int index, const Vec3* avoid = nullptr) const;
-    bool isHumanPointBlocked(float x, float z, float radius, bool allowTraversableSlopes=false) const;
+    bool isHumanPointBlocked(float x, float z, float radius) const;
+    bool isHumanMovementBlocked(float x,float z,float feetY,float radius) const;
     bool isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const;
     void updateMeleeDash(float dt);
     void finishAirLungeLanding(float impactSpeed);

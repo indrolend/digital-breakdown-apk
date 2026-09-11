@@ -3499,12 +3499,21 @@ bool Game::isTraversableSlopeAuthoritySlot(const RoomCollider& collider) const {
     return false;
 }
 
-bool Game::isHumanPointBlocked(float x,float z,float radius,bool allowTraversableSlopes) const {
+bool Game::isHumanPointBlocked(float x,float z,float radius) const {
     const float localZ=wrapZ(z);
     if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius) return true;
     for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
-        if(allowTraversableSlopes&&isTraversableSlopeAuthoritySlot(c))continue;
         if(x>c.minX-radius && x<c.maxX+radius && localZ>c.minZ-radius && localZ<c.maxZ+radius) return true;}
+    return false;
+}
+
+bool Game::isHumanMovementBlocked(float x,float z,float feetY,float radius) const {
+    const float localZ=wrapZ(z);
+    if(x < -ROOM_WIDTH*0.5f+radius || x > ROOM_WIDTH*0.5f-radius)return true;
+    for(int i=0;i<state_.debug.colliderCount;++i){const RoomCollider& c=state_.roomColliders[i];
+        if(isTraversableSlopeAuthoritySlot(c)||feetY>=c.topY+GROUND_Y-0.06f)continue;
+        if(x>c.minX-radius&&x<c.maxX+radius&&localZ>c.minZ-radius&&localZ<c.maxZ+radius)return true;
+    }
     return false;
 }
 
@@ -3620,6 +3629,7 @@ void Game::updateTargets(float dt) {
                     if(playerDist<HUMAN_ATTACK_NOTICE_RANGE){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
+                            if(isTraversableSlopeAuthoritySlot(c)||t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
                             const float bounds[4]={c.minX-0.42f,c.maxX+0.42f,tileOrigin+c.minZ-0.42f,tileOrigin+c.maxZ+0.42f};float enter=0.0f,exit=dist;Vec3 entryNormal{};bool intersects=true;
                             const float origins[2]={t.pos.x,t.pos.z},directions[2]={dir.x,dir.z};
                             for(int axis=0;axis<2;++axis){
@@ -3629,7 +3639,6 @@ void Game::updateTargets(float dt) {
                                 if(nearDistance>farDistance){std::swap(nearDistance,farDistance);nearNormal=nearNormal*-1.0f;}
                                 if(nearDistance>enter){enter=nearDistance;entryNormal=nearNormal;}exit=std::min(exit,farDistance);if(enter>=exit){intersects=false;break;}
                             }
-                            if(isTraversableSlopeAuthoritySlot(c))continue;
                             if(intersects&&enter>=0.0f&&enter<nearestEntry){
                                 nearestEntry=enter;obstructionNormal=entryNormal;obstructionCollider=colliderIndex;
                                 if(t.pos.x<=bounds[0])obstructionNormal={-1,0,0};else if(t.pos.x>=bounds[1])obstructionNormal={1,0,0};else if(t.pos.z<=bounds[2])obstructionNormal={0,0,-1};else if(t.pos.z>=bounds[3])obstructionNormal={0,0,1};
@@ -3650,7 +3659,7 @@ void Game::updateTargets(float dt) {
                             const float clearance=0.90f;const float cornerX=tangent.x>0.0f?c.maxX+clearance:(tangent.x<0.0f?c.minX-clearance:clampf(t.pos.x,c.minX-clearance,c.maxX+clearance));
                             const float cornerLocalZ=tangent.z>0.0f?c.maxZ+clearance:(tangent.z<0.0f?c.minZ-clearance:clampf(wrapZ(t.pos.z),c.minZ-clearance,c.maxZ+clearance));
                             Vec3 around{cornerX-t.pos.x,0,getRoomTileOriginZ(getRoomTileIndex(t.pos.z))+cornerLocalZ-t.pos.z};const float aroundLength=horizontalLength(around);
-                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanPointBlocked(candidateNext.x,candidateNext.z,0.42f,true)){dir=candidate;next=candidateNext;found=true;}}
+                            if(aroundLength>0.001f){const Vec3 candidate=around*(1.0f/aroundLength);const Vec3 candidateNext=t.pos+candidate*step;if(!isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,0.42f)){dir=candidate;next=candidateNext;found=true;}}
                         }
                         constexpr float offsets[]={1.5707963f,1.05f,2.10f};
                         for(float offset:offsets){
@@ -3658,13 +3667,13 @@ void Game::updateTargets(float dt) {
                             for(float side:{preferredSide,-preferredSide}){
                                 const float angle=offset*side,cs=std::cos(angle),sn=std::sin(angle);const Vec3 candidate{dir.x*cs-dir.z*sn,0,dir.x*sn+dir.z*cs};
                                 const Vec3 candidateNext=t.pos+candidate*step;
-                                if(isHumanPointBlocked(candidateNext.x,candidateNext.z,0.42f,true))continue;
+                                if(isHumanMovementBlocked(candidateNext.x,candidateNext.z,t.pos.y,0.42f))continue;
                                 dir=candidate;next=candidateNext;found=true;break;
                             }
                             if(found)break;
                         }
                         if(!found)next=t.pos;
-                    }else if(isHumanPointBlocked(next.x,next.z,0.42f,true)){chooseHumanWalkTarget(i);next=t.pos;}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,0.42f)){chooseHumanWalkTarget(i);next=t.pos;}
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
                     t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
                 } else t.locomotionAmount=0.0f;
