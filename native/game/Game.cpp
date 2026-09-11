@@ -1794,7 +1794,7 @@ PlayerSupportSample Game::getPlayerSupport(float x,float z) const {
         if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=sample.classification;support.identity={SupportSource::Slope,i};}
     }
     for(int i=0;i<state_.rockSupportCount;++i){
-        const auto sample=faceted_rock::sampleSupportFootprint(state_.rockSupports[i],x,localZ,PLAYER_COLLISION_RADIUS);
+        const auto sample=faceted_rock::sampleSupportFootprint(state_.rockSupports[i],x,localZ,PLAYER_SUPPORT_RADIUS);
         if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
         if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;support.identity={SupportSource::Generated,i};}
     }
