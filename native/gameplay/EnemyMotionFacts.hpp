@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Math.hpp"
+#include "../game/Math.hpp"
 
 // Facts produced by authoritative enemy locomotion and consumed by presentation.
 // This type is intentionally geometry-agnostic: it describes what happened to

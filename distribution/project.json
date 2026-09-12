@@ -20,7 +20,19 @@
   "commandHud": {
     "commands": [
       {
+        "name": "play",
+        "action": "Play",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dbdev.ps1 playtest -Mode game",
+        "argv": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tools/dbdev.ps1", "playtest", "-Mode", "game"],
+        "owner": "tools/dbdev.ps1",
+        "kind": "smoke",
+        "successMarkers": [
+          {"contains": "PLAYTEST_READY mode=game", "summary": "desktop game launched"}
+        ]
+      },
+      {
         "name": "verify",
+        "action": "Ship",
         "command": "node tools/verify.mjs",
         "argv": ["node", "tools/verify.mjs"],
         "owner": "tools/verify.mjs",
@@ -116,6 +128,7 @@
       },
       {
         "name": "traversal-check",
+        "action": "Check",
         "command": "node tools/run-traversal-tier.mjs check",
         "argv": ["node", "tools/run-traversal-tier.mjs", "check"],
         "owner": "tools/run-traversal-tier.mjs",
@@ -127,6 +140,7 @@
       },
       {
         "name": "traversal-prove",
+        "action": "Prove",
         "command": "node tools/run-traversal-tier.mjs prove",
         "argv": ["node", "tools/run-traversal-tier.mjs", "prove"],
         "owner": "tools/run-traversal-tier.mjs",
@@ -138,6 +152,7 @@
       },
       {
         "name": "traversal-mutate",
+        "action": "Explore",
         "command": "node tools/run-traversal-mutation-gauntlet.mjs",
         "argv": ["node", "tools/run-traversal-mutation-gauntlet.mjs"],
         "owner": "tools/run-traversal-mutation-gauntlet.mjs",

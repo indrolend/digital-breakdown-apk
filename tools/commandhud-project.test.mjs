@@ -12,7 +12,7 @@ test('DATA declares a valid owned CommandHUD integration', () => {
   const commands = project.commandHud?.commands;
   assert.ok(Array.isArray(commands));
   assert.deepEqual(commands.map(({ name }) => name), [
-    'verify', 'lint', 'assets', 'native-tests', 'traversal-check', 'traversal-prove', 'traversal-mutate', 'multiplayer', 'multiplayer-dry-deploy',
+    'play', 'verify', 'lint', 'assets', 'native-tests', 'traversal-check', 'traversal-prove', 'traversal-mutate', 'multiplayer', 'multiplayer-dry-deploy',
   ]);
   assert.equal(new Set(commands.map(({ name }) => name)).size, commands.length);
 
@@ -25,6 +25,20 @@ test('DATA declares a valid owned CommandHUD integration', () => {
     assert.equal(isAbsolute(ownerRelative) || ownerRelative === '..' || ownerRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`), false);
     assert.equal(existsSync(owner), true, command.owner);
   }
+});
+
+test('the primary play action delegates to the repository-owned desktop loop', () => {
+  const play = project.commandHud.commands.find(({ name }) => name === 'play');
+  assert.deepEqual(project.commandHud.commands.filter(({ action }) => action).map(({ name, action }) => [name, action]), [
+    ['play', 'Play'],
+    ['verify', 'Ship'],
+    ['traversal-check', 'Check'],
+    ['traversal-prove', 'Prove'],
+    ['traversal-mutate', 'Explore'],
+  ]);
+  assert.deepEqual(play.argv, ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tools/dbdev.ps1', 'playtest', '-Mode', 'game']);
+  assert.equal(play.owner, 'tools/dbdev.ps1');
+  assert.match(readFileSync(join(root, play.owner), 'utf8'), /PLAYTEST_READY mode=\$Mode/);
 });
 
 test('traversal confidence tiers share authority without making CHECK exhaustive', () => {
@@ -108,10 +122,13 @@ test('native verification owns one cross-platform factual result marker and chec
   assert.match(unix, /CMakeCache\.txt/);
   assert.match(wrapper, /checkoutKey/);
   assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
+  assert.match(windows, /cmake --build \$BuildDir --config Release --parallel/);
+  assert.doesNotMatch(windows, /cmake --build[^\r\n]*--target/);
   const targetPattern = /\b(?:DigitalBreakdown|[A-Za-z0-9]+(?:Test|Probe|Soak))\b/g;
-  const windowsTargets = [...new Set(windows.match(targetPattern) || [])].filter((name) => name !== 'CTest').sort();
   const unixTargets = [...new Set(unix.match(targetPattern) || [])].filter((name) => name !== 'CTest').sort();
-  assert.deepEqual(unixTargets, windowsTargets);
+  const cmake = readFileSync(join(root, 'native-desktop', 'CMakeLists.txt'), 'utf8');
+  const cmakeTargets = [...cmake.matchAll(/add_executable\(\s*([A-Za-z0-9]+)/g)].map((match) => match[1]).sort();
+  assert.deepEqual(unixTargets, cmakeTargets);
 });
 
 test('multiplayer verification emits one factual marker only after its complete check chain', () => {

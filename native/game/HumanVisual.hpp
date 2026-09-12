@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include "Math.hpp"
-#include "gameplay/EnemyMotionFacts.hpp"
+#include "../gameplay/EnemyMotionFacts.hpp"
 
 constexpr float HUMAN_SWING_ATTACK_DURATION = 0.86f;
 constexpr float HUMAN_SWING_COMMIT_PHASE = 0.30f;
