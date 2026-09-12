@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -38,7 +39,8 @@ PhoneWorldBounds phoneWorldBounds(const GameState& state){
 }
 }
 
-int main(){
+int main(int argc,char** argv){
+    const bool boundedCheck=argc==2&&std::string_view(argv[1])=="--check";
     Game ascent;ascent.debugStartSlopeLab();const auto fixture=ascent.state().slopeSupports[0];
     if(!ascent.state().slopeLab||ascent.state().slopeSupportCount!=1||ascent.state().debug.colliderCount!=1||classifySupport(fixture)!=SupportClassification::TraversableSlope){std::fprintf(stderr,"SLOPE_FIXTURE_FAIL authority\n");return 1;}
     bool crossedSlope=false,reachedPlateau=false;float previousY=ascent.state().player.pos.y;Vec3 previousCamera=ascent.state().camera.pos;
@@ -112,6 +114,10 @@ int main(){
     Game rockApproach;rockApproach.debugStartSlopeLab();rockApproach.networkMutableState().slopeSupportCount=0;auto& approachPlayer=rockApproach.networkMutableState().player;approachPlayer.pos={rockProp.center.x-rockProp.size.x,0.08f,rockProp.center.z};approachPlayer.vel={};approachPlayer.grounded=true;approachPlayer.battery=100;rockApproach.networkMutableState().camera.yaw=-1.5707963f;bool approachedSupport=false;float approachHighY=approachPlayer.pos.y,minCameraBoom=99.0f;int onRockFrames=0;for(int frame=0;frame<300;++frame){input(rockApproach,0,1);const auto& state=rockApproach.state();const bool onRock=state.player.supportIdentity.source==SupportSource::Generated;approachedSupport|=onRock;onRockFrames=onRock?onRockFrames+1:0;approachHighY=std::max(approachHighY,state.player.pos.y);if(onRockFrames>10)minCameraBoom=std::min(minCameraBoom,horizontalLength(state.camera.pos-state.player.pos));}if(!approachedSupport||approachHighY<0.30f||rockApproach.state().player.pos.x<rockProp.center.x+0.45f||rockApproach.state().camera.firstPerson||minCameraBoom<1.0f){std::fprintf(stderr,"ROCK_APPROACH_FAIL support=%d highY=%.3f finalX=%.3f firstPerson=%d minBoom=%.3f camera=(%.3f,%.3f,%.3f) player=(%.3f,%.3f,%.3f)\n",approachedSupport?1:0,approachHighY,rockApproach.state().player.pos.x,rockApproach.state().camera.firstPerson?1:0,minCameraBoom,rockApproach.state().camera.pos.x,rockApproach.state().camera.pos.y,rockApproach.state().camera.pos.z,rockApproach.state().player.pos.x,rockApproach.state().player.pos.y,rockApproach.state().player.pos.z);return 1;}
     {
         auto enemyApproach=std::make_unique<Game>();enemyApproach->debugStartSlopeLab();auto& state=enemyApproach->networkMutableState();for(auto& target:state.targets)target=TargetState{};state.slopeSupportCount=0;state.player.pos={rockProp.center.x+2.5f,0.08f,rockProp.center.z};state.player.vel={};state.player.grounded=true;TargetState& enemy=state.targets[0];enemy.alive=true;enemy.pos={rockProp.center.x-2.5f,0.08f,rockProp.center.z};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=999.0f;bool gainedRockSupport=false;float furthestX=enemy.pos.x;int stalledFrames=0,maxStalledFrames=0;for(int frame=0;frame<600;++frame){const float before=enemyApproach->state().targets[0].pos.x;enemyApproach->update(Dt);const auto& observed=enemyApproach->state().targets[0];gainedRockSupport|=observed.pos.y>0.12f;furthestX=std::max(furthestX,observed.pos.x);if(std::abs(observed.pos.x-before)<0.0001f)++stalledFrames;else stalledFrames=0;maxStalledFrames=std::max(maxStalledFrames,stalledFrames);}if(!gainedRockSupport||furthestX<rockProp.center.x+0.35f||maxStalledFrames>90){std::fprintf(stderr,"ENEMY_ROCK_APPROACH_FAIL support=%d furthestX=%.3f stall=%d\n",gainedRockSupport?1:0,furthestX,maxStalledFrames);return 1;}
+    }
+    if(boundedCheck){
+        std::puts("SLOPE_CHECK_OK ascent descent lateral stop reversal jump combat enemy-slope enemy-edge enemy-platform rock-support rock-traversal rock-approach");
+        return 0;
     }
     for(int direction=0;direction<8;++direction){
         auto enemyApproach=std::make_unique<Game>();enemyApproach->debugStartSlopeLab();auto& state=enemyApproach->networkMutableState();for(auto& target:state.targets)target=TargetState{};state.slopeSupportCount=0;

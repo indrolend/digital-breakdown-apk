@@ -16,6 +16,14 @@ int main(){
     static_assert(shadowQualityFor(2,true,false)==ShadowQuality::Cheap);
     static_assert(FieldOpenGround.texture==TextureId::FieldGrass&&FieldOpenGround.textureWorldScale==2.4f);
     static_assert(CityGround.texture==TextureId::CityAsphalt&&CityGround.textureWorldScale==3.2f);
-    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3 shadow_qualities=3 field_grass=TEXTURED city_ground=TEXTURED");
+    const auto opening=sceneAtmosphere(0.0f,1,0.0f);
+    const auto deepRoom=sceneAtmosphere(0.0f,19,1.0f);
+    if(!(deepRoom.fogDensity>opening.fogDensity&&deepRoom.fog.r>opening.fog.r&&deepRoom.sun.b>opening.sun.b)){
+        std::fputs("RENDER_CONTRACTS_FAIL atmosphere progression\n",stderr);return 1;
+    }
+    if(opening.phone.r!=0.0f||deepRoom.phone.b!=1.32f){
+        std::fputs("RENDER_CONTRACTS_FAIL phone light response\n",stderr);return 1;
+    }
+    std::puts("RENDER_CONTRACTS_OK profiles=2 shading_models=3 shadow_qualities=3 atmosphere=PROGRESSIVE field_grass=TEXTURED city_ground=TEXTURED");
     return 0;
 }

@@ -115,6 +115,39 @@
         "resultMarkers": true
       },
       {
+        "name": "traversal-check",
+        "command": "node tools/run-traversal-tier.mjs check",
+        "argv": ["node", "tools/run-traversal-tier.mjs", "check"],
+        "owner": "tools/run-traversal-tier.mjs",
+        "kind": "test",
+        "resultMarkers": true,
+        "successMarkers": [
+          {"contains": "TRAVERSAL=PASS mode=check", "summary": "fast traversal check"}
+        ]
+      },
+      {
+        "name": "traversal-prove",
+        "command": "node tools/run-traversal-tier.mjs prove",
+        "argv": ["node", "tools/run-traversal-tier.mjs", "prove"],
+        "owner": "tools/run-traversal-tier.mjs",
+        "kind": "test",
+        "resultMarkers": true,
+        "successMarkers": [
+          {"contains": "TRAVERSAL=PASS mode=prove", "summary": "exhaustive traversal proof"}
+        ]
+      },
+      {
+        "name": "traversal-mutate",
+        "command": "node tools/run-traversal-mutation-gauntlet.mjs",
+        "argv": ["node", "tools/run-traversal-mutation-gauntlet.mjs"],
+        "owner": "tools/run-traversal-mutation-gauntlet.mjs",
+        "kind": "test",
+        "resultMarkers": true,
+        "successMarkers": [
+          {"contains": "MUTATION_GAUNTLET=PASS", "summary": "seeded traversal fault gauntlet"}
+        ]
+      },
+      {
         "name": "multiplayer",
         "command": "npm --prefix multiplayer-server run check",
         "argv": ["npm", "--prefix", "multiplayer-server", "run", "check"],

@@ -12,7 +12,7 @@ test('DATA declares a valid owned CommandHUD integration', () => {
   const commands = project.commandHud?.commands;
   assert.ok(Array.isArray(commands));
   assert.deepEqual(commands.map(({ name }) => name), [
-    'verify', 'lint', 'assets', 'native-tests', 'multiplayer', 'multiplayer-dry-deploy',
+    'verify', 'lint', 'assets', 'native-tests', 'traversal-check', 'traversal-prove', 'traversal-mutate', 'multiplayer', 'multiplayer-dry-deploy',
   ]);
   assert.equal(new Set(commands.map(({ name }) => name)).size, commands.length);
 
@@ -25,6 +25,30 @@ test('DATA declares a valid owned CommandHUD integration', () => {
     assert.equal(isAbsolute(ownerRelative) || ownerRelative === '..' || ownerRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`), false);
     assert.equal(existsSync(owner), true, command.owner);
   }
+});
+
+test('traversal confidence tiers share authority without making CHECK exhaustive', () => {
+  const check = project.commandHud.commands.find(({ name }) => name === 'traversal-check');
+  const prove = project.commandHud.commands.find(({ name }) => name === 'traversal-prove');
+  assert.deepEqual(check.argv, ['node', 'tools/run-traversal-tier.mjs', 'check']);
+  assert.deepEqual(prove.argv, ['node', 'tools/run-traversal-tier.mjs', 'prove']);
+  assert.equal(check.owner, prove.owner);
+  const source = readFileSync(join(root, check.owner), 'utf8');
+  assert.match(source, /mode === 'check'[\s\S]*\['TraversalCalibrationTest', 'SlopeTraversalFixtureTest'\]/);
+  assert.match(source, /'TraversalCalibrationTest', 'SlopeTraversalFixtureTest'/);
+  assert.match(source, /SlopeTraversalCheck/);
+  assert.match(source, /TRAVERSAL=PASS mode=\$\{mode\}/);
+});
+
+test('traversal mutation exploration is repository-owned and restores its sources', () => {
+  const mutation = project.commandHud.commands.find(({ name }) => name === 'traversal-mutate');
+  assert.deepEqual(mutation.argv, ['node', 'tools/run-traversal-mutation-gauntlet.mjs']);
+  assert.equal(mutation.resultMarkers, true);
+  const source = readFileSync(join(root, mutation.owner), 'utf8');
+  assert.match(source, /classification = !check\.pass \? 'FAST_CAUGHT'/);
+  assert.match(source, /finally \{[\s\S]*writeFileSync\(path, baseline\)/);
+  assert.match(source, /restoration failed/);
+  assert.match(source, /MUTATION_GAUNTLET=/);
 });
 
 test('DATA verification composes existing authorities without reimplementing them', () => {
