@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "Math.hpp"
+#include "gameplay/NeuralEnemyMotor.hpp"
 
 constexpr float HUMAN_SWING_ATTACK_DURATION = 0.86f;
 constexpr float HUMAN_SWING_COMMIT_PHASE = 0.30f;
@@ -36,8 +37,8 @@ struct HumanVisualSpec {
 };
 
 constexpr HumanVisualSpec PASS7_HUMAN_VISUAL_SPEC{
-    1.16f,  // totalHeight: Pass 7 HUMAN_MODEL_HEIGHT after FBX normalization.
-    0.34f,  // shoulderWidth: proportional reconstruction from normalized FBX height.
+    1.16f,
+    0.34f,
     0.38f,
     0.27f,
     0.15f,
@@ -99,8 +100,6 @@ inline float smoothStep01(float x) {
 inline float humanShellThinningAmount(float armor, float armorMax, bool slurpable) {
     if(slurpable||armorMax<=0.001f)return 0.0f;
     const float remaining=clampf(armor/armorMax,0.0f,1.0f);
-    // Start exposing deterministic data-shaped holes after the first meaningful
-    // damage and grow them into an unmistakable, still-readable silhouette.
     return smoothStep01(clampf((0.86f-remaining)/0.86f,0.0f,1.0f))*0.44f;
 }
 
@@ -172,25 +171,35 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
     pose.scale *= (1.0f - stress * 0.25f) * std::max(0.0f, pose.morphShrink);
     pose.scale *= reaction.visibility;
 
-    const float cadence = reaction.locomotionPhase;
-    const float stride = std::sin(cadence);
-    const float counterStride = std::sin(cadence + DB_PI);
-    const float idle = std::sin(time * 3.0f);
     const float active = aliveHuman ? reaction.locomotionAmount : 0.0f;
+    const float idle = std::sin(time * 3.0f);
+    const float attackProgress = aliveHuman && reaction.attackTimer > 0.0f
+        ? 1.0f - clampf(reaction.attackTimer / HUMAN_SWING_ATTACK_DURATION, 0.0f, 1.0f)
+        : 0.0f;
+    const gameplay::NeuralEnemyMotorOutput motor = gameplay::neuralEnemyMotor(
+        reaction.locomotionPhase,
+        active,
+        reaction.hitAmount,
+        reaction.vacuumPullAmount,
+        reaction.captureCollapseAmount,
+        attackProgress
+    );
+
     pose.collapse = reaction.captureCollapseAmount;
     pose.vacuumLean = reaction.vacuumPullAmount;
-    pose.rootBob = (0.012f * idle + 0.028f * std::abs(stride) * active) * pose.scale;
-    pose.torsoPitch = -0.04f * active - reaction.hitAmount * 0.16f - reaction.vacuumPullAmount * 0.20f + pose.collapse * 0.42f;
-    pose.torsoRoll = stride * 0.055f * active + reaction.hitDirectionLocal * reaction.hitAmount * 0.18f;
+    pose.rootBob = (0.010f * idle + 0.026f * std::abs(motor.leftLeg - motor.rightLeg) * active) * pose.scale;
+    pose.torsoPitch = motor.torsoPitch * 0.16f * active - reaction.hitAmount * 0.16f - reaction.vacuumPullAmount * 0.20f + pose.collapse * 0.42f;
+    pose.torsoRoll = motor.torsoRoll * 0.14f * active + reaction.hitDirectionLocal * reaction.hitAmount * 0.18f;
     pose.headPitch = 0.035f * idle - reaction.hitAmount * 0.12f + pose.collapse * 0.24f;
     const float armTrail = reaction.vacuumPullAmount * 0.28f + pose.collapse * 0.42f;
-    pose.leftArmSwing = counterStride * 0.46f * active - 0.08f + reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
-    pose.rightArmSwing = stride * 0.46f * active - 0.08f - reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
-    pose.leftLegSwing = stride * 0.36f * active - pose.collapse * 0.24f;
-    pose.rightLegSwing = counterStride * 0.36f * active - pose.collapse * 0.24f;
+    pose.leftArmSwing = motor.leftArm * 0.62f * active - 0.08f + reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
+    pose.rightArmSwing = motor.rightArm * 0.62f * active - 0.08f - reaction.hitDirectionLocal * reaction.hitAmount * 0.32f - armTrail;
+    pose.leftLegSwing = motor.leftLeg * 0.52f * active - pose.collapse * 0.24f;
+    pose.rightLegSwing = motor.rightLeg * 0.52f * active - pose.collapse * 0.24f;
     pose.hitLean = reaction.hitAmount * 0.08f;
+
     if (aliveHuman && reaction.attackTimer > 0.0f) {
-        const float t = 1.0f - clampf(reaction.attackTimer / HUMAN_SWING_ATTACK_DURATION, 0.0f, 1.0f);
+        const float t = attackProgress;
         const float windup = std::sin(clampf(t / HUMAN_SWING_COMMIT_PHASE, 0.0f, 1.0f) * DB_PI * 0.5f) * (t < HUMAN_SWING_COMMIT_PHASE ? 1.0f : 0.0f);
         const float sweepT=clampf((t-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
         const float strike = std::sin(sweepT * DB_PI);
