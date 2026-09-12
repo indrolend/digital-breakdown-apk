@@ -32,14 +32,62 @@ function writeModel(filename,model){
 function humanBoneMetadata(name) {
   const lower=name.toLowerCase();
   let flags=0;
+
   if(lower.includes("spine")||lower.includes("chest")||lower.includes("torso"))flags|=1;
   if(lower.includes("head")||lower.includes("neck"))flags|=2;
-  const arm=lower.includes("arm")||lower.includes("hand")||lower.includes("forearm")||lower.includes("shoulder");
+
+  const arm=
+    lower.includes("arm")||
+    lower.includes("hand")||
+    lower.includes("forearm")||
+    lower.includes("shoulder");
+
+  const leg=
+    lower.includes("leg")||
+    lower.includes("foot")||
+    lower.includes("toe");
+
+  const left=
+    lower.includes("left")||
+    lower.includes("_l")||
+    lower.endsWith("l")||
+    lower.endsWith(".l");
+
+  const right=
+    lower.includes("right")||
+    lower.includes("_r")||
+    lower.endsWith("r")||
+    lower.endsWith(".r");
+
   let side=0;
-  if(arm&&(lower.includes("left")||lower.includes("_l")||lower.endsWith("l")||lower.endsWith(".l"))){flags|=4;side=-1;}
-  if(arm&&(lower.includes("right")||lower.includes("_r")||lower.endsWith("r")||lower.endsWith(".r"))){flags|=8;side=1;}
+
+  if((arm||leg)&&left)side=-1;
+  if((arm||leg)&&right)side=1;
+
+  if(arm&&side<0)flags|=4;
+  if(arm&&side>0)flags|=8;
+
   let kind=0;
-  if(lower.includes("shoulder"))kind=1;else if(lower.includes("upper"))kind=2;else if(lower.includes("lower")||lower.includes("forearm"))kind=3;else if(lower.includes("hand"))kind=4;
+
+  if(lower==="hips"||lower.includes("pelvis"))
+    kind=5;
+  else if(leg&&lower.includes("upper"))
+    kind=6;
+  else if(leg&&lower.includes("lower"))
+    kind=7;
+  else if(lower.includes("foot"))
+    kind=8;
+  else if(lower.includes("toe"))
+    kind=9;
+  else if(arm&&lower.includes("shoulder"))
+    kind=1;
+  else if(arm&&lower.includes("upper"))
+    kind=2;
+  else if(arm&&(lower.includes("lower")||lower.includes("forearm")))
+    kind=3;
+  else if(arm&&lower.includes("hand"))
+    kind=4;
+
   return {flags,kind,side};
 }
 

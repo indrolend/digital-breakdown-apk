@@ -775,10 +775,21 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
     const float reach=target.attackTimer>0?smoothStep01(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)):0.0f;
-    const Quat rootQ=quaternionFromEulerXYZ(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0,target.visualYaw+PI,target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0);
     const Vec3 attackForward=lengthSq(target.attackDirection)>0.001f?normalized(target.attackDirection):Vec3{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};
+    const Vec3 bodyRight{attackForward.z,0,-attackForward.x};
+    const float forwardSpeed=dot3(target.vel,attackForward),sideSpeed=dot3(target.vel,bodyRight);
+    const float speed=std::sqrt(target.vel.x*target.vel.x+target.vel.z*target.vel.z);
+    const float plantedPulse=std::sin(target.visualWalkPhase*0.5f)*clampf(speed/5.0f,0.0f,1.0f);
+    const float motionPitch=clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
+    const float motionRoll=clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
+    const float impactPitch=-target.hitFlash*0.24f-target.vacuumPullAmount*0.16f;
+    const float impactRoll=target.hitDirectionLocal*target.hitFlash*0.30f;
+    const Quat rootQ=quaternionFromEulerXYZ(
+        motionPitch+impactPitch+(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0),
+        target.visualYaw+PI,
+        motionRoll+impactRoll+(target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0));
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
-    const Vec3 root{target.pos.x+attackLunge.x,target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0,target.pos.z+attackLunge.z};
+    const Vec3 root{target.pos.x+attackLunge.x,target.pos.y+(target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0),target.pos.z+attackLunge.z};
     const float matrix[16]={1-2*(rootQ.y*rootQ.y+rootQ.z*rootQ.z),2*(rootQ.x*rootQ.y+rootQ.z*rootQ.w),2*(rootQ.x*rootQ.z-rootQ.y*rootQ.w),0,2*(rootQ.x*rootQ.y-rootQ.z*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.z*rootQ.z),2*(rootQ.y*rootQ.z+rootQ.x*rootQ.w),0,2*(rootQ.x*rootQ.z+rootQ.y*rootQ.w),2*(rootQ.y*rootQ.z-rootQ.x*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.y*rootQ.y),0,0,0,0,1};
     const VisualColor base{humanModel_.color[0],humanModel_.color[1],humanModel_.color[2]};const VisualColor damageColor=humanDamageSurfaceColor(base,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
     const bool parryCue=target.attackTimer>0&&attackT>=0.22f&&attackT<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={damageColor.r+(0.55f-damageColor.r)*cue,damageColor.g+(0.96f-damageColor.g)*cue,damageColor.b+(1.0f-damageColor.b)*cue,humanModel_.color[3]};

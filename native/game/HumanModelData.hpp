@@ -254,7 +254,12 @@ private:
     RigShoulder = 3,
     RigUpperArm = 4,
     RigForearm = 5,
-    RigHand = 6
+    RigHand = 6,
+    RigPelvis = 7,
+    RigThigh = 8,
+    RigShin = 9,
+    RigFoot = 10,
+    RigToe = 11
   };
   static RigRegion rigRegion(const HumanModelBone &bone) {
     if (bone.kind == 1)
@@ -265,6 +270,16 @@ private:
       return RigForearm;
     if (bone.kind == 4)
       return RigHand;
+    if (bone.kind == 5)
+      return RigPelvis;
+    if (bone.kind == 6)
+      return RigThigh;
+    if (bone.kind == 7)
+      return RigShin;
+    if (bone.kind == 8)
+      return RigFoot;
+    if (bone.kind == 9)
+      return RigToe;
     if (bone.flags & 2)
       return RigHead;
     if (bone.flags & 1)
@@ -273,6 +288,7 @@ private:
   }
   static bool rigIsLeftArm(const HumanModelBone &bone) { return bone.flags & 4; }
   static bool rigIsRightArm(const HumanModelBone &bone) { return bone.flags & 8; }
+
   static void applyAttack(const HumanModelBone &bone, float timer, int variant,
                           float *q) {
     constexpr float duration = 0.86f;

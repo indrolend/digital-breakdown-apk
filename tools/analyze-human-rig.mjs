@@ -2,7 +2,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const modulePath =
+  process.platform === "win32"
+    ? decodeURIComponent(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, "$1")
+    : decodeURIComponent(new URL(import.meta.url).pathname);
+const root = path.resolve(path.dirname(modulePath), "..");
 const modelPath = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(root, "native-models", "human.dbhuman");
@@ -87,6 +91,11 @@ const regionName = (bone) => {
   if (bone.kind === 2) return "upper-arm";
   if (bone.kind === 3) return "forearm";
   if (bone.kind === 4) return "hand";
+  if (bone.kind === 5) return "pelvis";
+  if (bone.kind === 6) return "thigh";
+  if (bone.kind === 7) return "shin";
+  if (bone.kind === 8) return "foot";
+  if (bone.kind === 9) return "toe";
   if (bone.flags & 2) return "head-neck";
   if (bone.flags & 1) return "spine-torso";
   return "other";

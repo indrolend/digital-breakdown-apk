@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "Math.hpp"
+#include "gameplay/EnemyMotionFacts.hpp"
 
 constexpr float HUMAN_SWING_ATTACK_DURATION = 0.86f;
 constexpr float HUMAN_SWING_COMMIT_PHASE = 0.30f;
@@ -162,7 +163,7 @@ inline HumanReactionVisual makeHumanReactionVisual(
     return visual;
 }
 
-inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, const HumanReactionVisual& reaction, bool aliveHuman) {
+inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, const HumanReactionVisual& reaction, bool aliveHuman, const EnemyMotionFacts& motion = {}) {
     HumanVisualPose pose;
     pose.yaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
     pose.scale = scale;
@@ -189,6 +190,57 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
     pose.leftLegSwing = stride * 0.36f * active - pose.collapse * 0.24f;
     pose.rightLegSwing = counterStride * 0.36f * active - pose.collapse * 0.24f;
     pose.hitLean = reaction.hitAmount * 0.08f;
+
+    // Presentation consumes controller facts; it does not rediscover world geometry.
+    // This keeps support/contact policy in the controller while allowing the body to
+    // visibly tell the truth about slopes, obstruction, slipping, and climbing.
+    if (aliveHuman) {
+        const float uphill = clampf(1.0f - motion.supportNormal.y, 0.0f, 1.0f);
+        const float horizontalMismatch = horizontalLength(motion.desiredVelocity - motion.actualVelocity);
+        const float imbalance = clampf(std::max(motion.balanceError, horizontalMismatch * 0.18f), 0.0f, 1.0f);
+        const float brace = clampf(std::max(motion.obstructionAmount, motion.impactAmount) + imbalance * 0.45f, 0.0f, 1.0f);
+        const float climb = clampf(motion.climbAmount, 0.0f, 1.0f);
+        const float climbCycle = std::sin(time * 8.0f + cadence * 0.35f);
+
+        pose.torsoPitch += uphill * 0.34f + motion.slipAmount * 0.18f - (motion.airborne ? 0.08f : 0.0f);
+        pose.torsoRoll += clampf(motion.supportNormal.x, -0.7f, 0.7f) * 0.22f;
+        pose.headPitch -= uphill * 0.10f;
+        pose.leftArmSwing -= brace * 0.55f;
+        pose.rightArmSwing -= brace * 0.55f;
+        pose.leftArmSwing += imbalance * 0.30f;
+        pose.rightArmSwing -= imbalance * 0.30f;
+
+        if (climb > 0.001f) {
+            pose.rootBob += std::abs(climbCycle) * 0.018f * pose.scale * climb;
+            pose.torsoPitch -= 0.22f * climb;
+            pose.leftArmSwing = pose.leftArmSwing + (-1.10f + climbCycle * 0.42f - pose.leftArmSwing) * climb;
+            pose.rightArmSwing = pose.rightArmSwing + (-1.10f - climbCycle * 0.42f - pose.rightArmSwing) * climb;
+            pose.leftLegSwing = pose.leftLegSwing + (0.52f - climbCycle * 0.35f - pose.leftLegSwing) * climb;
+            pose.rightLegSwing = pose.rightLegSwing + (0.52f + climbCycle * 0.35f - pose.rightLegSwing) * climb;
+            pose.torsoRoll += climbCycle * 0.07f * climb;
+        }
+
+        // Extreme physical expression: the simulation still owns one compact body,
+        // while the visible skeleton behaves like a soft, badly controlled puppet.
+        // Impacts and airborne motion can fully overwhelm the ordinary walk cycle.
+        const float violent = clampf(std::max(motion.impactAmount, motion.slipAmount * 0.82f) + (motion.airborne ? 0.44f : 0.0f), 0.0f, 1.0f);
+        if (violent > 0.001f) {
+            const float speed = horizontalLength(motion.actualVelocity);
+            const float chaosA = std::sin(time * (15.0f + speed * 0.55f) + motion.actualVelocity.x * 0.71f + motion.actualVelocity.z * 0.37f);
+            const float chaosB = std::sin(time * (21.0f + speed * 0.31f) - motion.actualVelocity.x * 0.43f + 1.7f);
+            const float vertical = clampf(motion.actualVelocity.y / 9.0f, -1.0f, 1.0f);
+            pose.rootBob += std::abs(chaosB) * 0.055f * pose.scale * violent;
+            pose.torsoPitch += (-vertical * 0.82f + chaosA * 0.48f) * violent;
+            pose.torsoRoll += chaosB * 0.86f * violent;
+            pose.headPitch += (chaosA * 0.72f - vertical * 0.38f) * violent;
+            pose.leftArmSwing += (chaosA * 1.65f + chaosB * 0.72f) * violent;
+            pose.rightArmSwing += (-chaosA * 1.52f + chaosB * 0.91f) * violent;
+            pose.leftLegSwing += (-chaosB * 1.18f + vertical * 0.48f) * violent;
+            pose.rightLegSwing += (chaosB * 1.24f + vertical * 0.42f) * violent;
+            pose.hitLean += violent * 0.16f;
+        }
+    }
+
     if (aliveHuman && reaction.attackTimer > 0.0f) {
         const float t = 1.0f - clampf(reaction.attackTimer / HUMAN_SWING_ATTACK_DURATION, 0.0f, 1.0f);
         const float windup = std::sin(clampf(t / HUMAN_SWING_COMMIT_PHASE, 0.0f, 1.0f) * DB_PI * 0.5f) * (t < HUMAN_SWING_COMMIT_PHASE ? 1.0f : 0.0f);

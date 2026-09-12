@@ -27,6 +27,9 @@ constexpr float ROOM_GRID_Z = ROOM_EXIT_Z + 0.42f;
 constexpr float ROOM_MIN_SPAWN_Z = -ROOM_DEPTH * 0.5f + 9.0f;
 constexpr float ROOM_MAX_SPAWN_Z = ROOM_DEPTH * 0.5f - 7.0f;
 
+// DATA is already extremely fast. Preserve the calibrated traversal envelope;
+// the exaggerated build gets its extra velocity from pressure, combat and
+// presentation without making authored gaps or network prediction dishonest.
 constexpr float WALK_ACCEL = 16.0f;
 constexpr float RUN_ACCEL = 42.0f;
 constexpr float WALK_MAX_SPEED = 18.0f;
@@ -83,11 +86,11 @@ constexpr float MENU_PHONE_VIEWPORT_HEIGHT = 0.80f;
 constexpr float DEATH_PRESENTATION_SCALE = 0.18f;
 
 
-constexpr float VACUUM_MOVE_MULT = 0.35f;
-constexpr float VACUUM_CHARGE_SPEED = 3.5f;
+constexpr float VACUUM_MOVE_MULT = 0.58f;
+constexpr float VACUUM_CHARGE_SPEED = 5.5f;
 constexpr float VACUUM_DECAY_SPEED = 6.0f;
-constexpr float SOUL_ATTRACTION_RANGE = 15.5f;
-constexpr float SOUL_ATTRACTION_CONE_RADIUS = 2.35f;
+constexpr float SOUL_ATTRACTION_RANGE = 20.0f;
+constexpr float SOUL_ATTRACTION_CONE_RADIUS = 3.25f;
 constexpr float SOUL_CAPTURE_CYLINDER_RADIUS = 1.75f;
 constexpr float SOUL_CAPTURE_CYLINDER_HEIGHT = 2.25f;
 constexpr float SOUL_LATCH_DISTANCE = 0.48f;
@@ -108,22 +111,22 @@ constexpr float PHONE_SOLID_HALF_Z = PHONE_BODY_DEPTH * 0.5f;
 constexpr float SOUL_CORE_SOLID_RADIUS = 0.33f;
 constexpr float HUMAN_SCALE_BRUTE = 1.7f;
 constexpr float HUMAN_WALK_PHASE_PER_METER = 7.5f;
-constexpr float HUMAN_WALK_SPEED = 0.72f;
+constexpr float HUMAN_WALK_SPEED = 3.8f;
 constexpr float HUMAN_WALK_TARGET_RADIUS = 0.55f;
 constexpr float HUMAN_WALK_RANGE = 5.5f;
-constexpr float HUMAN_ATTACK_NOTICE_RANGE = 5.6f;
+constexpr float HUMAN_ATTACK_NOTICE_RANGE = 38.0f;
 constexpr float HUMAN_SUPPORT_RADIUS = 0.10f;
 constexpr float HUMAN_BODY_RADIUS = 0.42f;
-constexpr float HUMAN_TREE_CLIMB_SPEED = 0.82f;
+constexpr float HUMAN_TREE_CLIMB_SPEED = 2.8f;
 constexpr float HUMAN_TREE_GRIP_CLEARANCE = 0.02f;
 constexpr float HUMAN_ATTACK_START_RANGE = 1.55f;
 constexpr float HUMAN_ATTACK_HIT_RANGE = 1.85f;
 constexpr float HUMAN_ATTACK_VERTICAL_MARGIN = 0.18f;
 constexpr float HUMAN_ATTACK_DURATION = HUMAN_SWING_ATTACK_DURATION;
-constexpr float HUMAN_ATTACK_COOLDOWN = 1.15f;
-constexpr float HUMAN_ATTACK_KNOCKBACK = 3.0f;
+constexpr float HUMAN_ATTACK_COOLDOWN = 0.62f;
+constexpr float HUMAN_ATTACK_KNOCKBACK = 4.8f;
 constexpr float HUMAN_ATTACK_BATTERY_COST = 26.0f;
-constexpr float BATTERY_IDLE_REGEN = 22.0f;
+constexpr float BATTERY_IDLE_REGEN = 8.0f;
 constexpr float BATTERY_WALK_DRAIN = 0.45f;
 constexpr float BATTERY_SPRINT_DRAIN = 3.0f;
 constexpr float BATTERY_AIR_DRAIN = 0.9f;
@@ -131,8 +134,8 @@ constexpr float BATTERY_VACUUM_DRAIN = 1.35f;
 constexpr float BATTERY_JUMP_COST = 3.0f;
 constexpr float BATTERY_DOUBLE_JUMP_COST = 6.0f;
 constexpr float BATTERY_SHOOT_COST = 7.0f;
-constexpr float BATTERY_CAPTURE_GAIN = 10.0f;
-constexpr float BATTERY_MELEE_HIT_GAIN = 2.0f;
+constexpr float BATTERY_CAPTURE_GAIN = 14.0f;
+constexpr float BATTERY_MELEE_HIT_GAIN = 3.5f;
 constexpr float BATTERY_COMBO_GROWTH = 1.22f;
 constexpr float BATTERY_COMBO_TIMEOUT = 1.8f;
 constexpr float MULTI_HIT_BONUS_GROWTH = 1.12f;
@@ -208,8 +211,8 @@ constexpr float AIR_MELEE_LANDING_RETENTION = 0.82f;
 constexpr float AIR_MELEE_WALL_GRIP_TIME = 0.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_WINDOW = 1.10f;
 constexpr float LUNGE_HEADSHOT_REBOUND_COST_MULT = 0.55f;
-constexpr float BULLET_SPEED = 25.0f;
-constexpr float BULLET_BRUTE_SPEED = 20.0f;
+constexpr float BULLET_SPEED = 38.0f;
+constexpr float BULLET_BRUTE_SPEED = 31.0f;
 constexpr float BULLET_GRAVITY = 6.5f;
 constexpr float BULLET_LIFE = 3.25f;
 constexpr float BULLET_VERTICAL_LIFT = 2.0f;
@@ -234,12 +237,12 @@ constexpr float BULLET_MAX_UP_AIM = 0.30f;
 constexpr float BULLET_MAX_DOWN_AIM = -0.10f;
 constexpr float ROOM_DEPOSIT_HIT_RADIUS = 1.65f;
 constexpr int MAX_STORED_SOULS = 30;
-constexpr int ACTIVE_HUMAN_TARGET = 5;
-constexpr int ACTIVE_HUMAN_TARGET_CAP = 20;
-constexpr float HUMAN_RESPAWN_DELAY_MIN = 1.45f;
-constexpr float HUMAN_RESPAWN_DELAY_MAX = 2.35f;
+constexpr int ACTIVE_HUMAN_TARGET = 9;
+constexpr int ACTIVE_HUMAN_TARGET_CAP = 28;
+constexpr float HUMAN_RESPAWN_DELAY_MIN = 0.42f;
+constexpr float HUMAN_RESPAWN_DELAY_MAX = 0.90f;
 constexpr float ENEMY_ARMOR_REGEN_DELAY = 2.40f;
-constexpr float ROOM_HEAT_SECONDS = 90.0f;
+constexpr float ROOM_HEAT_SECONDS = 32.0f;
 constexpr float DOOR_DATAMOSH_DISTANCE = 3.0f;
 constexpr float DOOR_DATAMOSH_MIN_STRENGTH = 0.018f;
 
@@ -2083,10 +2086,12 @@ void Game::awardGoalToken(CapturePointState& capture) {
 int Game::activeHumanTarget() const {
     int activePlayers=1;
     if(state_.multiplayer.authoritativeHost)for(int id=1;id<NETWORK_PLAYER_COUNT;++id)if(state_.multiplayer.peers[id].active)++activePlayers;
-    const int roomExtra=std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(0,state_.roomIndex-1));
+    const int baseTarget=state_.multiplayer.enabled?5:ACTIVE_HUMAN_TARGET;
+    const int targetCap=state_.multiplayer.enabled?20:ACTIVE_HUMAN_TARGET_CAP;
+    const int roomExtra=std::min(targetCap,std::max(0,state_.roomIndex-1));
     const int environmentAdjustment=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex).enemyAdjustment;
-    return std::min(TARGET_COUNT,std::min(ACTIVE_HUMAN_TARGET_CAP,std::max(1,
-        ACTIVE_HUMAN_TARGET+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2+environmentAdjustment)));
+    return std::min(TARGET_COUNT,std::min(targetCap,std::max(1,
+        baseTarget+roomExtra+state_.runRules.crowdedRoomStacks+(activePlayers-1)*2+environmentAdjustment)));
 }
 
 void Game::advanceRunRulesForRoom() {
@@ -2791,7 +2796,7 @@ void Game::updateCamera(float dt) {
     const float cp = std::cos(camera.pitch);
     const Vec3 aimForward = normalized({-std::sin(camera.yaw) * cp, std::sin(camera.pitch), -std::cos(camera.yaw) * cp});
     const float horizontalSpeed=std::sqrt(player.vel.x*player.vel.x+player.vel.z*player.vel.z);
-    const float motionFov=clampf((horizontalSpeed-2.5f)*1.05f,0.0f,9.0f)+(!player.grounded?2.2f:0.0f)+(state_.meleeVisual.airLungeLandingPending?4.8f:0.0f);
+    const float motionFov=clampf((horizontalSpeed-2.0f)*1.22f,0.0f,16.0f)+(!player.grounded?3.2f:0.0f)+(state_.meleeVisual.airLungeLandingPending?7.0f:0.0f);
     const bool mobile = state_.localSettings.mobileFraming;
     const float targetFov=camera.firstPerson?(mobile?60.0f:64.0f):(mobile?56.0f:60.0f)+motionFov*(mobile?0.72f:1.0f);
     if(dt>0.0f)camera.verticalFovDegrees+=(targetFov-camera.verticalFovDegrees)*(1.0f-std::exp(-(targetFov>camera.verticalFovDegrees?5.2f:2.8f)*dt));else camera.verticalFovDegrees=targetFov;
@@ -3469,7 +3474,7 @@ void Game::respawnTarget(int index) {
     t.visualWalkPhase = seededRoomValue(560 + index) * DB_PI * 2.0f;
     t.floatOffset=seededRoomValue(565+index)*DB_PI*2.0f;
     t.spinSpeed=0.4f+seededRoomValue(570+index)*0.8f;
-    t.attackCooldown=seededRoomValue(580+index)*0.5f;
+    t.attackCooldown=seededRoomValue(580+index)*(state_.multiplayer.enabled?0.5f:0.25f);
     t.attackVariant=static_cast<int>(seededRoomValue(590+index)*4.0f)%4;
     resetSoulLattice(t);
     chooseHumanWalkTarget(index);
@@ -3562,9 +3567,17 @@ void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_
 void Game::updateTargets(float dt) {
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
     if(state_.enemyAttackOwner>=0){const TargetState& owner=state_.targets[state_.enemyAttackOwner];if(!owner.alive||owner.slurpable||owner.attackTimer<=0.0f)state_.enemyAttackOwner=-1;}
+    // Preserve the shipped network cadence until the protocol carries the
+    // denser predator pressure explicitly. Solo is the authored exaggerated
+    // experience; connected play remains deterministic and interoperable.
+    const float noticeRange=state_.multiplayer.enabled?5.6f:HUMAN_ATTACK_NOTICE_RANGE;
+    const float pursuitSpeed=state_.multiplayer.enabled?0.72f:HUMAN_WALK_SPEED;
+    const float attackCooldown=state_.multiplayer.enabled?1.15f:HUMAN_ATTACK_COOLDOWN;
+    const float attackCadence=state_.multiplayer.enabled?0.34f:0.14f;
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
         if (!t.alive) continue;
+        const Vec3 physicalFrameStart=t.pos;
         gameplay::updateLooseSoulMotion(t, dt);
         t.hitFlash = std::max(0.0f, t.hitFlash - TARGET_HITFLASH_DECAY_PER_FRAME);
         t.visibility = 1.0f;
@@ -3644,7 +3657,7 @@ void Game::updateTargets(float dt) {
                     if(towardLength>0.001f)t.visualYaw=std::atan2(-towardTree.x/towardLength,-towardTree.z/towardLength);
                 }
             }
-            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<HUMAN_ATTACK_NOTICE_RANGE)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
             if(climbedTreeThisFrame){
                 // Tree climbing is physical pursuit, not an attack shortcut.
                 // The existing vertical-overlap contract decides when combat
@@ -3676,22 +3689,34 @@ void Game::updateTargets(float dt) {
                     if(state_.time-state_.audio.lastDamageAckTime>=0.18f){state_.audio.lastDamageAckTime=state_.time;emitAudio(AudioCue::NegativeAck,0.26f);}
                     t.attackHit=true;
                 }
-                if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=0.34f;}
+                if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=attackCadence;}
             } else if(playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
-                t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=HUMAN_ATTACK_COOLDOWN;
+                t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=attackCooldown;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
-                Vec3 destination=pursuedTree?treeGripPoint:((playerDist<HUMAN_ATTACK_NOTICE_RANGE && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
+                Vec3 destination=pursuedTree?treeGripPoint:((playerDist<noticeRange && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
-                if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=HUMAN_ATTACK_NOTICE_RANGE){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
+                if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=noticeRange){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
-                    Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<HUMAN_ATTACK_NOTICE_RANGE?1.28f:1.0f;
+                    Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
-                    const float speed=HUMAN_WALK_SPEED*aggro*(t.brute?0.56f:1.0f)*variation;
-                    const float step=std::min(dist,speed*dt);Vec3 next=t.pos+dir*step;
+                    const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
+                    const bool physicalPursuit=!state_.multiplayer.enabled;
+                    if(physicalPursuit){
+                        const Vec3 desired=dir*speed;
+                        const float response=1.0f-std::exp(-(t.brute?5.5f:8.0f)*dt);
+                        t.vel.x+=(desired.x-t.vel.x)*response;
+                        t.vel.z+=(desired.z-t.vel.z)*response;
+                        const float horizontalSpeed=horizontalLength(t.vel);
+                        const float maximum=speed*(t.brute?1.30f:1.45f);
+                        if(horizontalSpeed>maximum){const float scale=maximum/horizontalSpeed;t.vel.x*=scale;t.vel.z*=scale;}
+                    }else{t.vel.x=dir.x*speed;t.vel.z=dir.z*speed;}
+                    float step=std::min(dist,physicalPursuit?horizontalLength(t.vel)*dt:speed*dt);
+                    Vec3 motionDir=physicalPursuit&&horizontalLength(t.vel)>0.001f?Vec3{t.vel.x/horizontalLength(t.vel),0,t.vel.z/horizontalLength(t.vel)}:dir;
+                    Vec3 next=t.pos+motionDir*step;
                     bool pursuitBlocked=false;Vec3 obstructionNormal{};int obstructionCollider=-1;
-                    if(playerDist<HUMAN_ATTACK_NOTICE_RANGE){
+                    if(playerDist<noticeRange){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
                             if(t.pos.y>=c.topY+GROUND_Y-0.06f)continue;
@@ -3741,11 +3766,12 @@ void Game::updateTargets(float dt) {
                             }
                             if(found)break;
                         }
-                        if(!found)next=t.pos;
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;}
-                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;t.visualYaw=std::atan2(-dir.x,-dir.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
+                        if(!found){next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
+                        else if(physicalPursuit){const float redirectedSpeed=horizontalLength(t.vel);t.vel.x=dir.x*redirectedSpeed;t.vel.z=dir.z*redirectedSpeed;}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
+                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
                     t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
-                } else t.locomotionAmount=0.0f;
+                } else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
             }
             if(!attachedToTreeThisFrame){
                 const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
@@ -3754,7 +3780,13 @@ void Game::updateTargets(float dt) {
             }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
-        if ((!t.slurpable || t.soulMorph < 0.995f) && t.ingestProgress < 0.01f) t.humanAnimationTime += dt;
+        if ((!t.slurpable || t.soulMorph < 0.995f) && t.ingestProgress < 0.01f) {
+            const Vec3 physicalTravel=t.pos-physicalFrameStart;
+            const float distance=std::sqrt(physicalTravel.x*physicalTravel.x+physicalTravel.z*physicalTravel.z)+std::abs(physicalTravel.y)*0.45f;
+            // The walk clip follows actual body travel, so feet do not cycle
+            // faster or slower than the root that owns contact.
+            t.humanAnimationTime += distance*0.68f;
+        }
         syncTargetReactionVisual(t);
     }
 }
@@ -3845,7 +3877,7 @@ void Game::updateVacuum(float dt) {
         if (t.soulState == SoulState::Attracted) {
             Vec3 delta = pullPoint - soulWorld; const float d = std::max(length(delta), 0.001f);
             const float proximity = 1.0f - clampf(d / SOUL_ATTRACTION_RANGE, 0.0f, 1.0f);
-            const float speed = v.power * (3.2f + smooth01(proximity)*5.8f + (insideCylinder(soulWorld)?8.5f:0.0f)) / soulMass;
+            const float speed = v.power * (5.5f + smooth01(proximity)*10.5f + (insideCylinder(soulWorld)?13.0f:0.0f)) / soulMass;
             Vec3 next = soulWorld + normalized(delta) * std::min(d, speed*dt);
             next=keepOutsidePhoneSolid(next,insideCylinder(soulWorld));
             writeCanonical(t, next); t.vel = {}; t.vacuumPullAmount = v.power;
