@@ -1453,6 +1453,7 @@ void printUsage() {
     std::printf("  --controller-live-test   Stream controller state for a short live test.\n");
     std::printf("  --build-identity-json    Print machine-readable build identity and exit.\n");
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
+    std::printf("  --capture-identity-frame PATH  Capture the deterministic human observation cue.\n");
     std::printf("  --capture-spectator-frame PATH  Capture the multiplayer spectator presentation.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
@@ -1726,6 +1727,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     const bool captureHuman=argValue(argc,argv,"--capture-human-frame")!=nullptr;
+    const bool captureIdentity=argValue(argc,argv,"--capture-identity-frame")!=nullptr;
     const bool captureSoul=argValue(argc,argv,"--capture-soul-frame")!=nullptr;
     const bool captureOcclusion=argValue(argc,argv,"--capture-occlusion-frame")!=nullptr;
     const bool captureStart=argValue(argc,argv,"--capture-start-frame")!=nullptr;
@@ -1760,7 +1762,7 @@ int main(int argc, char** argv) {
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
-    const char* capturePath=captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureOcclusion?argValue(argc,argv,"--capture-occlusion-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame")))))))));
+    const char* capturePath=captureIdentity?argValue(argc,argv,"--capture-identity-frame"):(captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureOcclusion?argValue(argc,argv,"--capture-occlusion-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame"))))))))));
     const int windowWidth=std::max(320,std::min(7680,argInt(argc,argv,"--capture-width",1280)));
     const int windowHeight=std::max(180,std::min(4320,argInt(argc,argv,"--capture-height",720)));
     if (hasArg(argc, argv, "--smoke-test")) {
@@ -1887,7 +1889,8 @@ int main(int argc, char** argv) {
     host.previousPermanentLevels=host.game.state().progression.permanent.levels;
     host.previousPlayerAlive=host.game.state().player.alive;
     host.lastHapticAudioSerial=host.game.state().audio.nextSerial>0?host.game.state().audio.nextSerial-1:0;
-    if(captureHuman){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;fixture.camera.yaw=0;fixture.camera.pitch=0;}
+    if(captureHuman||captureIdentity){GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target.alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=false;target.pos={0,0.08f,fixture.player.pos.z-4.0f};target.walkTarget=target.pos;target.visualYaw=0;target.scale=1;target.visibility=1;target.attackCooldown=999;if(target.soul.id==0)target.soul={41,false,fixture.roomIndex};fixture.camera.yaw=0;fixture.camera.pitch=0;}
+    if(captureIdentity){GameState& fixture=host.game.networkMutableState();fixture.started=true;fixture.attractMode=false;fixture.cinematic.introActive=false;fixture.uiPaused=false;}
     if(captureSoul){GameState& fixture=const_cast<GameState&>(host.game.state());for(int i=1;i<TARGET_COUNT;++i)fixture.targets[i].alive=false;auto& target=fixture.targets[0];target.alive=true;target.slurpable=true;target.soulMorph=1;target.soulCubeAmount=1;target.pos=fixture.player.pos+Vec3{0,0.5f,-1.5f};target.walkTarget=target.pos;target.health=1;target.armor=0;target.soulState=SoulState::Free;fixture.camera.yaw=0;fixture.camera.pitch=0;}
     if(captureOcclusion){
         GameState& fixture=const_cast<GameState&>(host.game.state());for(auto& target:fixture.targets)target=TargetState{};
@@ -2182,7 +2185,7 @@ int main(int argc, char** argv) {
         }
         const bool leftMouseDown=glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         if(!leftMouseDown)host.suppressLeftMouseUntilRelease=false;
-        const bool vacuumHeld = captureSoul || (leftMouseDown&&!host.suppressLeftMouseUntilRelease) || gamepad.vacuumHeld;
+        const bool vacuumHeld = captureSoul || captureIdentity || (leftMouseDown&&!host.suppressLeftMouseUntilRelease) || gamepad.vacuumHeld;
         const bool sprintHeld = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                                 glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS || gamepad.sprintHeld;
 
@@ -2395,6 +2398,7 @@ int main(int argc, char** argv) {
         if(capturePath&&++captureFrames>=stillCaptureFrames){
             const bool attractRunning=!captureStart||(host.game.state().attractMode&&!host.game.state().uiPaused);
             const bool captured=attractRunning&&captureFramebuffer(capturePath,framebufferWidth,framebufferHeight);
+            if(captureIdentity){const auto& fixture=host.game.state();std::printf("IDENTITY_CAPTURE_STATE vacuum=%d power=%.3f soul=%llu alive=%d slurpable=%d\n",fixture.vacuum.active?1:0,fixture.vacuum.power,static_cast<unsigned long long>(fixture.targets[0].soul.id),fixture.targets[0].alive?1:0,fixture.targets[0].slurpable?1:0);}
             std::printf("CAPTURE_FRAME_%s %s\n",captured?"OK":"FAILED",capturePath);
             glfwSetWindowShouldClose(window,GLFW_TRUE);
         }
