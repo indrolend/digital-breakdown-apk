@@ -1,0 +1,20 @@
+{
+    "generated_at":  "2026-09-13T17:20:43.4802709-05:00",
+    "repository":  "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645",
+    "branch":  "convergence/clean-20260913-171645",
+    "head":  "16e1bb249f6b05f34919daadfc8e770639922898",
+    "preserved_sources":  {
+                              "apk":  "7222534d22bb6d33677e714a60678886e49fa4ae",
+                              "gauntlet":  "c84b81c7e29aedc5cbc2e46e7ec5a38a69544f49",
+                              "hypercore":  "82150c6f7d9dd94bde21ed2f851d8ecc530d3c97"
+                          },
+    "runtime_evidence":  "C:\\Users\\indro\\Downloads\\digital-breakdown-extreme-leapfrog-4\\mirror\\extreme-chaos",
+    "build":  "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645\\build\\convergence-clean\\bin\\Release\\DigitalBreakdown.exe",
+    "principles":  [
+                       "one clean development worktree",
+                       "dirty historical work preserved",
+                       "no destructive reset",
+                       "no silent history rewrite",
+                       "source authority separated from runtime evidence"
+                   ]
+}
