@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Native desktop action game and multiplayer relay",
   "scripts": {
-    "hud:check": "node --test ./tools/commandhud-project.test.mjs ./tools/verify.test.mjs",
+    "hud:check": "node --test ./tools/commandhud-project.test.mjs ./tools/verify.test.mjs ./tools/fundamental-benchmark.test.mjs",
+    "benchmark:fundamental": "node ./tools/fundamental-benchmark.mjs --json",
     "lint": "node ./tools/lint.mjs",
     "assets": "python ./tools/verify_assets.py",
     "assets:phone": "node ./tools/assets/generate-phone-model.mjs",
