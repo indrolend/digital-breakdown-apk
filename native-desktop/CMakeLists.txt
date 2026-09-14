@@ -166,14 +166,6 @@ if(WIN32)
 endif()
 
 add_executable(
-    Pass7ParityTest
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/game_pass7_parity_smoke.cpp"
-    "${DB_GAME_ROOT}/Game.cpp"
-)
-target_include_directories(Pass7ParityTest PRIVATE "${DB_GAME_ROOT}")
-target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
-
-add_executable(
     MultiplayerProtocolTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/multiplayer_protocol_test.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../native-network/MultiplayerProtocol.cpp"

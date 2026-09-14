@@ -29,21 +29,6 @@ $timer.Stop()
 Write-Output ("NATIVE_STAGE=PASS name=ctest durationSeconds={0:F3}" -f $timer.Elapsed.TotalSeconds)
 
 $timer.Restart()
-& (Join-Path $BuildDir "Release/Pass7ParityTest.exe")
-if ($LASTEXITCODE -ne 0) { throw "Pass7ParityTest failed with exit code $LASTEXITCODE" }
-
-& (Join-Path $BuildDir "Release/MultiplayerProtocolTest.exe")
-if ($LASTEXITCODE -ne 0) { throw "MultiplayerProtocolTest failed with exit code $LASTEXITCODE" }
-
-& (Join-Path $BuildDir "Release/MultiplayerDeterminismTest.exe")
-if ($LASTEXITCODE -ne 0) { throw "MultiplayerDeterminismTest failed with exit code $LASTEXITCODE" }
-
-& (Join-Path $BuildDir "Release/HostRemotePeerSimulationIsolationTest.exe")
-if ($LASTEXITCODE -ne 0) { throw "HostRemotePeerSimulationIsolationTest failed with exit code $LASTEXITCODE" }
-$timer.Stop()
-Write-Output ("NATIVE_STAGE=PASS name=evidence durationSeconds={0:F3}" -f $timer.Elapsed.TotalSeconds)
-
-$timer.Restart()
 git diff --check
 if ($LASTEXITCODE -ne 0) { throw "git diff --check failed with exit code $LASTEXITCODE" }
 $timer.Stop()

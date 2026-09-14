@@ -12,7 +12,7 @@ test('DATA declares a valid owned CommandHUD integration', () => {
   const commands = project.commandHud?.commands;
   assert.ok(Array.isArray(commands));
   assert.deepEqual(commands.map(({ name }) => name), [
-    'play', 'verify', 'lint', 'assets', 'native-tests', 'traversal-check', 'traversal-prove', 'traversal-mutate', 'multiplayer', 'multiplayer-dry-deploy',
+    'play', 'ship', 'check', 'prove', 'explore',
   ]);
   assert.equal(new Set(commands.map(({ name }) => name)).size, commands.length);
 
@@ -31,10 +31,10 @@ test('the primary play action delegates to the repository-owned desktop loop', (
   const play = project.commandHud.commands.find(({ name }) => name === 'play');
   assert.deepEqual(project.commandHud.commands.filter(({ action }) => action).map(({ name, action }) => [name, action]), [
     ['play', 'Play'],
-    ['verify', 'Ship'],
-    ['traversal-check', 'Check'],
-    ['traversal-prove', 'Prove'],
-    ['traversal-mutate', 'Explore'],
+    ['ship', 'Ship'],
+    ['check', 'Check'],
+    ['prove', 'Prove'],
+    ['explore', 'Explore'],
   ]);
   assert.deepEqual(play.argv, ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tools/dbdev.ps1', 'playtest', '-Mode', 'game']);
   assert.equal(play.owner, 'tools/dbdev.ps1');
@@ -42,8 +42,8 @@ test('the primary play action delegates to the repository-owned desktop loop', (
 });
 
 test('traversal confidence tiers share authority without making CHECK exhaustive', () => {
-  const check = project.commandHud.commands.find(({ name }) => name === 'traversal-check');
-  const prove = project.commandHud.commands.find(({ name }) => name === 'traversal-prove');
+  const check = project.commandHud.commands.find(({ name }) => name === 'check');
+  const prove = project.commandHud.commands.find(({ name }) => name === 'prove');
   assert.deepEqual(check.argv, ['node', 'tools/run-traversal-tier.mjs', 'check']);
   assert.deepEqual(prove.argv, ['node', 'tools/run-traversal-tier.mjs', 'prove']);
   assert.equal(check.owner, prove.owner);
@@ -55,7 +55,7 @@ test('traversal confidence tiers share authority without making CHECK exhaustive
 });
 
 test('traversal mutation exploration is repository-owned and restores its sources', () => {
-  const mutation = project.commandHud.commands.find(({ name }) => name === 'traversal-mutate');
+  const mutation = project.commandHud.commands.find(({ name }) => name === 'explore');
   assert.deepEqual(mutation.argv, ['node', 'tools/run-traversal-mutation-gauntlet.mjs']);
   assert.equal(mutation.resultMarkers, true);
   const source = readFileSync(join(root, mutation.owner), 'utf8');
@@ -66,7 +66,7 @@ test('traversal mutation exploration is repository-owned and restores its source
 });
 
 test('DATA verification composes existing authorities without reimplementing them', () => {
-  const command = project.commandHud.commands.find(({ name }) => name === 'verify');
+  const command = project.commandHud.commands.find(({ name }) => name === 'ship');
   assert.equal(command.kind, 'test');
   assert.equal(command.resultMarkers, true);
   assert.equal(command.stageMarker, 'DATA_VERIFY_STAGE');
@@ -86,10 +86,7 @@ test('DATA verification composes existing authorities without reimplementing the
   assert.doesNotMatch(source, /verify_asset_mirrors|verify-gameplay|vitest|tsc/);
 });
 
-test('DATA lint authority owns static JavaScript, TypeScript, and whitespace checks', () => {
-  const command = project.commandHud.commands.find(({ name }) => name === 'lint');
-  assert.equal(command.kind, 'lint');
-  assert.equal(command.resultMarkers, true);
+test('DATA ship verification delegates to the lint authority', () => {
   const source = readFileSync(join(root, 'tools', 'lint.mjs'), 'utf8');
   assert.match(source, /git.*ls-files/);
   assert.match(source, /--cached.*--others.*--exclude-standard/);
@@ -100,17 +97,13 @@ test('DATA lint authority owns static JavaScript, TypeScript, and whitespace che
   assert.match(source, /LINT=PASS javascript=/);
 });
 
-test('DATA launchers delegate to the installed product with an explicit root', () => {
-  const shell = readFileSync(join(root, 'CommandHUD Shell.cmd'), 'utf8');
+test('the one root launcher delegates to the installed product with an explicit root', () => {
   const desktop = readFileSync(join(root, 'CommandHUD.cmd'), 'utf8');
-  assert.match(shell, /hud shell --root "%~dp0\."/);
   assert.match(desktop, /hud desktop --root "%~dp0\."/);
-  assert.doesNotMatch(`${shell}\n${desktop}`, /tools[\\/]hud|node .*cli\.mjs/i);
+  assert.doesNotMatch(desktop, /tools[\\/]hud|node .*cli\.mjs/i);
 });
 
 test('native verification owns one cross-platform factual result marker and checkout-scoped build cache', () => {
-  const command = project.commandHud.commands.find(({ name }) => name === 'native-tests');
-  assert.equal(command.resultMarkers, true);
   const windows = readFileSync(join(root, 'scripts', 'verify-gameplay.ps1'), 'utf8');
   const unix = readFileSync(join(root, 'scripts', 'verify-gameplay.sh'), 'utf8');
   const wrapper = readFileSync(join(root, 'tools', 'run-native-tests.mjs'), 'utf8');
@@ -123,6 +116,7 @@ test('native verification owns one cross-platform factual result marker and chec
   assert.match(wrapper, /checkoutKey/);
   assert.doesNotMatch(wrapper, /"digital-breakdown-gameplay-checks"\)/);
   assert.match(windows, /cmake --build \$BuildDir --config Release --parallel/);
+  assert.doesNotMatch(windows, /NATIVE_STAGE=PASS name=evidence/);
   assert.doesNotMatch(windows, /cmake --build[^\r\n]*--target/);
   const targetPattern = /\b(?:DigitalBreakdown|[A-Za-z0-9]+(?:Test|Probe|Soak))\b/g;
   const unixTargets = [...new Set(unix.match(targetPattern) || [])].filter((name) => name !== 'CTest').sort();
@@ -132,10 +126,11 @@ test('native verification owns one cross-platform factual result marker and chec
 });
 
 test('multiplayer verification emits one factual marker only after its complete check chain', () => {
-  const command = project.commandHud.commands.find(({ name }) => name === 'multiplayer');
-  assert.equal(command.resultMarkers, true);
-  assert.equal(command.kind, 'test');
+  const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const multiplayerPackage = JSON.parse(readFileSync(join(root, 'multiplayer-server', 'package.json'), 'utf8'));
+  assert.match(rootPackage.scripts.multiplayer, /audit --omit=dev --audit-level=moderate/);
+  assert.match(rootPackage.scripts.multiplayer, /run check/);
+  assert.match(rootPackage.scripts.multiplayer, /run deploy:dry -- --env staging/);
   assert.match(
     multiplayerPackage.scripts.check,
     /wrangler types --check && tsc --noEmit && vitest run && node -e .*MULTIPLAYER_CHECK=PASS suite=server/,

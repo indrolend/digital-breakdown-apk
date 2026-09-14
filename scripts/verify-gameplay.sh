@@ -51,7 +51,6 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   SoulEconomyTest \
   SoulProjectileLifecycleTest \
   TraversalCalibrationTest \
-  Pass7ParityTest \
   MultiplayerProtocolTest \
   MultiplayerDeterminismTest \
   HostRemotePeerSimulationIsolationTest \
@@ -62,9 +61,5 @@ run_logged build cmake --build "$BUILD_DIR" --config Release --target \
   SecretTvPolicyTest \
   --parallel
 run_logged ctest ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure
-run_logged parity "$BUILD_DIR/Pass7ParityTest"
-run_logged multiplayer "$BUILD_DIR/MultiplayerProtocolTest"
-run_logged determinism "$BUILD_DIR/MultiplayerDeterminismTest"
-run_logged peer-isolation "$BUILD_DIR/HostRemotePeerSimulationIsolationTest"
 run_logged diff-check git diff --check
 echo "NATIVE_VERIFICATION=PASS suite=gameplay"

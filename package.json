@@ -2,17 +2,15 @@
   "name": "digital-breakdown",
   "version": "1.0.0",
   "description": "Native desktop action game and multiplayer relay",
-  "main": "index.js",
   "scripts": {
     "hud:check": "node --test ./tools/commandhud-project.test.mjs ./tools/verify.test.mjs",
     "lint": "node ./tools/lint.mjs",
     "assets": "python ./tools/verify_assets.py",
     "assets:phone": "node ./tools/assets/generate-phone-model.mjs",
-    "multiplayer": "npm --prefix multiplayer-server run check",
+    "multiplayer": "npm --prefix multiplayer-server audit --omit=dev --audit-level=moderate && npm --prefix multiplayer-server run check && npm --prefix multiplayer-server run deploy:dry -- --env staging",
     "verify": "node ./tools/verify.mjs",
     "test": "node ./tools/run-native-tests.mjs"
   },
-  "keywords": [],
   "author": "Joel Gutierrez and contributors",
   "license": "AGPL-3.0-only",
   "type": "commonjs",

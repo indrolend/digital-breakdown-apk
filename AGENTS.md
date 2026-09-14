@@ -4,6 +4,19 @@ Before editing, fetch the remote, inspect the current branch and working tree, a
 
 The supported product is the native desktop game on Windows, macOS, and Linux.
 
+Authority map:
+
+- Human development entrance: `CommandHUD.cmd` / `hud desktop --root .`
+- Semantic actions: `distribution/project.json` (`Play`, `Check`, `Prove`, `Explore`, `Ship`)
+- Product and playtest modes: the `DigitalBreakdown` executable
+- Build system: `native-desktop/CMakeLists.txt`
+- Native test registry and runner: CTest
+- Full repository verification: `node tools/verify.mjs`
+- Continuous integration: `.github/workflows/ci.yml` invoking the same verification
+- Release contract: `.github/workflows/native-release.yml`
+
+Keep platform adapters and specialized modes below these interfaces. Do not add another root launcher, product executable, test runner, or release path for an existing responsibility.
+
 - Gameplay and simulation: `native/game`
 - Behavioral tests: `native/tests`
 - Desktop host and presentation: `native-desktop`
