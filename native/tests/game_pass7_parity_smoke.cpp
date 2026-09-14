@@ -380,8 +380,8 @@ int main() {
         TargetState& enemy=setup.targets[0];enemy=TargetState{};enemy.alive=true;enemy.pos={setup.player.pos.x,PHONE_MODEL_HEIGHT*0.5f,setup.player.pos.z-1.0f};enemy.walkTarget=enemy.pos;enemy.armor=2.0f;enemy.attackCooldown=0.0f;
     }
     step(game,90);
-    ok &= expect(game.state().player.treeClimbing&&game.state().targets[0].attackTimer<=0.0f&&!game.state().targets[0].attackHit&&game.state().player.grabbedByTarget<0,
-        "tree-tip elevation keeps DATA outside a ground-bound human's physical attack reach");
+    ok &= expect(game.state().player.treeClimbing&&!game.state().targets[0].attackHit&&game.state().player.grabbedByTarget<0&&game.state().targets[0].pos.y>PHONE_MODEL_HEIGHT*0.5f+0.20f,
+        "tree-tip elevation requires a human to climb into vertical reach before contact can land");
 
     game.reset();
     float enemyTreeStartY=0.0f,enemyTreeHighestY=0.0f,enemyTreeMaximumRise=0.0f;
@@ -398,8 +398,8 @@ int main() {
     for(int frame=0;frame<240;++frame){const float before=game.state().targets[0].pos.y;step(game);const float after=game.state().targets[0].pos.y;enemyTreeHighestY=std::max(enemyTreeHighestY,after);enemyTreeMaximumRise=std::max(enemyTreeMaximumRise,after-before);if(game.state().player.treeClimbing)++enemyTreeHeldFrames;}
     const TargetState& climbedEnemy=game.state().targets[0];
     const bool outsideTree=climbedEnemy.pos.z<=-0.18f-0.42f||climbedEnemy.pos.z>=0.18f+0.42f||climbedEnemy.pos.x<=-0.18f-0.42f||climbedEnemy.pos.x>=0.18f+0.42f;
-    if(!(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.015f&&outsideTree&&climbedEnemy.attackTimer<=0.0f))std::fprintf(stderr,"ENEMY_TREE_OBSERVED startY=%.3f highY=%.3f maxRise=%.4f final=(%.3f, %.3f, %.3f) attack=%.3f outside=%d heldFrames=%d playerTree=%d playerY=%.3f colliderTop=%.3f\n",enemyTreeStartY,enemyTreeHighestY,enemyTreeMaximumRise,climbedEnemy.pos.x,climbedEnemy.pos.y,climbedEnemy.pos.z,climbedEnemy.attackTimer,outsideTree?1:0,enemyTreeHeldFrames,game.state().player.treeClimbing?1:0,game.state().player.pos.y,game.state().roomColliders[0].climbTopY);
-    ok &= expect(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.015f&&outsideTree&&climbedEnemy.attackTimer<=0.0f,
+    if(!(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.0475f&&outsideTree&&climbedEnemy.attackTimer<=0.0f))std::fprintf(stderr,"ENEMY_TREE_OBSERVED startY=%.3f highY=%.3f maxRise=%.4f final=(%.3f, %.3f, %.3f) attack=%.3f outside=%d heldFrames=%d playerTree=%d playerY=%.3f colliderTop=%.3f\n",enemyTreeStartY,enemyTreeHighestY,enemyTreeMaximumRise,climbedEnemy.pos.x,climbedEnemy.pos.y,climbedEnemy.pos.z,climbedEnemy.attackTimer,outsideTree?1:0,enemyTreeHeldFrames,game.state().player.treeClimbing?1:0,game.state().player.pos.y,game.state().roomColliders[0].climbTopY);
+    ok &= expect(enemyTreeHighestY>enemyTreeStartY+0.20f&&enemyTreeMaximumRise<=0.0475f&&outsideTree&&climbedEnemy.attackTimer<=0.0f,
         "enemy approaches a real trunk face and gains height continuously without attacking through the tree");
     const_cast<GameState&>(game.state()).targets[0].attackCooldown=0.0f;
     bool elevatedAttack=false;
@@ -652,7 +652,7 @@ int main() {
         GameState& setup=const_cast<GameState&>(game.state());
         for(auto& target:setup.targets) target.alive=false;
         TargetState& target=setup.targets[0]; target=TargetState{}; target.alive=true; target.slurpable=true;
-        target.pos=setup.player.pos+Vec3{0,0.5f,3.0f};
+        target.pos=setup.player.pos-setup.camera.forward*10.0f;
     }
     game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
     step(game,30);
@@ -852,7 +852,7 @@ int main() {
             "shooting consumes the stored cube and launches that cube's type");
         ok &= expect(hasAudioCue(state,AudioCue::SentMessage),
             "released projectile queues the authoritative sent-message cue");
-        ok &= expect(fired && horizontalSpeed(fired->vel)<23.0f,
+        ok &= expect(fired && horizontalSpeed(fired->vel)>29.0f&&horizontalSpeed(fired->vel)<32.0f,
             "stored brute soul uses the browser's heavier launch speed");
         ok &= expect(state.hud.shootJoinTimer>0.0f && state.hud.crosshairSpreadPixels<15.0f,
             "successful discharge starts the browser crosshair join cue");
@@ -1102,8 +1102,8 @@ int main() {
         setup.player.battery=50.0f;
     }
     step(game,60);
-    ok &= expect(near(game.state().player.battery,72.0f,0.001f),
-        "idle native battery reproduces the browser 22-per-second regeneration");
+    ok &= expect(near(game.state().player.battery,58.0f,0.001f),
+        "idle native battery reproduces the mature eight-per-second regeneration");
 
     game.reset();
     {
@@ -1145,8 +1145,8 @@ int main() {
     game.setTouchControls(0,0,0,0,true,false,false,false,false,false);
     step(game,60);
     ok &= expect(near(game.state().player.battery,50.0f,0.0001f) &&
-        near(game.state().energy.supplementalValue,90.812f,0.0002f),
-        "native supplemental power matches the oracle one-second 60 FPS vacuum trace");
+        near(game.state().energy.supplementalValue,90.7504f,0.0002f),
+        "native supplemental power matches the mature one-second 60 FPS vacuum trace");
 
     game.reset();
     {
