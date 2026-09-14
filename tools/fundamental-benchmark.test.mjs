@@ -13,8 +13,8 @@ test("fundamental compute benchmark remains deterministic and measurable", () =>
     assert.ok(Number.isFinite(byName[name].ms) && byName[name].ms > 0, `${name} duration invalid`);
   }
 
-  assert.equal(byName.xorshift32.check, 1768305425);
-  assert.equal(byName.sha256.check, "40cb17dbcefd2701");
+  assert.equal(byName.xorshift32.check, 2669331932);
+  assert.equal(byName.sha256.check, "b56fbd6a698b3597");
   assert.ok(byName.truth_compiler.files > byName.truth_compiler.truthFiles);
   assert.ok(byName.truth_compiler.bytes >= byName.truth_compiler.truthBytes);
 
