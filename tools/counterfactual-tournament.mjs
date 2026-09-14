@@ -4,9 +4,9 @@
 //
 // Given a directory of .patch files, materialize each candidate in a detached
 // temporary git worktree, run the same probes against baseline and candidate,
-// compare any SEMANTIC_DIGEST=<hex/text> markers, measure source delta, rank
-// survivors, and delete every worktree. Candidate futures are evidence, not
-// repository authorities.
+// compare any SEMANTIC_DIGEST=<value> markers, measure *authoritative* source
+// reduction, rank survivors, and delete every worktree. Candidate futures are
+// evidence, not repository authorities.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -16,6 +16,16 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const normalize = p => p.split(path.sep).join("/");
+const AUTHORITY_FILES = new Set(["distribution/project.json", "native-desktop/CMakeLists.txt", "tools/verify.mjs", ".github/workflows/ci.yml", ".github/workflows/native-release.yml"]);
+
+function category(file) {
+  if (/^native\/tests\//.test(file) || /\.test\.mjs$/.test(file)) return "proof";
+  if (/^(docs\/|README\.md$|AGENTS\.md$)/.test(file)) return "history";
+  if (/^(native\/game|native-desktop|native-network)\//.test(file)) return "runtime";
+  if (AUTHORITY_FILES.has(file) || /^\.github\/workflows\//.test(file)) return "build";
+  return "support";
+}
 
 function die(message) {
   console.error(`COUNTERFACTUAL_TOURNAMENT=FAIL ${message}`);
@@ -25,17 +35,11 @@ function die(message) {
 function run(command, args, cwd, { allowFailure = false } = {}) {
   const r = spawnSync(command, args, { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
   const status = r.status ?? 1;
-  if (!allowFailure && status !== 0) {
-    const error = new Error(`${command} ${args.join(" ")} failed (${status})`);
-    error.result = r;
-    throw error;
-  }
+  if (!allowFailure && status !== 0) throw new Error(`${command} ${args.join(" ")} failed (${status})`);
   return { status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-function git(args, cwd = root, options) {
-  return run("git", args, cwd, options);
-}
+function git(args, cwd = root, options) { return run("git", args, cwd, options); }
 
 function parseArgs(argv) {
   const out = { probes: [], patchDir: null, json: false, fullVerify: false, keep: false };
@@ -58,19 +62,13 @@ function parseArgs(argv) {
 }
 
 function shell(command, cwd) {
-  const r = process.platform === "win32"
+  return process.platform === "win32"
     ? run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", command], cwd, { allowFailure: true })
     : run(process.env.SHELL || "/bin/sh", ["-lc", command], cwd, { allowFailure: true });
-  return { command, ...r };
 }
 
 function digestMarkers(text) {
-  const values = [];
-  for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/(?:^|\s)SEMANTIC_DIGEST=([^\s]+)/);
-    if (m) values.push(m[1]);
-  }
-  return values;
+  return text.split(/\r?\n/).map(line => line.match(/(?:^|\s)SEMANTIC_DIGEST=([^\s]+)/)?.[1]).filter(Boolean);
 }
 
 function runProbes(cwd, probes) {
@@ -101,22 +99,36 @@ function semanticEquivalent(baseline, candidate) {
 
 function diffStats(cwd) {
   const r = git(["diff", "--numstat", "HEAD"], cwd);
-  let additions = 0, deletions = 0, files = 0;
+  const stats = { files: 0, additions: 0, deletions: 0, netLines: 0, runtime: { additions: 0, deletions: 0 }, touchedProof: false, touchedHistory: false, touchedAuthority: false, paths: [] };
   for (const line of r.stdout.split(/\r?\n/).filter(Boolean)) {
-    const [a, d] = line.split("\t");
-    if (/^\d+$/.test(a)) additions += Number(a);
-    if (/^\d+$/.test(d)) deletions += Number(d);
-    files++;
+    const [aRaw, dRaw, pRaw] = line.split("\t");
+    const file = normalize(pRaw || "");
+    const a = /^\d+$/.test(aRaw) ? Number(aRaw) : 0;
+    const d = /^\d+$/.test(dRaw) ? Number(dRaw) : 0;
+    const kind = category(file);
+    stats.files++;
+    stats.additions += a;
+    stats.deletions += d;
+    stats.paths.push({ file, kind, additions: a, deletions: d });
+    if (kind === "runtime" || kind === "build") { stats.runtime.additions += a; stats.runtime.deletions += d; }
+    if (kind === "proof") stats.touchedProof = true;
+    if (kind === "history") stats.touchedHistory = true;
+    if (AUTHORITY_FILES.has(file)) stats.touchedAuthority = true;
   }
-  return { files, additions, deletions, netLines: additions - deletions };
+  stats.netLines = stats.additions - stats.deletions;
+  return stats;
 }
 
 function rank(candidate) {
   if (!candidate.probes.passed) return -1e12;
   if (!candidate.semanticEquivalent) return -1e9;
-  // Selection pressure: preserve tested semantics, then prefer subtraction and
-  // smaller change radius. This is intentionally simple and inspectable.
-  return candidate.diff.deletions * 10 - candidate.diff.additions * 2 - candidate.diff.files * 5;
+  // Never reward deletion of proof/history. Penalize touching canonical authority.
+  // Only runtime/build subtraction can produce positive selection pressure.
+  let score = candidate.diff.runtime.deletions * 10 - candidate.diff.runtime.additions * 2 - candidate.diff.files * 5;
+  if (candidate.diff.touchedProof) score -= 10000;
+  if (candidate.diff.touchedHistory) score -= 1000;
+  if (candidate.diff.touchedAuthority) score -= 5000;
+  return score;
 }
 
 function safeName(file) {
@@ -137,7 +149,6 @@ function main() {
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "db-counterfactual-"));
   const candidates = [];
-
   try {
     for (let index = 0; index < patches.length; index++) {
       const patch = patches[index];
@@ -148,7 +159,7 @@ function main() {
         git(["worktree", "add", "--quiet", "--detach", cwd, baselineHead]);
         const apply = git(["apply", "--whitespace=nowarn", path.join(patchDir, patch)], cwd, { allowFailure: true });
         if (apply.status !== 0) {
-          candidate = { name, patch, applyPassed: false, applyError: apply.stderr.trim(), probes: { passed: false, results: [] }, semanticEquivalent: false, diff: { files: 0, additions: 0, deletions: 0, netLines: 0 }, score: -1e12 };
+          candidate = { name, patch, applyPassed: false, applyError: apply.stderr.trim(), probes: { passed: false, results: [] }, semanticEquivalent: false, diff: { files: 0, additions: 0, deletions: 0, runtime: { additions: 0, deletions: 0 } }, score: -1e12 };
         } else {
           const probes = runProbes(cwd, args.probes);
           const diff = diffStats(cwd);
@@ -156,7 +167,7 @@ function main() {
           candidate.score = rank(candidate);
         }
       } catch (error) {
-        candidate = { name, patch, applyPassed: false, error: String(error), probes: { passed: false, results: [] }, semanticEquivalent: false, diff: { files: 0, additions: 0, deletions: 0, netLines: 0 }, score: -1e12 };
+        candidate = { name, patch, applyPassed: false, error: String(error), probes: { passed: false, results: [] }, semanticEquivalent: false, diff: { files: 0, additions: 0, deletions: 0, runtime: { additions: 0, deletions: 0 } }, score: -1e12 };
       } finally {
         if (!args.keep && fs.existsSync(cwd)) git(["worktree", "remove", "--force", cwd], root, { allowFailure: true });
       }
@@ -171,16 +182,14 @@ function main() {
   const result = {
     schemaVersion: 1,
     baseline: { head: baselineHead, probes: baseline.results.map(x => ({ command: x.command, semanticDigests: x.semanticDigests })) },
-    selection: "probes pass; emitted semantic digests match baseline; prefer deletions and smaller change radius",
+    selection: "all probes pass; emitted semantic digests equal baseline; reward only runtime/build subtraction; penalize proof/history/authority edits",
     candidates
   };
 
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(`COUNTERFACTUAL_TOURNAMENT=PASS candidates=${candidates.length}`);
-    for (const c of candidates) {
-      console.log(`${c.semanticEquivalent ? "SURVIVE" : "REJECT "} score=${String(c.score).padStart(8)} files=${c.diff.files} +${c.diff.additions}/-${c.diff.deletions} ${c.name}`);
-    }
+    for (const c of candidates) console.log(`${c.semanticEquivalent ? "SURVIVE" : "REJECT "} score=${String(c.score).padStart(8)} runtime=+${c.diff.runtime.additions}/-${c.diff.runtime.deletions} files=${c.diff.files} ${c.name}`);
   }
 }
 
