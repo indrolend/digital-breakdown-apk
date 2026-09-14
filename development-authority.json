@@ -1,20 +1,50 @@
 {
-    "generated_at":  "2026-09-13T17:20:43.4802709-05:00",
-    "repository":  "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645",
-    "branch":  "convergence/clean-20260913-171645",
-    "head":  "16e1bb249f6b05f34919daadfc8e770639922898",
-    "preserved_sources":  {
-                              "apk":  "7222534d22bb6d33677e714a60678886e49fa4ae",
-                              "gauntlet":  "c84b81c7e29aedc5cbc2e46e7ec5a38a69544f49",
-                              "hypercore":  "82150c6f7d9dd94bde21ed2f851d8ecc530d3c97"
-                          },
-    "runtime_evidence":  "C:\\Users\\indro\\Downloads\\digital-breakdown-extreme-leapfrog-4\\mirror\\extreme-chaos",
-    "build":  "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645\\build\\convergence-clean\\bin\\Release\\DigitalBreakdown.exe",
-    "principles":  [
-                       "one clean development worktree",
-                       "dirty historical work preserved",
-                       "no destructive reset",
-                       "no silent history rewrite",
-                       "source authority separated from runtime evidence"
-                   ]
+  "generated_at": "2026-09-14T09:00:00-05:00",
+  "repository": "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645",
+  "branch": "convergence/mature-20260914",
+  "head_at_recording": "0862a4c",
+  "authoritative_base": "8bc7862570247b0f8736660cddb539dcd7c40490",
+  "incorporated": {
+    "mature_gameplay_and_traversal": "c84b81c7e29aedc5cbc2e46e7ec5a38a69544f49",
+    "persistent_human_identity": "50dc7d9a77731db2fcb31be67dd81560b7cf609d",
+    "identity_integration": "7bb0c70",
+    "hypercore_atmosphere_reference": "82150c6f7d9dd94bde21ed2f851d8ecc530d3c97",
+    "contract_based_atmosphere": "8bc7862570247b0f8736660cddb539dcd7c40490",
+    "parity_evidence_alignment": "0862a4c"
+  },
+  "preserved_not_integrated": [
+    "origin/codex/neural-enemy-motor",
+    "origin/experiment/simple-humor-physics-bootstrap",
+    "origin/automation/blob-tracking-bootstrap",
+    "C:\\Users\\indro\\Downloads\\digital-breakdown-extreme-leapfrog-4",
+    "C:\\Users\\indro\\Projects\\digital-breakdown-ultra-leapfrog-1",
+    "C:\\Users\\indro\\Projects\\digital-breakdown-runtime-authority",
+    "C:\\Users\\indro\\Projects\\digital-breakdown-apk (dirty atmosphere contract evidence)"
+  ],
+  "excluded_from_core": [
+    "cart and momentum default-run state",
+    "Extreme field simulation and postprocess stack",
+    "runtime mirror as a product dependency",
+    "neural motor as canonical enemy locomotion",
+    "humor angular state in replicated targets",
+    "localized projectile lattice impact wave mislabeled as blob tracking"
+  ],
+  "build": "C:\\Users\\indro\\Projects\\digital-breakdown-converged-20260913-171645\\build\\desktop-release\\bin\\Release\\DigitalBreakdown.exe",
+  "verification": {
+    "release_build": "pass",
+    "ctest": "35/35 pass",
+    "pass7_parity": "pass",
+    "smoke_test": "pass",
+    "identity_capture": "build/verification-captures/identity.ppm",
+    "gameplay_capture": "build/verification-captures/gameplay.ppm"
+  },
+  "principles": [
+    "one authoritative development worktree",
+    "one gameplay authority",
+    "visual-only identity observation",
+    "atmosphere exposed through renderer contracts",
+    "dirty historical work preserved",
+    "no destructive cleanup",
+    "experimental state excluded from core"
+  ]
 }
