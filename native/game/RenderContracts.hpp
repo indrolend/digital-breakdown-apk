@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include "EarlyBrowserVisuals.hpp"
 #include "Math.hpp"
 #include "VisualIdentity.hpp"
 
@@ -52,19 +53,30 @@ struct SceneAtmosphere {
     float fogDensity=0.0f;
 };
 
-inline SceneAtmosphere sceneAtmosphere(float time,int roomIndex,float phonePower){
+inline SceneAtmosphere sceneAtmosphere(float time,int roomIndex,int roomSeed,float phonePower,early_browser_visuals::RoomSetting setting){
     const float omenPulse=0.5f+0.5f*std::sin(time*0.73f+static_cast<float>(roomIndex)*0.41f);
     const float roomThreat=clampf((static_cast<float>(roomIndex)-1.0f)/18.0f,0.0f,1.0f);
+    const float variation=0.92f+0.16f*(0.5f+0.5f*std::sin(static_cast<float>(roomSeed)*0.0173f+static_cast<float>(roomIndex)*1.91f));
     const float phonePulse=clampf(phonePower,0.0f,1.0f);
-    return {
-        {0.003f+omenPulse*0.004f,0.002f,0.009f+roomThreat*0.008f},
-        {0.018f+omenPulse*0.012f,0.014f,0.030f+roomThreat*0.018f},
-        {0.48f+roomThreat*0.12f,0.055f+omenPulse*0.035f,0.13f+roomThreat*0.16f},
-        {0.04f,0.30f+omenPulse*0.10f,0.52f+roomThreat*0.18f},
-        {0.18f*phonePulse,1.05f*phonePulse,1.32f*phonePulse},
-        {0.010f+roomThreat*0.018f,0.002f,0.024f+omenPulse*0.012f},
-        0.020f+roomThreat*0.010f+omenPulse*0.003f
-    };
+    SceneAtmosphere atmosphere{};
+    using early_browser_visuals::RoomSetting;
+    switch(setting){
+        case RoomSetting::Field:
+            atmosphere={{0.025f,0.055f,0.075f},{0.20f,0.31f,0.22f},{0.92f,0.72f,0.38f},{0.12f,0.38f,0.55f},{},{0.035f,0.075f,0.085f},0.010f};break;
+        case RoomSetting::Sterile:
+            atmosphere={{0.003f,0.007f,0.011f},{0.035f,0.060f,0.075f},{0.38f,0.56f,0.68f},{0.055f,0.16f,0.23f},{},{0.018f,0.032f,0.043f},0.025f};break;
+        case RoomSetting::City:
+            atmosphere={{0.006f,0.005f,0.014f},{0.060f,0.055f,0.085f},{0.62f,0.24f,0.20f},{0.08f,0.28f,0.46f},{},{0.020f,0.014f,0.036f},0.021f};break;
+        case RoomSetting::Coastal:
+            atmosphere={{0.018f,0.045f,0.065f},{0.15f,0.25f,0.27f},{0.86f,0.62f,0.36f},{0.10f,0.42f,0.58f},{},{0.035f,0.080f,0.095f},0.014f};break;
+    }
+    atmosphere.background={atmosphere.background.r*variation,atmosphere.background.g*variation,atmosphere.background.b*variation};
+    atmosphere.ambient={atmosphere.ambient.r*variation,atmosphere.ambient.g*variation,atmosphere.ambient.b*variation};
+    atmosphere.sun={atmosphere.sun.r*(0.94f+omenPulse*0.06f),atmosphere.sun.g*(0.94f+omenPulse*0.06f),atmosphere.sun.b*(0.94f+omenPulse*0.06f)};
+    atmosphere.fill={atmosphere.fill.r*variation,atmosphere.fill.g*variation,atmosphere.fill.b*variation};
+    atmosphere.phone={0.18f*phonePulse,1.05f*phonePulse,1.32f*phonePulse};
+    atmosphere.fogDensity+=roomThreat*0.004f;
+    return atmosphere;
 }
 
 } // namespace render_contract
