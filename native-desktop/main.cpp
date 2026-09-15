@@ -1951,7 +1951,7 @@ int main(int argc, char** argv) {
     glfwSetWindowTitle(window,"Data");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval((multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
+    glfwSwapInterval((capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
     setMouseCaptured(window, host, host.game.state().started&&!host.game.state().attractMode);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -2403,7 +2403,7 @@ int main(int argc, char** argv) {
             glfwSetWindowShouldClose(window,GLFW_TRUE);
         }
         const auto swapBegin=std::chrono::steady_clock::now();
-        glfwSwapBuffers(window);
+        if(!capturePath)glfwSwapBuffers(window);
         const auto frameEnd=std::chrono::steady_clock::now();
         perfTrace.sample(host.game.state(),std::chrono::duration<double,std::milli>(frameEnd-frameBegin).count(),std::chrono::duration<double,std::milli>(updateEnd-updateBegin).count(),std::chrono::duration<double,std::milli>(audioEnd-audioBegin).count(),std::chrono::duration<double,std::milli>(renderEnd-renderBegin).count(),std::chrono::duration<double,std::milli>(frameEnd-swapBegin).count(),simulationSteps,droppedAccumulator);
     }
