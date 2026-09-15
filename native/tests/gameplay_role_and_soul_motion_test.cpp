@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 
+#include "gameplay/EnemyMotor.hpp"
 #include "gameplay/SoulMotion.hpp"
 #include "gameplay/TargetRoles.hpp"
 #include "VisualIdentity.hpp"
@@ -117,6 +118,62 @@ void testIngestingSoulShellContractsContinuously() {
     assert(late.morphScale > 0.0f);
 }
 
+void testEnemyMotorIsDeterministicBoundedAndStateful() {
+    gameplay::EnemyMotorInput input{};
+    input.toPlayer = {0.0f, 0.0f, -1.0f};
+    input.playerDistance = 7.0f;
+    input.playerVelocity = {0.45f, 0.0f, -0.20f};
+    input.toNearestAlly = {1.0f, 0.0f, 0.0f};
+    input.nearestAllyDistance = 1.3f;
+    input.roomPressure = 0.65f;
+    input.vacuumPressure = 0.0f;
+    input.bodySpeed = 2.4f;
+
+    gameplay::EnemyMotorMemory a{}, b{};
+    gameplay::EnemyMotorOutput first{};
+    for (int step = 0; step < 90; ++step) {
+        first = gameplay::updateEnemyMotor(input, a, 1.0f / 60.0f, 0.22f);
+        const auto same = gameplay::updateEnemyMotor(input, b, 1.0f / 60.0f, 0.22f);
+        assert(std::abs(first.steering.x - same.steering.x) < 0.000001f);
+        assert(std::abs(first.steering.z - same.steering.z) < 0.000001f);
+        assert(std::abs(first.speedScale - same.speedScale) < 0.000001f);
+        assert(std::abs(first.attackCommitment - same.attackCommitment) < 0.000001f);
+        assert(std::abs(first.brace - same.brace) < 0.000001f);
+    }
+    const float steeringMagnitude = std::sqrt(first.steering.x * first.steering.x + first.steering.z * first.steering.z);
+    assert(std::abs(steeringMagnitude - 1.0f) < 0.0001f);
+    assert(first.speedScale >= 0.58f && first.speedScale <= 1.42f);
+    assert(first.attackCommitment >= 0.0f && first.attackCommitment <= 1.0f);
+    assert(first.brace >= 0.0f && first.brace <= 1.0f);
+    assert(std::abs(first.steering.x) > 0.02f); // social/recurrent pressure bends direct pursuit
+}
+
+void testEnemyMotorRespondsToVacuumAndIndividualityWithoutNamedModes() {
+    gameplay::EnemyMotorInput input{};
+    input.toPlayer = {0.6f, 0.0f, -0.8f};
+    input.playerDistance = 4.5f;
+    input.playerVelocity = {-0.3f, 0.0f, 0.4f};
+    input.toNearestAlly = {-0.8f, 0.0f, -0.6f};
+    input.nearestAllyDistance = 0.9f;
+    input.roomPressure = 0.8f;
+    input.bodySpeed = 3.0f;
+
+    gameplay::EnemyMotorMemory calmMemory{}, vacuumMemory{}, otherMemory{};
+    gameplay::EnemyMotorOutput calm{}, vacuum{}, other{};
+    for (int step = 0; step < 120; ++step) {
+        input.vacuumPressure = 0.0f;
+        calm = gameplay::updateEnemyMotor(input, calmMemory, 1.0f / 60.0f, -0.35f);
+        input.vacuumPressure = 1.0f;
+        vacuum = gameplay::updateEnemyMotor(input, vacuumMemory, 1.0f / 60.0f, -0.35f);
+        other = gameplay::updateEnemyMotor(input, otherMemory, 1.0f / 60.0f, 0.65f);
+    }
+    assert(vacuum.brace > calm.brace);
+    assert(std::abs(vacuum.steering.x - calm.steering.x) > 0.005f ||
+           std::abs(vacuum.steering.z - calm.steering.z) > 0.005f);
+    assert(std::abs(other.steering.x - vacuum.steering.x) > 0.005f ||
+           std::abs(other.steering.z - vacuum.steering.z) > 0.005f);
+}
+
 } // namespace
 
 int main() {
@@ -126,5 +183,7 @@ int main() {
     testGroundClampAndStop();
     testVacuumOwnedStatesDoNotMove();
     testIngestingSoulShellContractsContinuously();
+    testEnemyMotorIsDeterministicBoundedAndStateful();
+    testEnemyMotorRespondsToVacuumAndIndividualityWithoutNamedModes();
     return 0;
 }
