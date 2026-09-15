@@ -1,4 +1,5 @@
 #include "DesktopRenderer.hpp"
+#include "ShoppingCartGeometry.hpp"
 #include "HumanVisual.hpp"
 #include "BitmapFont.hpp"
 #include "EarlyBrowserVisuals.hpp"
@@ -170,6 +171,17 @@ void cube() {
     glEnd();
 }
 
+unsigned int particleCubeList() {
+    static unsigned int list=0;
+    if(!list){list=glGenLists(1);glNewList(list,GL_COMPILE);cube();glEndList();}
+    return list;
+}
+
+void drawParticleCube(const Vec3& p,float size,float spin,float r,float g,float b,float a){
+    glPushMatrix();glTranslatef(p.x,p.y,p.z);glRotatef(spin*180.0f/PI,0.57735027f,0.57735027f,0.57735027f);
+    glScalef(size,size,size);gradedColor(r,g,b,a);glCallList(particleCubeList());glPopMatrix();
+}
+
 void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha, const Vec3& sunDirection) {
     constexpr int segments = 8;
     const float sunXOverY=sunDirection.x/sunDirection.y;
@@ -327,10 +339,25 @@ void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float y
     glScalef(s.x, s.y, s.z); gradedColor(r,g,b,a); cube(); glPopMatrix();
 }
 
+struct FixedRibbonGeometry { std::array<Vec3,50> vertices{}; };
+
+const FixedRibbonGeometry& fixedRibbonGeometry(float sweep){
+    struct Cache { FixedRibbonGeometry slash; FixedRibbonGeometry impact; };
+    static const Cache cache=[](){
+        Cache result{};
+        const auto fill=[](FixedRibbonGeometry& geometry,float arc,float innerRadius,float outerRadius){
+            constexpr int segments=24;
+            for(int i=0;i<=segments;++i){const float angle=arc*static_cast<float>(i)/segments,c=std::cos(angle),s=std::sin(angle);geometry.vertices[static_cast<std::size_t>(i)*2u]={c*outerRadius,s*outerRadius,0};geometry.vertices[static_cast<std::size_t>(i)*2u+1u]={c*innerRadius,s*innerRadius,0};}
+        };
+        fill(result.slash,PI*1.35f,0.494f,0.546f);fill(result.impact,PI*2.0f,0.318f,0.362f);return result;
+    }();
+    return sweep<PI*1.7f?cache.slash:cache.impact;
+}
+
 void fxRibbon(const Vec3& p,const Quat& q,const Vec3& scale,float start,float sweep,int segments,float inner,float outer,float r,float g,float b,float a){
     const float matrix[16]={1-2*(q.y*q.y+q.z*q.z),2*(q.x*q.y+q.z*q.w),2*(q.x*q.z-q.y*q.w),0,2*(q.x*q.y-q.z*q.w),1-2*(q.x*q.x+q.z*q.z),2*(q.y*q.z+q.x*q.w),0,2*(q.x*q.z+q.y*q.w),2*(q.y*q.z-q.x*q.w),1-2*(q.x*q.x+q.y*q.y),0,0,0,0,1};
     glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(scale.x,scale.y,scale.z); gradedColor(r,g,b,a);
-    glBegin(GL_TRIANGLE_STRIP); for(int i=0;i<=segments;++i){const float angle=start+sweep*static_cast<float>(i)/segments; const float c=std::cos(angle),s=std::sin(angle); glVertex3f(c*outer,s*outer,0); glVertex3f(c*inner,s*inner,0);} glEnd(); glPopMatrix();
+    glBegin(GL_TRIANGLE_STRIP);if(start==0.0f&&segments==24){for(const Vec3& vertex:fixedRibbonGeometry(sweep).vertices)glVertex3f(vertex.x,vertex.y,vertex.z);}else{for(int i=0;i<=segments;++i){const float angle=start+sweep*static_cast<float>(i)/segments;const float c=std::cos(angle),s=std::sin(angle);glVertex3f(c*outer,s*outer,0);glVertex3f(c*inner,s*inner,0);}}glEnd();glPopMatrix();
 }
 
 void fxStreak(const Vec3& p,const Quat& q,float length,float width,float r,float g,float b,float a){
@@ -1347,6 +1374,14 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);drawBox({0,0.014f,shadowTileOrigin},{ROOM_WIDTH,0.008f,ROOM_DEPTH*3.0f},0,0,0,0.012f,0.018f,0.022f,0.24f);glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);glDisable(GL_STENCIL_TEST);
     }
 
+    if(state.cart.active){
+        const auto& cart=state.cart;const Vec3 f=rolling_vehicle::forward(cart.yaw),r=rolling_vehicle::right(cart.yaw);
+        for(const auto& part:shopping_cart_geometry::Parts){
+            const Vec3 p=cart.pos+r*part.offset.x+Vec3{0,part.offset.y,0}-f*part.offset.z;
+            if(part.kind==shopping_cart_geometry::PartKind::Wheel)drawBox(p,part.size,cart.wheelSpin[part.wheel],cart.yaw+cart.casterYaw[part.wheel],0,0.07f,0.08f,0.09f);
+            else{const bool basket=part.kind==shopping_cart_geometry::PartKind::Basket;drawBox(p,part.size,0,cart.yaw,0,basket?0.34f:0.62f,basket?0.42f:0.68f,basket?0.45f:0.70f,basket?0.68f:1.0f);}
+        }
+    }
     if (state.phoneVisual.visible) {
         const Vec3 phonePos=state.phoneTransform.position;
         const auto& pv=state.phoneVisual;
@@ -1435,9 +1470,18 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         const float t=particle.maxLife>0.0f?clampf(particle.life/particle.maxLife,0.0f,1.0f):0.0f;
         const float size=particle.size*t;
         const VisualColor color=particleMaterialColor(particle.material,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,t);
-        drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,color.r,color.g,color.b,(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f));
+        drawParticleCube(particle.pos,size,particle.life*6.0f,color.r,color.g,color.b,(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f));
     }
     if(state.localSettings.particles||state.localSettings.portalWindow)drawDoorDataMosh(state);
+    if(codec&&codec->inspectedTarget>=0&&codec->inspectedTarget<TARGET_COUNT){
+        const TargetState& inspected=state.targets[codec->inspectedTarget];
+        if(inspected.alive&&!inspected.slurpable){
+            const float h=(PASS7_HUMAN_VISUAL_SPEC.totalHeight+0.18f)*inspected.scale;
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            drawBox(inspected.pos+Vec3{0,h*0.5f,0},{0.72f*inspected.scale,h,0.72f*inspected.scale},0,inspected.visualYaw,0,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.16f);
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+    }
     if(codec&&codec->showColliders){
         glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);glLineWidth(2.0f);
         const float z0=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;

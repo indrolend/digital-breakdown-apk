@@ -4,6 +4,7 @@
 #include "DesktopUpdateService.hpp"
 #include "DesktopPlaytestPolicy.hpp"
 #include "DeveloperCodec.hpp"
+#include "DeveloperInspection.hpp"
 #include "BuildIdentity.hpp"
 #include "MenuNavigation.hpp"
 #include "ControllerRumble.hpp"
@@ -978,7 +979,7 @@ void executeDeveloperCodec(HostState& host){
     const auto parsed=parseDeveloperCodecCommand(input);
     const auto invalid=[&](){host.codec.write(parsed.recognizedVerb?"INVALID ARGUMENTS":"UNKNOWN COMMAND");host.codec.write("type: help");};
     switch(parsed.command){
-        case DeveloperCodecCommand::Help:host.codec.write("help | state | soul spawn | battery full");host.codec.write("enemies on/off/toggle | room next/reroll");host.codec.write("colliders show/hide/toggle | playtest rally/traversal/rooms");break;
+        case DeveloperCodecCommand::Help:host.codec.write("help | state | soul spawn | battery full");host.codec.write("enemies on/off/toggle | room next/reroll");host.codec.write("colliders show/hide/toggle | inspect human/clear");host.codec.write("playtest rally/traversal/rooms/cart");break;
         case DeveloperCodecCommand::State:{
             const auto& state=host.game.state();const auto& build=desktopBuildIdentity();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
             host.codec.write("build "+build.commitShort+"  version "+build.humanVersion);
@@ -996,9 +997,21 @@ void executeDeveloperCodec(HostState& host){
         case DeveloperCodecCommand::CollidersShow:host.codec.showColliders=true;host.codec.write("COLLIDERS SHOWN");break;
         case DeveloperCodecCommand::CollidersHide:host.codec.showColliders=false;host.codec.write("COLLIDERS HIDDEN");break;
         case DeveloperCodecCommand::CollidersToggle:host.codec.showColliders=!host.codec.showColliders;host.codec.write(host.codec.showColliders?"COLLIDERS SHOWN":"COLLIDERS HIDDEN");break;
+        case DeveloperCodecCommand::InspectHuman:{
+            const auto picked=developerHumanAtReticle(host.game.state());host.codec.inspectedTarget=picked.targetIndex;
+            if(!picked.valid()){host.codec.write("INSPECT HUMAN  NONE");break;}
+            const TargetState& target=host.game.state().targets[picked.targetIndex];
+            const float attackProgress=target.attackTimer>0.0f?1.0f-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):-1.0f;
+            host.codec.write("HUMAN #"+std::to_string(picked.targetIndex)+"  DEPTH "+std::to_string(picked.depth));
+            host.codec.write("HP "+std::to_string(target.health)+"  ARMOR "+std::to_string(target.armor)+(target.brute?"  BRUTE":"  NORMAL"));
+            host.codec.write("ATTACK "+std::to_string(attackProgress)+"  HIT "+std::to_string(target.hitFlash));
+            host.codec.write("SOURCE TargetState -> HumanVisual -> Renderer");break;
+        }
+        case DeveloperCodecCommand::InspectClear:host.codec.inspectedTarget=-1;host.codec.write("INSPECT CLEAR");break;
         case DeveloperCodecCommand::PlaytestRally:host.game.debugStartRallyLab();host.codec.write("PLAYTEST RALLY");break;
         case DeveloperCodecCommand::PlaytestTraversal:host.game.debugStartTraversalLab();host.codec.write("PLAYTEST TRAVERSAL");break;
         case DeveloperCodecCommand::PlaytestRooms:host.game.debugStartRoomInspector();host.codec.write("PLAYTEST ROOMS");break;
+        case DeveloperCodecCommand::PlaytestCart:host.game.debugStartCartLab();host.codec.write("PLAYTEST CART  W/S/A/D  SHIFT BRAKE");break;
         default:invalid();break;
     }
     host.codec.input.clear();
@@ -1437,6 +1450,7 @@ void printUsage() {
     std::printf("  --tv-room-enter      Local lab exploit: start directly inside the TV room.\n");
     std::printf("  --traversal-lab      Start the playable parkour calibration room.\n");
     std::printf("  --slope-lab          Start the deterministic physical-slope fixture.\n");
+    std::printf("  --cart-lab           Start mounted in the shopping-cart vehicle lab.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
@@ -1749,6 +1763,7 @@ int main(int argc, char** argv) {
     const bool tvRoomEnter=hasArg(argc,argv,"--tv-room-enter");
     const bool traversalLab=hasArg(argc,argv,"--traversal-lab");
     const bool slopeLab=hasArg(argc,argv,"--slope-lab");
+    const bool cartLab=hasArg(argc,argv,"--cart-lab");
     const bool rallyLab=hasArg(argc,argv,"--rally-lab");
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
@@ -1878,6 +1893,7 @@ int main(int argc, char** argv) {
     }
     if(traversalLab){host.game.debugStartTraversalLab();std::printf("TRAVERSAL_LAB_READY center_gaps=1.50,2.00,2.50 right=ascent left=ledge\n");}
     if(slopeLab){host.game.debugStartSlopeLab();std::printf("SLOPE_LAB_READY low_z=12 high_z=2 rise=1.60 run=10.00 rock=(6,7) controls=standard\n");}
+    if(cartLab){host.game.debugStartCartLab();std::printf("CART_LAB_READY controls=W/S/A/D brake=SHIFT camera=independent mount=development-seam\n");}
     if(rallyLab){
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
@@ -1964,7 +1980,7 @@ int main(int argc, char** argv) {
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(soulLifecycleDirectory){const int result=runSoulLifecycleCapture(window,host,soulLifecycleDirectory,framebufferWidth,framebufferHeight);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
-    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!slopeLab&&!rallyLab&&!roomInspector){
+    if(!tvRoomTest&&!tvRoomEnter&&!traversalLab&&!slopeLab&&!cartLab&&!rallyLab&&!roomInspector){
         host.multiplayer.configureImpairment(
             argInt(argc,argv,"--net-latency-ms"),
             argInt(argc,argv,"--net-jitter-ms"),

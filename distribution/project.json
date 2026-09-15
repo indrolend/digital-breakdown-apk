@@ -31,6 +31,16 @@
         ]
       },
       {
+        "name": "play-cart",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dbdev.ps1 playtest -Mode cart",
+        "argv": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tools/dbdev.ps1", "playtest", "-Mode", "cart"],
+        "owner": "tools/dbdev.ps1",
+        "kind": "smoke",
+        "successMarkers": [
+          {"contains": "PLAYTEST_READY mode=cart", "summary": "shopping-cart lab launched"}
+        ]
+      },
+      {
         "name": "verify",
         "action": "Ship",
         "command": "node tools/verify.mjs",

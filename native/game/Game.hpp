@@ -16,6 +16,7 @@
 #include "HouseGeometry.hpp"
 #include "TreeGeometry.hpp"
 #include "MarkerPillarGeometry.hpp"
+#include "RollingVehicle.hpp"
 #include "gameplay/EnemyMotor.hpp"
 
 constexpr int TARGET_COUNT = 32;
@@ -705,6 +706,8 @@ struct GameState {
     bool rallyLab = false;
     bool traversalLab = false;
     bool slopeLab = false;
+    bool cartLab = false;
+    rolling_vehicle::State cart;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
     early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
@@ -735,6 +738,7 @@ public:
     void debugStartRallyLab();
     void debugStartTraversalLab();
     void debugStartSlopeLab();
+    void debugStartCartLab();
     void debugStartGeneratedRoomFixture(int roomSeed,int roomIndex);
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
@@ -808,6 +812,7 @@ private:
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);
+    void updateCart(float dt);
     bool tryBeginLedgeHang();
     bool updateLedgeHang(float dt, float forwardAxis, float strafeAxis);
     void releaseLedgeHang(bool mantle);

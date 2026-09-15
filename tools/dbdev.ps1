@@ -17,7 +17,7 @@ param(
         'diagnostics'
     )]
     [string]$Command = 'status',
-    [ValidateSet('game','rally','traversal','rooms','tv-room','tv-enter')]
+    [ValidateSet('game','rally','traversal','rooms','cart','tv-room','tv-enter')]
     [string]$Mode = 'game',
     [ValidateSet('Debug','Release')]
     [string]$Configuration = 'Release',
@@ -104,7 +104,7 @@ function Show-Help {
     Write-Host '  desktop-build [-Configuration Debug|Release] [-Reconfigure]'
     Write-Host '  desktop-run   [-Configuration Debug|Release] [-Reconfigure]'
     Write-Host '  desktop-test | desktop-smoke | room-smoke'
-    Write-Host '  playtest -Mode game|rally|traversal|rooms|tv-room|tv-enter [-Automation]'
+    Write-Host '  playtest -Mode game|rally|traversal|rooms|cart|tv-room|tv-enter [-Automation]'
     Write-Host '  ui | release-windows | diagnostics'
 }
 
@@ -194,6 +194,7 @@ switch ($Command) {
             'rally' { @('--rally-lab') }
             'traversal' { @('--traversal-lab') }
             'rooms' { @('--room-inspector') }
+            'cart' { @('--cart-lab') }
             'tv-room' { @('--tv-room-test') }
             'tv-enter' { @('--tv-room-enter') }
             default { @() }

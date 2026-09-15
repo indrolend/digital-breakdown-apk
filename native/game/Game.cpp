@@ -549,6 +549,17 @@ void Game::debugStartSlopeLab(){
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
 }
 
+void Game::debugStartCartLab(){
+    reset();
+    if(state_.multiplayer.enabled)return;
+    state_.cartLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=false;
+    state_.cinematic.introActive=false;state_.dead=false;state_.started=true;
+    for(auto& target:state_.targets)target.alive=false;
+    state_.player.pos={0.0f,0.72f,7.0f};state_.player.vel={};state_.player.grounded=false;
+    auto& cart=state_.cart;cart={};cart.active=true;cart.occupied=true;cart.driverPlayerId=0;cart.pos={0.0f,rolling_vehicle::CartConfig.rideHeight,7.0f};cart.yaw=0.0f;
+    state_.camera.yaw=0.0f;state_.camera.pitch=-0.12f;
+}
+
 void Game::debugStartGeneratedRoomFixture(int roomSeed,int roomIndex){
     reset();
     state_.roomSeed=roomSeed;
@@ -1459,7 +1470,7 @@ void Game::update(float dt) {
     if(state_.attractMode)updateAttractInput(dt);
     updateSecretTv(dt);
     updateInputActions(dt);
-    updatePlayer(dt);
+    if(state_.cartLab)updateCart(dt);else updatePlayer(dt);
     updateNetworkPeers(dt);
     updateTeamRevival(dt);
     state_.phoneVisual = makePhoneVisualState(state_.vacuum.pose, state_.vacuum.power, 0.0f, state_.time, state_.camera.firstPerson);
@@ -2374,6 +2385,43 @@ void Game::updatePlayer(float dt) {
     state_.debug.phoneSide = state_.phonePose.side;
 }
 
+void Game::updateCart(float dt){
+    auto& cart=state_.cart;
+    if(!cart.active||state_.multiplayer.enabled){state_.cartLab=false;updatePlayer(dt);return;}
+    std::array<rolling_vehicle::Probe,rolling_vehicle::WheelCount> probes{};
+    for(int i=0;i<rolling_vehicle::WheelCount;++i){
+        const Vec3 p=rolling_vehicle::worldAnchor(cart,i);
+        const auto sample=getWorldSupport(p.x,p.z,0.06f);
+        probes[i]={true,sample.height,sample.normal};
+    }
+    const float throttle=clampf((state_.input.forward?1.0f:0.0f)-(state_.input.back?1.0f:0.0f)+state_.input.touchMoveZ,-1,1);
+    const float steer=clampf((state_.input.right?1.0f:0.0f)-(state_.input.left?1.0f:0.0f)+state_.input.touchMoveX,-1,1);
+    const rolling_vehicle::Input input{throttle,steer,(state_.input.sprint||state_.input.touchSprint)?1.0f:0.0f};
+    const Vec3 previous=cart.pos;
+    rolling_vehicle::update(cart,input,probes,dt);
+    constexpr float radius=0.57f;
+    const auto blocked=[&](float x,float z){
+        for(int i=0;i<state_.debug.colliderCount;++i){
+            const auto& c=state_.roomColliders[i];
+            if(cart.pos.y+0.52f<c.bottomY||cart.pos.y>c.topY)continue;
+            if(x+radius>c.minX&&x-radius<c.maxX&&z+radius>c.minZ&&z-radius<c.maxZ)return true;
+        }
+        return x-radius<-ROOM_WIDTH*0.5f||x+radius>ROOM_WIDTH*0.5f;
+    };
+    if(blocked(cart.pos.x,wrapZ(cart.pos.z))){
+        const bool xFree=!blocked(previous.x,wrapZ(cart.pos.z));
+        const bool zFree=!blocked(cart.pos.x,wrapZ(previous.z));
+        if(xFree){cart.pos.x=previous.x;cart.vel.x=0;}
+        else if(zFree){cart.pos.z=previous.z;cart.vel.z=0;}
+        else{cart.pos.x=previous.x;cart.pos.z=previous.z;cart.vel.x=cart.vel.z=0;cart.yawRate=0;}
+    }
+    const Vec3 f=rolling_vehicle::forward(cart.yaw);
+    state_.player.pos=cart.pos-f*0.34f+Vec3{0,0.90f,0};state_.player.vel=cart.vel;
+    state_.player.yaw=state_.player.targetYaw=cart.yaw;state_.player.grounded=false;state_.player.jumpVel=0;
+    state_.vacuum=VacuumState{};state_.meleeVisual=MeleeVisualState{};
+    state_.debug.supportY=cart.supportHeight;state_.debug.horizontalSpeed=horizontalLength(cart.vel);
+}
+
 void Game::updatePhoneTransform() {
     PhoneTransformState& transform = state_.phoneTransform;
     const Vec3 forward{-std::sin(state_.player.yaw), 0.0f, -std::cos(state_.player.yaw)};
@@ -2898,6 +2946,15 @@ void Game::updateCamera(float dt) {
         }
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
+    }
+    if(state_.cartLab&&state_.cart.active&&state_.cart.occupied){
+        const Vec3 focus=state_.cart.pos+Vec3{0,0.68f,0};
+        const float cartPitchCos=std::cos(camera.pitch);
+        const Vec3 orbitForward=normalized({-std::sin(camera.yaw)*cartPitchCos,std::sin(camera.pitch),-std::cos(camera.yaw)*cartPitchCos});
+        const Vec3 desired=focus-orbitForward*3.8f+Vec3{0,0.65f,0};
+        const float response=dt>0?1.0f-std::exp(-7.0f*dt):1.0f;
+        camera.pos+=(desired-camera.pos)*response;camera.lookTarget+=(focus-camera.lookTarget)*response;
+        camera.forward=normalized(camera.lookTarget-camera.pos);camera.firstPerson=false;return;
     }
     if (camera.firstPerson) {
         camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;

@@ -181,6 +181,10 @@ add_executable(
 )
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_GAME_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+if(MSVC)
+    # The protocol integration test keeps several complete world snapshots alive.
+    target_link_options(MultiplayerProtocolTest PRIVATE "/STACK:8388608")
+endif()
 
 add_executable(
     MultiplayerDeterminismTest
@@ -327,6 +331,10 @@ add_executable(DeveloperCodecTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/d
 target_include_directories(DeveloperCodecTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(DeveloperCodecTest PRIVATE cxx_std_17)
 
+add_executable(RollingVehicleTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/rolling_vehicle_test.cpp")
+target_include_directories(RollingVehicleTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(RollingVehicleTest PRIVATE cxx_std_17)
+
 add_executable(
     SoulEconomyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
@@ -411,6 +419,7 @@ add_test(NAME SlopeTraversalCheck COMMAND SlopeTraversalFixtureTest --check)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
 add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)
+add_test(NAME RollingVehicleTest COMMAND RollingVehicleTest)
 add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
 add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)
