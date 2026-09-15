@@ -2,6 +2,7 @@
 
 #include "Game.hpp"
 #include "ModelData.hpp"
+#include "RenderContracts.hpp"
 #include "HumanModelData.hpp"
 #include "DeveloperCodec.hpp"
 
@@ -42,7 +43,7 @@ private:
     mutable int datamoshHeight_ = 0;
     bool hudVisible_ = true;
 
-    void drawRoomTile(const GameState& state, int tileIndex) const;
+    void drawRoomTile(const GameState& state, int tileIndex, const early_browser_visuals::RoomEnvironmentPlan& plan, const render_contract::RoomLightingProfile& lighting) const;
     void drawFieldGrass(int tileIndex) const;
     void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);

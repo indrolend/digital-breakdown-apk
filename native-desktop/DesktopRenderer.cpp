@@ -86,6 +86,32 @@ Vec3 gradedSceneColor(float r,float g,float b) {
 Vec3 mix3(const Vec3& a,const Vec3& b,float t){const float u=clampf(t,0.0f,1.0f);return {a.x+(b.x-a.x)*u,a.y+(b.y-a.y)*u,a.z+(b.z-a.z)*u};}
 void gradedColor(float r,float g,float b,float a=1.0f){const Vec3 color=gradedSceneColor(r,g,b);glColor4f(color.x,color.y,color.z,a);}
 
+void drawSkyGradient(const render_contract::RoomLightingProfile& lighting){
+    glDisable(GL_DEPTH_TEST);glDisable(GL_LIGHTING);glDisable(GL_FOG);
+    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(-1,1,-1,1,-1,1);
+    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+    glBegin(GL_QUADS);
+    glColor3f(lighting.skyHorizon.r,lighting.skyHorizon.g,lighting.skyHorizon.b);glVertex2f(-1,-1);glVertex2f(1,-1);
+    glColor3f(lighting.skyTop.r,lighting.skyTop.g,lighting.skyTop.b);glVertex2f(1,1);glVertex2f(-1,1);
+    glEnd();
+    glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glEnable(GL_DEPTH_TEST);
+}
+
+void drawEmissiveBox(const Vec3& position,const Vec3& size,const VisualColor& color,float intensity){
+    glDisable(GL_LIGHTING);DesktopRenderer::drawBox(position,size,0,0,0,color.r*intensity,color.g*intensity,color.b*intensity);glEnable(GL_LIGHTING);
+}
+
+void drawLightPool(const render_contract::LocalLightDefinition& light,float zOffset){
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+    const float radius=light.radius*0.42f,alpha=0.16f*light.intensity;
+    glBegin(GL_TRIANGLE_FAN);
+    glColor4f(light.color.r,light.color.g,light.color.b,alpha);glVertex3f(light.localPosition.x,0.012f,zOffset+light.localPosition.z);
+    glColor4f(light.color.r,light.color.g,light.color.b,0.0f);
+    for(int i=0;i<=24;++i){const float angle=2.0f*PI*static_cast<float>(i)/24.0f;glVertex3f(light.localPosition.x+std::cos(angle)*radius,0.012f,zOffset+light.localPosition.z+std::sin(angle)*radius);}
+    glEnd();
+    glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+}
+
 Vec3 cross3(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
@@ -123,9 +149,8 @@ void cube() {
     glEnd();
 }
 
-void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha) {
+void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha, const Vec3& sunDirection) {
     constexpr int segments = 8;
-    const Vec3& sunDirection=render_contract::DesktopSceneLighting.sun.direction;
     const float sunXOverY=sunDirection.x/sunDirection.y;
     const float sunZOverY=sunDirection.z/sunDirection.y;
     const Vec3 center{
@@ -836,8 +861,7 @@ void DesktopRenderer::drawSlopeWedge(const SlopeSupport& slope,float zOffset,con
     for(int i=0;i<mesh.vertexCount;++i){glNormal3f(mesh.normals[i*3],mesh.normals[i*3+1],mesh.normals[i*3+2]);glVertex3f(mesh.positions[i*3],mesh.positions[i*3+1],mesh.positions[i*3+2]);}glEnd();
 }
 
-void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const {
-    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const early_browser_visuals::RoomEnvironmentPlan& plan,const render_contract::RoomLightingProfile& lighting) const {
     const float z0 = static_cast<float>(tileIndex) * ROOM_DEPTH;
     const float doorWidth = 5.35f;
     const float doorHeight = 3.95f;
@@ -853,9 +877,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
     if(sterile){
         drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
-        glDisable(GL_LIGHTING);
-        for(float fixtureZ:{-8.0f,8.0f})drawBox({0,ROOM_WALL_HEIGHT-0.035f,z0+fixtureZ},{5.8f,0.055f,0.72f},0,0,0,0.68f,0.90f,1.0f);
-        glEnable(GL_LIGHTING);
+        for(int i=0;i<lighting.localLightCount;++i){const auto& fixture=lighting.localLights[i];drawLightPool(fixture,z0);if(fixture.visibleFixture)drawEmissiveBox(fixture.localPosition+Vec3{0,0,z0},fixture.fixtureSize,fixture.color,fixture.intensity);}
     }
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
         drawBox({-sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);
@@ -910,7 +932,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(prop,state.roomSeed,state.roomIndex,i,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
         else {for(const auto& part:marker_pillar_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.48f,0.55f,0.58f}:VisualColor{0.72f,0.90f,0.94f};drawBox(part.center,part.size,0,0,0,color.r,color.g,color.b);}}
     }
-    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glDisable(GL_LIGHTING);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();glEnable(GL_LIGHTING);}
+    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glNormal3f(0,1,0);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();}
 }
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
@@ -1209,35 +1231,29 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
 void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
     const auto roomPlan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
-    const auto atmosphere=render_contract::sceneAtmosphere(state.time,state.roomIndex,state.roomSeed,state.vacuum.power*0.62f+state.energy.dischargePositionAmount,roomPlan.setting);
-    glClearColor(atmosphere.background.r,atmosphere.background.g,atmosphere.background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    const auto lighting=render_contract::roomLightingProfile(roomPlan.setting,roomPlan.form,state.roomSeed,state.roomIndex,state.time,state.vacuum.power*0.62f+state.energy.dischargePositionAmount);
+    glClearColor(lighting.skyTop.r,lighting.skyTop.g,lighting.skyTop.b,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);drawSkyGradient(lighting);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
     glEnable(GL_LIGHTING); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
-    const auto& lighting=render_contract::DesktopSceneLighting;
-    const GLfloat ambient[]={atmosphere.ambient.r,atmosphere.ambient.g,atmosphere.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
-    const GLfloat sunDiffuse[]={atmosphere.sun.r,atmosphere.sun.g,atmosphere.sun.b,1.0f};
-    const auto primarySource=render_contract::primaryLightSourceFor(roomPlan.setting);
-    const bool sterileFixtures=primarySource==render_contract::PrimaryLightSource::CeilingFixtures;
-    const GLfloat sunPos[]={primarySource==render_contract::PrimaryLightSource::UrbanSky?-12.0f:-18.0f,50.0f,primarySource==render_contract::PrimaryLightSource::UrbanSky?-8.0f:12.0f,0.0f};
+    const GLfloat ambient[]={lighting.ambient.r,lighting.ambient.g,lighting.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
+    const GLfloat sunDiffuse[]={lighting.primary.r,lighting.primary.g,lighting.primary.b,1.0f};
+    const bool sterileFixtures=lighting.primarySource==render_contract::PrimaryLightSource::CeilingFixtures;
+    const GLfloat sunPos[]={lighting.primaryDirection.x,lighting.primaryDirection.y,lighting.primaryDirection.z,0.0f};
     if(sterileFixtures){glDisable(GL_LIGHT0);glDisable(GL_LIGHT1);}else{glEnable(GL_LIGHT0);glEnable(GL_LIGHT1);glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse);glLightfv(GL_LIGHT0,GL_POSITION,sunPos);}
-    const GLfloat fillDiffuse[]={atmosphere.fill.r,atmosphere.fill.g,atmosphere.fill.b,1.0f}, fillPos[]={lighting.fill.direction.x,lighting.fill.direction.y,lighting.fill.direction.z,0.0f};
+    const GLfloat fillDiffuse[]={lighting.fill.r,lighting.fill.g,lighting.fill.b,1.0f}, fillPos[]={lighting.fillDirection.x,lighting.fillDirection.y,lighting.fillDirection.z,0.0f};
     if(!sterileFixtures){glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);}
-    const GLfloat phoneDiffuse[]={atmosphere.phone.r,atmosphere.phone.g,atmosphere.phone.b,1.0f};
+    const GLfloat phoneDiffuse[]={lighting.phone.r,lighting.phone.g,lighting.phone.b,1.0f};
     const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
     if(sterileFixtures){
-        glEnable(GL_LIGHT3);glEnable(GL_LIGHT4);
         const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-        const GLfloat fixtureDiffuse[]={0.58f,0.82f,0.96f,1.0f};
-        const GLfloat fixtureA[]={0.0f,ROOM_WALL_HEIGHT-0.18f,tileOrigin-8.0f,1.0f};const GLfloat fixtureB[]={0.0f,ROOM_WALL_HEIGHT-0.18f,tileOrigin+8.0f,1.0f};
-        for(GLenum light:{GL_LIGHT3,GL_LIGHT4}){glLightfv(light,GL_DIFFUSE,fixtureDiffuse);glLightf(light,GL_CONSTANT_ATTENUATION,0.65f);glLightf(light,GL_LINEAR_ATTENUATION,0.075f);glLightf(light,GL_QUADRATIC_ATTENUATION,0.012f);}
-        glLightfv(GL_LIGHT3,GL_POSITION,fixtureA);glLightfv(GL_LIGHT4,GL_POSITION,fixtureB);
-    }else{glDisable(GL_LIGHT3);glDisable(GL_LIGHT4);}
-    glEnable(GL_FOG);const GLfloat fogColor[]={atmosphere.fog.r,atmosphere.fog.g,atmosphere.fog.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,atmosphere.fogDensity);
+        for(int i=0;i<3;++i){const GLenum light=GL_LIGHT3+i;if(i>=lighting.localLightCount){glDisable(light);continue;}const auto& local=lighting.localLights[i];const GLfloat diffuse[]={local.color.r*local.intensity,local.color.g*local.intensity,local.color.b*local.intensity,1.0f};const GLfloat position[]={local.localPosition.x,local.localPosition.y,tileOrigin+local.localPosition.z,1.0f};glEnable(light);glLightfv(light,GL_DIFFUSE,diffuse);glLightfv(light,GL_POSITION,position);glLightf(light,GL_CONSTANT_ATTENUATION,0.65f);glLightf(light,GL_LINEAR_ATTENUATION,0.05f);glLightf(light,GL_QUADRATIC_ATTENUATION,4.0f/(local.radius*local.radius));}
+    }else{glDisable(GL_LIGHT3);glDisable(GL_LIGHT4);glDisable(GL_LIGHT5);}
+    glEnable(GL_FOG);const GLfloat fogColor[]={lighting.fog.r,lighting.fog.g,lighting.fog.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,lighting.fogDensity);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
     const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;const float maxDist=cheapVisuals?38.0f:55.0f;return lengthSq(delta)<maxDist*maxDist&&dot3(delta,state.camera.forward)>-8.0f;};
-    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile);
+    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile,roomPlan,lighting);
 
     // The secret room is deliberately disconnected from the repeating corridor:
     // a tiny, cheap collection of boxes makes it feel like found backstage space.
@@ -1270,23 +1286,24 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     // A pause menu overlays the live world, so its frozen actors still own their
     // shadows. Only presentations that replace gameplay suppress world shadows.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
-    const auto shadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,true);
+    const auto requestedShadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,true);
+    const auto shadowQuality=sterileFixtures&&requestedShadowQuality==render_contract::ShadowQuality::Directional?render_contract::ShadowQuality::Cheap:requestedShadowQuality;
     if(shadowQuality==render_contract::ShadowQuality::Cheap){
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    if(!menuPresentation&&!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.phoneTransform.position,0.25f,0.18f,0.95f,0.20f);
-    if(!menuPresentation&&state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(!menuPresentation&&!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.phoneTransform.position,0.25f,0.18f,0.95f,0.20f,lighting.primaryDirection);
+    if(!menuPresentation&&state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f,lighting.primaryDirection);
     if(!menuPresentation){
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}
-    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
-    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f);}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f,lighting.primaryDirection);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f,lighting.primaryDirection);}
+    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f,lighting.primaryDirection);
+    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f,lighting.primaryDirection);}
     // Static room geometry already provides the receiving floor and its own
     // lighting. Projecting every collider (including room-scale walls) onto the
     // floor created large overlapping black sheets unrelated to visible casters.
     }
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
     else if(shadowQuality==render_contract::ShadowQuality::Directional&&!menuPresentation){
-        const Vec3& sun=render_contract::DesktopSceneLighting.sun.direction;
+        const Vec3& sun=lighting.primaryDirection;
         const float shadowMatrix[16]={1,0,0,0,-sun.x/sun.y,0,-sun.z/sun.y,0,0,0,1,0,0.006f,0.012f,0.005f,1};
         glStencilMask(0xff);glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);glEnable(GL_STENCIL_TEST);glStencilFunc(GL_ALWAYS,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);glDepthMask(GL_FALSE);glDisable(GL_DEPTH_TEST);glPushMatrix();glMultMatrixf(shadowMatrix);
