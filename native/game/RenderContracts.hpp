@@ -58,6 +58,43 @@ struct RoomLightingProfile {
     float cornerOcclusion=0.08f;
 };
 
+struct SceneResponseInputs {
+    float time=0.0f;
+    float horizontalSpeed=0.0f;
+    float batteryFraction=1.0f;
+    float vacuumPower=0.0f;
+    float discharge=0.0f;
+    float latestShotAge=9999.0f;
+    float criticalPulse=0.0f;
+    float goalProgress=0.0f;
+    bool grounded=true;
+    bool roomClear=false;
+};
+struct SceneResponse {
+    float movement=0.0f;
+    float shotLight=0.0f;
+    float actionLight=0.0f;
+    float criticalLight=0.0f;
+    float phoneLight=1.0f;
+    float exitGlow=0.0f;
+    float contactShadowScale=1.0f;
+    float wind=0.0f;
+};
+
+inline SceneResponse sceneResponse(const SceneResponseInputs& input){
+    SceneResponse response{};
+    response.movement=clampf(input.horizontalSpeed/8.0f,0.0f,1.0f);
+    response.shotLight=1.0f-clampf(input.latestShotAge/0.16f,0.0f,1.0f);
+    response.actionLight=clampf(input.discharge*0.82f+input.vacuumPower*0.16f,0.0f,1.0f);
+    response.criticalLight=clampf(input.criticalPulse,0.0f,1.0f);
+    const float battery=clampf(input.batteryFraction,0.0f,1.0f),lowBattery=1.0f-clampf(battery/0.20f,0.0f,1.0f);
+    response.phoneLight=(0.48f+0.52f*battery)*(1.0f-lowBattery*(0.08f+0.06f*std::sin(input.time*19.0f)));
+    response.exitGlow=clampf((input.roomClear?0.72f:0.0f)+clampf(input.goalProgress,0.0f,1.0f)*0.28f,0.0f,1.0f);
+    response.contactShadowScale=input.grounded?1.0f:0.62f;
+    response.wind=clampf(0.34f+response.movement*0.22f+input.vacuumPower*0.18f,0.0f,1.0f);
+    return response;
+}
+
 inline RoomLightingProfile roomLightingProfile(early_browser_visuals::RoomSetting setting,early_browser_visuals::RoomForm form,int roomSeed,int roomIndex,float time,float phonePower){
     const float pulse=0.98f+0.02f*(0.5f+0.5f*std::sin(time*0.73f+static_cast<float>(roomIndex)*0.41f));
     const float roomThreat=clampf((static_cast<float>(roomIndex)-1.0f)/18.0f,0.0f,1.0f);

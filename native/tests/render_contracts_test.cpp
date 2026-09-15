@@ -38,6 +38,9 @@ int main(){
     for(int i=0;i<sterile.localLightCount;++i)if(!sterile.localLights[i].visibleFixture||sterile.localLights[i].fixtureSize.x<=0.0f||sterile.localLights[i].radius<=0.0f){std::fputs("RENDER_CONTRACTS_FAIL visible fixture pairing\n",stderr);return 1;}
     const auto repeat=roomLightingProfile(RoomSetting::Field,RoomForm::Open,12345,1,0.0f,0.0f);
     if(repeat.ambient.r!=opening.ambient.r||repeat.primaryDirection.x!=opening.primaryDirection.x||repeat.skyHorizon.g!=opening.skyHorizon.g){std::fputs("RENDER_CONTRACTS_FAIL deterministic lighting\n",stderr);return 1;}
+    const auto calm=sceneResponse({0.0f,0.0f,1.0f,0.0f,0.0f,9999.0f,0.0f,0.0f,true,false});
+    const auto active=sceneResponse({0.0f,8.0f,0.1f,1.0f,1.0f,0.0f,1.0f,1.0f,false,true});
+    if(!(active.movement>calm.movement&&active.shotLight>calm.shotLight&&active.actionLight>calm.actionLight&&active.criticalLight>calm.criticalLight&&active.phoneLight<calm.phoneLight&&active.exitGlow>calm.exitGlow&&active.contactShadowScale<calm.contactShadowScale&&active.wind>calm.wind)){std::fputs("RENDER_CONTRACTS_FAIL scene response\n",stderr);return 1;}
     std::puts("RENDER_CONTRACTS_OK profiles=4 source-owned sky=GRADIENT fixtures=PAIRED shadows=PROFILE field_grass=LIT city_ground=TEXTURED");
     return 0;
 }

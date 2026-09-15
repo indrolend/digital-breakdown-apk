@@ -92,7 +92,7 @@ inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting sett
     return {{0.49f,0.54f,0.57f},false};
 }
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
-struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
+struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; float ambientWind=0.0f; };
 
 constexpr int GrassBladeCountLow = 160;
 constexpr int GrassBladeCountHigh = 320;
@@ -509,7 +509,8 @@ inline Vec3 grassTip(const GrassBlade& blade,float time,const GrassReactionInput
     Vec3 tip{blade.root.x,blade.root.y+blade.height,blade.root.z};
     const Vec3 playerDelta=blade.root-input.player;const float playerDistance=std::sqrt(playerDelta.x*playerDelta.x+playerDelta.z*playerDelta.z);
     const float windMask=1.0f-smooth01((playerDistance-4.0f)/8.0f);
-    tip.x+=std::sin(time*2.0f+blade.root.x*0.65f+blade.root.z*0.45f+blade.phase)*0.07f*windMask;
+    const float windAmplitude=0.025f+0.055f*clampf(input.ambientWind,0.0f,1.0f)*(0.65f+0.35f*windMask);
+    tip.x+=std::sin(time*2.0f+blade.root.x*0.65f+blade.root.z*0.45f+blade.phase)*windAmplitude;
     if(playerDistance<0.9f&&playerDistance>0.001f){const float power=1.0f-playerDistance/0.9f;tip.x+=playerDelta.x/playerDistance*power*0.3f;tip.z+=playerDelta.z/playerDistance*power*0.3f;tip.y-=power*0.08f;}
     if(input.shotAge>=0.0f&&input.shotAge<1.4f){const Vec3 delta=blade.root-input.shotOrigin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f;const float wave=input.shotAge*7.5f,ring=1.0f-smooth01(std::abs(distance-wave)/0.85f),range=1.0f-smooth01(distance/7.5f),decay=std::exp(-input.shotAge*2.4f),wobble=std::sin(input.shotAge*18.0f-distance*2.0f)*decay,blast=ring*range*decay,after=wobble*range*0.22f;tip.x+=delta.x*inv*(blast*0.9f+after);tip.z+=delta.z*inv*(blast*0.9f+after);tip.y-=blast*0.14f;}
     if(input.vacuumStrength>0.01f){const Vec3 delta=input.vacuumOrigin-blade.root;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f,pullMask=1.0f-smooth01((distance-0.5f)/7.5f),pulse=0.75f+0.25f*std::sin(time*2.0f*18.0f+distance*3.0f),pull=pullMask*pulse*input.vacuumStrength;tip.x+=delta.x*inv*pull*0.45f;tip.z+=delta.z*inv*pull*0.45f;tip.y-=pull*0.1f;}

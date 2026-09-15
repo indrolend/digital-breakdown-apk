@@ -43,7 +43,7 @@ private:
     mutable int datamoshHeight_ = 0;
     bool hudVisible_ = true;
 
-    void drawRoomTile(const GameState& state, int tileIndex, const early_browser_visuals::RoomEnvironmentPlan& plan, const render_contract::RoomLightingProfile& lighting) const;
+    void drawRoomTile(const GameState& state, int tileIndex, const early_browser_visuals::RoomEnvironmentPlan& plan, const render_contract::RoomLightingProfile& lighting, const render_contract::SceneResponse& response) const;
     void drawFieldGrass(int tileIndex) const;
     void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);
