@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 
 #include "gameplay/EnemyMotor.hpp"
 #include "gameplay/SoulMotion.hpp"
@@ -55,9 +56,7 @@ void testFreeSoulMotion() {
     TargetState soul = makeSoul();
     soul.pos = {0.0f, 1.0f, 0.0f};
     soul.vel = {2.0f, 0.0f, -1.0f};
-
     gameplay::updateLooseSoulMotion(soul, 0.1f);
-
     assert(soul.pos.x > 0.0f);
     assert(soul.pos.y < 1.0f);
     assert(soul.pos.z < 0.0f);
@@ -71,9 +70,7 @@ void testRecoilTimeout() {
     soul.recoilTime = 0.05f;
     soul.networkOwnerPlayerId = 2;
     soul.pos = {0.0f, 0.5f, 0.0f};
-
     gameplay::updateLooseSoulMotion(soul, 0.1f);
-
     assert(soul.soulState == SoulState::Free);
     assert(soul.networkOwnerPlayerId == -1);
     assert(soul.recoilTime == 0.0f);
@@ -83,9 +80,7 @@ void testGroundClampAndStop() {
     TargetState soul = makeSoul();
     soul.pos = {0.0f, 0.081f, 0.0f};
     soul.vel = {0.01f, -1.0f, -0.01f};
-
     gameplay::updateLooseSoulMotion(soul, 0.1f);
-
     assert(std::abs(soul.pos.y - 0.08f) < 0.0001f);
     assert(soul.vel.y == 0.0f);
     assert(soul.vel.x == 0.0f);
@@ -99,9 +94,7 @@ void testVacuumOwnedStatesDoNotMove() {
         soul.vel = {4.0f, 5.0f, 6.0f};
         const Vec3 originalPos = soul.pos;
         const Vec3 originalVel = soul.vel;
-
         gameplay::updateLooseSoulMotion(soul, 0.25f);
-
         assert(soul.pos.x == originalPos.x && soul.pos.y == originalPos.y && soul.pos.z == originalPos.z);
         assert(soul.vel.x == originalVel.x && soul.vel.y == originalVel.y && soul.vel.z == originalVel.z);
     }
@@ -111,11 +104,18 @@ void testIngestingSoulShellContractsContinuously() {
     const SoulVisualState start = makeSoulVisualState(3, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, true);
     const SoulVisualState middle = makeSoulVisualState(3, 1.0f, 0.5f, 0.0f, 1.0f, 0.0f, true);
     const SoulVisualState late = makeSoulVisualState(3, 1.0f, 0.8f, 0.0f, 1.0f, 0.0f, true);
-
     assert(std::abs(start.morphScale - 1.0f) < 0.0001f);
     assert(std::abs(middle.morphScale - 0.5f) < 0.0001f);
     assert(late.morphScale < middle.morphScale);
     assert(late.morphScale > 0.0f);
+}
+
+gameplay::EnemyMotorOutput settleMotor(gameplay::EnemyMotorInput input, float individuality) {
+    gameplay::EnemyMotorMemory memory{};
+    gameplay::EnemyMotorOutput output{};
+    for (int step = 0; step < 120; ++step)
+        output = gameplay::updateEnemyMotor(input, memory, 1.0f / 60.0f, individuality);
+    return output;
 }
 
 void testEnemyMotorIsDeterministicBoundedAndStateful() {
@@ -145,33 +145,44 @@ void testEnemyMotorIsDeterministicBoundedAndStateful() {
     assert(first.speedScale >= 0.58f && first.speedScale <= 1.42f);
     assert(first.attackCommitment >= 0.0f && first.attackCommitment <= 1.0f);
     assert(first.brace >= 0.0f && first.brace <= 1.0f);
-    assert(std::abs(first.steering.x) > 0.02f); // social/recurrent pressure bends direct pursuit
+    assert(std::abs(first.steering.x) > 0.02f);
 }
 
-void testEnemyMotorRespondsToVacuumAndIndividualityWithoutNamedModes() {
-    gameplay::EnemyMotorInput input{};
-    input.toPlayer = {0.6f, 0.0f, -0.8f};
-    input.playerDistance = 4.5f;
-    input.playerVelocity = {-0.3f, 0.0f, 0.4f};
-    input.toNearestAlly = {-0.8f, 0.0f, -0.6f};
-    input.nearestAllyDistance = 0.9f;
-    input.roomPressure = 0.8f;
-    input.bodySpeed = 3.0f;
+void testEnemyMotorRespondsToContinuousPressure() {
+    gameplay::EnemyMotorInput base{};
+    base.toPlayer = {0.6f, 0.0f, -0.8f};
+    base.playerDistance = 4.5f;
+    base.playerVelocity = {-0.3f, 0.0f, 0.4f};
+    base.toNearestAlly = {-0.8f, 0.0f, -0.6f};
+    base.nearestAllyDistance = 0.9f;
+    base.roomPressure = 0.8f;
+    base.bodySpeed = 3.0f;
 
-    gameplay::EnemyMotorMemory calmMemory{}, vacuumMemory{}, otherMemory{};
-    gameplay::EnemyMotorOutput calm{}, vacuum{}, other{};
-    for (int step = 0; step < 120; ++step) {
-        input.vacuumPressure = 0.0f;
-        calm = gameplay::updateEnemyMotor(input, calmMemory, 1.0f / 60.0f, -0.35f);
-        input.vacuumPressure = 1.0f;
-        vacuum = gameplay::updateEnemyMotor(input, vacuumMemory, 1.0f / 60.0f, -0.35f);
-        other = gameplay::updateEnemyMotor(input, otherMemory, 1.0f / 60.0f, 0.65f);
-    }
+    auto calmInput = base;
+    calmInput.vacuumPressure = 0.0f;
+    const auto calm = settleMotor(calmInput, -0.35f);
+    auto vacuumInput = base;
+    vacuumInput.vacuumPressure = 1.0f;
+    const auto vacuum = settleMotor(vacuumInput, -0.35f);
+    const auto other = settleMotor(vacuumInput, 0.65f);
+
     assert(vacuum.brace > calm.brace);
-    assert(std::abs(vacuum.steering.x - calm.steering.x) > 0.005f ||
-           std::abs(vacuum.steering.z - calm.steering.z) > 0.005f);
-    assert(std::abs(other.steering.x - vacuum.steering.x) > 0.005f ||
-           std::abs(other.steering.z - vacuum.steering.z) > 0.005f);
+    const float vacuumHeadingDelta = std::sqrt(
+        std::pow(vacuum.steering.x - calm.steering.x, 2.0f) +
+        std::pow(vacuum.steering.z - calm.steering.z, 2.0f));
+    const float individualityDelta = std::sqrt(
+        std::pow(other.steering.x - vacuum.steering.x, 2.0f) +
+        std::pow(other.steering.z - vacuum.steering.z, 2.0f));
+    assert(vacuumHeadingDelta > 0.005f);
+    assert(individualityDelta > 0.005f);
+
+    std::printf(
+        "ENEMY_MOTOR_PROBE social_lateral=%.6f vacuum_heading_delta=%.6f "
+        "vacuum_brace_delta=%.6f individuality_heading_delta=%.6f "
+        "attack_commitment=%.6f speed_scale=%.6f\n",
+        std::abs(calm.steering.x), vacuumHeadingDelta,
+        vacuum.brace - calm.brace, individualityDelta,
+        vacuum.attackCommitment, vacuum.speedScale);
 }
 
 } // namespace
@@ -184,6 +195,6 @@ int main() {
     testVacuumOwnedStatesDoNotMove();
     testIngestingSoulShellContractsContinuously();
     testEnemyMotorIsDeterministicBoundedAndStateful();
-    testEnemyMotorRespondsToVacuumAndIndividualityWithoutNamedModes();
+    testEnemyMotorRespondsToContinuousPressure();
     return 0;
 }
