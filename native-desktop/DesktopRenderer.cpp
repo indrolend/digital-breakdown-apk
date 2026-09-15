@@ -112,6 +112,27 @@ void drawLightPool(const render_contract::LocalLightDefinition& light,float zOff
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
 }
 
+void beginOcclusion(){glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}
+void endOcclusion(){glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
+
+void drawContactOcclusion(const Vec3& center,float halfWidth,float halfDepth,float alpha){
+    beginOcclusion();glBegin(GL_TRIANGLE_FAN);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(center.x,0.014f,center.z);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);
+    for(int i=0;i<=20;++i){const float angle=2.0f*PI*static_cast<float>(i)/20.0f;glVertex3f(center.x+std::cos(angle)*halfWidth,0.014f,center.z+std::sin(angle)*halfDepth);}
+    glEnd();endOcclusion();
+}
+
+void drawRoomCornerOcclusion(float zOffset,float alpha){
+    constexpr float width=1.15f,y=0.013f,halfRoom=ROOM_WIDTH*0.5f-0.26f,halfDepth=ROOM_DEPTH*0.5f;
+    beginOcclusion();glBegin(GL_QUADS);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(-halfRoom,y,zOffset-halfDepth);glVertex3f(-halfRoom,y,zOffset+halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);glVertex3f(-halfRoom+width,y,zOffset+halfDepth);glVertex3f(-halfRoom+width,y,zOffset-halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(halfRoom,y,zOffset+halfDepth);glVertex3f(halfRoom,y,zOffset-halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);glVertex3f(halfRoom-width,y,zOffset-halfDepth);glVertex3f(halfRoom-width,y,zOffset+halfDepth);
+    glEnd();endOcclusion();
+}
+
 Vec3 cross3(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
@@ -872,6 +893,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const ea
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
     drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
+    drawRoomCornerOcclusion(z0,lighting.cornerOcclusion);
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(tileIndex);
     if(plan.setting==early_browser_visuals::RoomSetting::City)drawCityGround(tileIndex);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
@@ -889,6 +911,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const ea
     const int authoredObstacleCount=(state.traversalLab||state.slopeLab)?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount);
     for (int i=0;i<authoredObstacleCount;++i) {
         const RoomCollider& c=state.roomColliders[i];
+        drawContactOcclusion({c.center.x,0.0f,z0+c.center.z},c.width*0.62f,c.depth*0.62f,lighting.contactOcclusion);
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
         if(plan.setting==early_browser_visuals::RoomSetting::City&&plan.form==early_browser_visuals::RoomForm::Corridor&&early_browser_visuals::obstacleRole(plan,state.roomSeed,state.roomIndex,i)==early_browser_visuals::EnvironmentRole::Landmark){
             const float tierH=gameplay::WORLD_SCALE.storyHeight*0.34f;

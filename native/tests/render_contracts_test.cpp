@@ -34,6 +34,7 @@ int main(){
         std::fputs("RENDER_CONTRACTS_FAIL room lighting identities\n",stderr);return 1;
     }
     if(sterile.localLightCount!=2||chamber.localLightCount!=3||sterile.primaryDirection.y<=0.0f){std::fputs("RENDER_CONTRACTS_FAIL fixture layout or contact-shadow direction\n",stderr);return 1;}
+    if(!(sterile.contactOcclusion>city.contactOcclusion&&city.contactOcclusion>opening.contactOcclusion&&opening.cornerOcclusion>0.0f)){std::fputs("RENDER_CONTRACTS_FAIL room occlusion identity\n",stderr);return 1;}
     for(int i=0;i<sterile.localLightCount;++i)if(!sterile.localLights[i].visibleFixture||sterile.localLights[i].fixtureSize.x<=0.0f||sterile.localLights[i].radius<=0.0f){std::fputs("RENDER_CONTRACTS_FAIL visible fixture pairing\n",stderr);return 1;}
     const auto repeat=roomLightingProfile(RoomSetting::Field,RoomForm::Open,12345,1,0.0f,0.0f);
     if(repeat.ambient.r!=opening.ambient.r||repeat.primaryDirection.x!=opening.primaryDirection.x||repeat.skyHorizon.g!=opening.skyHorizon.g){std::fputs("RENDER_CONTRACTS_FAIL deterministic lighting\n",stderr);return 1;}
