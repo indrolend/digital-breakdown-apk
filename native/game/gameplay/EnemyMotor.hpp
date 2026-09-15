@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "Game.hpp"
+#include "Math.hpp"
 
 namespace gameplay {
 

@@ -1240,6 +1240,7 @@ void Game::chooseSecretTvEntrance() {
 void Game::resetRoom() {
     const int roomIndex = state_.roomIndex;
     const int roomSeed = state_.roomSeed;
+    enemyMotorMemory_ = {};
     state_.roomClear = false;
     state_.player = PlayerState{};
     state_.player.pos = {0.0f, GROUND_Y, ROOM_START_Z};
@@ -3463,6 +3464,7 @@ void Game::updateRoomPopulation(float dt) {
     }
 }
 void Game::respawnTarget(int index) {
+    enemyMotorMemory_[index] = {};
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
     t.brute = seededRoomValue(520 + index) < 0.18f;
     t.soul = makeSoulRecord(t.brute,state_.roomIndex);
@@ -3704,12 +3706,34 @@ void Game::updateTargets(float dt) {
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
                     const bool physicalPursuit=!state_.multiplayer.enabled;
                     if(physicalPursuit){
-                        const Vec3 desired=dir*speed;
+                        Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
+                        for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
+                            if(allyIndex==i||!gameplay::isActiveHuman(state_.targets[allyIndex]))continue;
+                            const Vec3 toAlly{state_.targets[allyIndex].pos.x-t.pos.x,0,state_.targets[allyIndex].pos.z-t.pos.z};
+                            const float allyDistance=horizontalLength(toAlly);
+                            if(allyDistance<nearestAllyDistance){nearestAllyDistance=allyDistance;nearestAllyDirection=allyDistance>0.001f?toAlly*(1.0f/allyDistance):Vec3{};}
+                        }
+                        const float playerVelocityScale=std::max(6.0f,horizontalLength(attackedPlayer->vel));
+                        gameplay::EnemyMotorInput motorInput{};
+                        motorInput.toPlayer=playerDist>0.001f?toPlayer*(1.0f/playerDist):dir;
+                        motorInput.playerDistance=playerDist;
+                        motorInput.playerVelocity={attackedPlayer->vel.x/playerVelocityScale,0,attackedPlayer->vel.z/playerVelocityScale};
+                        motorInput.toNearestAlly=nearestAllyDirection;
+                        motorInput.nearestAllyDistance=nearestAllyDistance;
+                        motorInput.vacuumPressure=state_.vacuum.active?clampf(state_.vacuum.power,0.0f,1.0f):0.0f;
+                        motorInput.roomPressure=clampf(state_.progression.run.roomHeat,0.0f,1.0f);
+                        motorInput.bodySpeed=horizontalLength(t.vel);
+                        const auto motor=gameplay::updateEnemyMotor(motorInput,enemyMotorMemory_[i],dt,std::sin(static_cast<float>(i)*12.9898f));
+                        const Vec3 playerTangent{motorInput.toPlayer.z,0,-motorInput.toPlayer.x};
+                        const float steeringOffset=dot3(motor.steering,playerTangent);
+                        const Vec3 authoredTangent{dir.z,0,-dir.x};
+                        const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*0.35f));
+                        const Vec3 desired=desiredDirection*(speed*motor.speedScale);
                         const float response=1.0f-std::exp(-(t.brute?5.5f:8.0f)*dt);
                         t.vel.x+=(desired.x-t.vel.x)*response;
                         t.vel.z+=(desired.z-t.vel.z)*response;
                         const float horizontalSpeed=horizontalLength(t.vel);
-                        const float maximum=speed*(t.brute?1.30f:1.45f);
+                        const float maximum=speed*motor.speedScale*(t.brute?1.30f:1.45f);
                         if(horizontalSpeed>maximum){const float scale=maximum/horizontalSpeed;t.vel.x*=scale;t.vel.z*=scale;}
                     }else{t.vel.x=dir.x*speed;t.vel.z=dir.z*speed;}
                     float step=std::min(dist,physicalPursuit?horizontalLength(t.vel)*dt:speed*dt);

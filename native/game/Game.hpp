@@ -16,6 +16,7 @@
 #include "HouseGeometry.hpp"
 #include "TreeGeometry.hpp"
 #include "MarkerPillarGeometry.hpp"
+#include "gameplay/EnemyMotor.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -784,8 +785,10 @@ public:
 private:
     friend struct HostRemotePeerSimulationIsolationAccess;
     friend struct SoulProjectileLifecycleAccess;
+    friend struct EnemyMotorRuntimeIntegrationAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     GameState state_;
+    std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> enemyMotorMemory_{};
     int simulationPlayerId_ = 0;
 
     void resetRoom();
