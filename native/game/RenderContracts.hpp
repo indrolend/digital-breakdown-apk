@@ -39,6 +39,13 @@ struct SceneLightingDefinition {
     FogDefinition fog{};
 };
 
+enum class PrimaryLightSource : unsigned char { OutdoorSun, UrbanSky, CeilingFixtures };
+constexpr PrimaryLightSource primaryLightSourceFor(early_browser_visuals::RoomSetting setting){
+    using early_browser_visuals::RoomSetting;
+    return setting==RoomSetting::Sterile?PrimaryLightSource::CeilingFixtures:
+        (setting==RoomSetting::City?PrimaryLightSource::UrbanSky:PrimaryLightSource::OutdoorSun);
+}
+
 inline const SceneLightingDefinition DesktopSceneLighting{
     {0.32f,0.43f,0.34f},{{30.0f,60.0f,25.0f},{1,1,1},1.0f},
     {{-20.0f,25.0f,-30.0f},{0.20f,0.28f,0.35f},1.0f},{Pass7Visual::Background,0.018f}};

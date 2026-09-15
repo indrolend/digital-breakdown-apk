@@ -851,7 +851,12 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(tileIndex);
     if(plan.setting==early_browser_visuals::RoomSetting::City)drawCityGround(tileIndex);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
-    if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
+    if(sterile){
+        drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
+        glDisable(GL_LIGHTING);
+        for(float fixtureZ:{-8.0f,8.0f})drawBox({0,ROOM_WALL_HEIGHT-0.035f,z0+fixtureZ},{5.8f,0.055f,0.72f},0,0,0,0.68f,0.90f,1.0f);
+        glEnable(GL_LIGHTING);
+    }
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
         drawBox({-sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);
         drawBox({ sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);
@@ -1207,22 +1212,27 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     const auto atmosphere=render_contract::sceneAtmosphere(state.time,state.roomIndex,state.roomSeed,state.vacuum.power*0.62f+state.energy.dischargePositionAmount,roomPlan.setting);
     glClearColor(atmosphere.background.r,atmosphere.background.g,atmosphere.background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
-    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
     const auto& lighting=render_contract::DesktopSceneLighting;
     const GLfloat ambient[]={atmosphere.ambient.r,atmosphere.ambient.g,atmosphere.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
     const GLfloat sunDiffuse[]={atmosphere.sun.r,atmosphere.sun.g,atmosphere.sun.b,1.0f};
-    const GLfloat sunPos[]={
-        lighting.sun.direction.x,
-        lighting.sun.direction.y,
-        lighting.sun.direction.z,
-        0.0f
-    };
-    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
+    const auto primarySource=render_contract::primaryLightSourceFor(roomPlan.setting);
+    const bool sterileFixtures=primarySource==render_contract::PrimaryLightSource::CeilingFixtures;
+    const GLfloat sunPos[]={primarySource==render_contract::PrimaryLightSource::UrbanSky?-12.0f:-18.0f,50.0f,primarySource==render_contract::PrimaryLightSource::UrbanSky?-8.0f:12.0f,0.0f};
+    if(sterileFixtures){glDisable(GL_LIGHT0);glDisable(GL_LIGHT1);}else{glEnable(GL_LIGHT0);glEnable(GL_LIGHT1);glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse);glLightfv(GL_LIGHT0,GL_POSITION,sunPos);}
     const GLfloat fillDiffuse[]={atmosphere.fill.r,atmosphere.fill.g,atmosphere.fill.b,1.0f}, fillPos[]={lighting.fill.direction.x,lighting.fill.direction.y,lighting.fill.direction.z,0.0f};
-    glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
+    if(!sterileFixtures){glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);}
     const GLfloat phoneDiffuse[]={atmosphere.phone.r,atmosphere.phone.g,atmosphere.phone.b,1.0f};
     const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
+    if(sterileFixtures){
+        glEnable(GL_LIGHT3);glEnable(GL_LIGHT4);
+        const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+        const GLfloat fixtureDiffuse[]={0.58f,0.82f,0.96f,1.0f};
+        const GLfloat fixtureA[]={0.0f,ROOM_WALL_HEIGHT-0.18f,tileOrigin-8.0f,1.0f};const GLfloat fixtureB[]={0.0f,ROOM_WALL_HEIGHT-0.18f,tileOrigin+8.0f,1.0f};
+        for(GLenum light:{GL_LIGHT3,GL_LIGHT4}){glLightfv(light,GL_DIFFUSE,fixtureDiffuse);glLightf(light,GL_CONSTANT_ATTENUATION,0.65f);glLightf(light,GL_LINEAR_ATTENUATION,0.075f);glLightf(light,GL_QUADRATIC_ATTENUATION,0.012f);}
+        glLightfv(GL_LIGHT3,GL_POSITION,fixtureA);glLightfv(GL_LIGHT4,GL_POSITION,fixtureB);
+    }else{glDisable(GL_LIGHT3);glDisable(GL_LIGHT4);}
     glEnable(GL_FOG);const GLfloat fogColor[]={atmosphere.fog.r,atmosphere.fog.g,atmosphere.fog.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,atmosphere.fogDensity);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;

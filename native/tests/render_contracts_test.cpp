@@ -14,6 +14,10 @@ int main(){
     static_assert(shadowQualityFor(1,true,true)==ShadowQuality::Cheap);
     static_assert(shadowQualityFor(2,true,true)==ShadowQuality::Directional);
     static_assert(shadowQualityFor(2,true,false)==ShadowQuality::Cheap);
+    static_assert(primaryLightSourceFor(early_browser_visuals::RoomSetting::Field)==PrimaryLightSource::OutdoorSun);
+    static_assert(primaryLightSourceFor(early_browser_visuals::RoomSetting::Coastal)==PrimaryLightSource::OutdoorSun);
+    static_assert(primaryLightSourceFor(early_browser_visuals::RoomSetting::City)==PrimaryLightSource::UrbanSky);
+    static_assert(primaryLightSourceFor(early_browser_visuals::RoomSetting::Sterile)==PrimaryLightSource::CeilingFixtures);
     static_assert(FieldOpenGround.texture==TextureId::FieldGrass&&FieldOpenGround.textureWorldScale==2.4f);
     static_assert(CityGround.texture==TextureId::CityAsphalt&&CityGround.textureWorldScale==3.2f);
     const auto opening=sceneAtmosphere(0.0f,1,12345,0.0f,early_browser_visuals::RoomSetting::Field);
