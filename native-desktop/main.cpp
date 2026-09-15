@@ -37,7 +37,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <memory>
 #include <numeric>
 #include <vector>
@@ -1596,6 +1598,102 @@ const char* argValue(int argc,char** argv,const char* expected){for(int i=1;i+1<
 int argInt(int argc,char** argv,const char* expected,int fallback=0){const char* value=argValue(argc,argv,expected);if(!value)return fallback;try{return std::stoi(value);}catch(...){return fallback;}}
 bool captureFramebuffer(const std::filesystem::path& path,int width,int height){std::error_code directoryError;if(path.has_parent_path())std::filesystem::create_directories(path.parent_path(),directoryError);if(directoryError)return false;std::vector<unsigned char> pixels(static_cast<std::size_t>(width)*height*3u);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,width,height,GL_RGB,GL_UNSIGNED_BYTE,pixels.data());std::ofstream out(path,std::ios::binary);if(!out)return false;out<<"P6\n"<<width<<" "<<height<<"\n255\n";for(int y=height-1;y>=0;--y)out.write(reinterpret_cast<const char*>(pixels.data()+static_cast<std::size_t>(y)*width*3u),static_cast<std::streamsize>(width*3));return static_cast<bool>(out);}
 
+struct AgentPlaytestInput {
+    int frames=1;
+    float moveX=0.0f;
+    float moveZ=0.0f;
+    float lookX=0.0f;
+    float lookY=0.0f;
+    bool sprint=false;
+    bool vacuum=false;
+    bool jump=false;
+    bool melee=false;
+    bool shoot=false;
+    bool camera=false;
+};
+
+bool parseAgentBool(const std::string& value,bool& out){
+    if(value=="1"||value=="true"||value=="on"){out=true;return true;}
+    if(value=="0"||value=="false"||value=="off"){out=false;return true;}
+    return false;
+}
+
+bool parseAgentStep(const std::string& line,AgentPlaytestInput& input,std::string& error){
+    std::istringstream stream(line);
+    std::string command;stream>>command;
+    if(command!="step"){error="expected_step";return false;}
+    std::string token;
+    while(stream>>token){
+        const std::size_t equals=token.find('=');
+        if(equals==std::string::npos){error="expected_key_value:"+token;return false;}
+        const std::string key=token.substr(0,equals);
+        const std::string value=token.substr(equals+1);
+        try{
+            if(key=="frames")input.frames=std::max(1,std::min(120,std::stoi(value)));
+            else if(key=="moveX")input.moveX=std::max(-1.0f,std::min(1.0f,std::stof(value)));
+            else if(key=="moveZ")input.moveZ=std::max(-1.0f,std::min(1.0f,std::stof(value)));
+            else if(key=="lookX")input.lookX=std::max(-400.0f,std::min(400.0f,std::stof(value)));
+            else if(key=="lookY")input.lookY=std::max(-400.0f,std::min(400.0f,std::stof(value)));
+            else if(key=="sprint"){if(!parseAgentBool(value,input.sprint))throw std::invalid_argument("bool");}
+            else if(key=="vacuum"){if(!parseAgentBool(value,input.vacuum))throw std::invalid_argument("bool");}
+            else if(key=="jump"){if(!parseAgentBool(value,input.jump))throw std::invalid_argument("bool");}
+            else if(key=="melee"){if(!parseAgentBool(value,input.melee))throw std::invalid_argument("bool");}
+            else if(key=="shoot"){if(!parseAgentBool(value,input.shoot))throw std::invalid_argument("bool");}
+            else if(key=="camera"){if(!parseAgentBool(value,input.camera))throw std::invalid_argument("bool");}
+            else {error="unknown_key:"+key;return false;}
+        }catch(...){error="invalid_value:"+token;return false;}
+    }
+    return true;
+}
+
+const char* agentActionName(const GameState& state){
+    if(state.dead||!state.player.alive)return "dead";
+    if(state.player.downed)return "downed";
+    if(state.player.grabbedByTarget>=0)return "grabbed";
+    if(state.player.treeClimbing)return "tree_climb";
+    if(state.player.ledgeHanging)return "ledge_hang";
+    if(state.vacuum.active)return "vacuum";
+    if(state.meleeVisual.airLungeTimer>0.0f||state.meleeVisual.airLungeLandingPending)return "air_lunge";
+    if(state.meleeVisual.visualTimer>0.0f)return "melee";
+    if(state.doorTransition.active)return "room_transition";
+    return state.player.vel.x*state.player.vel.x+state.player.vel.z*state.player.vel.z>0.01f?"move":"idle";
+}
+
+void printAgentObservation(const GameState& state,const std::filesystem::path& framePath,bool captured){
+    int living=0,loose=0,projectiles=0;float looseCommitment=0.0f;
+    for(const auto& target:state.targets){if(gameplay::isActiveHuman(target))++living;else if(gameplay::isLooseSoul(target)){++loose;looseCommitment=std::max(looseCommitment,std::max(target.capture,target.ingestProgress));}}
+    for(const auto& bullet:state.bullets)if(bullet.alive)++projectiles;
+    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    std::printf("AGENT_STATE frame=%d room=%d seed=%d environment=%s/%s pos=%.2f,%.2f,%.2f yaw=%.3f pitch=%.3f battery=%.2f reserve=%.2f souls=%d goals=%d/%d living=%d loose=%d projectiles=%d action=%s vacuum_target=%d vacuum_lock=%.2f loose_commitment=%.2f clear=%d dead=%d downed=%d\n",
+        state.frame,state.roomIndex,state.roomSeed,early_browser_visuals::settingName(plan.setting),early_browser_visuals::formName(plan.form),
+        state.player.pos.x,state.player.pos.y,state.player.pos.z,state.camera.yaw,state.camera.pitch,state.player.battery,
+        state.energy.supplementalValue,state.player.souls,state.depositedSouls,state.requiredSouls,living,loose,projectiles,
+        agentActionName(state),state.vacuum.target,state.vacuum.lockStrength,looseCommitment,state.roomClear?1:0,state.dead?1:0,state.player.downed?1:0);
+    std::printf("AGENT_FRAME_%s path=%s\n",captured?"OK":"FAILED",framePath.string().c_str());
+    std::fflush(stdout);
+}
+
+int runAgentPlaytest(GLFWwindow* window,HostState& host,const std::filesystem::path& framePath,int width,int height){
+    const auto observe=[&](){host.renderer.draw(host.game.state());glFinish();const bool captured=captureFramebuffer(framePath,width,height);glfwSwapBuffers(window);glfwPollEvents();printAgentObservation(host.game.state(),framePath,captured);return captured;};
+    std::printf("AGENT_PLAYTEST_READY fixed_dt=%.9f max_step_frames=120 frame_format=PPM persistent_save=DISABLED\n",SIMULATION_STEP_SECONDS);
+    std::printf("AGENT_PLAYTEST_COMMANDS observe | step frames=N moveX=-1..1 moveZ=-1..1 lookX=-400..400 lookY=-400..400 sprint=0/1 vacuum=0/1 jump=0/1 melee=0/1 shoot=0/1 camera=0/1 | reset | quit\n");
+    observe();
+    std::string line;
+    while(std::getline(std::cin,line)){
+        if(line=="quit"){std::printf("AGENT_PLAYTEST_QUIT\n");std::fflush(stdout);return 0;}
+        if(line=="observe"){observe();continue;}
+        if(line=="reset"){host.game.reset();observe();continue;}
+        AgentPlaytestInput input;std::string error;
+        if(!parseAgentStep(line,input,error)){std::printf("AGENT_PLAYTEST_ERROR %s\n",error.c_str());std::fflush(stdout);continue;}
+        for(int frame=0;frame<input.frames;++frame){
+            host.game.setTouchControls(input.moveX,input.moveZ,frame==0?input.lookX:0.0f,frame==0?input.lookY:0.0f,input.vacuum,input.sprint,frame==0&&input.jump,frame==0&&input.melee,frame==0&&input.shoot,frame==0&&input.camera);
+            host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+        }
+        observe();
+    }
+    std::printf("AGENT_PLAYTEST_EOF\n");std::fflush(stdout);return 0;
+}
+
 int runSoulLifecycleCapture(GLFWwindow* window,HostState& host,const std::filesystem::path& outputDirectory,int width,int height){
     std::error_code error;std::filesystem::create_directories(outputDirectory,error);
     if(error){std::fprintf(stderr,"SOUL_LIFECYCLE_CAPTURE_FAIL create_directory=%s\n",error.message().c_str());return 1;}
@@ -1766,6 +1864,8 @@ int main(int argc, char** argv) {
     const bool cartLab=hasArg(argc,argv,"--cart-lab");
     const bool rallyLab=hasArg(argc,argv,"--rally-lab");
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
+    const bool agentPlaytest=hasArg(argc,argv,"--agent-playtest");
+    const char* agentFrameArg=argValue(argc,argv,"--agent-frame");
     const bool roomInspectorSmoke=hasArg(argc,argv,"--room-inspector-smoke");
     const bool roomInspector=hasArg(argc,argv,"--room-inspector")||roomInspectorSmoke;
     const int roomInspectorPremise=std::max(0,std::min(static_cast<int>(early_browser_visuals::RoomPremise::Count)-1,argInt(argc,argv,"--room-inspector-premise",0)));
@@ -1822,7 +1922,7 @@ int main(int argc, char** argv) {
     // Browser reference creates WebGL with antialias:true. Four samples are a
     // modest desktop cost and remove the most visible geometry/crosshair jaggies.
     glfwWindowHint(GLFW_SAMPLES, 4);
-    if(capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
+    if(capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory||agentPlaytest)glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(
         windowWidth,
@@ -1851,9 +1951,9 @@ int main(int argc, char** argv) {
     if(automationPlaytest)host.automationCaptureDelayFrames=1;
     host.progressionPath=progressionSavePath();
     bool recoveredPersistentSave=false;
-    bool loadedPersistentSave=loadProgressionWithBackup(host.game,host.progressionPath,&recoveredPersistentSave);
+    bool loadedPersistentSave=agentPlaytest?false:loadProgressionWithBackup(host.game,host.progressionPath,&recoveredPersistentSave);
 #ifdef __APPLE__
-    if(!loadedPersistentSave){
+    if(!agentPlaytest&&!loadedPersistentSave){
         const std::filesystem::path legacyPath=legacyTemporaryProgressionSavePath();
         if(legacyPath!=host.progressionPath&&loadProgression(host.game,legacyPath)){
             loadedPersistentSave=saveProgression(host.game.state().progression.permanent,host.game.state().localSettings,host.progressionPath);
@@ -1861,10 +1961,10 @@ int main(int argc, char** argv) {
         }
     }
 #endif
-    std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),recoveredPersistentSave?" (recovered backup)":(loadedPersistentSave?" (loaded)":""));
+    std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),agentPlaytest?" (bypassed for agent playtest)":(recoveredPersistentSave?" (recovered backup)":(loadedPersistentSave?" (loaded)":"")));
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
-    if((!capturePath&&!captureDemo)||captureStart)host.game.prepareAttractScreen();
+    if((!capturePath&&!captureDemo&&!agentPlaytest)||captureStart)host.game.prepareAttractScreen();
     if(captureMenu){
         const char* page=captureMenuPage;
         GameState& fixture=host.game.networkMutableState();
@@ -1967,7 +2067,7 @@ int main(int argc, char** argv) {
     glfwSetWindowTitle(window,"Data");
     // Let the platform compositor pace presentation while gameplay remains fixed
     // at 60 Hz. The renderer interpolates camera state between simulation ticks.
-    glfwSwapInterval((capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory)?0:1);
+    glfwSwapInterval((capturePath||multiplayerTest||combatRenderStress||combatCrowdStress||soulLifecycleDirectory||agentPlaytest)?0:1);
     setMouseCaptured(window, host, host.game.state().started&&!host.game.state().attractMode);
     if(capturePaused||captureMenuPause)host.game.setUiPaused(true);
 
@@ -1976,6 +2076,11 @@ int main(int argc, char** argv) {
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     host.renderer.resize(framebufferWidth, framebufferHeight);
     if(captureDemo||captureHideHud)host.renderer.setHudVisible(false);
+    if(agentPlaytest){
+        const std::filesystem::path framePath=agentFrameArg?std::filesystem::path(agentFrameArg):(progressionSavePath().parent_path()/"agent-playtest"/"current-frame.ppm");
+        const int result=runAgentPlaytest(window,host,framePath,framebufferWidth,framebufferHeight);
+        glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;
+    }
     if(roomInspectorSmoke){const int result=runRoomInspectorSmoke(host.game);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatRenderStress){const int result=runCombatRenderStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
     if(combatCrowdStress){const int result=runCombatCrowdStress(window,host);glfwDestroyWindow(window);host.audio.stopAll();glfwTerminate();return result;}
