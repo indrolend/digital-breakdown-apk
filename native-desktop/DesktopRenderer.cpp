@@ -1464,13 +1464,38 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     }
     for (const auto& bullet:state.bullets) if (bullet.alive) {
         const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);
-        drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.68f);
+        if(bullet.dropped){
+            // Recoverable combat capital settles into a grounded, coherent
+            // posture instead of reading like a projectile frozen in flight.
+            drawBox(bullet.pos,{size*1.02f,size*0.78f,size*1.02f},0,bullet.spin,0,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.78f);
+        }else{
+            // Let velocity physically articulate flight. The mild stretch is
+            // the projectile itself, not a trail or targeting annotation.
+            const float speed=length(bullet.vel);const Vec3 direction=speed>0.001f?bullet.vel*(1.0f/speed):Vec3{0,0,1};
+            const float yaw=std::atan2(direction.x,direction.z),pitch=-std::asin(clampf(direction.y,-1.0f,1.0f));
+            drawBox(bullet.pos,{size*0.84f,size*0.84f,size*1.28f},pitch,yaw,bullet.spin*0.45f,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.68f);
+        }
     }
+    const auto shellFragmentVisibility=[&](const ParticleState& particle){
+        if(particle.material!=ParticleMaterial::Environment)return 1.0f;
+        float visibility=1.0f;
+        for(const auto& target:state.targets){
+            if(!target.alive||!target.slurpable||target.soulMorph>=0.92f)continue;
+            Vec3 soul=target.pos;soul.z=tileOrigin+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);soul.y+=0.57f;
+            const Vec3 sight=soul-state.camera.pos;const float sightLengthSq=lengthSq(sight);if(sightLengthSq<0.001f)continue;
+            const float along=clampf(dot3(particle.pos-state.camera.pos,sight)/sightLengthSq,0.0f,1.0f);
+            const Vec3 nearest=state.camera.pos+sight*along;
+            const float revealRadius=0.20f+(1.0f-target.soulMorph)*0.34f;
+            if(along>0.04f&&along<1.0f&&lengthSq(particle.pos-nearest)<revealRadius*revealRadius)visibility=std::min(visibility,0.16f);
+        }
+        return visibility;
+    };
     if(state.localSettings.particles)for(const auto& particle:state.particles) if(particle.life>0.0f) {
         const float t=particle.maxLife>0.0f?clampf(particle.life/particle.maxLife,0.0f,1.0f):0.0f;
         const float size=particle.size*t;
         const VisualColor color=particleMaterialColor(particle.material,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,t);
-        drawParticleCube(particle.pos,size,particle.life*6.0f,color.r,color.g,color.b,(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f));
+        const float alpha=(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f)*shellFragmentVisibility(particle);
+        drawParticleCube(particle.pos,size,particle.life*6.0f,color.r,color.g,color.b,alpha);
     }
     if(state.localSettings.particles||state.localSettings.portalWindow)drawDoorDataMosh(state);
     if(codec&&codec->inspectedTarget>=0&&codec->inspectedTarget<TARGET_COUNT){
