@@ -108,6 +108,12 @@ void testIngestingSoulShellContractsContinuously() {
     assert(std::abs(middle.morphScale - 0.5f) < 0.0001f);
     assert(late.morphScale < middle.morphScale);
     assert(late.morphScale > 0.0f);
+    const SoulVisualState freeSoul = makeSoulVisualState(0, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, true);
+    const SoulVisualState attractedSoul = makeSoulVisualState(1, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, true);
+    const SoulVisualState latchedSoul = makeSoulVisualState(2, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, true);
+    assert(freeSoul.shellOpacity > attractedSoul.shellOpacity);
+    assert(attractedSoul.shellOpacity > latchedSoul.shellOpacity);
+    assert(late.shellOpacity < start.shellOpacity);
 }
 
 gameplay::EnemyMotorOutput settleMotor(gameplay::EnemyMotorInput input, float individuality) {

@@ -1409,7 +1409,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         glDisable(GL_BLEND); glEnable(GL_LIGHTING);
     }
 
-    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
+    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float opacity; float distanceSquared; };
     std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
     int translucentSoulCount=0;
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
@@ -1430,7 +1430,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
             drawSoulFlesh(target,soulCenter);
             const float cube=0.72f*0.78f*target.scale*sv.morphScale;
             const Vec3 delta=soulCenter-state.camera.pos;
-            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,sv.shellOpacity,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
     }
     std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
@@ -1438,7 +1438,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     // Draw one camera-facing surface of each convex shell. With culling
     // disabled, several cube faces compound alpha and produce false opacity.
     glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
-    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,0.68f);}
+    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,soul.opacity);}
     glDisable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDisable(GL_BLEND);
     for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
