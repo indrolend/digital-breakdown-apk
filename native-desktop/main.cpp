@@ -884,7 +884,11 @@ DesktopGamepadInput pollGamepad(GLFWwindow* window,HostState& host){
     }
     const bool leftTriggerPressed=leftTriggerDown&&!host.previousGamepadLeftTrigger;
     const bool rightTriggerPressed=rightTriggerDown&&!host.previousGamepadRightTrigger;
-    if(menuActive&&!host.enteringJoinCode){
+    if(host.game.state().victory&&!host.game.state().multiplayer.enabled){
+        dbmenu::resetMenuRepeat(host.controllerVerticalMenuRepeat);
+        if(pressed(GLFW_GAMEPAD_BUTTON_A))host.game.resolveVictory(true);
+        else if(pressed(GLFW_GAMEPAD_BUTTON_X))host.game.resolveVictory(false);
+    }else if(menuActive&&!host.enteringJoinCode){
         const int verticalDirection=menuDown?1:(menuUp?-1:0);
         if(dbmenu::menuRepeatMove(host.controllerVerticalMenuRepeat,verticalDirection,glfwGetTime())){
             const int current=host.game.state().hud.menuSelection;
@@ -1089,6 +1093,11 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int) {
         host->game.restart();
         setMouseCaptured(window, *host, true);
         return;
+    }
+
+    if(action==GLFW_PRESS&&host->game.state().victory&&(!host->game.state().multiplayer.enabled||host->game.state().multiplayer.authoritativeHost)){
+        if(key==GLFW_KEY_ENTER||key==GLFW_KEY_SPACE){host->game.resolveVictory(true);setMouseCaptured(window,*host,true);return;}
+        if(key==GLFW_KEY_R){host->game.resolveVictory(false);setMouseCaptured(window,*host,true);return;}
     }
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
@@ -1471,6 +1480,7 @@ void printUsage() {
     std::printf("  --capture-frame PATH Capture a hidden frame and exit.\n");
     std::printf("  --capture-identity-frame PATH  Capture the deterministic human observation cue.\n");
     std::printf("  --capture-spectator-frame PATH  Capture the multiplayer spectator presentation.\n");
+    std::printf("  --capture-victory-frame PATH  Capture the finite-run completion presentation.\n");
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
     std::printf("  --capture-cinematic-demo DIR  Record the real lunge/capture sequence from a cinematic spectator camera.\n");
@@ -1848,6 +1858,7 @@ int main(int argc, char** argv) {
     const bool capturePhone=argValue(argc,argv,"--capture-phone-frame")!=nullptr;
     const bool captureMenu=argValue(argc,argv,"--capture-menu-frame")!=nullptr;
     const bool captureSpectator=argValue(argc,argv,"--capture-spectator-frame")!=nullptr;
+    const bool captureVictory=argValue(argc,argv,"--capture-victory-frame")!=nullptr;
     const char* captureDemoDir=argValue(argc,argv,"--capture-cpu-demo");
     const char* captureCinematicDir=argValue(argc,argv,"--capture-cinematic-demo");
     const bool captureCinematic=captureCinematicDir!=nullptr;
@@ -1877,7 +1888,7 @@ int main(int argc, char** argv) {
     const bool combatRenderStress=hasArg(argc,argv,"--combat-render-stress");
     const bool combatCrowdStress=hasArg(argc,argv,"--combat-crowd-stress");
     const char* soulLifecycleDirectory=argValue(argc,argv,"--capture-soul-lifecycle");
-    const char* capturePath=captureIdentity?argValue(argc,argv,"--capture-identity-frame"):(captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureOcclusion?argValue(argc,argv,"--capture-occlusion-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame"))))))))));
+    const char* capturePath=captureVictory?argValue(argc,argv,"--capture-victory-frame"):(captureIdentity?argValue(argc,argv,"--capture-identity-frame"):(captureHuman?argValue(argc,argv,"--capture-human-frame"):(captureSoul?argValue(argc,argv,"--capture-soul-frame"):(captureOcclusion?argValue(argc,argv,"--capture-occlusion-frame"):(captureStart?argValue(argc,argv,"--capture-start-frame"):(capturePaused?argValue(argc,argv,"--capture-paused-frame"):(captureMosh?argValue(argc,argv,"--capture-mosh-frame"):(capturePhone?argValue(argc,argv,"--capture-phone-frame"):(captureMenu?argValue(argc,argv,"--capture-menu-frame"):(captureSpectator?argValue(argc,argv,"--capture-spectator-frame"):argValue(argc,argv,"--capture-frame")))))))))));
     const int windowWidth=std::max(320,std::min(7680,argInt(argc,argv,"--capture-width",1280)));
     const int windowHeight=std::max(180,std::min(4320,argInt(argc,argv,"--capture-height",720)));
     if (hasArg(argc, argv, "--smoke-test")) {
@@ -1997,6 +2008,13 @@ int main(int argc, char** argv) {
     if(rallyLab){
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
+    }
+    if(captureVictory){
+        GameState& fixture=host.game.networkMutableState();
+        fixture.started=true;fixture.attractMode=false;fixture.cinematic.introActive=false;fixture.uiPaused=false;
+        fixture.roomIndex=STORY_RUN_FINAL_ROOM;fixture.roomClear=true;fixture.victory=true;
+        for(int i=0;i<fixture.requiredSouls;++i){fixture.captures[i].filled=true;fixture.captures[i].packedSoul=packSoulRecord({static_cast<std::uint64_t>(301+i),i==2,STORY_RUN_FINAL_ROOM});}
+        fixture.depositedSouls=fixture.requiredSouls;
     }
     if(roomInspector){host.game.debugStartRoomInspector();for(int premise=0;premise<roomInspectorPremise;++premise)host.game.debugStepRoomInspector(1,false);std::printf("ROOM_INSPECTOR_READY previous=[ next=] regenerate=R enemies=E review=5/6/7/8\n");}
     if(automationPlaytest)std::printf("AUTOMATION_PLAYTEST_READY local_only=YES focus_pause=OFF input_clearing=ON\n");

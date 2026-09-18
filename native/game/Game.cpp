@@ -446,6 +446,19 @@ void Game::restart() {
     updatePhoneDisplay(0.0f);
 }
 
+void Game::resolveVictory(bool continueEndless) {
+    if (!state_.victory) return;
+    if (state_.multiplayer.enabled && !state_.multiplayer.authoritativeHost) return;
+    if (!continueEndless) {
+        restart();
+        return;
+    }
+    state_.victory = false;
+    state_.endlessMode = true;
+    clearInputState();
+    setEnergyTicker("CONTAINMENT RELEASED / ENDLESS", 2);
+}
+
 void Game::debugStartSecretTvTest(bool enterRoom) {
     reset();
     state_.roomIndex = 10;
@@ -1379,7 +1392,7 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
 
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
-    const bool soloSimulationPaused=state_.started&&state_.uiPaused&&!state_.multiplayer.enabled;
+    const bool soloSimulationPaused=(state_.started&&state_.uiPaused&&!state_.multiplayer.enabled)||state_.victory;
     if(!soloSimulationPaused){
         state_.time += dt;
         state_.environmentVisual.latestShotAge=std::min(9999.0f,state_.environmentVisual.latestShotAge+dt);
@@ -1422,6 +1435,12 @@ void Game::update(float dt) {
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
         state_.hud.gameOver=false;
+        return;
+    }
+    if(state_.victory){
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,state_.camera.firstPerson);
+        updatePhoneTransform();
+        updateCamera(0.0f);
         return;
     }
     if(state_.cinematic.introActive) {
@@ -2029,6 +2048,14 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
     Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
     if (!isInsideDoorAperture(local, 0.04f)) return;
     if (state_.roomClear && currentTile < previousTile) {
+        if(state_.roomIndex==STORY_RUN_FINAL_ROOM&&!state_.endlessMode&&!state_.rallyLab&&!state_.traversalLab&&!state_.slopeLab&&!state_.cartLab&&!state_.roomInspector){
+            state_.player.pos.z=previousZ;
+            state_.player.vel={};
+            state_.victory=true;
+            clearInputState();
+            setEnergyTicker("BREAKDOWN CONTAINED",2);
+            return;
+        }
         state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
         state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
         if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
@@ -4160,7 +4187,7 @@ void Game::updateBullets(float dt) {
                 }
                 if(!sphereHit && !wallHit) continue;
                 int filledSlot=0;
-                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
+                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; state_.captures[fill].packedSoul=packSoulRecord(b.soul); awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
                 emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);emitAudio(AudioCue::RewardNice,0.28f);
                 spawnParticleBurst(b.pos,ParticleMaterial::Soul);
                 spawnParticleBurst(goal,ParticleMaterial::Soul);
@@ -4227,7 +4254,10 @@ void Game::updateCaptures(float dt) {
     state_.depositedSouls=filled;
     const bool wasClear=state_.roomClear;
     state_.roomClear = filled >= state_.requiredSouls;
-    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
+    if(state_.roomClear && !wasClear){
+        emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);
+        if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}
+    }
 }
 void Game::clampRoom(Vec3& pos) {
     pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + PLAYER_WALL_MARGIN, ROOM_WIDTH * 0.5f - PLAYER_WALL_MARGIN);

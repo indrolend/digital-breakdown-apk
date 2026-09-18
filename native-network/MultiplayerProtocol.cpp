@@ -281,6 +281,8 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
   p.u8(s.roomClear ? 1 : 0);
   p.u8(s.started ? 1 : 0);
   p.u8(s.dead ? 1 : 0);
+  p.u8(s.victory ? 1 : 0);
+  p.u8(s.endlessMode ? 1 : 0);
   p.u64(s.nextSoulId);
   p.i32(s.runRules.requiredSlotStacks);
   p.i32(s.runRules.crowdedRoomStacks);
@@ -304,7 +306,7 @@ std::vector<std::uint8_t> encodeSnapshot(std::uint8_t playerId,
     writePlayer(p, player);
   for (const auto &target : s.targets)
     writeTarget(p, target);
-  for (std::size_t i=0;i<s.captures.size();++i){p.u8(s.captures[i]?1:0);p.vec(s.capturePositions[i]);}
+  for (std::size_t i=0;i<s.captures.size();++i){const auto& soul=s.captureSouls[i];p.u8(s.captures[i]?1:0);p.vec(s.capturePositions[i]);p.u64(soul.id);p.u8(soul.brute?1:0);p.i32(soul.originRoom);}
   for (const auto &bullet : s.bullets)
     writeBullet(p, bullet);
   for (const auto &flower : s.flowers)
@@ -326,14 +328,16 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
     return false;
   Reader r(data + HEADER_BYTES, h.payloadBytes);
   s.tick = h.tick;
-  std::uint8_t clear = 0, started = 0, dead = 0, upgradeMenu = 0;
+  std::uint8_t clear = 0, started = 0, dead = 0, victory = 0, endlessMode = 0, upgradeMenu = 0;
   if (!readWorldContext(r,s.world) || !r.f32(s.time) || !r.i32(s.roomIndex) || !r.i32(s.roomSeed) ||
       !r.i32(s.requiredSouls) || !r.i32(s.depositedSouls) || !r.u8(clear) ||
-      !r.u8(started) || !r.u8(dead) || !r.u64(s.nextSoulId))
+      !r.u8(started) || !r.u8(dead) || !r.u8(victory) || !r.u8(endlessMode) || !r.u64(s.nextSoulId))
     return false;
   s.roomClear = clear != 0;
   s.started = started != 0;
   s.dead = dead != 0;
+  s.victory = victory != 0;
+  s.endlessMode = endlessMode != 0;
   if (!r.i32(s.runRules.requiredSlotStacks) ||
       !r.i32(s.runRules.crowdedRoomStacks) ||
       !r.i32(s.runRules.fasterSlurpStacks) || !r.i32(s.runRules.nextId) ||
@@ -364,10 +368,12 @@ bool decodeSnapshot(const std::uint8_t *data, std::size_t size, PacketHeader &h,
     if (!readTarget(r, target))
       return false;
   for (std::size_t i = 0; i < s.captures.size(); ++i) {
-    std::uint8_t value = 0;
-    if (!r.u8(value)||!r.vec(s.capturePositions[i]))
+    std::uint8_t value = 0, brute = 0;
+    auto& soul=s.captureSouls[i];
+    if (!r.u8(value)||!r.vec(s.capturePositions[i])||!r.u64(soul.id)||!r.u8(brute)||!r.i32(soul.originRoom))
       return false;
     s.captures[i] = value != 0;
+    soul.brute = brute != 0;
   }
   for (auto &bullet : s.bullets)
     if (!readBullet(r, bullet))
@@ -474,6 +480,8 @@ captureWorld(const GameState &state,
   s.roomClear = state.roomClear;
   s.started = state.started;
   s.dead = state.dead;
+  s.victory = state.victory;
+  s.endlessMode = state.endlessMode;
   s.nextSoulId=state.nextSoulId;
   s.runRules = state.runRules;
   s.upgradeMenuActive = state.upgradeMenu.active;
@@ -524,6 +532,7 @@ captureWorld(const GameState &state,
   for (int i = 0; i < CAPTURE_COUNT; ++i){
     s.captures[i] = state.captures[i].filled;
     s.capturePositions[i]=state.captures[i].pos;
+    s.captureSouls[i]=unpackSoulRecord(state.captures[i].packedSoul);
   }
   for (int i = 0; i < BULLET_COUNT; ++i) {
     const auto &a = state.bullets[i];
@@ -566,6 +575,8 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
   state.roomClear = s.roomClear;
   state.started = s.started;
   state.dead = s.dead;
+  state.victory = s.victory;
+  state.endlessMode = s.endlessMode;
   state.nextSoulId=s.nextSoulId;
   state.runRules = s.runRules;
   state.upgradeMenu.active = s.upgradeMenuActive;
@@ -757,6 +768,7 @@ void applyWorld(GameState &state, const WorldSnapshot &s,
     auto &capture = state.captures[i];
     capture.pos=s.capturePositions[i];
     capture.filled = s.captures[i];
+    capture.packedSoul = packSoulRecord(s.captureSouls[i]);
     if (!capture.filled) {
       capture.tokenAwarded = false;
     } else if (!capture.tokenAwarded) {
@@ -916,6 +928,7 @@ DurableSectionHashes durableSectionHashes(const WorldSnapshot& s){
   for(auto value:s.sharedPermanentUpgradeLevels)progression.i32(value);
   for(std::size_t i=0;i<s.captures.size();++i){
     progression.boolean(s.captures[i]);progression.vec(s.capturePositions[i]);
+    progression.u64(s.captureSouls[i].id);progression.boolean(s.captureSouls[i].brute);progression.i32(s.captureSouls[i].originRoom);
   }
   result.progression=progression.value;
   return result;
@@ -924,7 +937,7 @@ DurableSectionHashes durableSectionHashes(const WorldSnapshot& s){
 std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
   StableHash h;
   h.i32(s.roomIndex);h.i32(s.roomSeed);h.i32(s.requiredSouls);h.i32(s.depositedSouls);
-  h.boolean(s.roomClear);h.boolean(s.started);h.boolean(s.dead);
+  h.boolean(s.roomClear);h.boolean(s.started);h.boolean(s.dead);h.boolean(s.victory);h.boolean(s.endlessMode);
   h.u64(s.nextSoulId);
   h.i32(s.runRules.requiredSlotStacks);h.i32(s.runRules.crowdedRoomStacks);
   h.i32(s.runRules.fasterSlurpStacks);h.i32(s.runRules.nextId);h.i32(s.runRules.lastAdded);
@@ -937,7 +950,7 @@ std::uint64_t authoritativeStateHash(const WorldSnapshot& s){
   h.boolean(s.doorTransition.active);h.scalar(s.doorTransition.progress);
   for(const auto& p:s.players)hashPlayerGameplay(h,p);
   for(const auto& t:s.targets)hashTargetGameplay(h,t);
-  for(std::size_t i=0;i<s.captures.size();++i){h.boolean(s.captures[i]);h.vec(s.capturePositions[i]);}
+  for(std::size_t i=0;i<s.captures.size();++i){h.boolean(s.captures[i]);h.vec(s.capturePositions[i]);h.u64(s.captureSouls[i].id);h.boolean(s.captureSouls[i].brute);h.i32(s.captureSouls[i].originRoom);}
   for(const auto& b:s.bullets){h.boolean(b.active);h.boolean(b.brute);h.vec(b.pos);h.vec(b.vel);h.scalar(b.life);h.boolean(b.dropped);h.scalar(b.contactCooldown);h.i32(b.lastRoomColliderIndex);h.scalar(b.roomColliderContactCooldown);h.u64(b.soul.id);h.boolean(b.soul.brute);h.i32(b.soul.originRoom);}
   for(const auto& f:s.flowers){h.boolean(f.active);h.vec(f.pos);h.scalar(f.age);}
   return h.value;

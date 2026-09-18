@@ -114,10 +114,12 @@ int main() {
             bullet = BulletState{};
             bullet.alive = true;
             bullet.life = 1.0f;
+            bullet.soul = {static_cast<std::uint64_t>(room * 100 + shot + 1), shot % 3 == 0, room};
             bullet.pos = state.captures[shot].pos + Vec3{0, 0, tileOrigin + 1.9f};
             bullet.vel = {0, 0, -25.0f};
             step(game);
-            if (filledGoals(game.state()) != shot + 1) {
+            if (filledGoals(game.state()) != shot + 1 ||
+                unpackSoulRecord(game.state().captures[shot].packedSoul).id != bullet.soul.id) {
                 return fail(iteration, "goal_not_filled_once", game.state());
             }
         }
@@ -143,6 +145,18 @@ int main() {
         crossing.player.vel = {0, 0, -20.0f};
         crossing.player.grounded = true;
         step(game, 2);
+
+        if(room==STORY_RUN_FINAL_ROOM){
+            if(!game.state().victory||game.state().roomIndex!=room)
+                return fail(iteration,"final_room_did_not_end_run",game.state());
+            game.resolveVictory(true);
+            if(game.state().victory||!game.state().endlessMode)
+                return fail(iteration,"endless_choice_failed",game.state());
+            crossing.player.pos = {0, PHONE_MODEL_HEIGHT * 0.5f, tileOrigin - 20.8f};
+            crossing.player.vel = {0, 0, -20.0f};
+            crossing.player.grounded = true;
+            step(game,2);
+        }
 
         const GameState& advanced = game.state();
         const int expectedRules = std::min(11, rulesBefore + 1);

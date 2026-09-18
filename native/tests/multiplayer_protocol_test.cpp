@@ -152,6 +152,8 @@ int main() {
   worldState.roomColliders[0].center = {2,0.5f,-3};
   worldState.roomColliders[0].width = 1.5f;
   worldState.captures[0].pos = {-1.25f,3.05f,-15};
+  worldState.captures[0].filled = true;
+  worldState.captures[0].packedSoul = packSoulRecord({8123,true,3});
   worldState.secretTv.available = true;
   worldState.secretTv.entrancePos = {13,0.5f,4};
   worldState.bullets[0].alive = true;
@@ -165,6 +167,7 @@ int main() {
   worldState.bullets[0].soul={7001,true,3};
   world = captureWorld(game.state(), players, 123);
   world.world=inputWorld;
+  world.victory=true;
   auto snapshotBytes = encodeSnapshot(0, world, 8);
   worldState.roomInspector=true;
   worldState.roomInspectorEnemies=true;
@@ -172,6 +175,7 @@ int main() {
   worldState.roomInspectorReport.seed=999999;
   worldState.roomInspectorReport.colliderCount=15;
   auto debugOnlyWorld=captureWorld(game.state(),players,123);debugOnlyWorld.world=inputWorld;
+  debugOnlyWorld.victory=true;
   const auto debugOnlyBytes=encodeSnapshot(0,debugOnlyWorld,8);
   ok &= debugOnlyBytes==snapshotBytes;
   WorldSnapshot roundtrip;
@@ -213,6 +217,8 @@ int main() {
         roundtrip.roomColliderCount == 1 &&
         std::abs(roundtrip.roomColliders[0].center.x - 2.0f) < 0.0001f &&
         std::abs(roundtrip.capturePositions[0].x + 1.25f) < 0.0001f &&
+        roundtrip.victory && !roundtrip.endlessMode &&
+        roundtrip.captureSouls[0].id == 8123 && roundtrip.captureSouls[0].brute &&
         roundtrip.bullets[0].active && roundtrip.bullets[0].brute &&
         roundtrip.bullets[0].dropped && roundtrip.bullets[0].lastRoomColliderIndex==4 &&
         std::abs(roundtrip.bullets[0].roomColliderContactCooldown-0.031f)<0.0001f && roundtrip.bullets[0].soul.id == 7001 &&
@@ -230,6 +236,8 @@ int main() {
         completeGuest.state().debug.colliderCount == 1 &&
         completeGuest.state().topology.currentTileIndex == -2 &&
         completeGuest.state().doorTransition.active &&
+        completeGuest.state().victory &&
+        unpackSoulRecord(completeGuest.state().captures[0].packedSoul).id == 8123 &&
         std::abs(completeGuest.state().captures[0].pos.x + 1.25f) < 0.0001f;
   auto modernInventory=std::make_unique<WorldSnapshot>(roundtrip);
   modernInventory->players[1].storedSoulBruteMask=1;
@@ -450,7 +458,7 @@ int main() {
   if (!snapshotBytes.empty()) {
     const auto validSnapshot = snapshotBytes;
     auto unknownAction=validSnapshot;
-    constexpr std::size_t firstPlayerActionOffset=20+14+8+153+15*48+50;
+    constexpr std::size_t firstPlayerActionOffset=20+14+10+153+15*48+50;
     unknownAction[firstPlayerActionOffset]=0xff;
     WorldSnapshot unknownActionWorld;
     ok &= !decodeSnapshot(unknownAction.data(),unknownAction.size(),h,unknownActionWorld);

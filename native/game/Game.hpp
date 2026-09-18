@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -30,6 +31,7 @@ constexpr int AUDIO_EVENT_COUNT = 64;
 constexpr int ROOM_COLLIDER_COUNT = 15;
 constexpr int PHONE_CAPACITY = 30;
 constexpr int SOUL_LATTICE_NODE_COUNT = 27;
+constexpr int STORY_RUN_FINAL_ROOM = 3;
 constexpr float PHONE_MODEL_HEIGHT = gameplay::WORLD_SCALE.phoneHeight;
 constexpr float PHONE_BODY_WIDTH = 0.08f;
 constexpr float PHONE_BODY_HEIGHT = PHONE_MODEL_HEIGHT;
@@ -102,6 +104,33 @@ struct SoulRecord {
     int originRoom = 0;
 };
 
+struct StoredSoulBruteFlags {
+    struct Reference {
+        std::uint32_t* bits;
+        std::uint32_t mask;
+        operator bool() const { return (*bits & mask) != 0; }
+        Reference& operator=(bool value) { if (value) *bits |= mask; else *bits &= ~mask; return *this; }
+    };
+    std::uint32_t bits = 0;
+    void fill(bool value) { bits = value ? ((1u << PHONE_CAPACITY) - 1u) : 0u; }
+    Reference operator[](std::size_t index) { return {&bits, 1u << index}; }
+    bool operator[](std::size_t index) const { return (bits & (1u << index)) != 0; }
+};
+static_assert(sizeof(StoredSoulBruteFlags) == sizeof(std::uint32_t));
+
+inline std::uint64_t packSoulRecord(const SoulRecord& soul) {
+    if (soul.id == 0) return 0;
+    constexpr std::uint64_t IdMask = (1ull << 47) - 1ull;
+    const std::uint64_t room = static_cast<std::uint64_t>(std::max(0, std::min(65535, soul.originRoom)));
+    return (soul.id & IdMask) | (soul.brute ? (1ull << 47) : 0ull) | (room << 48);
+}
+
+inline SoulRecord unpackSoulRecord(std::uint64_t packed) {
+    if (packed == 0) return {};
+    constexpr std::uint64_t IdMask = (1ull << 47) - 1ull;
+    return {packed & IdMask, (packed & (1ull << 47)) != 0, static_cast<int>(packed >> 48)};
+}
+
 enum class SupportSource : unsigned char { Ground, Collider, Slope, Generated };
 struct SupportIdentity { SupportSource source=SupportSource::Ground;int index=-1; };
 inline bool operator==(const SupportIdentity& a,const SupportIdentity& b){return a.source==b.source&&a.index==b.index;}
@@ -116,7 +145,7 @@ struct PlayerState {
     SupportIdentity supportIdentity{};
     float battery = 100.0f;
     int souls = 0;
-    std::array<bool, PHONE_CAPACITY> storedSoulBrute{};
+    StoredSoulBruteFlags storedSoulBrute{};
     std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
     int airJumpsRemaining = 1;
     float coyoteTimer = 0.12f;
@@ -293,6 +322,7 @@ struct CapturePointState {
     Vec3 pos;
     bool filled = false;
     bool tokenAwarded = false;
+    std::uint64_t packedSoul = 0;
 };
 
 struct BulletState {
@@ -699,6 +729,8 @@ struct GameState {
     int requiredSouls = 5;
     int depositedSouls = 0;
     bool roomClear = false;
+    bool victory = false;
+    bool endlessMode = false;
     bool started = true;
     bool dead = false;
     bool uiPaused = false;
@@ -730,6 +762,7 @@ class Game {
 public:
     void reset();
     void restart();
+    void resolveVictory(bool continueEndless);
     void prepareStartScreen();
     void prepareAttractScreen();
     void dismissAttractMode();

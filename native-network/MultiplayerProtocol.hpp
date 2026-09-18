@@ -10,8 +10,8 @@
 namespace dbnet {
 
 constexpr std::uint32_t MAGIC = 0x504d4244u;
-constexpr std::uint16_t PROTOCOL_VERSION = 9;
-constexpr std::uint16_t GAMEPLAY_VERSION = 7;
+constexpr std::uint16_t PROTOCOL_VERSION = 10;
+constexpr std::uint16_t GAMEPLAY_VERSION = 8;
 constexpr std::size_t HEADER_BYTES = 20;
 constexpr std::size_t MAX_PACKET_BYTES = 64u * 1024u;
 constexpr std::size_t MAX_SNAPSHOT_BYTES = 12u * 1024u;
@@ -211,6 +211,8 @@ struct WorldSnapshot {
     bool roomClear = false;
     bool started = false;
     bool dead = false;
+    bool victory = false;
+    bool endlessMode = false;
     std::uint64_t nextSoulId = 1;
     RunRuleState runRules;
     bool upgradeMenuActive = false;
@@ -232,6 +234,7 @@ struct WorldSnapshot {
     std::array<TargetSnapshot, TARGET_COUNT> targets{};
     std::array<bool, CAPTURE_COUNT> captures{};
     std::array<Vec3, CAPTURE_COUNT> capturePositions{};
+    std::array<SoulRecord, CAPTURE_COUNT> captureSouls{};
     std::array<BulletSnapshot, BULLET_COUNT> bullets{};
     std::array<FlowerSnapshot, FLOWER_POWERUP_COUNT> flowers{};
 };

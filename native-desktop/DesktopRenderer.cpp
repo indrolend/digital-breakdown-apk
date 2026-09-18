@@ -1206,7 +1206,28 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     center=rotateCenter(-spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
     center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
 
-    if(state.upgradeMenu.active){
+    if(state.victory){
+        const float pw=std::min(700.0f,static_cast<float>(width_)-48.0f),ph=390.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.005f,0.012f,0.016f,0.72f);
+        quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.94f);quad(px,py,pw,2,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.92f);
+        text("BREAKDOWN CONTAINED",px+24,py+24,2.65f,0.88f,1.0f,1.0f);
+        text("THE FINAL AUDIT",px+24,py+58,1.25f,Pass7Visual::WarmGold.r,Pass7Visual::WarmGold.g,Pass7Visual::WarmGold.b);
+        text("IDENTITIES SACRIFICED TO LEAVE",px+24,py+94,1.05f,0.68f,0.88f,0.92f);
+        int row=0;
+        for(int i=0;i<state.requiredSouls&&row<6;++i){
+            const SoulRecord soul=unpackSoulRecord(state.captures[i].packedSoul);if(!state.captures[i].filled||soul.id==0)continue;
+            const auto profile=soul_identity::profile(soul.id,soul.brute,soul.originRoom);
+            const std::string line=soul_identity::name(profile)+"  /  "+soul_identity::details(profile);
+            text(line,px+34,py+122+row*25,1.05f,row%2?0.72f:0.86f,0.96f,0.92f);++row;
+        }
+        if(row==0)text("RECORDS UNAVAILABLE",px+34,py+122,1.05f,0.72f,0.82f,0.84f);
+        if(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost){
+            text("HOST IS CHOOSING",px+24,py+ph-62,1.35f,0.72f,1.0f,0.86f);
+        }else{
+            text("ENTER / A  CONTINUE ENDLESS",px+24,py+ph-76,1.35f,0.72f,1.0f,0.86f);
+            text("R / X        BEGIN AGAIN",px+24,py+ph-46,1.35f,0.92f,0.84f,0.72f);
+        }
+    } else if(state.upgradeMenu.active){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float pw=std::min(680.0f,menuCanvasW-24.0f),ph=300.0f,px=(menuCanvasW-pw)*0.5f,py=(menuCanvasH-ph)*0.5f;
         quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.16f);quad(px,py,pw,1,0.62f,0.96f,1,0.62f);quad(px,py+ph-1,pw,1,0.62f,0.96f,1,0.42f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost?"HOST IS CHOOSING":"CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
@@ -1445,7 +1466,12 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;
         drawBox(p+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0,0,0,Pass7Visual::MetallicTeal.r*0.74f,Pass7Visual::MetallicTeal.g*0.74f,Pass7Visual::MetallicTeal.b*0.74f);
         drawBox(p,{0.52f,0.52f,0.08f},0,0,0,0.02f,0.03f,0.04f);
-        if(capture.filled) drawBox(p+Vec3{0,0,0.12f},{0.36f,0.36f,0.36f},state.time*1.5f,state.time*2.0f,state.time,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
+        if(capture.filled){
+            const SoulRecord depositedSoul=unpackSoulRecord(capture.packedSoul);
+            const float identityPhase=depositedSoul.id?static_cast<float>(depositedSoul.id%97u)/97.0f:0.0f;
+            const float identityScale=depositedSoul.brute?1.16f:1.0f;
+            drawBox(p+Vec3{0,0,0.12f},{0.36f*identityScale,0.36f/identityScale,0.36f},state.time*(1.15f+identityPhase*0.7f),state.time*(1.55f+identityPhase),identityPhase*PI,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
+        }
     }
     for(const auto& flower:state.flowers) if(flower.active){
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){
