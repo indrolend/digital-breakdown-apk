@@ -875,7 +875,8 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
 void DesktopRenderer::drawSoulFlesh(const TargetState& target,const Vec3& center){
     auto index=[](int x,int y,int z){return x+y*3+z*9;};
     auto emitQuad=[&](int ia,int ib,int ic,int id){const Vec3 a=center+target.latticeSurfacePos[ia],b=center+target.latticeSurfacePos[ib],c=center+target.latticeSurfacePos[ic],d=center+target.latticeSurfacePos[id];Vec3 n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);n=normalized(cross3(c-a,d-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(c.x,c.y,c.z);glVertex3f(d.x,d.y,d.z);};
-    gradedColor(224.0f/255.0f,160.0f/255.0f,143.0f/255.0f);glBegin(GL_TRIANGLES);
+    const auto identity=soul_identity::visualSignature(target.soul.id,target.soul.brute,target.soul.originRoom);
+    gradedColor(0.58f+identity.red*0.34f,0.34f+identity.green*0.34f,0.32f+identity.blue*0.34f);glBegin(GL_TRIANGLES);
     for(int y=0;y<2;++y)for(int z=0;z<2;++z){emitQuad(index(0,y,z),index(0,y+1,z),index(0,y+1,z+1),index(0,y,z+1));emitQuad(index(2,y,z),index(2,y,z+1),index(2,y+1,z+1),index(2,y+1,z));}
     for(int x=0;x<2;++x)for(int z=0;z<2;++z){emitQuad(index(x,0,z),index(x,0,z+1),index(x+1,0,z+1),index(x+1,0,z));emitQuad(index(x,2,z),index(x+1,2,z),index(x+1,2,z+1),index(x,2,z+1));}
     for(int x=0;x<2;++x)for(int y=0;y<2;++y){emitQuad(index(x,y,0),index(x+1,y,0),index(x+1,y+1,0),index(x,y+1,0));emitQuad(index(x,y,2),index(x,y+1,2),index(x+1,y+1,2),index(x+1,y,2));}
@@ -919,7 +920,11 @@ void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const ea
     const float topY = doorHeight + topH * 0.5f;
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
-    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
+    const float progress=response.goalProgress;
+    const VisualColor baseFloor=field?Pass7Visual::FieldGround:(sterile?VisualColor{0.58f,0.61f,0.63f}:(coastal?VisualColor{0.24f,0.43f,0.50f}:Pass7Visual::RoomFloor));
+    const VisualColor awakened=field?VisualColor{0.42f,0.58f,0.34f}:(sterile?VisualColor{0.61f,0.65f,0.67f}:(coastal?VisualColor{0.31f,0.50f,0.55f}:VisualColor{0.31f,0.30f,0.28f}));
+    const float floorResponse=0.14f*progress;
+    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,baseFloor.r+(awakened.r-baseFloor.r)*floorResponse,baseFloor.g+(awakened.g-baseFloor.g)*floorResponse,baseFloor.b+(awakened.b-baseFloor.b)*floorResponse);
     drawRoomCornerOcclusion(z0,lighting.cornerOcclusion);
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(tileIndex);
     if(plan.setting==early_browser_visuals::RoomSetting::City)drawCityGround(tileIndex);
@@ -1303,9 +1308,9 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
 void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
     const auto roomPlan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
-    const auto lighting=render_contract::roomLightingProfile(roomPlan.setting,roomPlan.form,state.roomSeed,state.roomIndex,state.time,state.vacuum.power*0.62f+state.energy.dischargePositionAmount);
     const float horizontalSpeed=std::sqrt(state.player.vel.x*state.player.vel.x+state.player.vel.z*state.player.vel.z);
     const float goalProgress=state.requiredSouls>0?static_cast<float>(state.depositedSouls)/static_cast<float>(state.requiredSouls):0.0f;
+    const auto lighting=render_contract::roomLightingProfile(roomPlan.setting,roomPlan.form,state.roomSeed,state.roomIndex,state.time,state.vacuum.power*0.62f+state.energy.dischargePositionAmount,goalProgress);
     const auto response=render_contract::sceneResponse({state.time,horizontalSpeed,state.player.battery/100.0f,state.vacuum.power,state.energy.dischargePositionAmount,state.environmentVisual.latestShotAge,state.hud.criticalHitPulse,goalProgress,state.player.grounded,state.roomClear});
     glClearColor(lighting.skyTop.r,lighting.skyTop.g,lighting.skyTop.b,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);drawSkyGradient(lighting);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
@@ -1451,7 +1456,9 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
             drawSoulFlesh(target,soulCenter);
             const float cube=0.72f*0.78f*target.scale*sv.morphScale;
             const Vec3 delta=soulCenter-state.camera.pos;
-            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,sv.shellOpacity,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
+            const auto identity=soul_identity::visualSignature(target.soul.id,target.soul.brute,target.soul.originRoom);
+            const VisualColor identityColor{sv.color.r*0.50f+identity.red*0.50f,sv.color.g*0.58f+identity.green*0.42f,sv.color.b*0.54f+identity.blue*0.46f};
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x*identity.aspect,cube*sv.scale.y,cube*sv.scale.z/identity.aspect},sv.rotationY+identity.phase*0.34f,identityColor,sv.shellOpacity,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
     }
     std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
@@ -1468,9 +1475,10 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         drawBox(p,{0.52f,0.52f,0.08f},0,0,0,0.02f,0.03f,0.04f);
         if(capture.filled){
             const SoulRecord depositedSoul=unpackSoulRecord(capture.packedSoul);
-            const float identityPhase=depositedSoul.id?static_cast<float>(depositedSoul.id%97u)/97.0f:0.0f;
+            const auto identity=soul_identity::visualSignature(depositedSoul.id,depositedSoul.brute,depositedSoul.originRoom);
+            const float identityPhase=identity.phase;
             const float identityScale=depositedSoul.brute?1.16f:1.0f;
-            drawBox(p+Vec3{0,0,0.12f},{0.36f*identityScale,0.36f/identityScale,0.36f},state.time*(1.15f+identityPhase*0.7f),state.time*(1.55f+identityPhase),identityPhase*PI,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
+            drawBox(p+Vec3{0,0,0.12f},{0.36f*identityScale*identity.aspect,0.36f/identityScale,0.36f/identity.aspect},state.time*(1.15f+identityPhase*0.7f)*identity.spinRate,state.time*(1.55f+identityPhase)*identity.spinRate,identityPhase*PI,identity.red,identity.green,identity.blue);
         }
     }
     for(const auto& flower:state.flowers) if(flower.active){
@@ -1490,16 +1498,17 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     }
     for (const auto& bullet:state.bullets) if (bullet.alive) {
         const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);
+        const auto identity=soul_identity::visualSignature(bullet.soul.id,bullet.soul.brute,bullet.soul.originRoom);
         if(bullet.dropped){
             // Recoverable combat capital settles into a grounded, coherent
             // posture instead of reading like a projectile frozen in flight.
-            drawBox(bullet.pos,{size*1.02f,size*0.78f,size*1.02f},0,bullet.spin,0,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.78f);
+            drawBox(bullet.pos,{size*1.02f*identity.aspect,size*0.78f,size*1.02f/identity.aspect},0,bullet.spin*identity.spinRate+identity.phase*PI,0,identity.red,identity.green,identity.blue,0.78f);
         }else{
             // Let velocity physically articulate flight. The mild stretch is
             // the projectile itself, not a trail or targeting annotation.
             const float speed=length(bullet.vel);const Vec3 direction=speed>0.001f?bullet.vel*(1.0f/speed):Vec3{0,0,1};
             const float yaw=std::atan2(direction.x,direction.z),pitch=-std::asin(clampf(direction.y,-1.0f,1.0f));
-            drawBox(bullet.pos,{size*0.84f,size*0.84f,size*1.28f},pitch,yaw,bullet.spin*0.45f,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.68f);
+            drawBox(bullet.pos,{size*0.84f*identity.aspect,size*0.84f/identity.aspect,size*1.28f},pitch,yaw,bullet.spin*0.45f*identity.spinRate+identity.phase*PI,identity.red,identity.green,identity.blue,0.68f);
         }
     }
     const auto shellFragmentVisibility=[&](const ParticleState& particle){
@@ -1521,7 +1530,9 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         const float size=particle.size*t;
         const VisualColor color=particleMaterialColor(particle.material,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,t);
         const float alpha=(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f)*shellFragmentVisibility(particle);
-        drawParticleCube(particle.pos,size,particle.life*6.0f,color.r,color.g,color.b,alpha);
+        Vec3 renderedPos=particle.pos;float renderedSpin=particle.life*6.0f;
+        if(state.vacuum.active&&state.vacuum.power>0.01f){const Vec3 toPhone=state.phoneTransform.vacuumPullPoint-particle.pos;const float distance=length(toPhone);if(distance>0.001f&&distance<7.5f){const float influence=(1.0f-distance/7.5f)*state.vacuum.power;renderedPos+=toPhone*(0.018f*influence);renderedSpin+=influence*0.85f;}}
+        drawParticleCube(renderedPos,size,renderedSpin,color.r,color.g,color.b,alpha);
     }
     if(state.localSettings.particles||state.localSettings.portalWindow)drawDoorDataMosh(state);
     if(codec&&codec->inspectedTarget>=0&&codec->inspectedTarget<TARGET_COUNT){

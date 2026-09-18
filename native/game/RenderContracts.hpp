@@ -79,6 +79,7 @@ struct SceneResponse {
     float exitGlow=0.0f;
     float contactShadowScale=1.0f;
     float wind=0.0f;
+    float goalProgress=0.0f;
 };
 
 inline SceneResponse sceneResponse(const SceneResponseInputs& input){
@@ -92,10 +93,11 @@ inline SceneResponse sceneResponse(const SceneResponseInputs& input){
     response.exitGlow=clampf((input.roomClear?0.72f:0.0f)+clampf(input.goalProgress,0.0f,1.0f)*0.28f,0.0f,1.0f);
     response.contactShadowScale=input.grounded?1.0f:0.62f;
     response.wind=clampf(0.34f+response.movement*0.22f+input.vacuumPower*0.18f,0.0f,1.0f);
+    response.goalProgress=clampf(input.goalProgress,0.0f,1.0f);
     return response;
 }
 
-inline RoomLightingProfile roomLightingProfile(early_browser_visuals::RoomSetting setting,early_browser_visuals::RoomForm form,int roomSeed,int roomIndex,float time,float phonePower){
+inline RoomLightingProfile roomLightingProfile(early_browser_visuals::RoomSetting setting,early_browser_visuals::RoomForm form,int roomSeed,int roomIndex,float time,float phonePower,float goalProgress=0.0f){
     const float pulse=0.98f+0.02f*(0.5f+0.5f*std::sin(time*0.73f+static_cast<float>(roomIndex)*0.41f));
     const float roomThreat=clampf((static_cast<float>(roomIndex)-1.0f)/18.0f,0.0f,1.0f);
     const float variation=0.96f+0.08f*(0.5f+0.5f*std::sin(static_cast<float>(roomSeed)*0.0173f+static_cast<float>(roomIndex)*1.91f));
@@ -120,6 +122,13 @@ inline RoomLightingProfile roomLightingProfile(early_browser_visuals::RoomSettin
     profile.skyTop=scaled(profile.skyTop,variation);profile.skyHorizon=scaled(profile.skyHorizon,variation);
     profile.ambient=scaled(profile.ambient,variation);profile.primary=scaled(profile.primary,pulse);profile.fill=scaled(profile.fill,variation);
     profile.phone={0.18f*phonePulse,1.05f*phonePulse,1.32f*phonePulse};profile.fogDensity+=roomThreat*0.004f;
+    const float progress=clampf(goalProgress,0.0f,1.0f);
+    // Each setting acknowledges progress through its own existing light source:
+    // outdoor air clears, city bounce warms, and clinical fixtures wake in order.
+    if(setting==RoomSetting::Field){profile.skyHorizon=scaled(profile.skyHorizon,1.0f+0.06f*progress);profile.fogDensity*=1.0f-0.18f*progress;}
+    else if(setting==RoomSetting::Coastal){profile.fill=scaled(profile.fill,1.0f+0.10f*progress);profile.fogDensity*=1.0f-0.24f*progress;}
+    else if(setting==RoomSetting::City){profile.fill.r+=0.055f*progress;profile.fill.g+=0.035f*progress;profile.fogDensity*=1.0f-0.12f*progress;}
+    else if(setting==RoomSetting::Sterile)for(int i=0;i<profile.localLightCount;++i){const float threshold=static_cast<float>(i)/static_cast<float>(std::max(1,profile.localLightCount));const float awake=clampf((progress-threshold)*static_cast<float>(profile.localLightCount),0.0f,1.0f);profile.localLights[i].intensity*=0.78f+0.22f*awake;}
     return profile;
 }
 

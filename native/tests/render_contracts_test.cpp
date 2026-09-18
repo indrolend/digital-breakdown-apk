@@ -41,6 +41,9 @@ int main(){
     const auto calm=sceneResponse({0.0f,0.0f,1.0f,0.0f,0.0f,9999.0f,0.0f,0.0f,true,false});
     const auto active=sceneResponse({0.0f,8.0f,0.1f,1.0f,1.0f,0.0f,1.0f,1.0f,false,true});
     if(!(active.movement>calm.movement&&active.shotLight>calm.shotLight&&active.actionLight>calm.actionLight&&active.criticalLight>calm.criticalLight&&active.phoneLight<calm.phoneLight&&active.exitGlow>calm.exitGlow&&active.contactShadowScale<calm.contactShadowScale&&active.wind>calm.wind)){std::fputs("RENDER_CONTRACTS_FAIL scene response\n",stderr);return 1;}
+    const auto completedField=roomLightingProfile(RoomSetting::Field,RoomForm::Open,12345,1,0.0f,0.0f,1.0f);
+    const auto completedSterile=roomLightingProfile(RoomSetting::Sterile,RoomForm::Corridor,12345,2,0.0f,0.0f,1.0f);
+    if(!(active.goalProgress==1.0f&&completedField.skyHorizon.r>opening.skyHorizon.r&&completedField.fogDensity<opening.fogDensity&&completedSterile.localLights[0].intensity>sterile.localLights[0].intensity)){std::fputs("RENDER_CONTRACTS_FAIL physical goal response\n",stderr);return 1;}
     std::puts("RENDER_CONTRACTS_OK profiles=4 source-owned sky=GRADIENT fixtures=PAIRED shadows=PROFILE field_grass=LIT city_ground=TEXTURED");
     return 0;
 }
