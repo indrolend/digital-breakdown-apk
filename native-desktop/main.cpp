@@ -424,6 +424,7 @@ struct TargetPresentationSample {
     float visualYaw=0.0f;
     float visualWalkPhase=0.0f;
     float humanAnimationTime=0.0f;
+    float floatOffset=0.0f;
     float attackTimer=0.0f;
     float locomotionAmount=0.0f;
     HumanReactionVisual visualReaction;
@@ -451,7 +452,7 @@ FramePresentationSample capturePresentation(const GameState& state){
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetState& target=state.targets[i];
         sample.targets[i]={target.alive,target.slurpable,target.pos,target.visualYaw,
-            target.visualWalkPhase,target.humanAnimationTime,target.attackTimer,
+            target.visualWalkPhase,target.humanAnimationTime,target.floatOffset,target.attackTimer,
             target.locomotionAmount,target.visualReaction,target.hitFlash};
     }
     for(int i=0;i<BULLET_COUNT;++i){sample.bulletPositions[i]=state.bullets[i].pos;sample.bulletActive[i]=state.bullets[i].alive;}
@@ -482,6 +483,7 @@ void interpolatePresentation(GameState& renderState,const FramePresentationSampl
         target.visualYaw=interpolateWrappedAngle(before.visualYaw,now.visualYaw,alpha);
         target.visualWalkPhase=before.visualWalkPhase+(now.visualWalkPhase-before.visualWalkPhase)*alpha;
         target.humanAnimationTime=before.humanAnimationTime+(now.humanAnimationTime-before.humanAnimationTime)*alpha;
+        target.floatOffset=before.floatOffset+(now.floatOffset-before.floatOffset)*alpha;
         target.attackTimer=before.attackTimer+(now.attackTimer-before.attackTimer)*alpha;
         target.locomotionAmount=before.locomotionAmount+(now.locomotionAmount-before.locomotionAmount)*alpha;
         target.visualReaction.locomotionPhase=before.visualReaction.locomotionPhase+

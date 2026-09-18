@@ -19,6 +19,7 @@
 #include "MarkerPillarGeometry.hpp"
 #include "RollingVehicle.hpp"
 #include "gameplay/EnemyMotor.hpp"
+#include "gameplay/PhysicalEnemyBody.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;

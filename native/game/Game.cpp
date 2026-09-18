@@ -300,6 +300,34 @@ void syncTargetReactionVisual(TargetState& target) {
         target.attackVariant
     );
 }
+
+// Living-human and loose-soul roles are mutually exclusive. The prototype
+// borrows soul-only scalars while the shell is alive so authoritative state
+// size does not grow on legacy machines or stack-heavy verification paths.
+gameplay::PhysicalEnemyBodyState loadPhysicalEnemyBody(const TargetState& target) {
+    gameplay::PhysicalEnemyBodyState body;
+    body.initialized=target.spinSpeed<0.0f;
+    body.fallen=target.capture<0.0f;
+    body.bodyPitch=target.humanAnimationTime;
+    body.bodyRoll=target.floatOffset;
+    body.pitchVelocity=target.latticeVisualPull;
+    body.rollVelocity=target.latticeVisualPullVelocity;
+    body.yawVelocity=target.tetherWidth;
+    body.gaitPhase=target.visualWalkPhase;
+    body.recovery=body.fallen?std::max(0.0f,-target.capture-0.001f):0.0f;
+    return body;
+}
+
+void storePhysicalEnemyBody(TargetState& target,const gameplay::PhysicalEnemyBodyState& body) {
+    target.humanAnimationTime=body.bodyPitch;
+    target.floatOffset=body.bodyRoll;
+    target.latticeVisualPull=body.pitchVelocity;
+    target.latticeVisualPullVelocity=body.rollVelocity;
+    target.tetherWidth=body.yawVelocity;
+    target.visualWalkPhase=body.gaitPhase;
+    target.capture=body.fallen?-(body.recovery+0.001f):0.0f;
+    target.spinSpeed=-1.0f;
+}
 float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
 float secretDoorKnockPulse(float time) {
     constexpr float phraseSeconds = 11.8f;
@@ -3256,6 +3284,10 @@ int Game::applyMeleeHits() {
 }
 
 Vec3 Game::targetHeadCenter(const TargetState& target) const {
+    if(target.spinSpeed<0.0f&&(std::abs(target.humanAnimationTime)>0.82f||std::abs(target.floatOffset)>0.76f)){
+        const Vec3 forward{-std::sin(target.visualYaw),0.0f,-std::cos(target.visualYaw)};
+        return target.pos+forward*(0.42f*target.scale)+Vec3{0.0f,0.24f*target.scale,0.0f};
+    }
     // The authoritative FBX is normalized from the floor to HUMAN_MODEL_HEIGHT.
     // Its head sphere therefore sits one visual head radius below that top.
     return {target.pos.x,
@@ -3349,6 +3381,9 @@ bool Game::damageSoulShell(int index, float amount) {
         t.hitFlash=1.0f;
         if(t.armor<=0.0f) {
             t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
+            t.capture=0.0f;t.latticeVisualPull=0.0f;t.latticeVisualPullVelocity=0.0f;t.tetherWidth=0.0f;
+            t.floatOffset=seededRoomValue(430+index)*DB_PI*2.0f;
+            t.spinSpeed=0.4f+seededRoomValue(435+index)*0.8f;
             if(t.grabbedPlayerId>=0) releaseTargetGrab(index);
             spawnShellShatter(t);
             if(t.brute && nextFlowerRandom()<FLOWER_DROP_CHANCE) spawnFlowerPowerup(t.pos.x,GROUND_Y+0.42f,t.pos.z);
@@ -3358,6 +3393,9 @@ bool Game::damageSoulShell(int index, float amount) {
     }
     Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
     t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
+    auto physicalBody=loadPhysicalEnemyBody(t);
+    gameplay::applyPhysicalEnemyImpact(physicalBody,away*(2.4f+amount));
+    if(!t.slurpable)storePhysicalEnemyBody(t,physicalBody);
     feedSupplementalBattery(FLOWER_ATTACK_FEED);
     spawnParticleBurst(t.pos+Vec3{0,0.65f,0},ParticleMaterial::Flesh);
     return true;
@@ -3679,6 +3717,30 @@ void Game::updateTargets(float dt) {
             const WorldSupportSample supportBefore=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
             const bool supportedBefore=std::abs(t.pos.y-supportBefore.height)<=0.06f&&t.vel.y<=0.0f;
             if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
+            const auto advancePhysicalBody=[&](const Vec3& desiredVelocity,float desiredYaw,float brace,float individuality){
+                auto physicalBody=loadPhysicalEnemyBody(t);
+                gameplay::PhysicalEnemyBodyInput bodyInput{};
+                bodyInput.desiredVelocity=desiredVelocity;
+                bodyInput.actualVelocity=t.vel;
+                bodyInput.desiredYaw=desiredYaw;
+                bodyInput.individuality=individuality;
+                bodyInput.brace=brace;
+                bodyInput.dt=dt;
+                bodyInput.grounded=supportedBefore;
+                const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
+                t.vel.x=body.velocity.x;
+                t.vel.z=body.velocity.z;
+                t.visualYaw=body.yaw;
+                t.locomotionAmount=body.locomotion;
+                t.humanAnimationTime=physicalBody.bodyPitch;
+                t.floatOffset=physicalBody.bodyRoll;
+                t.visualWalkPhase=physicalBody.gaitPhase;
+                t.spinSpeed=-1.0f;
+                storePhysicalEnemyBody(t,physicalBody);
+                return body;
+            };
+            if(!state_.multiplayer.enabled&&t.spinSpeed>=0.0f)
+                advancePhysicalBody({},t.visualYaw,0.5f,std::sin(static_cast<float>(i)*12.9898f));
             t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
             if(t.armorRegenDelay<=0.0f){
                 const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
@@ -3700,7 +3762,8 @@ void Game::updateTargets(float dt) {
             float playerDist=horizontalLength(toPlayer);
             const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
                 const float humanBottom=t.pos.y;
-                const float humanTop=t.pos.y+PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale;
+                const float bodyHeight=loadPhysicalEnemyBody(t).fallen?0.34f:PASS7_HUMAN_VISUAL_SPEC.totalHeight;
+                const float humanTop=t.pos.y+bodyHeight*t.scale;
                 const float playerBottom=playerPosition.y-PHONE_SOLID_HALF_Y;
                 const float playerTop=playerPosition.y+PHONE_SOLID_HALF_Y;
                 return playerBottom<=humanTop+HUMAN_ATTACK_VERTICAL_MARGIN&&
@@ -3743,7 +3806,7 @@ void Game::updateTargets(float dt) {
                     if(towardLength>0.001f)t.visualYaw=std::atan2(-towardTree.x/towardLength,-towardTree.z/towardLength);
                 }
             }
-            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange&&state_.multiplayer.enabled)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
             if(climbedTreeThisFrame){
                 // Tree climbing is physical pursuit, not an attack shortcut.
                 // The existing vertical-overlap contract decides when combat
@@ -3751,13 +3814,17 @@ void Game::updateTargets(float dt) {
             } else if(t.attackTimer>0.0f){
                 t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
                 const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
-                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
+                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
                 else {
-                    t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
                     attackedPlayerId=t.attackTargetPlayerId;
                     attackedPlayerPos=state_.player.pos;
                     if(attackedPlayerId>0&&attackedPlayerId<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[attackedPlayerId].active)attackedPlayerPos=state_.multiplayer.peers[attackedPlayerId].player.pos;
                     else attackedPlayerId=0;
+                }
+                if(!state_.multiplayer.enabled){
+                    const float attackYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    advancePhysicalBody({},attackYaw,0.88f,std::sin(static_cast<float>(i)*12.9898f));
                 }
                 const float sweepT=clampf((progress-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
                 const float side=t.attackVariant%2==0?1.0f:-1.0f;
@@ -3776,19 +3843,19 @@ void Game::updateTargets(float dt) {
                     t.attackHit=true;
                 }
                 if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=attackCadence;}
-            } else if(playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+            } else if(!loadPhysicalEnemyBody(t).fallen&&playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
                 t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=attackCooldown;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
                 Vec3 destination=pursuedTree?treeGripPoint:((playerDist<noticeRange && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
+                const bool physicalPursuit=!state_.multiplayer.enabled;
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=noticeRange){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
                     Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
-                    const bool physicalPursuit=!state_.multiplayer.enabled;
                     if(physicalPursuit){
                         Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
                         for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
@@ -3813,9 +3880,7 @@ void Game::updateTargets(float dt) {
                         const Vec3 authoredTangent{dir.z,0,-dir.x};
                         const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*0.35f));
                         const Vec3 desired=desiredDirection*(speed*motor.speedScale);
-                        const float response=1.0f-std::exp(-(t.brute?5.5f:8.0f)*dt);
-                        t.vel.x+=(desired.x-t.vel.x)*response;
-                        t.vel.z+=(desired.z-t.vel.z)*response;
+                        advancePhysicalBody(desired,std::atan2(-desiredDirection.x,-desiredDirection.z),motor.brace,std::sin(static_cast<float>(i)*12.9898f));
                         const float horizontalSpeed=horizontalLength(t.vel);
                         const float maximum=speed*motor.speedScale*(t.brute?1.30f:1.45f);
                         if(horizontalSpeed>maximum){const float scale=maximum/horizontalSpeed;t.vel.x*=scale;t.vel.z*=scale;}
@@ -3874,12 +3939,21 @@ void Game::updateTargets(float dt) {
                             }
                             if(found)break;
                         }
-                        if(!found){next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
+                        if(!found){
+                            if(physicalPursuit){auto body=loadPhysicalEnemyBody(t);gameplay::applyPhysicalEnemyImpact(body,{dot3(t.vel,obstructionNormal),0,horizontalLength(t.vel)});storePhysicalEnemyBody(t,body);}
+                            next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                        }
                         else if(physicalPursuit){const float redirectedSpeed=horizontalLength(t.vel);t.vel.x=dir.x*redirectedSpeed;t.vel.z=dir.z*redirectedSpeed;}
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
-                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
-                    t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
-                } else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){
+                        if(physicalPursuit){auto body=loadPhysicalEnemyBody(t);gameplay::applyPhysicalEnemyImpact(body,{t.vel.x,0,t.vel.z});storePhysicalEnemyBody(t,body);}
+                        chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                    }
+                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;if(!physicalPursuit){const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);}t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
+                    if(!physicalPursuit)t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
+                } else {
+                    if(physicalPursuit)advancePhysicalBody({},t.visualYaw,0.55f,std::sin(static_cast<float>(i)*12.9898f));
+                    else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                }
             }
             if(!attachedToTreeThisFrame){
                 const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);

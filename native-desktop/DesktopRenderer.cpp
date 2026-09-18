@@ -240,7 +240,21 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
+    HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
+    const bool physicalBody=aliveHuman&&target.spinSpeed<0.0f;
+    const bool fallen=physicalBody&&(std::abs(target.humanAnimationTime)>0.82f||std::abs(target.floatOffset)>0.76f);
+    if(physicalBody){
+        pose.torsoPitch=target.humanAnimationTime;
+        pose.torsoRoll=target.floatOffset;
+        pose.headPitch=-target.humanAnimationTime*0.28f;
+        const float stride=std::sin(target.visualWalkPhase);
+        const float amplitude=fallen?0.16f:target.locomotionAmount*0.62f;
+        pose.leftLegSwing=stride*amplitude;
+        pose.rightLegSwing=-stride*amplitude;
+        pose.leftArmSwing=-pose.rightLegSwing*0.72f-target.floatOffset*0.24f;
+        pose.rightArmSwing=-pose.leftLegSwing*0.72f+target.floatOffset*0.24f;
+        pose.rootBob=std::abs(stride)*0.026f*pose.scale*target.locomotionAmount;
+    }
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
     const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
@@ -261,13 +275,14 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;
         const float legSwing=side<0?pose.leftLegSwing:pose.rightLegSwing;
+        const float knee=physicalBody?(fallen?0.58f:std::max(0.0f,legSwing)*0.72f):std::abs(legSwing)*0.35f;
         const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY,0};
         roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*collapseScale,0},{0.055f*s,spec.upperArmLength*s*collapseScale,0.065f*s},armSwing,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s*collapseScale,0},{0.052f*s,spec.forearmLength*s*collapseScale,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.14f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength)*s,0},{spec.handSize*s,spec.handSize*s,spec.handSize*0.75f*s},0,yaw,0,r,g,b);
         const Vec3 hip=root+right*(side*spec.pelvisWidth*0.28f*s);
         roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY*collapseScale,0},{0.075f*s,spec.thighLength*s*collapseScale,0.080f*s},legSwing,yaw,0,r,g,b);
-        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f,yaw,0,r,g,b);
+        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f+knee*0.72f,yaw,0,r,g,b);
         roundedEllipsoid(hip+forward*(spec.footLength*0.25f*s+legSwing*0.04f*s)+Vec3{0,footY,0},{0.075f*s,spec.footHeight*s,spec.footLength*s},0,yaw,0,r,g,b);
     }
 }
@@ -1393,7 +1408,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0,0,0);}
         const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
         const auto roomSetting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;
-        for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true);else drawProceduralHumanDesktop(target,state.time,0,0,0);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}
+        for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){drawProceduralHumanDesktop(target,state.time,0,0,0);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}
         for(const auto& flower:state.flowers)if(flower.active)drawBox({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},{0.54f,0.22f,0.54f},0,flower.rotationY,0,0,0,0);
         for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0,0,0);}
         glPopMatrix();glEnable(GL_DEPTH_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glStencilMask(0);glStencilFunc(GL_EQUAL,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
@@ -1447,7 +1462,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         target.pos = p;
         if (!target.slurpable) {
             const auto setting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;const VisualColor damageColor=humanDamageSurfaceColor(Pass7Visual::NormalEnemy,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
-            if(humanModel_.valid())drawHumanModel(target,state.time,setting);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b);
+            drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             const auto& sv=target.soulVisual;

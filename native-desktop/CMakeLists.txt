@@ -226,6 +226,13 @@ target_include_directories(EnemyMotorRuntimeIntegrationTest PRIVATE "${DB_GAME_R
 target_compile_features(EnemyMotorRuntimeIntegrationTest PRIVATE cxx_std_17)
 
 add_executable(
+    PhysicalEnemyBodyTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/physical_enemy_body_test.cpp"
+)
+target_include_directories(PhysicalEnemyBodyTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(PhysicalEnemyBodyTest PRIVATE cxx_std_17)
+
+add_executable(
     GameplayGeometryAndConfigTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/gameplay_geometry_and_config_test.cpp"
 )
@@ -393,6 +400,7 @@ target_compile_features(SecretTvPolicyTest PRIVATE cxx_std_17)
 
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
 add_test(NAME EnemyMotorRuntimeIntegrationTest COMMAND EnemyMotorRuntimeIntegrationTest)
+add_test(NAME PhysicalEnemyBodyTest COMMAND PhysicalEnemyBodyTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
 add_test(NAME HostRemotePeerSimulationIsolationTest COMMAND HostRemotePeerSimulationIsolationTest)
