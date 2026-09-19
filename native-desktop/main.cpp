@@ -1486,6 +1486,8 @@ void printUsage() {
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
     std::printf("  --capture-cinematic-demo DIR  Record the real lunge/capture sequence from a cinematic spectator camera.\n");
+    std::printf("  --agent-playtest    Run the paused stdin/stdout firsthand playtest bridge.\n");
+    std::printf("  --agent-frame PATH  Set the bridge's stable current-frame PPM path.\n");
     std::printf("  --capture-width N --capture-height N  Set capture framebuffer dimensions.\n");
     std::printf("  --capture-hide-hud  Hide framebuffer HUD elements in visual captures.\n");
     std::printf("  --perf-trace FILE   Record one-second runtime performance summaries as CSV.\n");
@@ -1685,24 +1687,92 @@ void printAgentObservation(const GameState& state,const std::filesystem::path& f
     std::fflush(stdout);
 }
 
+struct AgentPlaytestRecording {
+    bool active=false;
+    int fps=30;
+    int simulationFramesPerCapture=2;
+    int capturedFrames=0;
+    int simulationFrames=0;
+    std::filesystem::path directory;
+};
+
+bool validAgentRecordingName(const std::string& name){
+    if(name.empty()||name.size()>48||name=="."||name=="..")return false;
+    for(const unsigned char c:name)if(!std::isalnum(c)&&c!='-'&&c!='_')return false;
+    return true;
+}
+
+bool parseAgentRecordStart(const std::string& line,std::string& name,int& fps,std::string& error){
+    std::istringstream stream(line);std::string record,start;stream>>record>>start;
+    if(record!="record"||start!="start"){error="expected_record_start";return false;}
+    name="demo";fps=30;std::string token;
+    while(stream>>token){
+        const std::size_t equals=token.find('=');
+        if(equals==std::string::npos){error="expected_key_value:"+token;return false;}
+        const std::string key=token.substr(0,equals),value=token.substr(equals+1);
+        if(key=="name")name=value;
+        else if(key=="fps"){try{fps=std::stoi(value);}catch(...){error="invalid_value:"+token;return false;}}
+        else {error="unknown_key:"+key;return false;}
+    }
+    if(!validAgentRecordingName(name)){error="invalid_name";return false;}
+    if(fps!=15&&fps!=20&&fps!=30&&fps!=60){error="fps_must_be_15_20_30_or_60";return false;}
+    return true;
+}
+
 int runAgentPlaytest(GLFWwindow* window,HostState& host,const std::filesystem::path& framePath,int width,int height){
     const auto observe=[&](){host.renderer.draw(host.game.state());glFinish();const bool captured=captureFramebuffer(framePath,width,height);glfwSwapBuffers(window);glfwPollEvents();printAgentObservation(host.game.state(),framePath,captured);return captured;};
+    AgentPlaytestRecording recording;
+    const auto captureRecordingFrame=[&](){
+        char frameName[32];std::snprintf(frameName,sizeof(frameName),"frame-%06d.ppm",recording.capturedFrames);
+        host.renderer.draw(host.game.state());glFinish();
+        const bool captured=captureFramebuffer(recording.directory/frameName,width,height);
+        if(captured)++recording.capturedFrames;
+        else std::printf("AGENT_RECORDING_ERROR capture_failed path=%s\n",(recording.directory/frameName).string().c_str());
+        return captured;
+    };
     std::printf("AGENT_PLAYTEST_READY fixed_dt=%.9f max_step_frames=120 frame_format=PPM persistent_save=DISABLED\n",SIMULATION_STEP_SECONDS);
-    std::printf("AGENT_PLAYTEST_COMMANDS observe | step frames=N moveX=-1..1 moveZ=-1..1 lookX=-400..400 lookY=-400..400 sprint=0/1 vacuum=0/1 jump=0/1 melee=0/1 shoot=0/1 camera=0/1 | reset | quit\n");
+    std::printf("AGENT_PLAYTEST_COMMANDS observe | step frames=N moveX=-1..1 moveZ=-1..1 lookX=-400..400 lookY=-400..400 sprint=0/1 vacuum=0/1 jump=0/1 melee=0/1 shoot=0/1 camera=0/1 | record start name=NAME fps=15|20|30|60 | record status | record stop | reset | quit\n");
     observe();
     std::string line;
     while(std::getline(std::cin,line)){
-        if(line=="quit"){std::printf("AGENT_PLAYTEST_QUIT\n");std::fflush(stdout);return 0;}
+        if(line=="quit"){if(recording.active)std::printf("AGENT_RECORDING_STOPPED reason=quit frames=%d fps=%d directory=%s\n",recording.capturedFrames,recording.fps,recording.directory.string().c_str());std::printf("AGENT_PLAYTEST_QUIT\n");std::fflush(stdout);return 0;}
         if(line=="observe"){observe();continue;}
-        if(line=="reset"){host.game.reset();observe();continue;}
+        if(line=="reset"){if(recording.active){std::printf("AGENT_PLAYTEST_ERROR reset_while_recording\n");std::fflush(stdout);continue;}host.game.reset();observe();continue;}
+        if(line.rfind("record start",0)==0){
+            if(recording.active){std::printf("AGENT_PLAYTEST_ERROR recording_already_active\n");std::fflush(stdout);continue;}
+            std::string name,error;int fps=30;
+            if(!parseAgentRecordStart(line,name,fps,error)){std::printf("AGENT_PLAYTEST_ERROR %s\n",error.c_str());std::fflush(stdout);continue;}
+            const auto directory=framePath.parent_path()/"recordings"/name;
+            std::error_code filesystemError;
+            if(std::filesystem::exists(directory,filesystemError)&&std::filesystem::directory_iterator(directory,filesystemError)!=std::filesystem::directory_iterator()){
+                std::printf("AGENT_PLAYTEST_ERROR recording_output_exists path=%s\n",directory.string().c_str());std::fflush(stdout);continue;
+            }
+            std::filesystem::create_directories(directory,filesystemError);
+            if(filesystemError){std::printf("AGENT_PLAYTEST_ERROR recording_directory_failed path=%s\n",directory.string().c_str());std::fflush(stdout);continue;}
+            recording={true,fps,60/fps,0,0,directory};
+            const bool captured=captureRecordingFrame();
+            std::printf("AGENT_RECORDING_%s fps=%d directory=%s pattern=frame-%%06d.ppm\n",captured?"STARTED":"FAILED",fps,directory.string().c_str());std::fflush(stdout);
+            if(!captured)recording.active=false;
+            continue;
+        }
+        if(line=="record status"){
+            std::printf("AGENT_RECORDING_STATUS active=%d frames=%d fps=%d simulation_frames=%d directory=%s\n",recording.active?1:0,recording.capturedFrames,recording.fps,recording.simulationFrames,recording.directory.empty()?"-":recording.directory.string().c_str());std::fflush(stdout);continue;
+        }
+        if(line=="record stop"){
+            if(!recording.active){std::printf("AGENT_PLAYTEST_ERROR recording_not_active\n");std::fflush(stdout);continue;}
+            recording.active=false;
+            std::printf("AGENT_RECORDING_READY frames=%d fps=%d duration=%.3f directory=%s encoder=tools/encode-agent-playtest-video.ps1\n",recording.capturedFrames,recording.fps,static_cast<double>(recording.capturedFrames)/recording.fps,recording.directory.string().c_str());std::fflush(stdout);continue;
+        }
         AgentPlaytestInput input;std::string error;
         if(!parseAgentStep(line,input,error)){std::printf("AGENT_PLAYTEST_ERROR %s\n",error.c_str());std::fflush(stdout);continue;}
         for(int frame=0;frame<input.frames;++frame){
             host.game.setTouchControls(input.moveX,input.moveZ,frame==0?input.lookX:0.0f,frame==0?input.lookY:0.0f,input.vacuum,input.sprint,frame==0&&input.jump,frame==0&&input.melee,frame==0&&input.shoot,frame==0&&input.camera);
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+            if(recording.active&&++recording.simulationFrames%recording.simulationFramesPerCapture==0)captureRecordingFrame();
         }
         observe();
     }
+    if(recording.active)std::printf("AGENT_RECORDING_STOPPED reason=eof frames=%d fps=%d directory=%s\n",recording.capturedFrames,recording.fps,recording.directory.string().c_str());
     std::printf("AGENT_PLAYTEST_EOF\n");std::fflush(stdout);return 0;
 }
 
