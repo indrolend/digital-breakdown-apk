@@ -6,8 +6,9 @@
 #include <cstdio>
 
 struct EnemyMotorRuntimeIntegrationAccess {
-    static const gameplay::EnemyMotorMemory& memory(const Game& game,int index){return game.enemyMotorMemory_[index];}
-    static gameplay::EnemyMotorMemory& memory(Game& game,int index){return game.enemyMotorMemory_[index];}
+    static const gameplay::EnemyMotorMemory& memory(const Game& game,int index){return game.enemyRuntime_->motors[index];}
+    static gameplay::EnemyMotorMemory& memory(Game& game,int index){return game.enemyRuntime_->motors[index];}
+    static const gameplay::PhysicalEnemyBodyState& body(const Game& game,int index){return game.enemyRuntime_->bodies[index];}
     static void respawn(Game& game,int index){game.respawnTarget(index);}
 };
 
@@ -56,6 +57,14 @@ int main(){
     for(int i=0;i<2;++i){
         assert(std::abs(firstPositions[i].x-repeatPositions[i].x)<0.00001f);
         assert(std::abs(firstPositions[i].z-repeatPositions[i].z)<0.00001f);
+        const auto& target=first.state().targets[i];
+        assert(target.physicalBodyMarker<0.0f);
+        assert(EnemyMotorRuntimeIntegrationAccess::body(first,i).initialized);
+        // Physical embodiment must not borrow loose-soul/capture storage.
+        assert(target.capture==0.0f);
+        assert(target.latticeVisualPull==0.0f);
+        assert(target.latticeVisualPullVelocity==0.0f);
+        assert(target.tetherWidth==0.0f);
     }
 
     Game multiplayer,multiplayerControl;
@@ -73,8 +82,10 @@ int main(){
 
     EnemyMotorRuntimeIntegrationAccess::respawn(first,0);
     assert(memoryIsZero(EnemyMotorRuntimeIntegrationAccess::memory(first,0)));
+    assert(!EnemyMotorRuntimeIntegrationAccess::body(first,0).initialized);
     first.reset();
     assert(memoryIsZero(EnemyMotorRuntimeIntegrationAccess::memory(first,1)));
+    assert(!EnemyMotorRuntimeIntegrationAccess::body(first,1).initialized);
 
     std::printf("ENEMY_MOTOR_RUNTIME_OK deterministic divergence=%.3f solo0=(%.3f,%.3f) solo1=(%.3f,%.3f) multiplayerStep=(%.4f,%.4f) respawn-reset\n",
         mirroredDifference,firstPositions[0].x,firstPositions[0].z,firstPositions[1].x,firstPositions[1].z,multiplayerTravel.x,multiplayerTravel.z);

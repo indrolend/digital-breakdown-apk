@@ -240,9 +240,9 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const bool physicalBody=aliveHuman&&target.spinSpeed<0.0f;
-    const bool fallen=physicalBody&&(std::abs(target.humanAnimationTime)>0.82f||std::abs(target.floatOffset)>0.76f);
-    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.humanAnimationTime,target.floatOffset,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const bool fallen=physicalBody&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f);
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
     const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
@@ -848,8 +848,8 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
 
 void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow) const {
     const bool aliveHuman=!target.slurpable;
-    const bool physicalBody=aliveHuman&&target.spinSpeed<0.0f;
-    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.humanAnimationTime,target.floatOffset,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
     humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
     const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;

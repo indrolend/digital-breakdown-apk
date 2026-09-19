@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "HumanVisual.hpp"
@@ -278,11 +279,20 @@ struct TargetState {
     float respawnTimer = 0.0f;
     float scale = 1.0f;
     float phase = 0.0f;
-    float floatOffset = 0.0f;
-    float spinSpeed = 0.8f;
+    union {
+        float floatOffset = 0.0f; // Loose-soul phase.
+        float physicalBodyRoll;   // Living-human visual projection.
+    };
+    union {
+        float spinSpeed = 0.8f;       // Loose-soul rotation speed.
+        float physicalBodyMarker;     // Negative while physical visuals own the living shell.
+    };
     float visualYaw = 0.0f;
     float visualWalkPhase = 0.0f;
-    float humanAnimationTime = 0.0f;
+    union {
+        float humanAnimationTime = 0.0f; // Mature/network animation clock.
+        float physicalBodyPitch;         // Solo physical visual projection.
+    };
     float locomotionAmount = 0.0f;
     float hitFlash = 0.0f;
     float armorRegenDelay = 0.0f;
@@ -825,10 +835,15 @@ private:
     friend struct SoulProjectileLifecycleAccess;
     friend struct EnemyMotorRuntimeIntegrationAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
+    struct EnemyRuntimePool {
+        std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> motors{};
+        std::array<gameplay::PhysicalEnemyBodyState, TARGET_COUNT> bodies{};
+    };
     GameState state_;
-    std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> enemyMotorMemory_{};
+    std::unique_ptr<EnemyRuntimePool> enemyRuntime_;
     int simulationPlayerId_ = 0;
 
+    EnemyRuntimePool& enemyRuntime();
     void resetRoom();
     void buildRoomColliders();
     void chooseSecretTvEntrance();
