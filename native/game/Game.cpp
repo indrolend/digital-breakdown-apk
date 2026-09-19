@@ -3701,6 +3701,29 @@ void Game::updateTargets(float dt) {
             if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
             const auto advancePhysicalBody=[&](const Vec3& desiredVelocity,float desiredYaw,float brace,float individuality){
                 auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 bodyForward{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const Vec3 bodyRight{bodyForward.z,0.0f,-bodyForward.x};
+                const float stride=std::sin(physicalBody.gaitPhase);
+                constexpr float footHalfWidth=0.11f;
+                constexpr float strideReach=0.14f;
+                constexpr float stepHeight=0.10f;
+                const Vec3 leftFoot=t.pos+bodyRight*footHalfWidth+bodyForward*(stride*strideReach);
+                const Vec3 rightFoot=t.pos-bodyRight*footHalfWidth-bodyForward*(stride*strideReach);
+                WorldSupportSample leftSupport{};
+                WorldSupportSample rightSupport{};
+                // The ground plane is continuous and already authoritative in
+                // supportBefore. Only elevated/generated support needs the
+                // more expensive independent footprint probes.
+                if(supportBefore.identity.source!=SupportSource::Ground){
+                    leftSupport=getWorldSupport(leftFoot.x,leftFoot.z,0.035f);
+                    rightSupport=getWorldSupport(rightFoot.x,rightFoot.z,0.035f);
+                }
+                const float leftFootHeight=t.pos.y+std::max(0.0f,stride)*stepHeight;
+                const float rightFootHeight=t.pos.y+std::max(0.0f,-stride)*stepHeight;
+                const auto contactAmount=[&](float footHeight,const WorldSupportSample& support){
+                    if(!supportedBefore)return 0.0f;
+                    return clampf(1.0f-std::abs(footHeight-support.height)/0.055f,0.0f,1.0f);
+                };
                 gameplay::PhysicalEnemyBodyInput bodyInput{};
                 bodyInput.desiredVelocity=desiredVelocity;
                 bodyInput.actualVelocity=t.vel;
@@ -3709,6 +3732,14 @@ void Game::updateTargets(float dt) {
                 bodyInput.brace=brace;
                 bodyInput.dt=dt;
                 bodyInput.grounded=supportedBefore;
+                bodyInput.leftFootContact=contactAmount(leftFootHeight,leftSupport);
+                bodyInput.rightFootContact=contactAmount(rightFootHeight,rightSupport);
+                const float leftWeight=bodyInput.leftFootContact;
+                const float rightWeight=bodyInput.rightFootContact;
+                const float supportWeight=leftWeight+rightWeight;
+                bodyInput.supportNormal=supportWeight>0.001f
+                    ? normalized(leftSupport.normal*leftWeight+rightSupport.normal*rightWeight)
+                    : supportBefore.normal;
                 const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
                 t.vel.x=body.velocity.x;
                 t.vel.z=body.velocity.z;

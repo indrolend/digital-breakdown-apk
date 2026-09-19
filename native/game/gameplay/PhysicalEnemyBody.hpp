@@ -31,6 +31,9 @@ struct PhysicalEnemyBodyInput {
     float brace = 0.0f;
     float dt = 0.0f;
     bool grounded = true;
+    float leftFootContact = 1.0f;
+    float rightFootContact = 1.0f;
+    Vec3 supportNormal{0.0f, 1.0f, 0.0f};
 };
 
 struct PhysicalEnemyBodyOutput {
@@ -69,11 +72,8 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     if (!body.fallen && input.grounded && requestedSpeed > 0.08f)
         body.gaitPhase += cadence * dt;
 
-    const float stride = std::sin(body.gaitPhase);
-    const float leftLift = std::max(0.0f, stride);
-    const float rightLift = std::max(0.0f, -stride);
-    const float leftFootContact = input.grounded ? (1.0f - std::min(1.0f, leftLift * 1.8f)) : 0.0f;
-    const float rightFootContact = input.grounded ? (1.0f - std::min(1.0f, rightLift * 1.8f)) : 0.0f;
+    const float leftFootContact = input.grounded ? std::max(0.0f, std::min(1.0f, input.leftFootContact)) : 0.0f;
+    const float rightFootContact = input.grounded ? std::max(0.0f, std::min(1.0f, input.rightFootContact)) : 0.0f;
     const float contact = std::max(leftFootContact, rightFootContact);
 
     Vec3 velocity = input.actualVelocity;
@@ -93,11 +93,16 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     const Vec3 right{facing.z, 0.0f, -facing.x};
     const float forwardError = dot3(input.desiredVelocity - velocity, facing);
     const float lateralVelocity = dot3(velocity, right);
+    const Vec3 supportNormal = normalized(input.supportNormal);
+    const float supportPitch = std::atan2(dot3(supportNormal, facing), std::max(0.1f, supportNormal.y)) * 0.18f;
+    const float supportRoll = -std::atan2(dot3(supportNormal, right), std::max(0.1f, supportNormal.y)) * 0.18f;
+    const float singleSupportRoll = (rightFootContact - leftFootContact) * 0.045f;
     const float desiredPitch = body.fallen ? (body.bodyPitch >= 0.0f ? 1.28f : -1.28f)
-                                           : std::max(-0.34f, std::min(0.25f, -forwardError * 0.075f));
+                                           : std::max(-0.34f, std::min(0.25f, -forwardError * 0.075f + supportPitch));
     const float desiredRoll = body.fallen ? (body.bodyRoll >= 0.0f ? 0.82f : -0.82f)
                                           : std::max(-0.30f, std::min(0.30f,
-                                                lateralVelocity * 0.10f - body.yawVelocity * actualSpeed * 0.035f));
+                                                lateralVelocity * 0.10f - body.yawVelocity * actualSpeed * 0.035f
+                                                + supportRoll + singleSupportRoll));
     const float balanceFrequency = body.fallen ? 2.4f : 8.0f + brace * 3.0f;
     const float wobble = std::sin(body.gaitPhase * 0.5f + personality * 2.7f) * requestedSpeed * 0.025f;
     body.pitchVelocity += ((desiredPitch - body.bodyPitch) * balanceFrequency * balanceFrequency

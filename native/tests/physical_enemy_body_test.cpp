@@ -39,6 +39,31 @@ int main() {
     assert(std::abs(yaw) < 0.25f);
     assert(body.gaitPhase > 1.0f);
 
+    // A grounded flag is not traction. The environment must report at least
+    // one supported foot before the body can accelerate toward motor intent.
+    gameplay::PhysicalEnemyBodyState unsupportedBody{};
+    gameplay::PhysicalEnemyBodyInput unsupportedInput=input;
+    unsupportedInput.actualVelocity={};
+    unsupportedInput.leftFootContact=0.0f;
+    unsupportedInput.rightFootContact=0.0f;
+    const auto unsupported=gameplay::updatePhysicalEnemyBody(unsupportedBody,unsupportedInput,0.0f);
+    assert(horizontalLength(unsupported.velocity)<0.0001f);
+    unsupportedInput.leftFootContact=1.0f;
+    const auto oneFootSupported=gameplay::updatePhysicalEnemyBody(unsupportedBody,unsupportedInput,0.0f);
+    assert(horizontalLength(oneFootSupported.velocity)>0.05f);
+
+    // World support orientation is physical input: repeated contact on an
+    // incline produces a bounded body attitude without changing intent.
+    gameplay::PhysicalEnemyBodyState slopeBody{};
+    gameplay::PhysicalEnemyBodyInput slopeInput=input;
+    slopeInput.actualVelocity={};
+    slopeInput.desiredVelocity={};
+    slopeInput.supportNormal=normalized(Vec3{0.0f,0.92f,0.38f});
+    for(int frame=0;frame<90;++frame)
+        gameplay::updatePhysicalEnemyBody(slopeBody,slopeInput,0.0f);
+    assert(std::abs(slopeBody.bodyPitch)>0.02f);
+    assert(std::abs(slopeBody.bodyPitch)<0.20f);
+
     // An excessive physical attitude removes locomotor authority. The planner
     // cannot keep translating an enemy whose body has fallen.
     body.bodyPitch = 0.9f;
