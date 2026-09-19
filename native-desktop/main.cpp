@@ -424,6 +424,7 @@ struct TargetPresentationSample {
     float visualYaw=0.0f;
     float visualWalkPhase=0.0f;
     float humanAnimationTime=0.0f;
+    float floatOffset=0.0f;
     float attackTimer=0.0f;
     float locomotionAmount=0.0f;
     HumanReactionVisual visualReaction;
@@ -451,7 +452,7 @@ FramePresentationSample capturePresentation(const GameState& state){
     for(int i=0;i<TARGET_COUNT;++i){
         const TargetState& target=state.targets[i];
         sample.targets[i]={target.alive,target.slurpable,target.pos,target.visualYaw,
-            target.visualWalkPhase,target.humanAnimationTime,target.attackTimer,
+            target.visualWalkPhase,target.humanAnimationTime,target.floatOffset,target.attackTimer,
             target.locomotionAmount,target.visualReaction,target.hitFlash};
     }
     for(int i=0;i<BULLET_COUNT;++i){sample.bulletPositions[i]=state.bullets[i].pos;sample.bulletActive[i]=state.bullets[i].alive;}
@@ -482,6 +483,7 @@ void interpolatePresentation(GameState& renderState,const FramePresentationSampl
         target.visualYaw=interpolateWrappedAngle(before.visualYaw,now.visualYaw,alpha);
         target.visualWalkPhase=before.visualWalkPhase+(now.visualWalkPhase-before.visualWalkPhase)*alpha;
         target.humanAnimationTime=before.humanAnimationTime+(now.humanAnimationTime-before.humanAnimationTime)*alpha;
+        target.floatOffset=before.floatOffset+(now.floatOffset-before.floatOffset)*alpha;
         target.attackTimer=before.attackTimer+(now.attackTimer-before.attackTimer)*alpha;
         target.locomotionAmount=before.locomotionAmount+(now.locomotionAmount-before.locomotionAmount)*alpha;
         target.visualReaction.locomotionPhase=before.visualReaction.locomotionPhase+
@@ -1484,6 +1486,8 @@ void printUsage() {
     std::printf("  --capture-menu-frame PATH --menu-page NAME  Capture a phone menu page and exit.\n");
     std::printf("  --capture-cpu-demo DIR  Record a HUD-free deterministic gameplay vignette as PPM frames.\n");
     std::printf("  --capture-cinematic-demo DIR  Record the real lunge/capture sequence from a cinematic spectator camera.\n");
+    std::printf("  --agent-playtest    Run the paused stdin/stdout firsthand playtest bridge.\n");
+    std::printf("  --agent-frame PATH  Set the bridge's stable current-frame PPM path.\n");
     std::printf("  --capture-width N --capture-height N  Set capture framebuffer dimensions.\n");
     std::printf("  --capture-hide-hud  Hide framebuffer HUD elements in visual captures.\n");
     std::printf("  --perf-trace FILE   Record one-second runtime performance summaries as CSV.\n");
@@ -1683,24 +1687,92 @@ void printAgentObservation(const GameState& state,const std::filesystem::path& f
     std::fflush(stdout);
 }
 
+struct AgentPlaytestRecording {
+    bool active=false;
+    int fps=30;
+    int simulationFramesPerCapture=2;
+    int capturedFrames=0;
+    int simulationFrames=0;
+    std::filesystem::path directory;
+};
+
+bool validAgentRecordingName(const std::string& name){
+    if(name.empty()||name.size()>48||name=="."||name=="..")return false;
+    for(const unsigned char c:name)if(!std::isalnum(c)&&c!='-'&&c!='_')return false;
+    return true;
+}
+
+bool parseAgentRecordStart(const std::string& line,std::string& name,int& fps,std::string& error){
+    std::istringstream stream(line);std::string record,start;stream>>record>>start;
+    if(record!="record"||start!="start"){error="expected_record_start";return false;}
+    name="demo";fps=30;std::string token;
+    while(stream>>token){
+        const std::size_t equals=token.find('=');
+        if(equals==std::string::npos){error="expected_key_value:"+token;return false;}
+        const std::string key=token.substr(0,equals),value=token.substr(equals+1);
+        if(key=="name")name=value;
+        else if(key=="fps"){try{fps=std::stoi(value);}catch(...){error="invalid_value:"+token;return false;}}
+        else {error="unknown_key:"+key;return false;}
+    }
+    if(!validAgentRecordingName(name)){error="invalid_name";return false;}
+    if(fps!=15&&fps!=20&&fps!=30&&fps!=60){error="fps_must_be_15_20_30_or_60";return false;}
+    return true;
+}
+
 int runAgentPlaytest(GLFWwindow* window,HostState& host,const std::filesystem::path& framePath,int width,int height){
     const auto observe=[&](){host.renderer.draw(host.game.state());glFinish();const bool captured=captureFramebuffer(framePath,width,height);glfwSwapBuffers(window);glfwPollEvents();printAgentObservation(host.game.state(),framePath,captured);return captured;};
+    AgentPlaytestRecording recording;
+    const auto captureRecordingFrame=[&](){
+        char frameName[32];std::snprintf(frameName,sizeof(frameName),"frame-%06d.ppm",recording.capturedFrames);
+        host.renderer.draw(host.game.state());glFinish();
+        const bool captured=captureFramebuffer(recording.directory/frameName,width,height);
+        if(captured)++recording.capturedFrames;
+        else std::printf("AGENT_RECORDING_ERROR capture_failed path=%s\n",(recording.directory/frameName).string().c_str());
+        return captured;
+    };
     std::printf("AGENT_PLAYTEST_READY fixed_dt=%.9f max_step_frames=120 frame_format=PPM persistent_save=DISABLED\n",SIMULATION_STEP_SECONDS);
-    std::printf("AGENT_PLAYTEST_COMMANDS observe | step frames=N moveX=-1..1 moveZ=-1..1 lookX=-400..400 lookY=-400..400 sprint=0/1 vacuum=0/1 jump=0/1 melee=0/1 shoot=0/1 camera=0/1 | reset | quit\n");
+    std::printf("AGENT_PLAYTEST_COMMANDS observe | step frames=N moveX=-1..1 moveZ=-1..1 lookX=-400..400 lookY=-400..400 sprint=0/1 vacuum=0/1 jump=0/1 melee=0/1 shoot=0/1 camera=0/1 | record start name=NAME fps=15|20|30|60 | record status | record stop | reset | quit\n");
     observe();
     std::string line;
     while(std::getline(std::cin,line)){
-        if(line=="quit"){std::printf("AGENT_PLAYTEST_QUIT\n");std::fflush(stdout);return 0;}
+        if(line=="quit"){if(recording.active)std::printf("AGENT_RECORDING_STOPPED reason=quit frames=%d fps=%d directory=%s\n",recording.capturedFrames,recording.fps,recording.directory.string().c_str());std::printf("AGENT_PLAYTEST_QUIT\n");std::fflush(stdout);return 0;}
         if(line=="observe"){observe();continue;}
-        if(line=="reset"){host.game.reset();observe();continue;}
+        if(line=="reset"){if(recording.active){std::printf("AGENT_PLAYTEST_ERROR reset_while_recording\n");std::fflush(stdout);continue;}host.game.reset();observe();continue;}
+        if(line.rfind("record start",0)==0){
+            if(recording.active){std::printf("AGENT_PLAYTEST_ERROR recording_already_active\n");std::fflush(stdout);continue;}
+            std::string name,error;int fps=30;
+            if(!parseAgentRecordStart(line,name,fps,error)){std::printf("AGENT_PLAYTEST_ERROR %s\n",error.c_str());std::fflush(stdout);continue;}
+            const auto directory=framePath.parent_path()/"recordings"/name;
+            std::error_code filesystemError;
+            if(std::filesystem::exists(directory,filesystemError)&&std::filesystem::directory_iterator(directory,filesystemError)!=std::filesystem::directory_iterator()){
+                std::printf("AGENT_PLAYTEST_ERROR recording_output_exists path=%s\n",directory.string().c_str());std::fflush(stdout);continue;
+            }
+            std::filesystem::create_directories(directory,filesystemError);
+            if(filesystemError){std::printf("AGENT_PLAYTEST_ERROR recording_directory_failed path=%s\n",directory.string().c_str());std::fflush(stdout);continue;}
+            recording={true,fps,60/fps,0,0,directory};
+            const bool captured=captureRecordingFrame();
+            std::printf("AGENT_RECORDING_%s fps=%d directory=%s pattern=frame-%%06d.ppm\n",captured?"STARTED":"FAILED",fps,directory.string().c_str());std::fflush(stdout);
+            if(!captured)recording.active=false;
+            continue;
+        }
+        if(line=="record status"){
+            std::printf("AGENT_RECORDING_STATUS active=%d frames=%d fps=%d simulation_frames=%d directory=%s\n",recording.active?1:0,recording.capturedFrames,recording.fps,recording.simulationFrames,recording.directory.empty()?"-":recording.directory.string().c_str());std::fflush(stdout);continue;
+        }
+        if(line=="record stop"){
+            if(!recording.active){std::printf("AGENT_PLAYTEST_ERROR recording_not_active\n");std::fflush(stdout);continue;}
+            recording.active=false;
+            std::printf("AGENT_RECORDING_READY frames=%d fps=%d duration=%.3f directory=%s encoder=tools/encode-agent-playtest-video.ps1\n",recording.capturedFrames,recording.fps,static_cast<double>(recording.capturedFrames)/recording.fps,recording.directory.string().c_str());std::fflush(stdout);continue;
+        }
         AgentPlaytestInput input;std::string error;
         if(!parseAgentStep(line,input,error)){std::printf("AGENT_PLAYTEST_ERROR %s\n",error.c_str());std::fflush(stdout);continue;}
         for(int frame=0;frame<input.frames;++frame){
             host.game.setTouchControls(input.moveX,input.moveZ,frame==0?input.lookX:0.0f,frame==0?input.lookY:0.0f,input.vacuum,input.sprint,frame==0&&input.jump,frame==0&&input.melee,frame==0&&input.shoot,frame==0&&input.camera);
             host.game.update(static_cast<float>(SIMULATION_STEP_SECONDS));
+            if(recording.active&&++recording.simulationFrames%recording.simulationFramesPerCapture==0)captureRecordingFrame();
         }
         observe();
     }
+    if(recording.active)std::printf("AGENT_RECORDING_STOPPED reason=eof frames=%d fps=%d directory=%s\n",recording.capturedFrames,recording.fps,recording.directory.string().c_str());
     std::printf("AGENT_PLAYTEST_EOF\n");std::fflush(stdout);return 0;
 }
 
@@ -1739,15 +1811,15 @@ int runSoulLifecycleCapture(GLFWwindow* window,HostState& host,const std::filesy
 int runModelTest(const std::filesystem::path& root) {
     HumanModelData human;StaticModelData phone,flower;
     if(!human.load((root/"models"/"human.dbhuman").string())||!phone.load((root/"models"/"phone.dbmesh").string())||!flower.load((root/"models"/"flower.dbmesh").string())){std::fprintf(stderr,"MODEL_TEST_FAILED load\n");return 1;}
-    std::vector<float> idle,walk,attack;human.skin(0.0f,0.0f,0,idle);human.skin(0.25f,0.0f,0,walk);human.skin(0.25f,0.24f,1,attack);
+    std::vector<float> idle,walk,attack,planted;human.skin(0.0f,0.0f,0,idle);human.skin(0.25f,0.0f,0,walk);human.skin(0.25f,0.24f,1,attack);human.skin(0.25f,0.0f,0,planted,HumanModelLegPlant{-0.18f,0.08f,1.0f,0.12f,0.0f,0.8f});
     auto finite=[](const std::vector<float>& v){return !v.empty()&&std::all_of(v.begin(),v.end(),[](float x){return std::isfinite(x)&&std::abs(x)<100.0f;});};
     auto differs=[](const std::vector<float>& a,const std::vector<float>& b){if(a.size()!=b.size())return true;for(std::size_t i=0;i<a.size();++i)if(std::abs(a[i]-b[i])>0.00001f)return true;return false;};
     float minY=100,maxY=-100;for(std::size_t i=1;i<idle.size();i+=3){minY=std::min(minY,idle[i]);maxY=std::max(maxY,idle[i]);}
     float phoneMin[3]{100,100,100},phoneMax[3]{-100,-100,-100};for(std::size_t i=0;i+2<phone.vertices.size();i+=3)for(int axis=0;axis<3;++axis){phoneMin[axis]=std::min(phoneMin[axis],phone.vertices[i+axis]);phoneMax[axis]=std::max(phoneMax[axis],phone.vertices[i+axis]);}
     const std::size_t phoneVertexCount=phone.vertices.size()/3;const float phoneWidth=phoneMax[0]-phoneMin[0],phoneHeight=phoneMax[1]-phoneMin[1],phoneDepth=phoneMax[2]-phoneMin[2];
     const bool phoneOk=phoneVertexCount==11820&&phone.batches.size()==7&&std::abs(phoneWidth-PHONE_BODY_WIDTH)<0.003f&&std::abs(phoneHeight-PHONE_BODY_HEIGHT)<0.003f&&phoneDepth>=PHONE_BODY_DEPTH&&phoneDepth<0.018f;
-    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phoneOk&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&differs(idle,walk)&&differs(walk,attack)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
-    std::printf("MODEL_TEST_%s human=%zu bones=%zu frames=%u phone=%zu/%zu flower=%zu y=[%.4f,%.4f] walk=%d attack=%d\n",ok?"OK":"FAILED",human.vertices.size(),human.bones.size(),human.frameCount,phone.vertices.size()/3,phone.batches.size(),flower.vertices.size()/3,minY,maxY,differs(idle,walk)?1:0,differs(walk,attack)?1:0);return ok?0:1;
+    const bool ok=human.vertices.size()==4164&&human.bones.size()==33&&human.frameCount==60&&phoneOk&&flower.vertices.size()/3==11628&&finite(idle)&&finite(walk)&&finite(attack)&&finite(planted)&&differs(idle,walk)&&differs(walk,attack)&&differs(walk,planted)&&minY>-0.03f&&maxY>1.0f&&maxY<1.25f;
+    std::printf("MODEL_TEST_%s human=%zu bones=%zu frames=%u phone=%zu/%zu flower=%zu y=[%.4f,%.4f] walk=%d attack=%d planted=%d\n",ok?"OK":"FAILED",human.vertices.size(),human.bones.size(),human.frameCount,phone.vertices.size()/3,phone.batches.size(),flower.vertices.size()/3,minY,maxY,differs(idle,walk)?1:0,differs(walk,attack)?1:0,differs(walk,planted)?1:0);return ok?0:1;
 }
 
 int runControllerTest(){

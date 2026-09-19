@@ -240,7 +240,10 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const bool fallen=physicalBody&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f);
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
     const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
@@ -261,13 +264,14 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;
         const float legSwing=side<0?pose.leftLegSwing:pose.rightLegSwing;
+        const float knee=physicalBody?(fallen?0.58f:std::max(0.0f,legSwing)*0.72f):std::abs(legSwing)*0.35f;
         const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY,0};
         roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*collapseScale,0},{0.055f*s,spec.upperArmLength*s*collapseScale,0.065f*s},armSwing,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s*collapseScale,0},{0.052f*s,spec.forearmLength*s*collapseScale,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.14f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength)*s,0},{spec.handSize*s,spec.handSize*s,spec.handSize*0.75f*s},0,yaw,0,r,g,b);
         const Vec3 hip=root+right*(side*spec.pelvisWidth*0.28f*s);
         roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY*collapseScale,0},{0.075f*s,spec.thighLength*s*collapseScale,0.080f*s},legSwing,yaw,0,r,g,b);
-        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f,yaw,0,r,g,b);
+        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f+knee*0.72f,yaw,0,r,g,b);
         roundedEllipsoid(hip+forward*(spec.footLength*0.25f*s+legSwing*0.04f*s)+Vec3{0,footY,0},{0.075f*s,spec.footHeight*s,spec.footLength*s},0,yaw,0,r,g,b);
     }
 }
@@ -843,8 +847,14 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
 }
 
 void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow) const {
-    humanModel_.skin(target.humanAnimationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
-    const bool aliveHuman=!target.slurpable;const HumanVisualPose pose=makeHumanVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman);
+    const bool aliveHuman=!target.slurpable;
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    const HumanModelLegPlant legPlant{
+        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight,
+        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight};
+    humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_,legPlant);if(humanVertices_.empty())return;
+    const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
@@ -854,13 +864,13 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const float forwardSpeed=dot3(target.vel,attackForward),sideSpeed=dot3(target.vel,bodyRight);
     const float speed=std::sqrt(target.vel.x*target.vel.x+target.vel.z*target.vel.z);
     const float plantedPulse=std::sin(target.visualWalkPhase*0.5f)*clampf(speed/5.0f,0.0f,1.0f);
-    const float motionPitch=clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
-    const float motionRoll=clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
+    const float motionPitch=physicalBody?visual.rootPitch:clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
+    const float motionRoll=physicalBody?visual.rootRoll:clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
     const float impactPitch=-target.hitFlash*0.24f-target.vacuumPullAmount*0.16f;
     const float impactRoll=target.hitDirectionLocal*target.hitFlash*0.30f;
     const Quat rootQ=quaternionFromEulerXYZ(
         motionPitch+impactPitch+(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0),
-        target.visualYaw+PI,
+        visual.rootYaw,
         motionRoll+impactRoll+(target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0));
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
     const Vec3 root{target.pos.x+attackLunge.x,target.pos.y+(target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0),target.pos.z+attackLunge.z};

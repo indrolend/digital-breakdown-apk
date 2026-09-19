@@ -300,6 +300,7 @@ void syncTargetReactionVisual(TargetState& target) {
         target.attackVariant
     );
 }
+
 float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
 float secretDoorKnockPulse(float time) {
     constexpr float phraseSeconds = 11.8f;
@@ -314,6 +315,7 @@ float secretDoorKnockPulse(float time) {
     }
     return clampf(pulse, 0.0f, 1.0f);
 }
+
 bool secretDoorKnockPhraseActive(float time) {
     constexpr float phraseSeconds = 11.8f;
     constexpr float audibleSeconds = 5.4f;
@@ -421,6 +423,11 @@ void Game::reset() {
     state_.uiPaused=false;
     emitAudio(AudioCue::VcInvitation,0.58f);
     updatePhoneDisplay(0.0f);
+}
+
+Game::EnemyRuntimePool& Game::enemyRuntime() {
+    if(!enemyRuntime_)enemyRuntime_=std::make_unique<EnemyRuntimePool>();
+    return *enemyRuntime_;
 }
 
 void Game::restart() {
@@ -1264,7 +1271,7 @@ void Game::chooseSecretTvEntrance() {
 void Game::resetRoom() {
     const int roomIndex = state_.roomIndex;
     const int roomSeed = state_.roomSeed;
-    enemyMotorMemory_ = {};
+    enemyRuntime() = {};
     state_.roomClear = false;
     state_.player = PlayerState{};
     state_.player.pos = {0.0f, GROUND_Y, ROOM_START_Z};
@@ -3256,6 +3263,10 @@ int Game::applyMeleeHits() {
 }
 
 Vec3 Game::targetHeadCenter(const TargetState& target) const {
+    if(target.physicalBodyMarker<0.0f&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f)){
+        const Vec3 forward{-std::sin(target.visualYaw),0.0f,-std::cos(target.visualYaw)};
+        return target.pos+forward*(0.42f*target.scale)+Vec3{0.0f,0.24f*target.scale,0.0f};
+    }
     // The authoritative FBX is normalized from the floor to HUMAN_MODEL_HEIGHT.
     // Its head sphere therefore sits one visual head radius below that top.
     return {target.pos.x,
@@ -3349,6 +3360,9 @@ bool Game::damageSoulShell(int index, float amount) {
         t.hitFlash=1.0f;
         if(t.armor<=0.0f) {
             t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
+            t.capture=0.0f;t.latticeVisualPull=0.0f;t.latticeVisualPullVelocity=0.0f;t.tetherWidth=0.0f;
+            t.floatOffset=seededRoomValue(430+index)*DB_PI*2.0f;
+            t.spinSpeed=0.4f+seededRoomValue(435+index)*0.8f;
             if(t.grabbedPlayerId>=0) releaseTargetGrab(index);
             spawnShellShatter(t);
             if(t.brute && nextFlowerRandom()<FLOWER_DROP_CHANCE) spawnFlowerPowerup(t.pos.x,GROUND_Y+0.42f,t.pos.z);
@@ -3358,6 +3372,9 @@ bool Game::damageSoulShell(int index, float amount) {
     }
     Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
     t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
+    auto& runtime=enemyRuntime();
+    if(!t.slurpable&&runtime.bodies[index].initialized)
+        gameplay::applyPhysicalEnemyImpact(runtime.bodies[index],away*(2.4f+amount));
     feedSupplementalBattery(FLOWER_ATTACK_FEED);
     spawnParticleBurst(t.pos+Vec3{0,0.65f,0},ParticleMaterial::Flesh);
     return true;
@@ -3548,7 +3565,9 @@ void Game::updateRoomPopulation(float dt) {
     }
 }
 void Game::respawnTarget(int index) {
-    enemyMotorMemory_[index] = {};
+    auto& runtime=enemyRuntime();
+    runtime.motors[index] = {};
+    runtime.bodies[index] = {};
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
     t.brute = seededRoomValue(520 + index) < 0.18f;
     t.soul = makeSoulRecord(t.brute,state_.roomIndex);
@@ -3651,6 +3670,7 @@ void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TAR
 void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){consumeStoredSoul(*player);player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
 
 void Game::updateTargets(float dt) {
+    auto& runtimePool=enemyRuntime();
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
     if(state_.enemyAttackOwner>=0){const TargetState& owner=state_.targets[state_.enemyAttackOwner];if(!owner.alive||owner.slurpable||owner.attackTimer<=0.0f)state_.enemyAttackOwner=-1;}
     // Preserve the shipped network cadence until the protocol carries the
@@ -3674,11 +3694,81 @@ void Game::updateTargets(float dt) {
         if (t.slurpable) {
             t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);
             t.locomotionAmount = 0.0f;
+            t.physicalLeftFootWeight=0.0f;
+            t.physicalRightFootWeight=0.0f;
         } else {
             t.soulMorph = 0.0f;
             const WorldSupportSample supportBefore=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
             const bool supportedBefore=std::abs(t.pos.y-supportBefore.height)<=0.06f&&t.vel.y<=0.0f;
             if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
+            const auto advancePhysicalBody=[&](const Vec3& desiredVelocity,float desiredYaw,float brace,float individuality){
+                auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 bodyForward{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const Vec3 bodyRight{bodyForward.z,0.0f,-bodyForward.x};
+                const float stride=std::sin(physicalBody.gaitPhase);
+                constexpr float footHalfWidth=0.11f;
+                constexpr float strideReach=0.14f;
+                constexpr float stepHeight=0.10f;
+                const Vec3 leftFoot=t.pos+bodyRight*footHalfWidth+bodyForward*(stride*strideReach);
+                const Vec3 rightFoot=t.pos-bodyRight*footHalfWidth-bodyForward*(stride*strideReach);
+                WorldSupportSample leftSupport{};
+                WorldSupportSample rightSupport{};
+                // The ground plane is continuous and already authoritative in
+                // supportBefore. Only elevated/generated support needs the
+                // more expensive independent footprint probes.
+                if(supportBefore.identity.source!=SupportSource::Ground){
+                    leftSupport=getWorldSupport(leftFoot.x,leftFoot.z,0.035f);
+                    rightSupport=getWorldSupport(rightFoot.x,rightFoot.z,0.035f);
+                }
+                const float leftFootHeight=t.pos.y+std::max(0.0f,stride)*stepHeight;
+                const float rightFootHeight=t.pos.y+std::max(0.0f,-stride)*stepHeight;
+                const auto contactAmount=[&](float footHeight,const WorldSupportSample& support){
+                    if(!supportedBefore)return 0.0f;
+                    return clampf(1.0f-std::abs(footHeight-support.height)/0.055f,0.0f,1.0f);
+                };
+                const float leftContact=contactAmount(leftFootHeight,leftSupport);
+                const float rightContact=contactAmount(rightFootHeight,rightSupport);
+                const auto updatePlant=[&](float contact,const Vec3& proposed,const WorldSupportSample& support,
+                                           bool& planted,Vec3& plant,float& weight){
+                    const Vec3 separation{proposed.x-plant.x,0.0f,proposed.z-plant.z};
+                    if(planted&&(contact<0.12f||horizontalLength(separation)>0.34f))planted=false;
+                    if(!planted&&contact>0.55f){planted=true;plant={proposed.x,support.height,proposed.z};}
+                    const float target=planted?1.0f:0.0f;
+                    weight+=(target-weight)*std::min(1.0f,dt*(planted?18.0f:10.0f));
+                };
+                updatePlant(leftContact,leftFoot,leftSupport,physicalBody.leftFootPlanted,
+                            physicalBody.leftFootPlant,physicalBody.leftPlantWeight);
+                updatePlant(rightContact,rightFoot,rightSupport,physicalBody.rightFootPlanted,
+                            physicalBody.rightFootPlant,physicalBody.rightPlantWeight);
+                gameplay::PhysicalEnemyBodyInput bodyInput{};
+                bodyInput.desiredVelocity=desiredVelocity;
+                bodyInput.actualVelocity=t.vel;
+                bodyInput.desiredYaw=desiredYaw;
+                bodyInput.individuality=individuality;
+                bodyInput.brace=brace;
+                bodyInput.dt=dt;
+                bodyInput.grounded=supportedBefore;
+                bodyInput.leftFootContact=leftContact;
+                bodyInput.rightFootContact=rightContact;
+                const float leftWeight=bodyInput.leftFootContact;
+                const float rightWeight=bodyInput.rightFootContact;
+                const float supportWeight=leftWeight+rightWeight;
+                bodyInput.supportNormal=supportWeight>0.001f
+                    ? normalized(leftSupport.normal*leftWeight+rightSupport.normal*rightWeight)
+                    : supportBefore.normal;
+                const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
+                t.vel.x=body.velocity.x;
+                t.vel.z=body.velocity.z;
+                t.visualYaw=body.yaw;
+                t.locomotionAmount=body.locomotion;
+                t.visualWalkPhase=physicalBody.gaitPhase;
+                t.physicalBodyMarker=-1.0f;
+                t.physicalBodyPitch=physicalBody.bodyPitch;
+                t.physicalBodyRoll=physicalBody.bodyRoll;
+                return body;
+            };
+            if(!state_.multiplayer.enabled&&!runtimePool.bodies[i].initialized)
+                advancePhysicalBody({},t.visualYaw,0.5f,std::sin(static_cast<float>(i)*12.9898f));
             t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
             if(t.armorRegenDelay<=0.0f){
                 const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
@@ -3700,7 +3790,8 @@ void Game::updateTargets(float dt) {
             float playerDist=horizontalLength(toPlayer);
             const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
                 const float humanBottom=t.pos.y;
-                const float humanTop=t.pos.y+PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale;
+                const float bodyHeight=runtimePool.bodies[i].fallen?0.34f:PASS7_HUMAN_VISUAL_SPEC.totalHeight;
+                const float humanTop=t.pos.y+bodyHeight*t.scale;
                 const float playerBottom=playerPosition.y-PHONE_SOLID_HALF_Y;
                 const float playerTop=playerPosition.y+PHONE_SOLID_HALF_Y;
                 return playerBottom<=humanTop+HUMAN_ATTACK_VERTICAL_MARGIN&&
@@ -3743,7 +3834,7 @@ void Game::updateTargets(float dt) {
                     if(towardLength>0.001f)t.visualYaw=std::atan2(-towardTree.x/towardLength,-towardTree.z/towardLength);
                 }
             }
-            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange&&state_.multiplayer.enabled)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
             if(climbedTreeThisFrame){
                 // Tree climbing is physical pursuit, not an attack shortcut.
                 // The existing vertical-overlap contract decides when combat
@@ -3751,13 +3842,17 @@ void Game::updateTargets(float dt) {
             } else if(t.attackTimer>0.0f){
                 t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
                 const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
-                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
+                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
                 else {
-                    t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
                     attackedPlayerId=t.attackTargetPlayerId;
                     attackedPlayerPos=state_.player.pos;
                     if(attackedPlayerId>0&&attackedPlayerId<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[attackedPlayerId].active)attackedPlayerPos=state_.multiplayer.peers[attackedPlayerId].player.pos;
                     else attackedPlayerId=0;
+                }
+                if(!state_.multiplayer.enabled){
+                    const float attackYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    advancePhysicalBody({},attackYaw,0.88f,std::sin(static_cast<float>(i)*12.9898f));
                 }
                 const float sweepT=clampf((progress-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
                 const float side=t.attackVariant%2==0?1.0f:-1.0f;
@@ -3776,19 +3871,19 @@ void Game::updateTargets(float dt) {
                     t.attackHit=true;
                 }
                 if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=attackCadence;}
-            } else if(playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+            } else if(!runtimePool.bodies[i].fallen&&playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
                 t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=attackCooldown;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
                 Vec3 destination=pursuedTree?treeGripPoint:((playerDist<noticeRange && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
+                const bool physicalPursuit=!state_.multiplayer.enabled;
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=noticeRange){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
                     Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
-                    const bool physicalPursuit=!state_.multiplayer.enabled;
                     if(physicalPursuit){
                         Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
                         for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
@@ -3807,15 +3902,13 @@ void Game::updateTargets(float dt) {
                         motorInput.vacuumPressure=state_.vacuum.active?clampf(state_.vacuum.power,0.0f,1.0f):0.0f;
                         motorInput.roomPressure=clampf(state_.progression.run.roomHeat,0.0f,1.0f);
                         motorInput.bodySpeed=horizontalLength(t.vel);
-                        const auto motor=gameplay::updateEnemyMotor(motorInput,enemyMotorMemory_[i],dt,std::sin(static_cast<float>(i)*12.9898f));
+                        const auto motor=gameplay::updateEnemyMotor(motorInput,runtimePool.motors[i],dt,std::sin(static_cast<float>(i)*12.9898f));
                         const Vec3 playerTangent{motorInput.toPlayer.z,0,-motorInput.toPlayer.x};
                         const float steeringOffset=dot3(motor.steering,playerTangent);
                         const Vec3 authoredTangent{dir.z,0,-dir.x};
                         const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*0.35f));
                         const Vec3 desired=desiredDirection*(speed*motor.speedScale);
-                        const float response=1.0f-std::exp(-(t.brute?5.5f:8.0f)*dt);
-                        t.vel.x+=(desired.x-t.vel.x)*response;
-                        t.vel.z+=(desired.z-t.vel.z)*response;
+                        advancePhysicalBody(desired,std::atan2(-desiredDirection.x,-desiredDirection.z),motor.brace,std::sin(static_cast<float>(i)*12.9898f));
                         const float horizontalSpeed=horizontalLength(t.vel);
                         const float maximum=speed*motor.speedScale*(t.brute?1.30f:1.45f);
                         if(horizontalSpeed>maximum){const float scale=maximum/horizontalSpeed;t.vel.x*=scale;t.vel.z*=scale;}
@@ -3874,17 +3967,41 @@ void Game::updateTargets(float dt) {
                             }
                             if(found)break;
                         }
-                        if(!found){next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
+                        if(!found){
+                            if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{dot3(t.vel,obstructionNormal),0,horizontalLength(t.vel)});
+                            next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                        }
                         else if(physicalPursuit){const float redirectedSpeed=horizontalLength(t.vel);t.vel.x=dir.x*redirectedSpeed;t.vel.z=dir.z*redirectedSpeed;}
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
-                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
-                    t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
-                } else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){
+                        if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{t.vel.x,0,t.vel.z});
+                        chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                    }
+                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;if(!physicalPursuit){const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);}t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
+                    if(!physicalPursuit)t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
+                } else {
+                    if(physicalPursuit)advancePhysicalBody({},t.visualYaw,0.55f,std::sin(static_cast<float>(i)*12.9898f));
+                    else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                }
             }
             if(!attachedToTreeThisFrame){
                 const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
                 if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
                 else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
+            }
+            if(!state_.multiplayer.enabled){
+                const auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 facing{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const float inverseScale=1.0f/std::max(0.001f,t.scale);
+                const auto projectFoot=[&](const Vec3& plant,float weight,float& forward,float& height,float& visualWeight){
+                    const Vec3 relative=plant-t.pos;
+                    forward=clampf(dot3(relative,facing)*inverseScale,-0.32f,0.32f);
+                    height=clampf(relative.y*inverseScale,-0.14f,0.26f);
+                    visualWeight=clampf(weight,0.0f,1.0f);
+                };
+                projectFoot(physicalBody.leftFootPlant,physicalBody.leftPlantWeight,
+                            t.physicalLeftFootForward,t.physicalLeftFootHeight,t.physicalLeftFootWeight);
+                projectFoot(physicalBody.rightFootPlant,physicalBody.rightPlantWeight,
+                            t.physicalRightFootForward,t.physicalRightFootHeight,t.physicalRightFootWeight);
             }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
@@ -3893,7 +4010,7 @@ void Game::updateTargets(float dt) {
             const float distance=std::sqrt(physicalTravel.x*physicalTravel.x+physicalTravel.z*physicalTravel.z)+std::abs(physicalTravel.y)*0.45f;
             // The walk clip follows actual body travel, so feet do not cycle
             // faster or slower than the root that owns contact.
-            t.humanAnimationTime += distance*0.68f;
+            if(t.physicalBodyMarker>=0.0f)t.humanAnimationTime += distance*0.68f;
         }
         syncTargetReactionVisual(t);
     }
