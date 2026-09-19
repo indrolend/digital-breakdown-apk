@@ -5,10 +5,20 @@
 #include <cstdio>
 
 #include "gameplay/PhysicalEnemyBody.hpp"
+#include "HumanVisual.hpp"
 
 int main() {
     constexpr float dt = 1.0f / 60.0f;
     gameplay::PhysicalEnemyBodyState body{};
+
+    const HumanReactionVisual calm{};
+    const auto embodiedPose=makeEnemyVisualPose(0.4f,1.0f,2.0f,calm,true,true,0.31f,-0.22f,1.7f,0.8f,9.0f);
+    assert(std::abs(embodiedPose.animationTime-1.7f)<0.0001f);
+    assert(std::abs(embodiedPose.rootPitch-0.31f)<0.0001f);
+    assert(std::abs(embodiedPose.rootRoll+0.22f)<0.0001f);
+    const auto maturePose=makeEnemyVisualPose(0.4f,1.0f,2.0f,calm,true,false,0.31f,-0.22f,1.7f,0.8f,9.0f);
+    assert(std::abs(maturePose.animationTime-9.0f)<0.0001f);
+    assert(std::abs(maturePose.rootPitch)<0.0001f&&std::abs(maturePose.rootRoll)<0.0001f);
     gameplay::PhysicalEnemyBodyInput input{};
     input.desiredVelocity = {0.0f, 0.0f, -1.8f};
     input.desiredYaw = 0.0f;

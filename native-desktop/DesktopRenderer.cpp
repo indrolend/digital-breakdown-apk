@@ -240,21 +240,10 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
     const bool physicalBody=aliveHuman&&target.spinSpeed<0.0f;
     const bool fallen=physicalBody&&(std::abs(target.humanAnimationTime)>0.82f||std::abs(target.floatOffset)>0.76f);
-    if(physicalBody){
-        pose.torsoPitch=target.humanAnimationTime;
-        pose.torsoRoll=target.floatOffset;
-        pose.headPitch=-target.humanAnimationTime*0.28f;
-        const float stride=std::sin(target.visualWalkPhase);
-        const float amplitude=fallen?0.16f:target.locomotionAmount*0.62f;
-        pose.leftLegSwing=stride*amplitude;
-        pose.rightLegSwing=-stride*amplitude;
-        pose.leftArmSwing=-pose.rightLegSwing*0.72f-target.floatOffset*0.24f;
-        pose.rightArmSwing=-pose.leftLegSwing*0.72f+target.floatOffset*0.24f;
-        pose.rootBob=std::abs(stride)*0.026f*pose.scale*target.locomotionAmount;
-    }
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.humanAnimationTime,target.floatOffset,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
     const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
@@ -858,8 +847,11 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
 }
 
 void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow) const {
-    humanModel_.skin(target.humanAnimationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
-    const bool aliveHuman=!target.slurpable;const HumanVisualPose pose=makeHumanVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman);
+    const bool aliveHuman=!target.slurpable;
+    const bool physicalBody=aliveHuman&&target.spinSpeed<0.0f;
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.humanAnimationTime,target.floatOffset,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
+    humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
+    const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
@@ -869,13 +861,13 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const float forwardSpeed=dot3(target.vel,attackForward),sideSpeed=dot3(target.vel,bodyRight);
     const float speed=std::sqrt(target.vel.x*target.vel.x+target.vel.z*target.vel.z);
     const float plantedPulse=std::sin(target.visualWalkPhase*0.5f)*clampf(speed/5.0f,0.0f,1.0f);
-    const float motionPitch=clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
-    const float motionRoll=clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
+    const float motionPitch=physicalBody?visual.rootPitch:clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
+    const float motionRoll=physicalBody?visual.rootRoll:clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
     const float impactPitch=-target.hitFlash*0.24f-target.vacuumPullAmount*0.16f;
     const float impactRoll=target.hitDirectionLocal*target.hitFlash*0.30f;
     const Quat rootQ=quaternionFromEulerXYZ(
         motionPitch+impactPitch+(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0),
-        target.visualYaw+PI,
+        visual.rootYaw,
         motionRoll+impactRoll+(target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0));
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
     const Vec3 root{target.pos.x+attackLunge.x,target.pos.y+(target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0),target.pos.z+attackLunge.z};
@@ -1408,7 +1400,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0,0,0);}
         const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
         const auto roomSetting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;
-        for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){drawProceduralHumanDesktop(target,state.time,0,0,0);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}
+        for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true);else drawProceduralHumanDesktop(target,state.time,0,0,0);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}
         for(const auto& flower:state.flowers)if(flower.active)drawBox({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},{0.54f,0.22f,0.54f},0,flower.rotationY,0,0,0,0);
         for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0,0,0);}
         glPopMatrix();glEnable(GL_DEPTH_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glStencilMask(0);glStencilFunc(GL_EQUAL,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
@@ -1462,7 +1454,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         target.pos = p;
         if (!target.slurpable) {
             const auto setting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;const VisualColor damageColor=humanDamageSurfaceColor(Pass7Visual::NormalEnemy,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
-            drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b);
+            if(humanModel_.valid())drawHumanModel(target,state.time,setting);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             const auto& sv=target.soulVisual;

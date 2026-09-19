@@ -79,6 +79,17 @@ struct HumanVisualPose {
     float collapse = 0.0f;
 };
 
+// The renderer-facing boundary between enemy embodiment and representation.
+// Gameplay owns the physical root facts; renderers decide whether those facts
+// drive the mature mesh, the procedural fallback, or a debug visualization.
+struct EnemyVisualPose {
+    HumanVisualPose human{};
+    float animationTime = 0.0f;
+    float rootPitch = 0.0f;
+    float rootYaw = 0.0f;
+    float rootRoll = 0.0f;
+};
+
 struct HumanReactionVisual {
     float locomotionPhase = 0.0f;
     float locomotionAmount = 0.0f;
@@ -264,4 +275,40 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
 inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float walkPhase, float time, float hitFlash, float soulMorphPhase, bool aliveHuman) {
     const HumanReactionVisual reaction = makeHumanReactionVisual(walkPhase, aliveHuman ? 1.0f : 0.0f, hitFlash, 0.0f, 0.0f, 0.0f, soulMorphPhase, true);
     return makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
+}
+
+inline EnemyVisualPose makeEnemyVisualPose(
+    float yaw,
+    float scale,
+    float time,
+    const HumanReactionVisual& reaction,
+    bool aliveHuman,
+    bool physicalBody,
+    float bodyPitch,
+    float bodyRoll,
+    float gaitPhase,
+    float locomotionAmount,
+    float legacyAnimationTime)
+{
+    EnemyVisualPose visual;
+    visual.human = makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
+    visual.animationTime = physicalBody ? gaitPhase : legacyAnimationTime;
+    visual.rootPitch = physicalBody ? bodyPitch : 0.0f;
+    visual.rootYaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
+    visual.rootRoll = physicalBody ? bodyRoll : 0.0f;
+
+    if (physicalBody && aliveHuman) {
+        const bool fallen = std::abs(bodyPitch) > 0.82f || std::abs(bodyRoll) > 0.76f;
+        const float stride = std::sin(gaitPhase);
+        const float amplitude = fallen ? 0.16f : clampf(locomotionAmount, 0.0f, 1.0f) * 0.62f;
+        visual.human.torsoPitch = bodyPitch;
+        visual.human.torsoRoll = bodyRoll;
+        visual.human.headPitch = -bodyPitch * 0.28f;
+        visual.human.leftLegSwing = stride * amplitude;
+        visual.human.rightLegSwing = -stride * amplitude;
+        visual.human.leftArmSwing = -visual.human.rightLegSwing * 0.72f - bodyRoll * 0.24f;
+        visual.human.rightArmSwing = -visual.human.leftLegSwing * 0.72f + bodyRoll * 0.24f;
+        visual.human.rootBob = std::abs(stride) * 0.026f * visual.human.scale * clampf(locomotionAmount, 0.0f, 1.0f);
+    }
+    return visual;
 }
