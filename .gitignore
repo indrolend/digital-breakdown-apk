@@ -8,6 +8,7 @@ multiplayer-server/.wrangler/
 /DigitalBreakdownDev.exe
 native-desktop/build/
 native/build/
+/artifacts/agent-playtest/
 
 *.mp3
 !native-desktop/audio/*.mp3
