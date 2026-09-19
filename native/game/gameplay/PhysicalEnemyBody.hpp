@@ -21,6 +21,12 @@ struct PhysicalEnemyBodyState {
     float yawVelocity = 0.0f;
     float gaitPhase = 0.0f;
     float recovery = 0.0f;
+    Vec3 leftFootPlant{};
+    Vec3 rightFootPlant{};
+    float leftPlantWeight = 0.0f;
+    float rightPlantWeight = 0.0f;
+    bool leftFootPlanted = false;
+    bool rightFootPlanted = false;
 };
 
 struct PhysicalEnemyBodyInput {

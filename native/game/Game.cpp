@@ -3694,6 +3694,8 @@ void Game::updateTargets(float dt) {
         if (t.slurpable) {
             t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);
             t.locomotionAmount = 0.0f;
+            t.physicalLeftFootWeight=0.0f;
+            t.physicalRightFootWeight=0.0f;
         } else {
             t.soulMorph = 0.0f;
             const WorldSupportSample supportBefore=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
@@ -3724,6 +3726,20 @@ void Game::updateTargets(float dt) {
                     if(!supportedBefore)return 0.0f;
                     return clampf(1.0f-std::abs(footHeight-support.height)/0.055f,0.0f,1.0f);
                 };
+                const float leftContact=contactAmount(leftFootHeight,leftSupport);
+                const float rightContact=contactAmount(rightFootHeight,rightSupport);
+                const auto updatePlant=[&](float contact,const Vec3& proposed,const WorldSupportSample& support,
+                                           bool& planted,Vec3& plant,float& weight){
+                    const Vec3 separation{proposed.x-plant.x,0.0f,proposed.z-plant.z};
+                    if(planted&&(contact<0.12f||horizontalLength(separation)>0.34f))planted=false;
+                    if(!planted&&contact>0.55f){planted=true;plant={proposed.x,support.height,proposed.z};}
+                    const float target=planted?1.0f:0.0f;
+                    weight+=(target-weight)*std::min(1.0f,dt*(planted?18.0f:10.0f));
+                };
+                updatePlant(leftContact,leftFoot,leftSupport,physicalBody.leftFootPlanted,
+                            physicalBody.leftFootPlant,physicalBody.leftPlantWeight);
+                updatePlant(rightContact,rightFoot,rightSupport,physicalBody.rightFootPlanted,
+                            physicalBody.rightFootPlant,physicalBody.rightPlantWeight);
                 gameplay::PhysicalEnemyBodyInput bodyInput{};
                 bodyInput.desiredVelocity=desiredVelocity;
                 bodyInput.actualVelocity=t.vel;
@@ -3732,8 +3748,8 @@ void Game::updateTargets(float dt) {
                 bodyInput.brace=brace;
                 bodyInput.dt=dt;
                 bodyInput.grounded=supportedBefore;
-                bodyInput.leftFootContact=contactAmount(leftFootHeight,leftSupport);
-                bodyInput.rightFootContact=contactAmount(rightFootHeight,rightSupport);
+                bodyInput.leftFootContact=leftContact;
+                bodyInput.rightFootContact=rightContact;
                 const float leftWeight=bodyInput.leftFootContact;
                 const float rightWeight=bodyInput.rightFootContact;
                 const float supportWeight=leftWeight+rightWeight;
@@ -3971,6 +3987,21 @@ void Game::updateTargets(float dt) {
                 const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
                 if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
                 else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
+            }
+            if(!state_.multiplayer.enabled){
+                const auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 facing{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const float inverseScale=1.0f/std::max(0.001f,t.scale);
+                const auto projectFoot=[&](const Vec3& plant,float weight,float& forward,float& height,float& visualWeight){
+                    const Vec3 relative=plant-t.pos;
+                    forward=clampf(dot3(relative,facing)*inverseScale,-0.32f,0.32f);
+                    height=clampf(relative.y*inverseScale,-0.14f,0.26f);
+                    visualWeight=clampf(weight,0.0f,1.0f);
+                };
+                projectFoot(physicalBody.leftFootPlant,physicalBody.leftPlantWeight,
+                            t.physicalLeftFootForward,t.physicalLeftFootHeight,t.physicalLeftFootWeight);
+                projectFoot(physicalBody.rightFootPlant,physicalBody.rightPlantWeight,
+                            t.physicalRightFootForward,t.physicalRightFootHeight,t.physicalRightFootWeight);
             }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;

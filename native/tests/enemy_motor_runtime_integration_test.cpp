@@ -65,6 +65,9 @@ int main(){
         assert(target.latticeVisualPull==0.0f);
         assert(target.latticeVisualPullVelocity==0.0f);
         assert(target.tetherWidth==0.0f);
+        const auto& body=EnemyMotorRuntimeIntegrationAccess::body(first,i);
+        assert(std::max(body.leftPlantWeight,body.rightPlantWeight)>0.20f);
+        assert(std::max(target.physicalLeftFootWeight,target.physicalRightFootWeight)>0.20f);
     }
 
     Game multiplayer,multiplayerControl;

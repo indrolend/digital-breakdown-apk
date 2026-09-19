@@ -850,7 +850,10 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const bool aliveHuman=!target.slurpable;
     const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
     const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime);
-    humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
+    const HumanModelLegPlant legPlant{
+        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight,
+        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight};
+    humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_,legPlant);if(humanVertices_.empty())return;
     const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);

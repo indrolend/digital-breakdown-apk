@@ -302,6 +302,14 @@ struct TargetState {
     float visibility = 1.0f;
     float soulCubeAmount = 0.0f;
     float soulMorph = 0.0f;
+    // Renderer-only projection of private physical foot contacts. These are
+    // not gameplay authority and are intentionally absent from snapshots.
+    float physicalLeftFootForward = 0.0f;
+    float physicalLeftFootHeight = 0.0f;
+    float physicalLeftFootWeight = 0.0f;
+    float physicalRightFootForward = 0.0f;
+    float physicalRightFootHeight = 0.0f;
+    float physicalRightFootWeight = 0.0f;
     Vec3 walkTarget;
     int walkTargetSequence = 0;
     float attackTimer = 0.0f;
