@@ -25,6 +25,7 @@ struct PhysicalEnemyBodyState {
     float disruption = 0.0f;
     float impactInstability = 0.0f;
     float scrambleAmount = 0.0f;
+    float supportFailureTime = 0.0f;
     Vec3 leftFootPlant{};
     Vec3 rightFootPlant{};
     float leftPlantWeight = 0.0f;
@@ -51,6 +52,9 @@ struct PhysicalEnemyBodyInput {
     Vec3 leftFootPosition{};
     Vec3 rightFootPosition{};
     Vec3 supportNormal{0.0f, 1.0f, 0.0f};
+    float recoveryUrgency = 0.0f;
+    bool correctiveStepActive = false;
+    bool turnStepActive = false;
 };
 
 struct PhysicalEnemyBodyOutput {
@@ -171,6 +175,7 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     body.disruption = std::max(0.0f, std::min(1.0f, finitePhysicalValue(body.disruption)));
     body.impactInstability = std::max(0.0f, std::min(1.0f, finitePhysicalValue(body.impactInstability)));
     body.scrambleAmount = std::max(0.0f, std::min(1.0f, finitePhysicalValue(body.scrambleAmount)));
+    body.supportFailureTime = std::max(0.0f, finitePhysicalValue(body.supportFailureTime));
     body.leftFootPlant = finitePhysicalVector(body.leftFootPlant);
     body.rightFootPlant = finitePhysicalVector(body.rightFootPlant);
     body.leftPlantWeight = std::max(0.0f, std::min(1.0f, finitePhysicalValue(body.leftPlantWeight)));
@@ -288,22 +293,39 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
         velocity.z *= drag;
     }
 
-    if (!body.fallen && support.totalWeight > minimumSupportWeight
-        && support.distance > support.radius + fallMargin) {
-        body.fallen = true;
-        body.recovery = 0.0f;
-        body.rollVelocity += std::max(
-            -2.4f, std::min(2.4f, dot3(support.error, right) * 5.0f));
-        body.pitchVelocity += std::max(
-            -2.4f, std::min(2.4f, -dot3(support.error, facing) * 5.0f));
+    if (!body.fallen && support.totalWeight > minimumSupportWeight) {
+        const bool threatened = support.distance > support.radius + fallMargin;
+        if (threatened) {
+            body.supportFailureTime += dt * (1.0f + outsideSupport * 1.8f);
+            const float recoveryUrgency = std::max(0.0f, std::min(
+                1.0f, finitePhysicalValue(input.recoveryUrgency)));
+            const bool recoveryWindow = input.correctiveStepActive
+                && recoveryUrgency > 0.08f && outsideSupport < 0.72f
+                && body.supportFailureTime < 0.48f;
+            if (!recoveryWindow) {
+                body.fallen = true;
+                body.recovery = 0.0f;
+                body.rollVelocity += std::max(
+                    -2.4f, std::min(2.4f, dot3(support.error, right) * 5.0f));
+                body.pitchVelocity += std::max(
+                    -2.4f, std::min(2.4f, -dot3(support.error, facing) * 5.0f));
+            }
+        } else {
+            body.supportFailureTime = std::max(0.0f, body.supportFailureTime - dt * 4.0f);
+        }
     }
 
     // Turning is also a ground reaction. No planted support means no newly
     // generated yaw torque. Single support turns more slowly than a settled
     // two-foot stance.
-    const float turnAuthority = body.fallen || support.totalWeight <= minimumSupportWeight
+    float turnAuthority = body.fallen || support.totalWeight <= minimumSupportWeight
         ? 0.0f
         : (support.doubleSupport ? 1.0f : std::max(0.20f, contact * 0.48f));
+    // Large turns need a rotational step. Symmetric double support may brace
+    // and make small corrections, but it cannot freely spin the pelvis around
+    // an invisible central pin.
+    if (std::abs(yawError) > 0.28f && !input.turnStepActive)
+        turnAuthority *= 0.12f;
     const float yawTorque = yawError * (2.65f + brace * 0.75f) * turnAuthority
         - body.yawVelocity * (2.70f + brace * 0.70f);
     body.yawVelocity += yawTorque * dt;

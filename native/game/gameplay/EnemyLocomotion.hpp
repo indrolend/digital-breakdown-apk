@@ -79,6 +79,8 @@ struct EnemyLocomotionOutput {
     float gaitPhase = 0.0f;
     float crouch = 0.0f;
     float recoveryUrgency = 0.0f;
+    bool correctiveStepActive = false;
+    bool turnStepActive = false;
 };
 
 inline float enemyLocomotionAngleDelta(float from, float to) {
@@ -140,6 +142,8 @@ inline EnemyLocomotionOutput enemyLocomotionOutput(const EnemyLocomotionState& l
     output.gaitPhase = locomotion.physicalGaitPhase;
     output.crouch = locomotion.crouch;
     output.recoveryUrgency = locomotion.recoveryUrgency;
+    output.correctiveStepActive = locomotion.recoveryUrgency > 0.08f
+        && locomotion.swingFoot >= 0;
     return output;
 }
 
@@ -331,6 +335,9 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     output.supportedDesiredVelocity = locomotion.committedTravelDirection
         * (requestedSpeed * plantedAuthority * std::max(0.35f, std::min(1.0f, input.traction)));
     output.desiredYaw = input.bodyYaw + turnError * plantedAuthority;
+    output.correctiveStepActive = locomotion.recoveryUrgency > 0.08f
+        && locomotion.swingFoot >= 0;
+    output.turnStepActive = rotationalStep && locomotion.swingFoot >= 0;
     return output;
 }
 
