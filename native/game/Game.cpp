@@ -4263,7 +4263,18 @@ void Game::updateTargets(float dt) {
                             if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{dot3(t.vel,obstructionNormal),0,horizontalLength(t.vel)});
                             next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
                         }
-                        else if(physicalPursuit){const float redirectedSpeed=horizontalLength(t.vel);t.vel.x=dir.x*redirectedSpeed;t.vel.z=dir.z*redirectedSpeed;}
+                        else if(physicalPursuit){
+                            // Collision chooses a new intention; it does not rotate
+                            // the body's velocity. The next simulation frames must
+                            // reorganize the feet and generate the turn through the
+                            // committed stance direction.
+                            auto& locomotion=runtimePool.locomotions[i];
+                            locomotion.committedTravelDirection=dir;
+                            locomotion.directionalCommitmentTimer=0.34f;
+                            const float intoObstacle=dot3(t.vel,obstructionNormal);
+                            if(intoObstacle<0.0f)t.vel-=obstructionNormal*intoObstacle;
+                            next=t.pos;
+                        }
                     }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){
                         if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{t.vel.x,0,t.vel.z});
                         chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;

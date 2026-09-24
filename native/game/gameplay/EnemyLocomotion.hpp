@@ -176,7 +176,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
         0.0f, locomotion.directionalCommitmentTimer - dt);
     if (horizontalLength(requestedDirection) > 0.5f
         && (locomotion.directionalCommitmentTimer <= 0.0f
-            || dot3(requestedDirection, locomotion.committedTravelDirection) < 0.25f)) {
+            || dot3(requestedDirection, locomotion.committedTravelDirection) < -0.65f)) {
         locomotion.committedTravelDirection = requestedDirection;
         locomotion.directionalCommitmentTimer = 0.16f;
     }

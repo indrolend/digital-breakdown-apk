@@ -58,6 +58,21 @@ int main() {
     assert(sawNewPlant);
     assert(walker.physicalGaitPhase > 3.0f);
 
-    std::puts("ENEMY_LOCOMOTION_OK planted_feet=WORLD_SPACE step=UNLOAD_SWING_CONTACT_LOAD");
+    // A route commitment supplied by collision handling survives the direct
+    // navigation request long enough for the feet to execute the turn.
+    EnemyLocomotionState routed{};
+    input.bodyPosition = {};
+    input.bodyVelocity = {};
+    input.desiredTravelDirection = {0.0f, 0.0f, -1.0f};
+    input.desiredSpeed = 1.0f;
+    initializeEnemyLocomotion(routed, input, flatSupport);
+    routed.committedTravelDirection = {1.0f, 0.0f, 0.0f};
+    routed.directionalCommitmentTimer = 0.30f;
+    const auto routedOutput = updateEnemyLocomotion(routed, input, flatSupport);
+    assert(routed.committedTravelDirection.x > 0.99f);
+    assert(routedOutput.supportedDesiredVelocity.x > 0.1f);
+    assert(std::abs(routedOutput.supportedDesiredVelocity.z) < 0.01f);
+
+    std::puts("ENEMY_LOCOMOTION_OK planted_feet=WORLD_SPACE step=UNLOAD_SWING_CONTACT_LOAD obstacle=INTENTION");
     return 0;
 }
