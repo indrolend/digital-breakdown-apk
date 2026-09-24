@@ -30,6 +30,34 @@ int main() {
     assert(std::abs(output.rightFootPosition.z - originalRight.z) < 0.00001f);
     assert(std::abs(output.leftLoad + output.rightLoad - 1.0f) < 0.00001f);
 
-    std::puts("ENEMY_LOCOMOTION_OK planted_feet=WORLD_SPACE");
+    EnemyLocomotionState walker{};
+    input.bodyPosition = {0.0f, 0.0f, 0.0f};
+    input.bodyVelocity = {};
+    input.desiredTravelDirection = {0.0f, 0.0f, -1.0f};
+    input.desiredSpeed = 2.0f;
+    input.desiredYaw = 0.0f;
+    input.dt = 1.0f / 60.0f;
+    initializeEnemyLocomotion(walker, input, flatSupport);
+    const Vec3 stancePlant = walker.right.plantPosition;
+    bool sawSwing = false;
+    bool sawNewPlant = false;
+    for (int frame = 0; frame < 90; ++frame) {
+        const auto step = updateEnemyLocomotion(walker, input, flatSupport);
+        if (walker.swingFoot == 0 && !walker.left.planted) {
+            sawSwing = true;
+            assert(std::abs(step.rightFootPosition.x - stancePlant.x) < 0.00001f);
+            assert(std::abs(step.rightFootPosition.z - stancePlant.z) < 0.00001f);
+        }
+        if (sawSwing && walker.swingFoot < 0 && walker.left.planted
+            && walker.left.plantPosition.z < -0.10f) {
+            sawNewPlant = true;
+            break;
+        }
+    }
+    assert(sawSwing);
+    assert(sawNewPlant);
+    assert(walker.physicalGaitPhase > 3.0f);
+
+    std::puts("ENEMY_LOCOMOTION_OK planted_feet=WORLD_SPACE step=UNLOAD_SWING_CONTACT_LOAD");
     return 0;
 }

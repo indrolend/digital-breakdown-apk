@@ -3804,41 +3804,40 @@ void Game::updateTargets(float dt) {
             if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
             const auto advancePhysicalBody=[&](const Vec3& desiredVelocity,float desiredYaw,float brace,float individuality){
                 auto& physicalBody=runtimePool.bodies[i];
-                const Vec3 bodyForward{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
-                const Vec3 bodyRight{bodyForward.z,0.0f,-bodyForward.x};
-                const float gaitAsymmetry=individuality*0.16f;
-                const float leftStride=std::sin(physicalBody.gaitPhase+gaitAsymmetry);
-                const float rightStride=-std::sin(physicalBody.gaitPhase-gaitAsymmetry);
-                constexpr float footHalfWidth=0.125f;
-                // Longer, lower steps read as a body being carried from one
-                // support to the next instead of toes cycling underneath it.
-                constexpr float strideReach=0.225f;
-                constexpr float stepHeight=0.075f;
-                const Vec3 leftFoot=t.pos+bodyRight*footHalfWidth+bodyForward*(leftStride*strideReach);
-                const Vec3 rightFoot=t.pos-bodyRight*footHalfWidth+bodyForward*(rightStride*strideReach);
-                WorldSupportSample leftSupport{};
-                WorldSupportSample rightSupport{};
-                // The ground plane is continuous and already authoritative in
-                // supportBefore. Only elevated/generated support needs the
-                // more expensive independent footprint probes.
-                if(supportBefore.identity.source!=SupportSource::Ground){
-                    leftSupport=getWorldSupport(leftFoot.x,leftFoot.z,0.035f);
-                    rightSupport=getWorldSupport(rightFoot.x,rightFoot.z,0.035f);
-                }
-                const float leftFootHeight=t.pos.y+std::max(0.0f,leftStride)*stepHeight;
-                const float rightFootHeight=t.pos.y+std::max(0.0f,rightStride)*stepHeight;
-                const auto contactAmount=[&](float footHeight,const WorldSupportSample& support){
-                    if(!supportedBefore)return 0.0f;
-                    return clampf(1.0f-std::abs(footHeight-support.height)/0.055f,0.0f,1.0f);
+                auto& locomotion=runtimePool.locomotions[i];
+                const auto queryFootSupport=[&](const Vec3& candidate){
+                    const auto support=getWorldSupport(candidate.x,candidate.z,0.035f);
+                    const bool reachableHeight=std::abs(support.height-t.pos.y)<=0.40f;
+                    const bool clear=!isHumanMovementBlocked(
+                        candidate.x,candidate.z,support.height,HUMAN_BODY_RADIUS*0.52f);
+                    return gameplay::EnemyFootSupport{
+                        {candidate.x,support.height,candidate.z},support.normal,
+                        reachableHeight&&clear};
                 };
-                const float leftContact=contactAmount(leftFootHeight,leftSupport);
-                const float rightContact=contactAmount(rightFootHeight,rightSupport);
+                gameplay::EnemyLocomotionInput locomotionInput{};
+                locomotionInput.bodyPosition=t.pos;
+                locomotionInput.bodyVelocity=t.vel;
+                locomotionInput.bodyYaw=t.visualYaw;
+                locomotionInput.bodyPitch=physicalBody.bodyPitch;
+                locomotionInput.bodyRoll=physicalBody.bodyRoll;
+                locomotionInput.desiredTravelDirection=horizontalLength(desiredVelocity)>0.001f
+                    ? desiredVelocity*(1.0f/horizontalLength(desiredVelocity)) : Vec3{};
+                locomotionInput.desiredSpeed=horizontalLength(desiredVelocity);
+                locomotionInput.desiredYaw=desiredYaw;
+                locomotionInput.brace=brace;
+                locomotionInput.traction=roomFloorMaterial.traction;
+                locomotionInput.individuality=individuality;
+                locomotionInput.centerOfMassHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale*0.52f;
+                locomotionInput.dt=dt;
+                locomotionInput.grounded=supportedBefore;
+                const auto feet=gameplay::updateEnemyLocomotion(
+                    locomotion,locomotionInput,queryFootSupport);
                 gameplay::PhysicalEnemyBodyInput bodyInput{};
-                bodyInput.desiredVelocity=desiredVelocity;
+                bodyInput.desiredVelocity=feet.supportedDesiredVelocity;
                 bodyInput.actualVelocity=t.vel;
                 bodyInput.bodyPosition=t.pos;
-                bodyInput.centerOfMassHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale*0.52f;
-                bodyInput.desiredYaw=desiredYaw;
+                bodyInput.centerOfMassHeight=locomotionInput.centerOfMassHeight;
+                bodyInput.desiredYaw=feet.desiredYaw;
                 bodyInput.individuality=individuality;
                 bodyInput.brace=brace;
                 // MaterialResponse is the shared weather/surface authority: the
@@ -3847,22 +3846,19 @@ void Game::updateTargets(float dt) {
                 bodyInput.surfaceTraction=roomFloorMaterial.traction;
                 bodyInput.dt=dt;
                 bodyInput.grounded=supportedBefore;
-                bodyInput.leftFootContact=leftContact;
-                bodyInput.rightFootContact=rightContact;
-                bodyInput.leftFootPosition={leftFoot.x,leftSupport.height,leftFoot.z};
-                bodyInput.rightFootPosition={rightFoot.x,rightSupport.height,rightFoot.z};
-                const float leftWeight=bodyInput.leftFootContact;
-                const float rightWeight=bodyInput.rightFootContact;
-                const float supportWeight=leftWeight+rightWeight;
-                bodyInput.supportNormal=supportWeight>0.001f
-                    ? normalized(leftSupport.normal*leftWeight+rightSupport.normal*rightWeight)
-                    : supportBefore.normal;
+                bodyInput.leftFootContact=feet.leftContact;
+                bodyInput.rightFootContact=feet.rightContact;
+                bodyInput.leftFootPosition=feet.leftFootPosition;
+                bodyInput.rightFootPosition=feet.rightFootPosition;
+                bodyInput.supportNormal=feet.supportNormal;
+                physicalBody.gaitPhase=feet.gaitPhase;
                 const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
+                physicalBody.gaitPhase=feet.gaitPhase;
                 t.vel.x=body.velocity.x;
                 t.vel.z=body.velocity.z;
                 t.visualYaw=body.yaw;
                 t.locomotionAmount=body.locomotion;
-                t.visualWalkPhase=physicalBody.gaitPhase;
+                t.visualWalkPhase=feet.gaitPhase;
                 t.physicalBodyMarker=-1.0f;
                 t.physicalBodyPitch=physicalBody.bodyPitch;
                 t.physicalBodyRoll=physicalBody.bodyRoll;
@@ -4280,7 +4276,8 @@ void Game::updateTargets(float dt) {
                 else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
             }
             if(!state_.multiplayer.enabled){
-                const auto& physicalBody=runtimePool.bodies[i];
+                const auto& locomotion=runtimePool.locomotions[i];
+                const auto feet=gameplay::enemyLocomotionOutput(locomotion);
                 const Vec3 facing{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
                 const float inverseScale=1.0f/std::max(0.001f,t.scale);
                 const auto projectFoot=[&](const Vec3& plant,float weight,float& forward,float& height,float& visualWeight){
@@ -4289,12 +4286,12 @@ void Game::updateTargets(float dt) {
                     height=clampf(relative.y*inverseScale,-0.14f,0.26f);
                     visualWeight=clampf(weight,0.0f,1.0f);
                 };
-                projectFoot(physicalBody.leftFootPlant,physicalBody.leftPlantWeight,
+                projectFoot(feet.leftFootPosition,feet.leftLoad,
                             t.physicalLeftFootForward,t.physicalLeftFootHeight,t.physicalLeftFootWeight);
-                projectFoot(physicalBody.rightFootPlant,physicalBody.rightPlantWeight,
+                projectFoot(feet.rightFootPosition,feet.rightLoad,
                             t.physicalRightFootForward,t.physicalRightFootHeight,t.physicalRightFootWeight);
-                t.physicalLeftFootWorld=physicalBody.leftFootPlant;
-                t.physicalRightFootWorld=physicalBody.rightFootPlant;
+                t.physicalLeftFootWorld=feet.leftFootPosition;
+                t.physicalRightFootWorld=feet.rightFootPosition;
             }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
