@@ -3808,7 +3808,9 @@ void Game::updateTargets(float dt) {
                 const auto queryFootSupport=[&](const Vec3& candidate){
                     const auto support=getWorldSupport(candidate.x,candidate.z,0.035f);
                     const bool reachableHeight=std::abs(support.height-t.pos.y)<=0.40f;
-                    const bool clear=!isHumanMovementBlocked(
+                    const bool terrainSurface=support.identity.source==SupportSource::Slope
+                        ||support.identity.source==SupportSource::Generated;
+                    const bool clear=terrainSurface||!isHumanMovementBlocked(
                         candidate.x,candidate.z,support.height,HUMAN_BODY_RADIUS*0.52f);
                     return gameplay::EnemyFootSupport{
                         {candidate.x,support.height,candidate.z},support.normal,
@@ -4213,6 +4215,18 @@ void Game::updateTargets(float dt) {
                     float step=std::min(dist,physicalPursuit?horizontalLength(t.vel)*dt:speed*dt);
                     Vec3 motionDir=physicalPursuit&&horizontalLength(t.vel)>0.001f?Vec3{t.vel.x/horizontalLength(t.vel),0,t.vel.z/horizontalLength(t.vel)}:dir;
                     Vec3 next=t.pos+motionDir*step;
+                    const auto plantedFootSupportsMotion=[&](const Vec3& direction){
+                        if(!physicalPursuit)return false;
+                        const auto& locomotion=runtimePool.locomotions[i];
+                        const auto supports=[&](const gameplay::EnemyFootState& foot){
+                            const Vec3 offset=foot.plantPosition-t.pos;
+                            return foot.planted&&foot.contact>0.55f
+                                && dot3(offset,direction)>0.08f
+                                && foot.plantPosition.y>=t.pos.y-0.06f
+                                && foot.plantPosition.y<=t.pos.y+0.40f;
+                        };
+                        return supports(locomotion.left)||supports(locomotion.right);
+                    };
                     bool pursuitBlocked=false;Vec3 obstructionNormal{};int obstructionCollider=-1;
                     if(playerDist<noticeRange){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
@@ -4235,7 +4249,8 @@ void Game::updateTargets(float dt) {
                         pursuitBlocked=obstructionCollider>=0;
                         if(!pursuitBlocked){
                             const Vec3 probe=t.pos+dir*step;
-                            pursuitBlocked=isHumanMovementBlocked(probe.x,probe.z,t.pos.y,HUMAN_BODY_RADIUS,&obstructionNormal);
+                            pursuitBlocked=isHumanMovementBlocked(probe.x,probe.z,t.pos.y,HUMAN_BODY_RADIUS,&obstructionNormal)
+                                && !plantedFootSupportsMotion(dir);
                         }
                     }
                     if(pursuitBlocked){
@@ -4280,7 +4295,8 @@ void Game::updateTargets(float dt) {
                             if(intoObstacle<0.0f)t.vel-=obstructionNormal*intoObstacle;
                             next=t.pos;
                         }
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)
+                        && !plantedFootSupportsMotion(motionDir)){
                         if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{t.vel.x,0,t.vel.z});
                         chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
                     }

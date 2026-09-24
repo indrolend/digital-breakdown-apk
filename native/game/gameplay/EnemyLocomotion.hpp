@@ -174,6 +174,12 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
 {
     if (!locomotion.initialized)
         initializeEnemyLocomotion(locomotion, input, querySupport);
+    // A spawn or landing can be resolved onto terrain after locomotion's first
+    // sample. Acquire an initial stance once support is real; never drag an
+    // already planted stance along with the body.
+    if (input.grounded && !input.fallen
+        && !locomotion.left.planted && !locomotion.right.planted)
+        initializeEnemyLocomotion(locomotion, input, querySupport);
 
     const float dt = std::max(0.0f, std::min(input.dt, 1.0f / 20.0f));
     const Vec3 forward{-std::sin(input.bodyYaw), 0.0f, -std::cos(input.bodyYaw)};
@@ -307,14 +313,24 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
             }
             const float stride = recoveryStep
                 ? 0.24f + locomotion.recoveryUrgency * 0.24f
-                : std::min(0.38f, 0.20f + requestedSpeed * 0.045f);
-            const Vec3 candidate = input.bodyPosition
-                + stepDirection * stride + right * (side * stanceWidth);
-            const EnemyFootSupport targetSupport = querySupport(candidate);
-            const Vec3 hipDelta = targetSupport.position - input.bodyPosition;
-            const bool reachable = targetSupport.valid
-                && horizontalLength(hipDelta) <= 0.62f
-                && std::abs(hipDelta.y) <= 0.38f;
+                : std::min(0.48f, 0.24f + requestedSpeed * 0.075f);
+            EnemyFootSupport targetSupport{};
+            bool reachable = false;
+            constexpr float reachScales[] = {1.0f, 0.70f, 0.45f};
+            for (const float reachScale : reachScales) {
+                const Vec3 candidate = input.bodyPosition
+                    + stepDirection * (stride * reachScale)
+                    + right * (side * stanceWidth);
+                const EnemyFootSupport candidateSupport = querySupport(candidate);
+                const Vec3 hipDelta = candidateSupport.position - input.bodyPosition;
+                if (candidateSupport.valid
+                    && horizontalLength(hipDelta) <= 0.62f
+                    && std::abs(hipDelta.y) <= 0.38f) {
+                    targetSupport = candidateSupport;
+                    reachable = true;
+                    break;
+                }
+            }
             if (reachable) {
                 swing.swingStart = swing.planted ? swing.plantPosition : swing.position;
                 swing.swingTarget = targetSupport.position;
@@ -344,7 +360,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
                 swing.swingProgress = 0.0f;
             }
         } else if (swing.phase == EnemyFootPhase::Swing) {
-            const float swingDuration = std::max(0.20f, 0.34f - requestedSpeed * 0.018f
+            const float swingDuration = std::max(0.16f, 0.27f - requestedSpeed * 0.018f
                 - locomotion.recoveryUrgency * 0.09f);
             swing.swingProgress = std::min(1.0f, swing.swingProgress + dt / swingDuration);
             const float p = swing.swingProgress;
@@ -381,7 +397,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
                 }
             }
         } else if (swing.phase == EnemyFootPhase::Loading) {
-            swing.swingProgress = std::min(1.0f, swing.swingProgress + dt / 0.13f);
+            swing.swingProgress = std::min(1.0f, swing.swingProgress + dt / 0.10f);
             swing.load = 0.5f * swing.swingProgress;
             stance.load = 1.0f - swing.load;
             if (swing.swingProgress >= 1.0f) {
@@ -394,7 +410,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
                     2.0f * 3.14159265358979323846f);
                 locomotion.nextSwingFoot = locomotion.swingFoot == 0 ? 1 : 0;
                 locomotion.swingFoot = -1;
-                locomotion.stepCooldown = std::max(0.03f, 0.16f - requestedSpeed * 0.012f
+                locomotion.stepCooldown = std::max(0.02f, 0.08f - requestedSpeed * 0.010f
                     - locomotion.recoveryUrgency * 0.08f);
             }
         }
@@ -418,7 +434,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     // speed changes commitment and target reach, but stance geometry bounds
     // the velocity that loaded feet can physically support.
     const float supportLimitedSpeed = std::min(
-        requestedSpeed, (0.78f + locomotion.recoveryUrgency * 0.18f)
+        requestedSpeed, (0.94f + locomotion.recoveryUrgency * 0.18f)
             * (1.0f + std::max(-1.0f, std::min(1.0f, input.individuality)) * 0.12f));
     output.supportedDesiredVelocity = locomotion.committedTravelDirection
         * (supportLimitedSpeed * plantedAuthority
