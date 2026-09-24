@@ -20,6 +20,7 @@
 #include "MarkerPillarGeometry.hpp"
 #include "RollingVehicle.hpp"
 #include "gameplay/EnemyMotor.hpp"
+#include "gameplay/EnemyLocomotion.hpp"
 #include "gameplay/EnemyPerception.hpp"
 #include "gameplay/PhysicalEnemyBody.hpp"
 
@@ -885,6 +886,7 @@ private:
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     struct EnemyRuntimePool {
         std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> motors{};
+        std::array<gameplay::EnemyLocomotionState, TARGET_COUNT> locomotions{};
         std::array<gameplay::PhysicalEnemyBodyState, TARGET_COUNT> bodies{};
         std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> perceptions{};
         int perceptionCursor = 0;

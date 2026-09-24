@@ -3645,6 +3645,7 @@ void Game::updateRoomPopulation(float dt) {
 void Game::respawnTarget(int index) {
     auto& runtime=enemyRuntime();
     runtime.motors[index] = {};
+    runtime.locomotions[index] = {};
     runtime.bodies[index] = {};
     runtime.perceptions[index] = {};
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
