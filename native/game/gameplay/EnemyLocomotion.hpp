@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Math.hpp"
+#include "EnemySupport.hpp"
 
 namespace gameplay {
 
@@ -81,6 +82,8 @@ struct EnemyLocomotionOutput {
     Vec3 rightFootPosition{};
     Vec3 supportNormal{0.0f, 1.0f, 0.0f};
     Vec3 supportedDesiredVelocity{};
+    Vec3 predictedCenterOfMass{};
+    EnemySupportState supportState = EnemySupportState::None;
     float leftContact = 0.0f;
     float rightContact = 0.0f;
     float leftLoad = 0.0f;
@@ -271,21 +274,17 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
 
     const float leftSupportLoad = locomotion.left.planted ? locomotion.left.load : 0.0f;
     const float rightSupportLoad = locomotion.right.planted ? locomotion.right.load : 0.0f;
-    const float totalLoad = leftSupportLoad + rightSupportLoad;
-    Vec3 supportCenter = input.bodyPosition;
-    if (totalLoad > 0.001f) {
-        supportCenter = (locomotion.left.plantPosition * leftSupportLoad
-            + locomotion.right.plantPosition * rightSupportLoad) * (1.0f / totalLoad);
-    }
     const Vec3 projectedCom = input.bodyPosition
         + forward * (std::sin(input.bodyPitch) * input.centerOfMassHeight)
         - right * (std::sin(input.bodyRoll) * input.centerOfMassHeight);
-    const float predictionTime = 0.18f + std::min(0.14f, horizontalLength(input.bodyVelocity) * 0.018f);
-    const Vec3 predictedCom = projectedCom
-        + Vec3{input.bodyVelocity.x, 0.0f, input.bodyVelocity.z} * predictionTime;
-    const Vec3 supportEscape{predictedCom.x - supportCenter.x, 0.0f, predictedCom.z - supportCenter.z};
-    const float supportRadius = leftSupportLoad > 0.20f && rightSupportLoad > 0.20f ? 0.34f : 0.19f;
-    const float outsideSupport = std::max(0.0f, horizontalLength(supportEscape) - supportRadius);
+    const Vec3 predictedCom = enemyCapturePoint(
+        projectedCom, input.bodyVelocity, input.centerOfMassHeight);
+    const EnemySupportRegion support = enemySupportRegion(
+        locomotion.left.plantPosition, leftSupportLoad, locomotion.left.contact,
+        locomotion.right.plantPosition, rightSupportLoad, locomotion.right.contact,
+        predictedCom);
+    const Vec3 supportEscape = support.error;
+    const float outsideSupport = std::max(0.0f, support.distance - support.margin);
     const float urgencyTarget = std::max(0.0f, std::min(1.0f, outsideSupport / 0.42f));
     locomotion.recoveryUrgency += (urgencyTarget - locomotion.recoveryUrgency)
         * std::min(1.0f, dt * (urgencyTarget > locomotion.recoveryUrgency ? 13.0f : 4.0f));
@@ -428,6 +427,8 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     }
 
     EnemyLocomotionOutput output = enemyLocomotionOutput(locomotion);
+    output.predictedCenterOfMass = predictedCom;
+    output.supportState = support.state;
     const float plantedAuthority = std::max(0.0f, std::min(1.0f,
         output.leftLoad * output.leftContact + output.rightLoad * output.rightContact));
     // The body cannot outrun its own stride cycle. Higher-level requested

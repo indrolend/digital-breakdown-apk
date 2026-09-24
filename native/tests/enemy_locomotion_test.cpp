@@ -30,6 +30,15 @@ int main() {
     assert(std::abs(output.rightFootPosition.z - originalRight.z) < 0.00001f);
     assert(std::abs(output.leftLoad + output.rightLoad - 1.0f) < 0.00001f);
 
+    const auto centeredSupport = enemySupportRegion(
+        originalLeft, 0.5f, 1.0f, originalRight, 0.5f, 1.0f,
+        (originalLeft + originalRight) * 0.5f);
+    assert(centeredSupport.state == EnemySupportState::Double);
+    assert(centeredSupport.distance < 0.00001f);
+    const auto leftOnlySupport = enemySupportRegion(
+        originalLeft, 1.0f, 1.0f, originalRight, 0.0f, 0.0f, originalLeft);
+    assert(leftOnlySupport.state == EnemySupportState::Left);
+
     EnemyLocomotionState walker{};
     input.bodyPosition = {0.0f, 0.0f, 0.0f};
     input.bodyVelocity = {};

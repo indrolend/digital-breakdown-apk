@@ -3840,6 +3840,8 @@ void Game::updateTargets(float dt) {
                 bodyInput.desiredVelocity=feet.supportedDesiredVelocity;
                 bodyInput.actualVelocity=t.vel;
                 bodyInput.bodyPosition=t.pos;
+                bodyInput.predictedCenterOfMass=feet.predictedCenterOfMass;
+                bodyInput.hasPredictedCenterOfMass=true;
                 bodyInput.centerOfMassHeight=locomotionInput.centerOfMassHeight;
                 bodyInput.desiredYaw=feet.desiredYaw;
                 bodyInput.individuality=individuality;

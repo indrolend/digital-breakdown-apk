@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Math.hpp"
+#include "EnemySupport.hpp"
 
 namespace gameplay {
 
@@ -38,6 +39,8 @@ struct PhysicalEnemyBodyInput {
     Vec3 desiredVelocity{};
     Vec3 actualVelocity{};
     Vec3 bodyPosition{};
+    Vec3 predictedCenterOfMass{};
+    bool hasPredictedCenterOfMass = false;
     float centerOfMassHeight = 0.90f;
     float desiredYaw = 0.0f;
     float individuality = 0.0f;
@@ -102,6 +105,7 @@ struct PhysicalSupportBalance {
     float totalWeight = 0.0f;
     float radius = 0.0f;
     bool doubleSupport = false;
+    EnemySupportState state = EnemySupportState::None;
 };
 
 inline Vec3 projectedEnemyCenterOfMass(
@@ -127,29 +131,22 @@ inline PhysicalSupportBalance physicalSupportBalance(
     const PhysicalEnemyBodyState& body,
     const Vec3& projectedCenterOfMass)
 {
-    constexpr float plantedWeightThreshold = 0.32f;
-    constexpr float singleSupportRadius = 0.25f;
-    constexpr float doubleSupportRadius = 0.46f;
-
     const float leftWeight = body.leftFootPlanted ? body.leftPlantWeight : 0.0f;
     const float rightWeight = body.rightFootPlanted ? body.rightPlantWeight : 0.0f;
+    const EnemySupportRegion region = enemySupportRegion(
+        body.leftFootPlant, leftWeight, body.leftFootPlanted ? 1.0f : 0.0f,
+        body.rightFootPlant, rightWeight, body.rightFootPlanted ? 1.0f : 0.0f,
+        projectedCenterOfMass);
 
     PhysicalSupportBalance support;
-    support.totalWeight = leftWeight + rightWeight;
-    support.doubleSupport = leftWeight > plantedWeightThreshold && rightWeight > plantedWeightThreshold;
-    support.radius = support.doubleSupport ? doubleSupportRadius : singleSupportRadius;
+    support.totalWeight = region.totalLoad;
+    support.state = region.state;
+    support.doubleSupport = region.state == EnemySupportState::Double;
+    support.radius = region.margin;
     support.projectedCenterOfMass = projectedCenterOfMass;
-    support.center = projectedCenterOfMass;
-    if (support.totalWeight > 0.001f) {
-        support.center = (body.leftFootPlant * leftWeight + body.rightFootPlant * rightWeight)
-            * (1.0f / support.totalWeight);
-    }
-    support.error = {
-        projectedCenterOfMass.x - support.center.x,
-        0.0f,
-        projectedCenterOfMass.z - support.center.z
-    };
-    support.distance = horizontalLength(support.error);
+    support.center = region.closestPoint;
+    support.error = region.error;
+    support.distance = region.distance;
     return support;
 }
 
@@ -255,7 +252,11 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
 
     constexpr float minimumSupportWeight = 0.10f;
     constexpr float fallMargin = 0.34f;
-    const PhysicalSupportBalance support = physicalSupportBalance(body, projectedCom);
+    const Vec3 predictedCom = input.hasPredictedCenterOfMass
+        ? finitePhysicalVector(input.predictedCenterOfMass, projectedCom)
+        : projectedCom;
+    const PhysicalSupportBalance support = physicalSupportBalance(body, predictedCom);
+    const PhysicalSupportBalance currentSupport = physicalSupportBalance(body, projectedCom);
     const float outsideSupport = std::max(0.0f, support.distance - support.radius);
 
     // One locomotion authority: horizontal changes come from the ground
@@ -342,8 +343,8 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     // support instead of remaining visually centered while a hidden horizontal
     // correction does all the work. This is bounded posture, not another
     // locomotion authority.
-    const float supportForwardError=dot3(support.error,facing);
-    const float supportSideError=dot3(support.error,right);
+    const float supportForwardError=dot3(currentSupport.error,facing);
+    const float supportSideError=dot3(currentSupport.error,right);
     const float catchPitch=-supportForwardError*0.34f;
     const float catchRoll=supportSideError*0.42f;
     // Falling and getting back up share this one posture spring. Previously the

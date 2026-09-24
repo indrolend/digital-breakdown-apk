@@ -34,6 +34,8 @@ int main() {
     assert(correctiveStep);
     assert(targetZ > 0.10f); // catch the backwards-moving COM with a rear step
     assert(locomotion.crouch > 0.0f);
+    assert(targetZ <= enemyCapturePoint(
+        input.bodyPosition, input.bodyVelocity, input.centerOfMassHeight).z + 0.20f);
 
     PhysicalEnemyBodyState catching{};
     catching.initialized = true;
@@ -45,6 +47,8 @@ int main() {
     catching.rightPlantWeight = 0.5f;
     PhysicalEnemyBodyInput bodyInput{};
     bodyInput.bodyPosition = {0.0f, 0.0f, 0.72f};
+    bodyInput.predictedCenterOfMass = {0.0f, 0.0f, 0.34f};
+    bodyInput.hasPredictedCenterOfMass = true;
     bodyInput.actualVelocity = {0.0f, 0.0f, 2.4f};
     bodyInput.leftFootPosition = catching.leftFootPlant;
     bodyInput.rightFootPosition = catching.rightFootPlant;
@@ -63,6 +67,7 @@ int main() {
     failed.fallen = false;
     failed.supportFailureTime = 0.0f;
     bodyInput.bodyPosition.z = 1.10f;
+    bodyInput.predictedCenterOfMass.z = 1.10f;
     bodyInput.correctiveStepActive = false;
     updatePhysicalEnemyBody(failed, bodyInput, 0.0f);
     assert(failed.fallen); // severe unsupported escape still falls
