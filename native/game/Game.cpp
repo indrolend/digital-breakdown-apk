@@ -3866,7 +3866,10 @@ void Game::updateTargets(float dt) {
                 t.visualYaw=body.yaw;
                 t.locomotionAmount=body.locomotion;
                 t.visualWalkPhase=feet.gaitPhase;
-                t.physicalBodyMarker=-1.0f;
+                // Preserve the existing solo-only marker slot: values below
+                // -1 encode locomotor compression without changing replicated
+                // TargetState layout.
+                t.physicalBodyMarker=-1.0f-feet.crouch;
                 t.physicalBodyPitch=physicalBody.bodyPitch;
                 t.physicalBodyRoll=physicalBody.bodyRoll;
                 return body;

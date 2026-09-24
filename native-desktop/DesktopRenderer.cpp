@@ -277,7 +277,8 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     const bool aliveHuman = !target.slurpable;
     const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
     const bool fallen=physicalBody&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f);
-    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,perceptionHeadYaw,perceptionHeadPitch);
+    const float physicalCrouch=physicalBody?clampf(-target.physicalBodyMarker-1.0f,0.0f,1.0f):0.0f;
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch);
     const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
@@ -889,7 +890,8 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
 void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow,float perceptionHeadYaw,float perceptionHeadPitch) const {
     const bool aliveHuman=!target.slurpable;
     const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
-    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,perceptionHeadYaw,perceptionHeadPitch);
+    const float physicalCrouch=physicalBody?clampf(-target.physicalBodyMarker-1.0f,0.0f,1.0f):0.0f;
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch);
     const HumanModelLegPlant legPlant{
         target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight,
         target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight};

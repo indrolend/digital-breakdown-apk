@@ -301,6 +301,7 @@ inline EnemyVisualPose makeEnemyVisualPose(
     float gaitPhase,
     float locomotionAmount,
     float legacyAnimationTime,
+    float physicalCrouch = 0.0f,
     float perceptionHeadYaw = 0.0f,
     float perceptionHeadPitch = 0.0f)
 {
@@ -325,7 +326,9 @@ inline EnemyVisualPose makeEnemyVisualPose(
         visual.human.leftArmSwing = -visual.human.rightLegSwing * 0.72f - bodyRoll * 0.24f;
         visual.human.rightArmSwing = -visual.human.leftLegSwing * 0.72f + bodyRoll * 0.24f;
         const float movement = clampf(locomotionAmount, 0.0f, 1.0f);
-        visual.bodyCompression = clampf(std::abs(bodyPitch), 0.0f, 0.44f) * 0.14f;
+        visual.bodyCompression = std::max(
+            clampf(std::abs(bodyPitch), 0.0f, 0.44f) * 0.14f,
+            clampf(physicalCrouch,0.0f,1.0f)*0.22f);
         visual.human.rootBob = std::abs(stride) * 0.022f * movement * visual.human.scale;
     }
     return visual;
