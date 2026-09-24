@@ -80,6 +80,9 @@ int main(){
     const Vec3 firstTravel=firstPositions[0]-Vec3{-5.0f,0.08f,8.0f};
     const Vec3 secondTravel=firstPositions[1]-Vec3{5.0f,0.08f,8.0f};
     const float mirroredDifference=std::abs(firstTravel.x+secondTravel.x)+std::abs(firstTravel.z-secondTravel.z);
+    if(mirroredDifference<=0.05f)std::fprintf(stderr,
+        "PHYSICAL_RUNTIME_DIVERGENCE_FAIL first=(%.3f,%.3f) second=(%.3f,%.3f) difference=%.3f\n",
+        firstTravel.x,firstTravel.z,secondTravel.x,secondTravel.z,mirroredDifference);
     assert(mirroredDifference>0.05f);
     for(int i=0;i<2;++i){
         assert(std::abs(firstPositions[i].x-repeatPositions[i].x)<0.00001f);

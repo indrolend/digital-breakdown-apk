@@ -3830,6 +3830,7 @@ void Game::updateTargets(float dt) {
                 locomotionInput.centerOfMassHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale*0.52f;
                 locomotionInput.dt=dt;
                 locomotionInput.grounded=supportedBefore;
+                locomotionInput.fallen=physicalBody.fallen;
                 const auto feet=gameplay::updateEnemyLocomotion(
                     locomotion,locomotionInput,queryFootSupport);
                 gameplay::PhysicalEnemyBodyInput bodyInput{};
@@ -3856,6 +3857,7 @@ void Game::updateTargets(float dt) {
                 bodyInput.recoveryUrgency=feet.recoveryUrgency;
                 bodyInput.correctiveStepActive=feet.correctiveStepActive;
                 bodyInput.turnStepActive=feet.turnStepActive;
+                bodyInput.supportRecoveryReady=feet.supportRecoveryReady;
                 physicalBody.gaitPhase=feet.gaitPhase;
                 const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
                 physicalBody.gaitPhase=feet.gaitPhase;

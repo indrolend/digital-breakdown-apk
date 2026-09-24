@@ -55,6 +55,7 @@ struct PhysicalEnemyBodyInput {
     float recoveryUrgency = 0.0f;
     bool correctiveStepActive = false;
     bool turnStepActive = false;
+    bool supportRecoveryReady = false;
 };
 
 struct PhysicalEnemyBodyOutput {
@@ -350,7 +351,8 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     // demanded upright, leaving some bodies at a permanent tilted equilibrium.
     // Once a settled body has spent enough time down, the same spring simply
     // changes its target back to upright.
-    const bool recovering = body.fallen && body.recovery > 1.25f && actualSpeed < 0.45f;
+    const bool recovering = body.fallen && input.supportRecoveryReady
+        && body.recovery > 0.25f && actualSpeed < 0.45f;
     const float desiredPitch=body.fallen&&!recovering?(body.bodyPitch>=0.0f?1.28f:-1.28f)
         :std::max(-0.16f,std::min(0.16f,-forwardError*0.025f+supportPitch+catchPitch));
     const float desiredRoll=body.fallen&&!recovering?(body.bodyRoll>=0.0f?0.82f:-0.82f)
@@ -371,7 +373,7 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
         body.recovery = 0.0f;
     }
     if (body.fallen) {
-        body.recovery += dt;
+        body.recovery = input.supportRecoveryReady ? body.recovery + dt : 0.0f;
         if (recovering && std::abs(body.bodyPitch) < 0.20f && std::abs(body.bodyRoll) < 0.20f) {
             body.fallen = false;
             body.recovery = 0.0f;

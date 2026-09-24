@@ -103,6 +103,7 @@ int main() {
     recoveryInput.rightFootContact=1.0f;
     recoveryInput.leftFootPosition={-0.12f,0.0f,0.0f};
     recoveryInput.rightFootPosition={0.12f,0.0f,0.0f};
+    recoveryInput.supportRecoveryReady=true;
     for(int frame=0;frame<360&&recoveryBody.fallen;++frame)
         gameplay::updatePhysicalEnemyBody(recoveryBody,recoveryInput,0.0f);
     assert(!recoveryBody.fallen);

@@ -15,6 +15,13 @@ enum class EnemyFootPhase : unsigned char {
     Loading
 };
 
+enum class EnemyRecoveryPhase : unsigned char {
+    None,
+    GatherFeet,
+    EstablishSupport,
+    Rise
+};
+
 struct EnemyFootState {
     Vec3 position{};
     Vec3 plantPosition{};
@@ -39,6 +46,8 @@ struct EnemyLocomotionState {
     float directionalCommitmentTimer = 0.0f;
     float crouch = 0.0f;
     float recoveryUrgency = 0.0f;
+    EnemyRecoveryPhase recoveryPhase = EnemyRecoveryPhase::None;
+    float recoveryPhaseTime = 0.0f;
     float physicalGaitPhase = 0.0f;
     bool initialized = false;
 };
@@ -64,6 +73,7 @@ struct EnemyLocomotionInput {
     float centerOfMassHeight = 0.9f;
     float dt = 0.0f;
     bool grounded = true;
+    bool fallen = false;
 };
 
 struct EnemyLocomotionOutput {
@@ -81,6 +91,7 @@ struct EnemyLocomotionOutput {
     float recoveryUrgency = 0.0f;
     bool correctiveStepActive = false;
     bool turnStepActive = false;
+    bool supportRecoveryReady = false;
 };
 
 inline float enemyLocomotionAngleDelta(float from, float to) {
@@ -144,6 +155,8 @@ inline EnemyLocomotionOutput enemyLocomotionOutput(const EnemyLocomotionState& l
     output.recoveryUrgency = locomotion.recoveryUrgency;
     output.correctiveStepActive = locomotion.recoveryUrgency > 0.08f
         && locomotion.swingFoot >= 0;
+    output.supportRecoveryReady = locomotion.recoveryPhase == EnemyRecoveryPhase::Rise
+        && output.leftContact > 0.80f && output.rightContact > 0.80f;
     return output;
 }
 
@@ -169,6 +182,75 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
         input.desiredTravelDirection, locomotion.committedTravelDirection);
     const float requestedSpeed = std::max(0.0f, input.desiredSpeed);
     const float turnError = enemyLocomotionAngleDelta(input.bodyYaw, input.desiredYaw);
+
+    if (input.fallen) {
+        if (locomotion.recoveryPhase == EnemyRecoveryPhase::None) {
+            locomotion.recoveryPhase = EnemyRecoveryPhase::GatherFeet;
+            locomotion.recoveryPhaseTime = 0.0f;
+            locomotion.swingFoot = -1;
+            locomotion.left.swingStart = locomotion.left.position;
+            locomotion.right.swingStart = locomotion.right.position;
+            const EnemyFootSupport leftTarget = querySupport(
+                input.bodyPosition + right * 0.14f + forward * 0.04f);
+            const EnemyFootSupport rightTarget = querySupport(
+                input.bodyPosition - right * 0.14f + forward * 0.04f);
+            locomotion.left.swingTarget = leftTarget.valid
+                ? leftTarget.position : input.bodyPosition + right * 0.14f;
+            locomotion.right.swingTarget = rightTarget.valid
+                ? rightTarget.position : input.bodyPosition - right * 0.14f;
+            locomotion.left.supportNormal = leftTarget.normal;
+            locomotion.right.supportNormal = rightTarget.normal;
+            locomotion.left.planted = false;
+            locomotion.right.planted = false;
+            locomotion.left.contact = locomotion.right.contact = 0.0f;
+            locomotion.left.load = locomotion.right.load = 0.0f;
+        }
+        locomotion.recoveryPhaseTime += dt;
+        if (locomotion.recoveryPhase == EnemyRecoveryPhase::GatherFeet) {
+            const float p = std::min(1.0f, locomotion.recoveryPhaseTime / 0.45f);
+            locomotion.left.position = locomotion.left.swingStart * (1.0f - p)
+                + locomotion.left.swingTarget * p;
+            locomotion.right.position = locomotion.right.swingStart * (1.0f - p)
+                + locomotion.right.swingTarget * p;
+            const float lift = std::sin(p * 3.14159265358979323846f) * 0.04f;
+            locomotion.left.position.y += lift;
+            locomotion.right.position.y += lift;
+            locomotion.crouch = 1.0f;
+            if (p >= 1.0f) {
+                locomotion.left.position = locomotion.left.swingTarget;
+                locomotion.right.position = locomotion.right.swingTarget;
+                locomotion.left.plantPosition = locomotion.left.position;
+                locomotion.right.plantPosition = locomotion.right.position;
+                locomotion.left.planted = true;
+                locomotion.right.planted = true;
+                locomotion.recoveryPhase = EnemyRecoveryPhase::EstablishSupport;
+                locomotion.recoveryPhaseTime = 0.0f;
+            }
+        } else if (locomotion.recoveryPhase == EnemyRecoveryPhase::EstablishSupport) {
+            const float p = std::min(1.0f, locomotion.recoveryPhaseTime / 0.38f);
+            locomotion.left.contact = locomotion.right.contact = p;
+            locomotion.left.load = locomotion.right.load = p * 0.5f;
+            locomotion.crouch = 1.0f;
+            if (p >= 1.0f) {
+                locomotion.recoveryPhase = EnemyRecoveryPhase::Rise;
+                locomotion.recoveryPhaseTime = 0.0f;
+            }
+        } else if (locomotion.recoveryPhase == EnemyRecoveryPhase::Rise) {
+            locomotion.left.contact = locomotion.right.contact = 1.0f;
+            locomotion.left.load = locomotion.right.load = 0.5f;
+            locomotion.crouch = std::max(0.25f, 1.0f - locomotion.recoveryPhaseTime * 0.75f);
+        }
+        EnemyLocomotionOutput recoveryOutput = enemyLocomotionOutput(locomotion);
+        recoveryOutput.supportRecoveryReady = locomotion.recoveryPhase == EnemyRecoveryPhase::Rise;
+        recoveryOutput.crouch = locomotion.crouch;
+        recoveryOutput.desiredYaw = input.bodyYaw;
+        return recoveryOutput;
+    }
+    if (locomotion.recoveryPhase != EnemyRecoveryPhase::None) {
+        locomotion.recoveryPhase = EnemyRecoveryPhase::None;
+        locomotion.recoveryPhaseTime = 0.0f;
+        locomotion.crouch = 0.0f;
+    }
 
     locomotion.stepCooldown = std::max(0.0f, locomotion.stepCooldown - dt);
     locomotion.stanceTime += dt;
@@ -332,8 +414,15 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     EnemyLocomotionOutput output = enemyLocomotionOutput(locomotion);
     const float plantedAuthority = std::max(0.0f, std::min(1.0f,
         output.leftLoad * output.leftContact + output.rightLoad * output.rightContact));
+    // The body cannot outrun its own stride cycle. Higher-level requested
+    // speed changes commitment and target reach, but stance geometry bounds
+    // the velocity that loaded feet can physically support.
+    const float supportLimitedSpeed = std::min(
+        requestedSpeed, (0.78f + locomotion.recoveryUrgency * 0.18f)
+            * (1.0f + std::max(-1.0f, std::min(1.0f, input.individuality)) * 0.12f));
     output.supportedDesiredVelocity = locomotion.committedTravelDirection
-        * (requestedSpeed * plantedAuthority * std::max(0.35f, std::min(1.0f, input.traction)));
+        * (supportLimitedSpeed * plantedAuthority
+            * std::max(0.35f, std::min(1.0f, input.traction)));
     output.desiredYaw = input.bodyYaw + turnError * plantedAuthority;
     output.correctiveStepActive = locomotion.recoveryUrgency > 0.08f
         && locomotion.swingFoot >= 0;

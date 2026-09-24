@@ -67,6 +67,27 @@ int main() {
     updatePhysicalEnemyBody(failed, bodyInput, 0.0f);
     assert(failed.fallen); // severe unsupported escape still falls
 
-    std::puts("ENEMY_LOCOMOTION_RECOVERY_OK predictive_step=REAR fall=FAILED_SUPPORT");
+    EnemyLocomotionState floorRecovery{};
+    input.bodyPosition = {};
+    input.bodyVelocity = {};
+    input.fallen = false;
+    initializeEnemyLocomotion(floorRecovery, input, flatSupport);
+    input.fallen = true;
+    EnemyLocomotionOutput recoveryOutput{};
+    bool sawGathering = false;
+    for (int frame = 0; frame < 90; ++frame) {
+        recoveryOutput = updateEnemyLocomotion(floorRecovery, input, flatSupport);
+        if (floorRecovery.recoveryPhase == EnemyRecoveryPhase::GatherFeet) {
+            sawGathering = true;
+            assert(recoveryOutput.leftContact == 0.0f);
+            assert(recoveryOutput.rightContact == 0.0f);
+        }
+        if (recoveryOutput.supportRecoveryReady) break;
+    }
+    assert(sawGathering);
+    assert(recoveryOutput.supportRecoveryReady);
+    assert(recoveryOutput.leftContact > 0.80f && recoveryOutput.rightContact > 0.80f);
+
+    std::puts("ENEMY_LOCOMOTION_RECOVERY_OK predictive_step=REAR fall=FAILED_SUPPORT rise=SUPPORTED");
     return 0;
 }
