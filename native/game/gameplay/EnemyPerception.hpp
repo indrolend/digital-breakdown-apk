@@ -81,30 +81,35 @@ inline float environmentalCueTransmission(float rain,bool exposed){
     return 1.0f-std::max(0.0f,std::min(1.0f,finitePerceptionValue(rain)))*0.22f;
 }
 
-inline float movementAwarenessStrength(float distance,float speed,float transmission,float surfaceTransmission=1.0f,float groundContact=1.0f){
+inline float movementEvidenceAwarenessStrength(float distance,float contactEvidence,float transmission,float surfaceTransmission=1.0f){
     distance=std::max(0.0f,finitePerceptionValue(distance,1000.0f));
-    speed=std::max(0.0f,std::min(12.0f,finitePerceptionValue(speed)));
+    contactEvidence=std::max(0.0f,std::min(1.0f,finitePerceptionValue(contactEvidence)));
     transmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(transmission)));
     surfaceTransmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(surfaceTransmission,1.0f)));
-    groundContact=std::max(0.0f,std::min(1.0f,finitePerceptionValue(groundContact,1.0f)));
-    // Nearby grounded body motion is audible/tactile evidence, not a coordinate. Slow
-    // movement remains subtle while committed running carries farther.
-    const float motion=std::min(1.0f,speed/6.0f);
-    const float range=2.2f+motion*3.8f;
-    return motion*(1.0f-std::min(1.0f,distance/range))*0.52f*transmission*surfaceTransmission*groundContact;
+    const float range=2.0f+contactEvidence*4.2f;
+    return contactEvidence*(1.0f-std::min(1.0f,distance/range))*0.56f
+        *transmission*surfaceTransmission;
 }
 
-inline float landingAwarenessStrength(float distance,float impactSpeed,float transmission,float surfaceTransmission=1.0f){
+inline Vec3 approximateEnvironmentalEvidencePosition(const Vec3& source,float individuality,float strength){
+    const Vec3 finiteSource=finitePerceptionVector(source);
+    individuality=finitePerceptionValue(individuality);
+    strength=std::max(0.0f,std::min(1.0f,finitePerceptionValue(strength)));
+    const float angle=individuality*4.731f+finiteSource.x*0.071f+finiteSource.z*0.043f;
+    const float error=0.12f+(1.0f-strength)*0.78f;
+    return finiteSource+Vec3{std::cos(angle)*error,0.0f,std::sin(angle)*error};
+}
+
+inline float landingEvidenceAwarenessStrength(float distance,float impactEvidence,float transmission,float surfaceTransmission=1.0f){
     distance=std::max(0.0f,finitePerceptionValue(distance,1000.0f));
-    impactSpeed=std::max(0.0f,std::min(12.0f,finitePerceptionValue(impactSpeed)));
+    impactEvidence=std::max(0.0f,std::min(1.0f,finitePerceptionValue(impactEvidence)));
     transmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(transmission)));
     surfaceTransmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(surfaceTransmission,1.0f)));
     // Landing is a short physical event: harder impacts travel farther through the
     // same floor/weather authority as grounded movement. It is evidence at the
     // contact point, never authoritative player tracking.
-    const float impact=std::max(0.0f,std::min(1.0f,(impactSpeed-1.4f)/5.0f));
-    const float range=2.0f+impact*5.0f;
-    return impact*(1.0f-std::min(1.0f,distance/range))*0.68f*transmission*surfaceTransmission;
+    const float range=2.0f+impactEvidence*5.0f;
+    return impactEvidence*(1.0f-std::min(1.0f,distance/range))*0.68f*transmission*surfaceTransmission;
 }
 
 inline float physicalHerdCueStrength(float distance,float activity,float physicalDisruption,float transmission){

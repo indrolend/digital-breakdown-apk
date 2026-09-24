@@ -92,7 +92,7 @@ inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting sett
     return {{0.49f,0.54f,0.57f},false};
 }
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
-struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; float ambientWind=0.0f; float rain=0.0f; float wetness=0.0f; Vec3 landingOrigin{10000.0f,0.0f,10000.0f}; float landingStrength=0.0f; Vec3 disturbanceOrigin{10000.0f,0.0f,10000.0f}; float disturbanceStrength=0.0f; Vec3 secondaryDisturbanceOrigin{10000.0f,0.0f,10000.0f}; float secondaryDisturbanceStrength=0.0f; Vec3 disturbanceSweep{}; Vec3 secondaryDisturbanceSweep{}; float disturbanceRadius=1.15f; float secondaryDisturbanceRadius=1.15f; };
+struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; float ambientWind=0.0f; float rain=0.0f; float wetness=0.0f; Vec3 landingOrigin{10000.0f,0.0f,10000.0f}; float landingStrength=0.0f; Vec3 disturbanceOrigin{10000.0f,0.0f,10000.0f}; float disturbanceStrength=0.0f; Vec3 secondaryDisturbanceOrigin{10000.0f,0.0f,10000.0f}; float secondaryDisturbanceStrength=0.0f; Vec3 disturbanceSweep{}; Vec3 secondaryDisturbanceSweep{}; float disturbanceRadius=1.15f; float secondaryDisturbanceRadius=1.15f; float playerContactStrength=1.0f; };
 
 constexpr int GrassBladeCountLow = 160;
 constexpr int GrassBladeCountHigh = 320;
@@ -529,6 +529,22 @@ inline DirtContactResponse dirtContactResponse(float contactStrength,float wetne
     // authority: dry dirt lifts, saturated dirt stays low and dark.
     return {contact*(1.0f-wet),contact*wet};
 }
+inline float dirtBodyContactStrength(float supportWeight,float speed,float bodyScale=1.0f) {
+    const float support=clampf(supportWeight,0.0f,1.0f);
+    const float travel=clampf((speed-0.55f)/3.45f,0.0f,1.0f);
+    const float scale=clampf(0.82f+0.18f*std::max(0.6f,bodyScale),0.9f,1.18f);
+    return support*travel*scale;
+}
+inline Vec3 dirtContactSweep(const Vec3& velocity,float age,float strength) {
+    const float speed=std::sqrt(velocity.x*velocity.x+velocity.z*velocity.z);
+    if(speed<=0.001f)return {};
+    const float travel=clampf(speed/5.0f,0.0f,1.0f),life=clampf(age,0.0f,1.0f),contact=clampf(strength,0.0f,1.0f);
+    const float distance=(0.035f+0.24f*life)*travel*contact;
+    return {-velocity.x/speed*distance,0.0f,-velocity.z/speed*distance};
+}
+inline Vec3 dirtWetContactOffset(const Vec3& velocity,float strength) {
+    return dirtContactSweep(velocity,0.35f,strength)*0.55f;
+}
 struct GrassBodyContact { Vec3 origin{}; float strength=0.0f; Vec3 sweep{}; float radius=1.15f; };
 inline GrassBodyContact grassBodyContact(const Vec3& leftPlant,float leftWeight,const Vec3& rightPlant,float rightWeight,const Vec3& velocity,float bodyScale=1.0f) {
     const float left=clampf(leftWeight,0.0f,1.0f),right=clampf(rightWeight,0.0f,1.0f),load=std::max(left,right);
@@ -563,7 +579,7 @@ inline Vec3 grassTip(const GrassBlade& blade,float time,const GrassReactionInput
     const float localWindZ=std::remainder(blade.root.z,36.0f);
     tip.x+=std::sin(time*(2.0f+rain*0.55f)+blade.root.x*0.65f+localWindZ*0.45f+blade.phase)*windAmplitude;
     tip.y-=blade.height*wetness*0.045f;
-    if(playerDistance<0.9f&&playerDistance>0.001f){const float power=1.0f-playerDistance/0.9f;tip.x+=playerDelta.x/playerDistance*power*0.3f;tip.z+=playerDelta.z/playerDistance*power*0.3f;tip.y-=power*0.08f;}
+    if(playerDistance<0.9f&&playerDistance>0.001f){const float power=(1.0f-playerDistance/0.9f)*clampf(input.playerContactStrength,0.0f,1.0f);tip.x+=playerDelta.x/playerDistance*power*0.3f;tip.z+=playerDelta.z/playerDistance*power*0.3f;tip.y-=power*0.08f;}
     if(input.shotAge>=0.0f&&input.shotAge<1.4f){const Vec3 delta=blade.root-input.shotOrigin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f;const float wave=input.shotAge*7.5f,ring=1.0f-smooth01(std::abs(distance-wave)/0.85f),range=1.0f-smooth01(distance/7.5f),decay=std::exp(-input.shotAge*2.4f),wobble=std::sin(input.shotAge*18.0f-distance*2.0f)*decay,blast=ring*range*decay,after=wobble*range*0.22f;tip.x+=delta.x*inv*(blast*0.9f+after);tip.z+=delta.z*inv*(blast*0.9f+after);tip.y-=blast*0.14f;}
     if(input.vacuumStrength>0.01f){const Vec3 delta=input.vacuumOrigin-blade.root;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f,pullMask=1.0f-smooth01((distance-0.5f)/7.5f),pulse=0.75f+0.25f*std::sin(time*2.0f*18.0f+distance*3.0f),pull=pullMask*pulse*input.vacuumStrength;tip.x+=delta.x*inv*pull*0.45f;tip.z+=delta.z*inv*pull*0.45f;tip.y-=pull*0.1f;}
     const float wetContactLateralResponse=1.0f-wetness*0.22f;

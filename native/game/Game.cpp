@@ -5,6 +5,7 @@
 #include "gameplay/TargetRoles.hpp"
 #include "gameplay/MeleeConfig.hpp"
 #include "gameplay/TraversalCapabilities.hpp"
+#include "gameplay/PlayerContactEvidence.hpp"
 #include "EarlyBrowserVisuals.hpp"
 
 #include <algorithm>
@@ -3969,21 +3970,32 @@ void Game::updateTargets(float dt) {
                 // lose signal twice while herd cues lost it once.
                 const float rainHearing=gameplay::environmentalCueTransmission(state_.weather.rain,state_.weather.exposed);
                 const float playerDistance=horizontalLength(actualPlayerPosition-t.pos);
-                // Ground contact turns physical movement into a directionless surface cue.
-                // Running nearby makes an uncertain animal search harder, while an
-                // airborne body cannot emit footfall evidence through the floor.
-                float vagueAwareness=gameplay::movementAwarenessStrength(
-                    playerDistance,horizontalLength(attackedPlayer->vel),rainHearing,
-                    roomFloorMaterial.movementCueTransmission,attackedPlayer->grounded?1.0f:0.0f);
+                // Resolved body motion produces one bounded contact fact. Material
+                // and weather then decide how much of that physical event reaches
+                // this observer. No stealth mode or detection multiplier exists.
+                const auto playerEvidence=gameplay::playerContactEvidence(
+                    attackedPlayer->vel,attackedPlayer->grounded,attackedPlayer->landingImpact);
+                const float movementCue=gameplay::movementEvidenceAwarenessStrength(
+                    playerDistance,playerEvidence.movement,rainHearing,
+                    roomFloorMaterial.movementCueTransmission);
+                float vagueAwareness=movementCue;
                 Vec3 environmentalCuePosition{};
                 float environmentalCueStrength=0.0f;
+                if(movementCue>0.08f){
+                    environmentalCueStrength=movementCue;
+                    environmentalCuePosition=gameplay::approximateEnvironmentalEvidencePosition(
+                        actualPlayerPosition,std::sin(static_cast<float>(i)*12.9898f),movementCue);
+                }
                 const float landingDistance=horizontalLength(attackedPlayer->landingContactPosition-t.pos);
-                const float landingCue=gameplay::landingAwarenessStrength(
-                    landingDistance,attackedPlayer->landingImpact,rainHearing,roomFloorMaterial.movementCueTransmission);
+                const float landingCue=gameplay::landingEvidenceAwarenessStrength(
+                    landingDistance,playerEvidence.landing,rainHearing,roomFloorMaterial.movementCueTransmission);
                 if(landingCue>0.0f){
                     vagueAwareness=std::max(vagueAwareness,landingCue);
-                    environmentalCueStrength=landingCue;
-                    environmentalCuePosition=attackedPlayer->landingContactPosition;
+                    if(landingCue>environmentalCueStrength){
+                        environmentalCueStrength=landingCue;
+                        environmentalCuePosition=gameplay::approximateEnvironmentalEvidencePosition(
+                            attackedPlayer->landingContactPosition,std::sin(static_cast<float>(i)*12.9898f),landingCue);
+                    }
                 }
                 // Existing player actions become imperfect environmental cues.
                 // They raise suspicion without granting a precise player position.

@@ -10,6 +10,7 @@
 #include "FacetedRock.hpp"
 #include "MarkerPillarGeometry.hpp"
 #include "SoulIdentity.hpp"
+#include "gameplay/PlayerContactEvidence.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -1052,7 +1053,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const ea
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(prop,state.roomSeed,state.roomIndex,i,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
         else {for(const auto& part:marker_pillar_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.48f,0.55f,0.58f}:VisualColor{0.72f,0.90f,0.94f};drawBox(part.center,part.size,0,0,0,color.r,color.g,color.b);}}
     }
-    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassBodyContact primary{},secondary{};for(const auto& target:state.targets){if(!target.alive||target.slurpable)continue;const float dz=std::abs(target.pos.z-(static_cast<float>(tileIndex)*ROOM_DEPTH));if(dz<ROOM_DEPTH*0.65f){const auto contact=early_browser_visuals::grassBodyContact(target.physicalLeftFootWorld,target.physicalLeftFootWeight,target.physicalRightFootWorld,target.physicalRightFootWeight,target.vel,target.scale);if(contact.strength>primary.strength){secondary=primary;primary=contact;}else if(contact.strength>secondary.strength)secondary=contact;}}early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge,response.wind,state.weather.rain,state.weather.wetness,state.player.landingContactPosition,clampf(state.player.landingImpact/7.0f,0.0f,1.0f),primary.origin,primary.strength,secondary.origin,secondary.strength,primary.sweep,secondary.sweep,primary.radius,secondary.radius};glNormal3f(0,1,0);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();}
+    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassBodyContact primary{},secondary{};for(const auto& target:state.targets){if(!target.alive||target.slurpable)continue;const float dz=std::abs(target.pos.z-(static_cast<float>(tileIndex)*ROOM_DEPTH));if(dz<ROOM_DEPTH*0.65f){const auto contact=early_browser_visuals::grassBodyContact(target.physicalLeftFootWorld,target.physicalLeftFootWeight,target.physicalRightFootWorld,target.physicalRightFootWeight,target.vel,target.scale);if(contact.strength>primary.strength){secondary=primary;primary=contact;}else if(contact.strength>secondary.strength)secondary=contact;}}early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge,response.wind,state.weather.rain,state.weather.wetness,state.player.landingContactPosition,clampf(state.player.landingImpact/7.0f,0.0f,1.0f),primary.origin,primary.strength,secondary.origin,secondary.strength,primary.sweep,secondary.sweep,primary.radius,secondary.radius};reaction.playerContactStrength=gameplay::playerContactEvidence(state.player.vel,state.player.grounded,state.player.landingImpact).movement;glNormal3f(0,1,0);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();}
 }
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
@@ -1462,19 +1463,22 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     }
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
     if(state.localSettings.particles){
-        const auto dustAt=[&](const Vec3& foot,float weight,float speed,float phase){
-            if(weight<0.42f||speed<0.55f||!onDirt(foot))return;
+        glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+        const auto dustAt=[&](const Vec3& foot,float weight,const Vec3& velocity,float bodyScale,float phase){
+            if(!onDirt(foot))return;
+            const float contactStrength=early_browser_visuals::dirtBodyContactStrength(
+                weight,horizontalLength(velocity),bodyScale);
+            if(contactStrength<=0.01f)return;
             const float wet=state.weather.exposed?state.weather.wetness:0.0f;
-            const float dustAmount=1.0f-wet;
-            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-            if(dustAmount>0.06f)for(int n=0;n<3;++n){const float age=std::fmod(state.time*(1.2f+0.13f*n)+phase+n*0.37f,1.0f);const float spread=0.08f+age*0.22f;const Vec3 q=foot+Vec3{std::sin(phase*11.0f+n*2.1f)*spread,0.035f+age*0.18f,std::cos(phase*7.0f+n*1.7f)*spread};drawParticleCube(q,0.035f+age*0.025f,age*3.0f,0.48f,0.34f,0.20f,(1.0f-age)*0.30f*weight*dustAmount);}
-            // The same planted-foot contact becomes a low, dark disturbance
-            // when dirt is wet. This is not a second mud/particle system.
-            if(wet>0.12f){const float pulse=0.55f+0.45f*std::sin(state.time*7.0f+phase*5.0f);const Vec3 q=foot+Vec3{0.0f,0.018f,0.0f};drawParticleCube(q,0.045f+0.035f*wet,phase,0.18f,0.14f,0.09f,0.14f*wet*weight*pulse);}
-            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+            const auto contact=early_browser_visuals::dirtContactResponse(contactStrength,wet);
+            if(contact.dust>0.04f)for(int n=0;n<3;++n){const float age=std::fmod(state.time*(1.2f+0.13f*n)+phase+n*0.37f,1.0f);const float spread=0.08f+age*0.22f;const Vec3 q=foot+early_browser_visuals::dirtContactSweep(velocity,age,contact.dust)+Vec3{std::sin(phase*11.0f+n*2.1f)*spread,0.035f+age*0.18f,std::cos(phase*7.0f+n*1.7f)*spread};drawParticleCube(q,0.035f+age*0.025f,age*3.0f,0.48f,0.34f,0.20f,(1.0f-age)*0.30f*contact.dust);}
+            if(contact.darkKick>0.04f){const float pulse=0.55f+0.45f*std::sin(state.time*7.0f+phase*5.0f);const Vec3 q=foot+early_browser_visuals::dirtWetContactOffset(velocity,contact.darkKick)+Vec3{0.0f,0.018f,0.0f};drawParticleCube(q,0.045f+0.035f*wet,phase,0.18f,0.14f,0.09f,0.14f*contact.darkKick*pulse);}
         };
-        const float playerSpeed=horizontalLength(state.player.vel);
-        if(state.player.grounded)dustAt(state.player.pos+Vec3{0,-PHONE_BODY_HEIGHT*0.45f,0},1.0f,playerSpeed,state.time*0.7f);
+        const auto playerEvidence=gameplay::playerContactEvidence(
+            state.player.vel,state.player.grounded,state.player.landingImpact);
+        if(playerEvidence.movement>0.0f)dustAt(
+            state.player.pos+Vec3{0,-PHONE_BODY_HEIGHT*0.45f,0},
+            playerEvidence.movement,state.player.vel,1.0f,state.time*0.7f);
         // Reuse the authoritative landing contact on dirt as a brief material
         // response. Dry ground lifts dust; wet ground gives the same contact a
         // low dark kick. No landing event queue or persistent decal is needed.
@@ -1482,12 +1486,11 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(landingStrength>0.04f&&onDirt(state.player.landingContactPosition)){
             const float wet=state.weather.exposed?state.weather.wetness:0.0f;
             const auto contact=early_browser_visuals::dirtContactResponse(landingStrength,wet);
-            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
             for(int n=0;n<3;++n){const float angle=state.time*1.7f+n*2.0943951f;const float spread=0.08f+0.12f*contact.dust;const Vec3 q=state.player.landingContactPosition+Vec3{std::cos(angle)*spread,0.025f+0.08f*contact.dust,std::sin(angle)*spread};if(contact.dust>0.04f)drawParticleCube(q,0.035f+0.025f*contact.dust,angle,0.48f,0.34f,0.20f,0.24f*contact.dust);}
-            if(contact.darkKick>0.04f)drawParticleCube(state.player.landingContactPosition+Vec3{0,0.018f,0},0.055f+0.035f*contact.darkKick,state.time,0.18f,0.14f,0.09f,0.18f*contact.darkKick);
-            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+            if(contact.darkKick>0.04f)drawParticleCube(state.player.landingContactPosition+early_browser_visuals::dirtWetContactOffset(state.player.vel,contact.darkKick)+Vec3{0,0.018f,0},0.055f+0.035f*contact.darkKick,state.time,0.18f,0.14f,0.09f,0.18f*contact.darkKick);
         }
-        for(int i=0;i<TARGET_COUNT;++i){const auto& t=state.targets[i];if(!t.alive||t.slurpable)continue;const float speed=horizontalLength(t.vel);dustAt(t.physicalLeftFootWorld,t.physicalLeftFootWeight,speed,t.visualWalkPhase);dustAt(t.physicalRightFootWorld,t.physicalRightFootWeight,speed,t.visualWalkPhase+PI);}
+        for(int i=0;i<TARGET_COUNT;++i){const auto& t=state.targets[i];if(!t.alive||t.slurpable)continue;dustAt(t.physicalLeftFootWorld,t.physicalLeftFootWeight,t.vel,t.scale,t.visualWalkPhase);dustAt(t.physicalRightFootWorld,t.physicalRightFootWeight,t.vel,t.scale,t.visualWalkPhase+PI);}
+        glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
     }
 
     // WORLD PRESENCE: cheap cues that make the existing simulation legible.

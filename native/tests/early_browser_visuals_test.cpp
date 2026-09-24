@@ -152,11 +152,14 @@ int main(){
     const Vec3 calm=grassTip(blade,0.5f,calmInput);
     GrassReactionInputs playerInput;playerInput.player=blade.root;
     const Vec3 displaced=grassTip(blade,0.5f,playerInput);
+    GrassReactionInputs stillPlayerInput=playerInput;stillPlayerInput.playerContactStrength=0.0f;
+    const Vec3 stillPlayer=grassTip(blade,0.5f,stillPlayerInput);
     GrassReactionInputs shotInput;shotInput.player={100,0,100};shotInput.shotOrigin=blade.root;shotInput.shotAge=0.08f;
     const Vec3 shot=grassTip(blade,0.5f,shotInput);
     GrassReactionInputs vacuumInput;vacuumInput.player={100,0,100};vacuumInput.vacuumOrigin=blade.root+Vec3{2,0,0};vacuumInput.vacuumStrength=1.0f;
     const Vec3 vacuum=grassTip(blade,0.5f,vacuumInput);
     assert(std::isfinite(calm.x)&&std::isfinite(displaced.x)&&std::isfinite(shot.x)&&std::isfinite(vacuum.x));
+    assert(std::abs(stillPlayer.y-calm.y)<0.0001f);
     assert(vacuum.x>calm.x);
     GrassBlade translatedBlade=blade;translatedBlade.root.z+=36.0f;
     GrassReactionInputs translatedInput=vacuumInput;translatedInput.player.z+=36.0f;translatedInput.vacuumOrigin.z+=36.0f;translatedInput.shotOrigin.z+=36.0f;

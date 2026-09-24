@@ -20,5 +20,14 @@ int main(){
     assert(std::abs(dryImpact.dust-0.8f)<0.0001f&&dryImpact.darkKick==0.0f);
     assert(wetImpact.dust==0.0f&&std::abs(wetImpact.darkKick-0.8f)<0.0001f);
     assert(std::abs(halfWetImpact.dust-halfWetImpact.darkKick)<0.0001f);
+    const float slow=dirtBodyContactStrength(1.0f,0.7f,1.0f);
+    const float walk=dirtBodyContactStrength(1.0f,2.2f,1.0f);
+    const float run=dirtBodyContactStrength(1.0f,5.0f,1.0f);
+    assert(slow<walk&&walk<run);
+    const Vec3 velocity{3.0f,0.0f,0.0f};
+    const Vec3 drySweep=dirtContactSweep(velocity,0.7f,run);
+    const Vec3 wetOffset=dirtWetContactOffset(velocity,run);
+    assert(drySweep.x<0.0f&&wetOffset.x<0.0f);
+    assert(std::abs(wetOffset.x)<std::abs(drySweep.x));
     std::puts("DIRT_FOOTPRINT_OK contiguous deterministic three-lobe patches contact=WEATHER_MATERIAL_RESPONSE");
 }
