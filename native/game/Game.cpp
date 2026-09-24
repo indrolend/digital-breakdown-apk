@@ -3848,6 +3848,8 @@ void Game::updateTargets(float dt) {
                 bodyInput.grounded=supportedBefore;
                 bodyInput.leftFootContact=feet.leftContact;
                 bodyInput.rightFootContact=feet.rightContact;
+                bodyInput.leftFootLoad=feet.leftLoad;
+                bodyInput.rightFootLoad=feet.rightLoad;
                 bodyInput.leftFootPosition=feet.leftFootPosition;
                 bodyInput.rightFootPosition=feet.rightFootPosition;
                 bodyInput.supportNormal=feet.supportNormal;

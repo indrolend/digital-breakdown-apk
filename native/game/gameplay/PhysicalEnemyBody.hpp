@@ -46,6 +46,8 @@ struct PhysicalEnemyBodyInput {
     bool grounded = true;
     float leftFootContact = 1.0f;
     float rightFootContact = 1.0f;
+    float leftFootLoad = -1.0f;
+    float rightFootLoad = -1.0f;
     Vec3 leftFootPosition{};
     Vec3 rightFootPosition{};
     Vec3 supportNormal{0.0f, 1.0f, 0.0f};
@@ -199,26 +201,19 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     const float leftFootContact = input.grounded ? std::max(0.0f, std::min(1.0f, finitePhysicalValue(input.leftFootContact))) : 0.0f;
     const float rightFootContact = input.grounded ? std::max(0.0f, std::min(1.0f, finitePhysicalValue(input.rightFootContact))) : 0.0f;
     const float contact = std::max(leftFootContact, rightFootContact);
-    // Foot contacts are sensed by the world, but plant ownership belongs here.
-    // The planner and Game integration cannot silently move a planted support.
-    const auto updatePlant = [&](float sensedContact, const Vec3& sensedPosition,
-                                 bool& planted, Vec3& plant, float& weight) {
-        const Vec3 foot = finitePhysicalVector(sensedPosition);
-        const Vec3 separation{foot.x - plant.x, 0.0f, foot.z - plant.z};
-        if (planted && (sensedContact < 0.07f || horizontalLength(separation) > 0.43f))
-            planted = false;
-        if (!planted && sensedContact > 0.64f) {
-            planted = true;
-            plant = foot;
-        }
-        const float targetWeight = planted ? 1.0f : 0.0f;
-        weight += (targetWeight - weight) * std::min(
-            1.0f, dt * (planted ? 8.0f : 6.0f));
-    };
-    updatePlant(leftFootContact, input.leftFootPosition,
-                body.leftFootPlanted, body.leftFootPlant, body.leftPlantWeight);
-    updatePlant(rightFootContact, input.rightFootPosition,
-                body.rightFootPlanted, body.rightFootPlant, body.rightPlantWeight);
+    // Locomotion owns world-space plants and load transfer. The body consumes
+    // those contact facts; it must not reacquire or release a foot from root
+    // displacement, because that would create a second stepping authority.
+    body.leftFootPlanted = leftFootContact > 0.07f;
+    body.rightFootPlanted = rightFootContact > 0.07f;
+    body.leftFootPlant = finitePhysicalVector(input.leftFootPosition);
+    body.rightFootPlant = finitePhysicalVector(input.rightFootPosition);
+    body.leftPlantWeight = body.leftFootPlanted
+        ? std::max(0.0f, std::min(1.0f, finitePhysicalValue(
+            input.leftFootLoad >= 0.0f ? input.leftFootLoad : leftFootContact))) : 0.0f;
+    body.rightPlantWeight = body.rightFootPlanted
+        ? std::max(0.0f, std::min(1.0f, finitePhysicalValue(
+            input.rightFootLoad >= 0.0f ? input.rightFootLoad : rightFootContact))) : 0.0f;
     body.supportContact = contact;
     const float velocityError = horizontalLength(desiredVelocity - actualVelocity);
     const float supportSlip = std::min(1.0f, velocityError / 3.0f) * (1.0f - contact);
@@ -261,8 +256,11 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     // reaction available at actual planted support. Planner velocity is an
     // intention, not a velocity assignment.
     if (!body.fallen && contact > 0.01f && support.totalWeight > minimumSupportWeight) {
-        const float supportLoad = std::max(0.18f, std::min(1.0f, contact));
-        const float accelerationLimit = (5.5f + supportLoad * (4.0f + brace * 1.2f)) * surfaceTraction;
+        const float supportLoad = std::max(0.0f, std::min(1.0f,
+            body.leftPlantWeight * leftFootContact
+            + body.rightPlantWeight * rightFootContact));
+        const float accelerationLimit = (5.5f + supportLoad * (4.0f + brace * 1.2f))
+            * surfaceTraction * supportLoad;
         Vec3 groundReaction = desiredVelocity - velocity;
         groundReaction.y = 0.0f;
 
