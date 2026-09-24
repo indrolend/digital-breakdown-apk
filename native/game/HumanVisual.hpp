@@ -90,6 +90,7 @@ struct EnemyVisualPose {
     float rootYaw = 0.0f;
     float rootRoll = 0.0f;
     float bodyCompression = 0.0f;
+    Vec3 expressiveScale{1.0f, 1.0f, 1.0f};
 };
 
 // Presentation-only projection of existing physical foot support. The body
@@ -311,6 +312,9 @@ inline EnemyVisualPose makeEnemyVisualPose(
     visual.rootPitch = physicalBody ? bodyPitch : 0.0f;
     visual.rootYaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
     visual.rootRoll = physicalBody ? bodyRoll : 0.0f;
+    const float hit=clampf(reaction.hitAmount,0.0f,1.0f);
+    const float rubberPulse=hit*(0.78f+std::sin(time*23.0f)*0.22f);
+    visual.expressiveScale={1.0f+rubberPulse*0.10f,1.0f-rubberPulse*0.14f,1.0f+rubberPulse*0.075f};
 
     if (physicalBody && aliveHuman) {
         const bool fallen = std::abs(bodyPitch) > 0.82f || std::abs(bodyRoll) > 0.76f;

@@ -31,6 +31,7 @@ struct HumanModelLegPlant {
 };
 
 struct HumanModelLook { float yaw = 0.0f, pitch = 0.0f; };
+struct HumanModelExpressiveness { float hitAmount = 0.0f, hitDirection = 0.0f, time = 0.0f; };
 
 struct HumanModelData {
   std::vector<HumanModelVertex> vertices;
@@ -109,7 +110,8 @@ struct HumanModelData {
   void skin(float animationTime, float attackTimer, int attackVariant,
             std::vector<float> &output,
             const HumanModelLegPlant &legPlant = {},
-            const HumanModelLook &look = {}) const {
+            const HumanModelLook &look = {},
+            const HumanModelExpressiveness &expressiveness = {}) const {
     if (!valid()) {
       output.clear();
       return;
@@ -137,6 +139,7 @@ struct HumanModelData {
         applyAttack(bones[i], attackTimer, attackVariant, q);
       applyLegPlant(bones[i], legPlant, q);
       applyLook(bones[i], look, q);
+      applyExpressiveness(bones[i], expressiveness, q);
       float local[16];
       compose(p, q, s, local);
       float *world = worlds.data() + i * 16u;
@@ -347,6 +350,20 @@ private:
     quaternionToEuler(q,x,y,z);
     x += std::clamp(look.pitch,-0.48f,0.48f);
     y += std::clamp(look.yaw,-1.18f,1.18f);
+    eulerToQuaternion(x,y,z,q);
+  }
+
+  static void applyExpressiveness(const HumanModelBone &bone,const HumanModelExpressiveness &expression,float *q) {
+    const RigRegion region=rigRegion(bone);
+    const bool left=rigIsLeftArm(bone),right=rigIsRightArm(bone);
+    if(!left&&!right)return;
+    const float hit=std::clamp(expression.hitAmount,0.0f,1.0f);
+    if(hit<=0.001f)return;
+    const float direction=std::clamp(expression.hitDirection,-1.0f,1.0f),side=left?-1.0f:1.0f;
+    const float gain=region==RigHand?1.0f:region==RigForearm?0.76f:region==RigUpperArm?0.48f:region==RigShoulder?0.28f:0.18f;
+    const float rebound=std::sin(expression.time*24.0f+side*0.9f)*hit*gain;
+    float x=0.0f,y=0.0f,z=0.0f;quaternionToEuler(q,x,y,z);
+    x+=rebound*0.34f;y+=(side*0.20f-direction*0.24f)*rebound;z+=side*rebound*0.38f;
     eulerToQuaternion(x,y,z,q);
   }
 

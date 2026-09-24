@@ -96,6 +96,8 @@ struct PhoneVisualState {
     Vec3 bodyScale{1.0f, 1.0f, 1.0f};
     Vec3 screenScale{1.0f, 1.0f, 1.0f};
     float screenOffset = 0.0f;
+    float ingestBulge = 0.0f;
+    float ingestBulgeVelocity = 0.0f;
     bool visible = true;
 };
 
@@ -138,6 +140,25 @@ inline PhoneVisualState makePhoneVisualState(float vacuumPose, float vacuumPower
     visual.screenOffset = visual.captureContactAmount * 0.012f;
     visual.visible = !firstPerson;
     return visual;
+}
+
+inline void advancePhoneIngestBulge(PhoneVisualState& visual,const PhoneVisualState& previous,float dt) {
+    const float step=std::max(0.0f,std::min(dt,1.0f/20.0f));
+    const float target=visualSmooth01(visual.captureContactAmount);
+    float amount=std::max(-0.10f,std::min(1.15f,previous.ingestBulge));
+    float velocity=std::max(-5.0f,std::min(5.0f,previous.ingestBulgeVelocity));
+    velocity+=(target-amount)*82.0f*step;
+    velocity*=std::exp(-7.5f*step);
+    amount=std::max(-0.10f,std::min(1.15f,amount+velocity*step));
+    visual.ingestBulge=amount;
+    visual.ingestBulgeVelocity=velocity;
+    // Render-only volume. Collision and screen interaction stay authoritative.
+    const float bulge=std::max(0.0f,amount);
+    visual.bodyScale.x*=1.0f+bulge*0.15f;
+    visual.bodyScale.y*=1.0f+bulge*0.12f;
+    visual.bodyScale.z*=1.0f+bulge*0.20f;
+    visual.screenScale.x*=1.0f+bulge*0.055f;
+    visual.screenScale.y*=1.0f+bulge*0.035f;
 }
 
 // soulState follows SoulState's Free, Attracted, Latched, Ingesting, Recoiling order.
