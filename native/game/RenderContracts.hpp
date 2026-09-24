@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cmath>
+#include "EarlyBrowserVisuals.hpp"
 #include "Math.hpp"
 #include "VisualIdentity.hpp"
 
@@ -29,42 +31,163 @@ constexpr MaterialDefinition normalLit(VisualColor color,float opacity=1.0f){ret
 constexpr MaterialDefinition unlit(VisualColor color,float opacity=1.0f){return {color,ShadingModel::Unlit,opacity,false,TextureId::None,1.0f};}
 inline constexpr MaterialDefinition FieldOpenGround{Pass7Visual::FieldGround,ShadingModel::ColorGraded,1.0f,true,TextureId::FieldGrass,2.4f};
 inline constexpr MaterialDefinition CityGround{{0.24f,0.26f,0.28f},ShadingModel::ColorGraded,1.0f,true,TextureId::CityAsphalt,3.2f};
-struct DirectionalLightDefinition { Vec3 direction{};VisualColor color{1,1,1};float intensity=1.0f; };
-struct FogDefinition { VisualColor color{};float density=0.0f; };
-struct SceneLightingDefinition {
-    VisualColor ambient{};
-    DirectionalLightDefinition sun{};
-    DirectionalLightDefinition fill{};
-    FogDefinition fog{};
+enum class PrimaryLightSource : unsigned char { OutdoorSun, UrbanSky, CeilingFixtures };
+struct LocalLightDefinition {
+    Vec3 localPosition{};
+    Vec3 fixtureSize{};
+    VisualColor color{};
+    float intensity=0.0f;
+    float radius=1.0f;
+    bool visibleFixture=false;
 };
-
-inline const SceneLightingDefinition DesktopSceneLighting{
-    {0.32f,0.43f,0.34f},{{30.0f,60.0f,25.0f},{1,1,1},1.0f},
-    {{-20.0f,25.0f,-30.0f},{0.20f,0.28f,0.35f},1.0f},{Pass7Visual::Background,0.018f}};
-
-struct SceneAtmosphere {
-    VisualColor background{};
+struct RoomLightingProfile {
+    VisualColor skyTop{};
+    VisualColor skyHorizon{};
     VisualColor ambient{};
-    VisualColor sun{};
+    VisualColor primary{};
+    Vec3 primaryDirection{};
     VisualColor fill{};
+    Vec3 fillDirection{};
     VisualColor phone{};
     VisualColor fog{};
     float fogDensity=0.0f;
+    PrimaryLightSource primarySource=PrimaryLightSource::OutdoorSun;
+    std::array<LocalLightDefinition,3> localLights{};
+    int localLightCount=0;
+    float contactOcclusion=0.10f;
+    float cornerOcclusion=0.08f;
 };
 
-inline SceneAtmosphere sceneAtmosphere(float time,int roomIndex,float phonePower){
-    const float omenPulse=0.5f+0.5f*std::sin(time*0.73f+static_cast<float>(roomIndex)*0.41f);
-    const float roomThreat=clampf((static_cast<float>(roomIndex)-1.0f)/18.0f,0.0f,1.0f);
-    const float phonePulse=clampf(phonePower,0.0f,1.0f);
-    return {
-        {0.003f+omenPulse*0.004f,0.002f,0.009f+roomThreat*0.008f},
-        {0.018f+omenPulse*0.012f,0.014f,0.030f+roomThreat*0.018f},
-        {0.48f+roomThreat*0.12f,0.055f+omenPulse*0.035f,0.13f+roomThreat*0.16f},
-        {0.04f,0.30f+omenPulse*0.10f,0.52f+roomThreat*0.18f},
-        {0.18f*phonePulse,1.05f*phonePulse,1.32f*phonePulse},
-        {0.010f+roomThreat*0.018f,0.002f,0.024f+omenPulse*0.012f},
-        0.020f+roomThreat*0.010f+omenPulse*0.003f
+inline RoomLightingProfile weatherLightingProfile(
+    RoomLightingProfile lighting,
+    bool exposed,
+    float daylightValue,
+    float rainValue)
+{
+    if (!exposed) return lighting;
+    const float daylight=clampf(daylightValue,0.0f,1.0f);
+    const float rain=clampf(rainValue,0.0f,1.0f);
+    const float night=1.0f-daylight;
+    const float rainDim=1.0f-rain*0.20f;
+    const auto scaleColor=[](VisualColor& c,float scale){c.r*=scale;c.g*=scale;c.b*=scale;};
+    const auto mixColor=[](VisualColor& c,const VisualColor& target,float amount){
+        const float t=clampf(amount,0.0f,1.0f);
+        c.r+=(target.r-c.r)*t;c.g+=(target.g-c.g)*t;c.b+=(target.b-c.b)*t;
     };
+    // Weather modulates the authored room profile rather than becoming a
+    // second lighting authority. Keeping this relationship in the render
+    // contract also makes startup/day-night composition directly testable.
+    scaleColor(lighting.skyTop,(0.13f+0.87f*daylight)*rainDim);
+    scaleColor(lighting.skyHorizon,(0.20f+0.80f*daylight)*rainDim);
+    scaleColor(lighting.ambient,(0.34f+0.66f*daylight)*rainDim);
+    scaleColor(lighting.primary,(0.20f+0.80f*daylight)*rainDim);
+    scaleColor(lighting.fill,(0.31f+0.69f*daylight)*rainDim);
+    mixColor(lighting.skyTop,{0.035f,0.055f,0.095f},night*0.34f);
+    mixColor(lighting.skyHorizon,{0.075f,0.095f,0.125f},night*0.24f);
+    mixColor(lighting.ambient,{0.055f,0.075f,0.105f},night*0.22f);
+    mixColor(lighting.fill,{0.075f,0.105f,0.135f},night*0.18f);
+    mixColor(lighting.skyHorizon,{0.29f,0.34f,0.39f},rain*0.16f);
+    mixColor(lighting.fog,lighting.skyHorizon,0.30f+rain*0.34f);
+    lighting.fogDensity*=1.0f+rain*0.42f+night*0.08f;
+    return lighting;
+}
+
+struct SceneResponseInputs {
+    float time=0.0f;
+    float horizontalSpeed=0.0f;
+    float batteryFraction=1.0f;
+    float vacuumPower=0.0f;
+    float discharge=0.0f;
+    float latestShotAge=9999.0f;
+    float criticalPulse=0.0f;
+    float goalProgress=0.0f;
+    float roomHeat=0.0f;
+    bool grounded=true;
+    bool roomClear=false;
+};
+struct SceneResponse {
+    float movement=0.0f;
+    float shotLight=0.0f;
+    float actionLight=0.0f;
+    float criticalLight=0.0f;
+    float phoneLight=1.0f;
+    float exitGlow=0.0f;
+    float contactShadowScale=1.0f;
+    float wind=0.0f;
+    float goalProgress=0.0f;
+    float roomPressure=0.0f;
+};
+
+inline RoomLightingProfile roomPressureLightingProfile(RoomLightingProfile lighting,float roomPressureValue){
+    const float pressure=clampf(roomPressureValue,0.0f,1.0f);
+    const float ambientScale=1.0f-pressure*0.055f;
+    const float fillScale=1.0f-pressure*0.075f;
+    const float primaryScale=1.0f+pressure*0.045f;
+    lighting.ambient.r*=ambientScale; lighting.ambient.g*=ambientScale; lighting.ambient.b*=ambientScale;
+    lighting.fill.r*=fillScale; lighting.fill.g*=fillScale; lighting.fill.b*=fillScale;
+    lighting.primary.r*=primaryScale; lighting.primary.g*=primaryScale; lighting.primary.b*=primaryScale;
+    lighting.fogDensity*=1.0f+pressure*0.16f;
+    return lighting;
+}
+
+inline Vec3 phoneActionLightPosition(const Vec3& screenCenter,const Vec3& vacuumPullPoint,float vacuumPower){
+    // Keep the phone as the light source while letting an active vacuum pull
+    // its existing light response slightly into the space it is affecting.
+    const float reach=clampf(vacuumPower,0.0f,1.0f)*0.34f;
+    return screenCenter+(vacuumPullPoint-screenCenter)*reach;
+}
+
+inline SceneResponse sceneResponse(const SceneResponseInputs& input){
+    SceneResponse response{};
+    response.movement=clampf(input.horizontalSpeed/8.0f,0.0f,1.0f);
+    response.shotLight=1.0f-clampf(input.latestShotAge/0.16f,0.0f,1.0f);
+    response.actionLight=clampf(input.discharge*0.82f+input.vacuumPower*0.16f,0.0f,1.0f);
+    response.criticalLight=clampf(input.criticalPulse,0.0f,1.0f);
+    const float battery=clampf(input.batteryFraction,0.0f,1.0f),lowBattery=1.0f-clampf(battery/0.20f,0.0f,1.0f);
+    response.phoneLight=(0.48f+0.52f*battery)*(1.0f-lowBattery*(0.08f+0.06f*std::sin(input.time*19.0f)));
+    response.exitGlow=clampf((input.roomClear?0.72f:0.0f)+clampf(input.goalProgress,0.0f,1.0f)*0.28f,0.0f,1.0f);
+    response.contactShadowScale=input.grounded?1.0f:0.62f;
+    response.wind=clampf(0.34f+response.movement*0.22f+input.vacuumPower*0.18f,0.0f,1.0f);
+    response.goalProgress=clampf(input.goalProgress,0.0f,1.0f);
+    // Existing room history becomes atmosphere rather than another encounter system.
+    // Clearing the room releases most of the pressure immediately.
+    response.roomPressure=clampf(input.roomHeat,0.0f,1.0f)*(input.roomClear?0.22f:1.0f);
+    return response;
+}
+
+inline RoomLightingProfile roomLightingProfile(early_browser_visuals::RoomSetting setting,early_browser_visuals::RoomForm form,int roomSeed,int roomIndex,float time,float phonePower,float goalProgress=0.0f){
+    const float pulse=0.98f+0.02f*(0.5f+0.5f*std::sin(time*0.73f+static_cast<float>(roomIndex)*0.41f));
+    const float roomThreat=clampf((static_cast<float>(roomIndex)-1.0f)/18.0f,0.0f,1.0f);
+    const float variation=0.96f+0.08f*(0.5f+0.5f*std::sin(static_cast<float>(roomSeed)*0.0173f+static_cast<float>(roomIndex)*1.91f));
+    const float phonePulse=clampf(phonePower,0.0f,1.0f);
+    RoomLightingProfile profile{};
+    using early_browser_visuals::RoomSetting;
+    switch(setting){
+        case RoomSetting::Field:
+            profile={{0.42f,0.55f,0.61f},{0.76f,0.75f,0.66f},{0.24f,0.27f,0.23f},{0.96f,0.84f,0.68f},{-18.0f,50.0f,12.0f},{0.16f,0.22f,0.25f},{20.0f,25.0f,-30.0f},{},{0.60f,0.63f,0.58f},0.010f,PrimaryLightSource::OutdoorSun};profile.contactOcclusion=0.09f;profile.cornerOcclusion=0.055f;break;
+        case RoomSetting::Sterile:
+            profile={{0.008f,0.012f,0.014f},{0.012f,0.019f,0.022f},{0.080f,0.100f,0.105f},{},{0.0f,1.0f,0.0f},{},{},{},{0.025f,0.034f,0.037f},0.018f,PrimaryLightSource::CeilingFixtures};
+            profile.contactOcclusion=0.16f;profile.cornerOcclusion=0.14f;
+            profile.localLightCount=form==early_browser_visuals::RoomForm::Chamber?3:2;
+            for(int i=0;i<profile.localLightCount;++i){const float z=profile.localLightCount==3?(-10.0f+10.0f*static_cast<float>(i)):(i==0?-8.0f:8.0f);profile.localLights[i]={{0.0f,7.02f,z},{5.8f,0.055f,0.72f},{0.68f,0.88f,0.94f},i==profile.localLightCount-1?1.05f:1.24f,12.5f,true};}
+            break;
+        case RoomSetting::City:
+            profile={{0.16f,0.18f,0.20f},{0.50f,0.47f,0.40f},{0.12f,0.12f,0.13f},{0.74f,0.69f,0.58f},{-12.0f,50.0f,-8.0f},{0.11f,0.14f,0.18f},{18.0f,24.0f,-28.0f},{},{0.30f,0.29f,0.27f},form==early_browser_visuals::RoomForm::Canyon?0.022f:0.017f,PrimaryLightSource::UrbanSky};profile.contactOcclusion=0.13f;profile.cornerOcclusion=0.11f;break;
+        case RoomSetting::Coastal:
+            profile={{0.40f,0.57f,0.63f},{0.82f,0.78f,0.65f},{0.22f,0.26f,0.25f},{0.98f,0.86f,0.68f},{-16.0f,48.0f,10.0f},{0.15f,0.24f,0.28f},{20.0f,25.0f,-30.0f},{},{0.65f,0.68f,0.61f},0.014f,PrimaryLightSource::OutdoorSun};profile.contactOcclusion=0.08f;profile.cornerOcclusion=0.05f;break;
+    }
+    const auto scaled=[](VisualColor color,float scale){return VisualColor{color.r*scale,color.g*scale,color.b*scale};};
+    profile.skyTop=scaled(profile.skyTop,variation);profile.skyHorizon=scaled(profile.skyHorizon,variation);
+    profile.ambient=scaled(profile.ambient,variation);profile.primary=scaled(profile.primary,pulse);profile.fill=scaled(profile.fill,variation);
+    profile.phone={0.18f*phonePulse,1.05f*phonePulse,1.32f*phonePulse};profile.fogDensity+=roomThreat*0.004f;
+    const float progress=clampf(goalProgress,0.0f,1.0f);
+    // Each setting acknowledges progress through its own existing light source:
+    // outdoor air clears, city bounce warms, and clinical fixtures wake in order.
+    if(setting==RoomSetting::Field){profile.skyHorizon=scaled(profile.skyHorizon,1.0f+0.06f*progress);profile.fogDensity*=1.0f-0.18f*progress;}
+    else if(setting==RoomSetting::Coastal){profile.fill=scaled(profile.fill,1.0f+0.10f*progress);profile.fogDensity*=1.0f-0.24f*progress;}
+    else if(setting==RoomSetting::City){profile.fill.r+=0.055f*progress;profile.fill.g+=0.035f*progress;profile.fogDensity*=1.0f-0.12f*progress;}
+    else if(setting==RoomSetting::Sterile)for(int i=0;i<profile.localLightCount;++i){const float threshold=static_cast<float>(i)/static_cast<float>(std::max(1,profile.localLightCount));const float awake=clampf((progress-threshold)*static_cast<float>(profile.localLightCount),0.0f,1.0f);profile.localLights[i].intensity*=0.78f+0.22f*awake;}
+    return profile;
 }
 
 } // namespace render_contract

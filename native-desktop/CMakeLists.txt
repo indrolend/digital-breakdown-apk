@@ -181,6 +181,10 @@ add_executable(
 )
 target_include_directories(MultiplayerProtocolTest PRIVATE "${DB_GAME_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}/../native-network")
 target_compile_features(MultiplayerProtocolTest PRIVATE cxx_std_17)
+if(MSVC)
+    # The protocol integration test keeps several complete world snapshots alive.
+    target_link_options(MultiplayerProtocolTest PRIVATE "/STACK:8388608")
+endif()
 
 add_executable(
     MultiplayerDeterminismTest
@@ -212,6 +216,87 @@ add_executable(
 )
 target_include_directories(GameplayRoleAndSoulMotionTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(GameplayRoleAndSoulMotionTest PRIVATE cxx_std_17)
+
+add_executable(
+    EnemyMotorRuntimeIntegrationTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/enemy_motor_runtime_integration_test.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
+)
+target_include_directories(EnemyMotorRuntimeIntegrationTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(EnemyMotorRuntimeIntegrationTest PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(EnemyMotorRuntimeIntegrationTest PRIVATE /UNDEBUG)
+else()
+    target_compile_options(EnemyMotorRuntimeIntegrationTest PRIVATE -UNDEBUG)
+endif()
+
+add_executable(
+    PhysicalEnemyBodyTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/physical_enemy_body_test.cpp"
+)
+target_include_directories(PhysicalEnemyBodyTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(PhysicalEnemyBodyTest PRIVATE cxx_std_17)
+
+add_executable(
+    EnemyPhysicalAuthorityTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/enemy_physical_authority_test.cpp"
+)
+target_include_directories(EnemyPhysicalAuthorityTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(EnemyPhysicalAuthorityTest PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(EnemyPhysicalAuthorityTest PRIVATE /UNDEBUG)
+else()
+    target_compile_options(EnemyPhysicalAuthorityTest PRIVATE -UNDEBUG)
+endif()
+
+add_executable(EnemyPerceptionTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/enemy_perception_test.cpp")
+target_include_directories(EnemyPerceptionTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(EnemyPerceptionTest PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(EnemyPerceptionTest PRIVATE /UNDEBUG)
+else()
+    target_compile_options(EnemyPerceptionTest PRIVATE -UNDEBUG)
+endif()
+
+# Keep focused header/contract regressions in the default native suite. These
+# tests are intentionally cheap and must not depend on a separate manual pass.
+function(db_add_contract_test target source)
+    add_executable(${target} "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/${source}")
+    target_include_directories(${target} PRIVATE "${DB_GAME_ROOT}")
+    target_compile_features(${target} PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${target} PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME ${target} COMMAND ${target})
+endfunction()
+
+db_add_contract_test(DirtFootprintTest dirt_footprint_test.cpp)
+db_add_contract_test(EnemyCenterOfMassSupportTest enemy_center_of_mass_support_test.cpp)
+db_add_contract_test(EnemyLandingCueTest enemy_landing_cue_test.cpp)
+db_add_contract_test(EnemyMotorPhysicalRecoveryTest enemy_motor_physical_recovery_test.cpp)
+db_add_contract_test(EnemyMotorUncertainInvestigationTest enemy_motor_uncertain_investigation_test.cpp)
+db_add_contract_test(EnemyPerceptionCueMemoryTest enemy_perception_cue_memory_test.cpp)
+db_add_contract_test(EnemyPerceptionEnvironmentalCueTest enemy_perception_environmental_cue_test.cpp)
+db_add_contract_test(EnemyPerceptionRoomMemoryTest enemy_perception_room_memory_test.cpp)
+db_add_contract_test(EnemyPerceptionRoomVigilanceTest enemy_perception_room_vigilance_test.cpp)
+db_add_contract_test(EnemyVisualPhysicalPostureTest enemy_visual_physical_posture_test.cpp)
+db_add_contract_test(EnemyVisualSupportTransferTest enemy_visual_support_transfer_test.cpp)
+db_add_contract_test(EnemyWeatherCueTransmissionTest enemy_weather_cue_transmission_test.cpp)
+db_add_contract_test(EnemyWetTractionResponseTest enemy_wet_traction_response_test.cpp)
+db_add_contract_test(HerdPerceptionAuthorityTest herd_perception_authority_test.cpp)
+db_add_contract_test(HerdPhysicalContactCueTest herd_physical_contact_cue_test.cpp)
+db_add_contract_test(HerdSocialCueAuthorityTest herd_social_cue_authority_test.cpp)
+db_add_contract_test(PhoneActionLightPositionTest phone_action_light_position_test.cpp)
+db_add_contract_test(SceneResponseRoomPressureTest scene_response_room_pressure_test.cpp)
+db_add_contract_test(WeatherStartupCompositionTest weather_startup_composition_test.cpp)
+db_add_contract_test(WeightedEnemyLocomotionTest weighted_enemy_locomotion_test.cpp)
+set_tests_properties(
+    HerdPerceptionAuthorityTest
+    HerdSocialCueAuthorityTest
+    PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
 
 add_executable(
     GameplayGeometryAndConfigTest
@@ -319,6 +404,10 @@ add_executable(DeveloperCodecTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/d
 target_include_directories(DeveloperCodecTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(DeveloperCodecTest PRIVATE cxx_std_17)
 
+add_executable(RollingVehicleTest "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/rolling_vehicle_test.cpp")
+target_include_directories(RollingVehicleTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(RollingVehicleTest PRIVATE cxx_std_17)
+
 add_executable(
     SoulEconomyTest
     "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/soul_economy_test.cpp"
@@ -376,6 +465,9 @@ target_include_directories(SecretTvPolicyTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(SecretTvPolicyTest PRIVATE cxx_std_17)
 
 add_test(NAME GameplayRoleAndSoulMotionTest COMMAND GameplayRoleAndSoulMotionTest)
+add_test(NAME EnemyMotorRuntimeIntegrationTest COMMAND EnemyMotorRuntimeIntegrationTest)
+add_test(NAME PhysicalEnemyBodyTest COMMAND PhysicalEnemyBodyTest)
+add_test(NAME EnemyPerceptionTest COMMAND EnemyPerceptionTest)
 add_test(NAME MultiplayerProtocolTest COMMAND MultiplayerProtocolTest)
 add_test(NAME MultiplayerDeterminismTest COMMAND MultiplayerDeterminismTest)
 add_test(NAME HostRemotePeerSimulationIsolationTest COMMAND HostRemotePeerSimulationIsolationTest)
@@ -402,6 +494,7 @@ add_test(NAME SlopeTraversalCheck COMMAND SlopeTraversalFixtureTest --check)
 add_test(NAME RenderContractsTest COMMAND RenderContractsTest)
 add_test(NAME DesktopPlaytestPolicyTest COMMAND DesktopPlaytestPolicyTest)
 add_test(NAME DeveloperCodecTest COMMAND DeveloperCodecTest)
+add_test(NAME RollingVehicleTest COMMAND RollingVehicleTest)
 add_test(NAME SoulEconomyTest COMMAND SoulEconomyTest)
 add_test(NAME SoulProjectileLifecycleTest COMMAND SoulProjectileLifecycleTest)
 add_test(NAME TraversalCalibrationTest COMMAND TraversalCalibrationTest)

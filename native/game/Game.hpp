@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "HumanVisual.hpp"
@@ -16,6 +18,10 @@
 #include "HouseGeometry.hpp"
 #include "TreeGeometry.hpp"
 #include "MarkerPillarGeometry.hpp"
+#include "RollingVehicle.hpp"
+#include "gameplay/EnemyMotor.hpp"
+#include "gameplay/EnemyPerception.hpp"
+#include "gameplay/PhysicalEnemyBody.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -28,6 +34,7 @@ constexpr int AUDIO_EVENT_COUNT = 64;
 constexpr int ROOM_COLLIDER_COUNT = 15;
 constexpr int PHONE_CAPACITY = 30;
 constexpr int SOUL_LATTICE_NODE_COUNT = 27;
+constexpr int STORY_RUN_FINAL_ROOM = 3;
 constexpr float PHONE_MODEL_HEIGHT = gameplay::WORLD_SCALE.phoneHeight;
 constexpr float PHONE_BODY_WIDTH = 0.08f;
 constexpr float PHONE_BODY_HEIGHT = PHONE_MODEL_HEIGHT;
@@ -58,6 +65,8 @@ struct InputState {
     bool meleePressed = false;
     bool shootPressed = false;
     bool cameraTogglePressed = false;
+    bool dodgePressed = false;
+    bool blockHeld = false;
 
     float touchMoveX = 0.0f;
     float touchMoveZ = 0.0f;
@@ -100,6 +109,33 @@ struct SoulRecord {
     int originRoom = 0;
 };
 
+struct StoredSoulBruteFlags {
+    struct Reference {
+        std::uint32_t* bits;
+        std::uint32_t mask;
+        operator bool() const { return (*bits & mask) != 0; }
+        Reference& operator=(bool value) { if (value) *bits |= mask; else *bits &= ~mask; return *this; }
+    };
+    std::uint32_t bits = 0;
+    void fill(bool value) { bits = value ? ((1u << PHONE_CAPACITY) - 1u) : 0u; }
+    Reference operator[](std::size_t index) { return {&bits, 1u << index}; }
+    bool operator[](std::size_t index) const { return (bits & (1u << index)) != 0; }
+};
+static_assert(sizeof(StoredSoulBruteFlags) == sizeof(std::uint32_t));
+
+inline std::uint64_t packSoulRecord(const SoulRecord& soul) {
+    if (soul.id == 0) return 0;
+    constexpr std::uint64_t IdMask = (1ull << 47) - 1ull;
+    const std::uint64_t room = static_cast<std::uint64_t>(std::max(0, std::min(65535, soul.originRoom)));
+    return (soul.id & IdMask) | (soul.brute ? (1ull << 47) : 0ull) | (room << 48);
+}
+
+inline SoulRecord unpackSoulRecord(std::uint64_t packed) {
+    if (packed == 0) return {};
+    constexpr std::uint64_t IdMask = (1ull << 47) - 1ull;
+    return {packed & IdMask, (packed & (1ull << 47)) != 0, static_cast<int>(packed >> 48)};
+}
+
 enum class SupportSource : unsigned char { Ground, Collider, Slope, Generated };
 struct SupportIdentity { SupportSource source=SupportSource::Ground;int index=-1; };
 inline bool operator==(const SupportIdentity& a,const SupportIdentity& b){return a.source==b.source&&a.index==b.index;}
@@ -111,10 +147,12 @@ struct PlayerState {
     float yaw = 0.0f;
     float targetYaw = 0.0f;
     bool grounded = true;
+    float landingImpact = 0.0f;
+    Vec3 landingContactPosition{};
     SupportIdentity supportIdentity{};
     float battery = 100.0f;
     int souls = 0;
-    std::array<bool, PHONE_CAPACITY> storedSoulBrute{};
+    StoredSoulBruteFlags storedSoulBrute{};
     std::array<SoulRecord, PHONE_CAPACITY> storedSouls{};
     int airJumpsRemaining = 1;
     float coyoteTimer = 0.12f;
@@ -144,6 +182,13 @@ struct PlayerState {
     float treeClimbCooldown = 0.0f;
     int commSignal = 0;
     float commSignalTimer = 0.0f;
+    // Defensive locomotion stays on the player body rather than becoming a
+    // parallel movement controller.
+    float dodgeTimer = 0.0f;
+    float dodgeCooldown = 0.0f;
+    Vec3 dodgeDirection{0.0f,0.0f,-1.0f};
+    float dodgeRoll = 0.0f;
+    bool blocking = false;
 };
 
 enum class AudioCue : unsigned char {
@@ -229,6 +274,14 @@ struct VacuumState {
     int target = -1;
 };
 
+struct HerdState {
+    float alarm = 0.0f;
+    float cohesion = 0.0f;
+    float injuryPressure = 0.0f;
+    int weakestTarget = -1;
+    Vec3 retreatCenter{};
+};
+
 struct TargetState {
     Vec3 pos;
     Vec3 vel;
@@ -246,11 +299,20 @@ struct TargetState {
     float respawnTimer = 0.0f;
     float scale = 1.0f;
     float phase = 0.0f;
-    float floatOffset = 0.0f;
-    float spinSpeed = 0.8f;
+    union {
+        float floatOffset = 0.0f; // Loose-soul phase.
+        float physicalBodyRoll;   // Living-human visual projection.
+    };
+    union {
+        float spinSpeed = 0.8f;       // Loose-soul rotation speed.
+        float physicalBodyMarker;     // Negative while physical visuals own the living shell.
+    };
     float visualYaw = 0.0f;
     float visualWalkPhase = 0.0f;
-    float humanAnimationTime = 0.0f;
+    union {
+        float humanAnimationTime = 0.0f; // Mature/network animation clock.
+        float physicalBodyPitch;         // Solo physical visual projection.
+    };
     float locomotionAmount = 0.0f;
     float hitFlash = 0.0f;
     float armorRegenDelay = 0.0f;
@@ -260,6 +322,16 @@ struct TargetState {
     float visibility = 1.0f;
     float soulCubeAmount = 0.0f;
     float soulMorph = 0.0f;
+    // Renderer-only projection of private physical foot contacts. These are
+    // not gameplay authority and are intentionally absent from snapshots.
+    float physicalLeftFootForward = 0.0f;
+    float physicalLeftFootHeight = 0.0f;
+    float physicalLeftFootWeight = 0.0f;
+    float physicalRightFootForward = 0.0f;
+    float physicalRightFootHeight = 0.0f;
+    float physicalRightFootWeight = 0.0f;
+    Vec3 physicalLeftFootWorld{};
+    Vec3 physicalRightFootWorld{};
     Vec3 walkTarget;
     int walkTargetSequence = 0;
     float attackTimer = 0.0f;
@@ -291,6 +363,7 @@ struct CapturePointState {
     Vec3 pos;
     bool filled = false;
     bool tokenAwarded = false;
+    std::uint64_t packedSoul = 0;
 };
 
 struct BulletState {
@@ -436,6 +509,20 @@ struct ProgressionState {
     PermanentProgressionState permanent;
     RunProgressionState run;
 };
+
+struct RoomWeatherState {
+    // Open rooms begin at the authored daylight peak instead of halfway through
+    // dawn. The previous zero phase evaluated to 0.5 daylight on the first
+    // gameplay frame, which made every exposed-room startup look as though a
+    // dark fullscreen veil had been applied.
+    float cycleTime = 45.0f;
+    float daylight = 1.0f;
+    float rain = 0.0f;
+    float wetness = 0.0f;
+    int completedCycles = 0;
+    bool exposed = false;
+};
+
 
 struct SecretTvState {
     int signal = 0;
@@ -679,6 +766,7 @@ struct GameState {
     RoomTopologyState topology;
     RunRuleState runRules;
     ProgressionState progression;
+    RoomWeatherState weather;
     SecretTvState secretTv;
     LocalSettingsState localSettings;
     UpgradeMenuState upgradeMenu;
@@ -697,6 +785,8 @@ struct GameState {
     int requiredSouls = 5;
     int depositedSouls = 0;
     bool roomClear = false;
+    bool victory = false;
+    bool endlessMode = false;
     bool started = true;
     bool dead = false;
     bool uiPaused = false;
@@ -704,6 +794,8 @@ struct GameState {
     bool rallyLab = false;
     bool traversalLab = false;
     bool slopeLab = false;
+    bool cartLab = false;
+    rolling_vehicle::State cart;
     bool roomInspector = false;
     bool roomInspectorEnemies = false;
     early_browser_visuals::RoomPremise roomInspectorPremise = early_browser_visuals::RoomPremise::FieldOpen;
@@ -716,6 +808,7 @@ struct GameState {
     float meleeComboWindow = 0.0f;
     int enemyAttackOwner = -1;
     float enemyAttackCadence = 0.0f;
+    HerdState herd;
     MultiplayerRuntimeState multiplayer;
 };
 
@@ -726,6 +819,7 @@ class Game {
 public:
     void reset();
     void restart();
+    void resolveVictory(bool continueEndless);
     void prepareStartScreen();
     void prepareAttractScreen();
     void dismissAttractMode();
@@ -734,6 +828,7 @@ public:
     void debugStartRallyLab();
     void debugStartTraversalLab();
     void debugStartSlopeLab();
+    void debugStartCartLab();
     void debugStartGeneratedRoomFixture(int roomSeed,int roomIndex);
     void debugStartRoomInspector();
     bool debugSpawnStoredSoul();
@@ -764,6 +859,7 @@ public:
         bool cameraTogglePressed
     );
     void setWiggle(float axis);
+    void setDefensiveInput(bool dodgePressed, bool blockHeld);
     void setCommSignal(int signal);
     void configureNetworkHost();
     void configureNetworkGuest(int localPlayerId);
@@ -780,14 +876,24 @@ public:
 
     const GameState& state() const { return state_; }
     GameState& networkMutableState() { return state_; }
+    const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>& enemyPerceptions() const;
 
 private:
     friend struct HostRemotePeerSimulationIsolationAccess;
     friend struct SoulProjectileLifecycleAccess;
+    friend struct EnemyMotorRuntimeIntegrationAccess;
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
+    struct EnemyRuntimePool {
+        std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> motors{};
+        std::array<gameplay::PhysicalEnemyBodyState, TARGET_COUNT> bodies{};
+        std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> perceptions{};
+        int perceptionCursor = 0;
+    };
     GameState state_;
+    std::unique_ptr<EnemyRuntimePool> enemyRuntime_;
     int simulationPlayerId_ = 0;
 
+    EnemyRuntimePool& enemyRuntime();
     void resetRoom();
     void buildRoomColliders();
     void chooseSecretTvEntrance();
@@ -805,6 +911,7 @@ private:
     void updateIntroCamera(float dt);
     void updateDeathCamera(float dt);
     void updatePlayer(float dt);
+    void updateCart(float dt);
     bool tryBeginLedgeHang();
     bool updateLedgeHang(float dt, float forwardAxis, float strafeAxis);
     void releaseLedgeHang(bool mantle);

@@ -1,4 +1,5 @@
 #include "DesktopRenderer.hpp"
+#include "ShoppingCartGeometry.hpp"
 #include "HumanVisual.hpp"
 #include "BitmapFont.hpp"
 #include "EarlyBrowserVisuals.hpp"
@@ -86,6 +87,80 @@ Vec3 gradedSceneColor(float r,float g,float b) {
 Vec3 mix3(const Vec3& a,const Vec3& b,float t){const float u=clampf(t,0.0f,1.0f);return {a.x+(b.x-a.x)*u,a.y+(b.y-a.y)*u,a.z+(b.z-a.z)*u};}
 void gradedColor(float r,float g,float b,float a=1.0f){const Vec3 color=gradedSceneColor(r,g,b);glColor4f(color.x,color.y,color.z,a);}
 
+void drawSkyGradient(const render_contract::RoomLightingProfile& lighting){
+    glDisable(GL_DEPTH_TEST);glDisable(GL_LIGHTING);glDisable(GL_FOG);
+    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(-1,1,-1,1,-1,1);
+    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+    glBegin(GL_QUADS);
+    glColor3f(lighting.skyHorizon.r,lighting.skyHorizon.g,lighting.skyHorizon.b);glVertex2f(-1,-1);glVertex2f(1,-1);
+    glColor3f(lighting.skyTop.r,lighting.skyTop.g,lighting.skyTop.b);glVertex2f(1,1);glVertex2f(-1,1);
+    glEnd();
+    glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glEnable(GL_DEPTH_TEST);
+}
+
+void drawNightSkyDetails(float daylight,float rain,std::uint32_t seed,int graphicsPreset){
+    const float night=clampf((0.42f-daylight)/0.42f,0.0f,1.0f);
+    const float clarity=night*(1.0f-clampf(rain,0.0f,1.0f)*0.92f);
+    if(clarity<0.025f)return;
+    // One tiny deterministic point batch: atmosphere, not a starfield system.
+    // Legacy keeps the same nocturnal identity at half the decorative density.
+    const int count=graphicsPreset<=0?12:24;
+    const auto hash=[](std::uint32_t x){x^=x>>16;x*=0x7feb352du;x^=x>>15;x*=0x846ca68bu;x^=x>>16;return x;};
+    const auto unit=[&](std::uint32_t x){return static_cast<float>(hash(x)&0xffffu)/65535.0f;};
+    glDisable(GL_DEPTH_TEST);glDisable(GL_LIGHTING);glDisable(GL_FOG);
+    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(-1,1,-1,1,-1,1);
+    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+    glPointSize(graphicsPreset<=0?1.0f:1.35f);glBegin(GL_POINTS);
+    for(int i=0;i<count;++i){
+        const std::uint32_t id=seed^static_cast<std::uint32_t>(i+1)*0x9e3779b9u;
+        const float x=-0.96f+unit(id)*1.92f;
+        const float y=-0.02f+unit(id^0x68bc21ebu)*0.96f;
+        const float brightness=clarity*(0.34f+unit(id^0x02e5be93u)*0.46f);
+        const float warmth=unit(id^0xa511e9b3u);
+        glColor3f(brightness*(0.88f+warmth*0.12f),brightness*(0.91f+warmth*0.07f),brightness);
+        glVertex2f(x,y);
+    }
+    glEnd();glPointSize(1.0f);
+    glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);
+    glEnable(GL_DEPTH_TEST);
+}
+
+void drawEmissiveBox(const Vec3& position,const Vec3& size,const VisualColor& color,float intensity){
+    glDisable(GL_LIGHTING);DesktopRenderer::drawBox(position,size,0,0,0,color.r*intensity,color.g*intensity,color.b*intensity);glEnable(GL_LIGHTING);
+}
+
+void drawLightPool(const render_contract::LocalLightDefinition& light,float zOffset){
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+    const float radius=light.radius*0.42f,alpha=0.16f*light.intensity;
+    glBegin(GL_TRIANGLE_FAN);
+    glColor4f(light.color.r,light.color.g,light.color.b,alpha);glVertex3f(light.localPosition.x,0.012f,zOffset+light.localPosition.z);
+    glColor4f(light.color.r,light.color.g,light.color.b,0.0f);
+    for(int i=0;i<=24;++i){const float angle=2.0f*PI*static_cast<float>(i)/24.0f;glVertex3f(light.localPosition.x+std::cos(angle)*radius,0.012f,zOffset+light.localPosition.z+std::sin(angle)*radius);}
+    glEnd();
+    glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+}
+
+void beginOcclusion(){glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);}
+void endOcclusion(){glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
+
+void drawContactOcclusion(const Vec3& center,float halfWidth,float halfDepth,float alpha){
+    beginOcclusion();glBegin(GL_TRIANGLE_FAN);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(center.x,0.014f,center.z);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);
+    for(int i=0;i<=20;++i){const float angle=2.0f*PI*static_cast<float>(i)/20.0f;glVertex3f(center.x+std::cos(angle)*halfWidth,0.014f,center.z+std::sin(angle)*halfDepth);}
+    glEnd();endOcclusion();
+}
+
+void drawRoomCornerOcclusion(float zOffset,float alpha){
+    constexpr float width=1.15f,y=0.013f,halfRoom=ROOM_WIDTH*0.5f-0.26f,halfDepth=ROOM_DEPTH*0.5f;
+    beginOcclusion();glBegin(GL_QUADS);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(-halfRoom,y,zOffset-halfDepth);glVertex3f(-halfRoom,y,zOffset+halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);glVertex3f(-halfRoom+width,y,zOffset+halfDepth);glVertex3f(-halfRoom+width,y,zOffset-halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,alpha);glVertex3f(halfRoom,y,zOffset+halfDepth);glVertex3f(halfRoom,y,zOffset-halfDepth);
+    glColor4f(0.005f,0.008f,0.010f,0.0f);glVertex3f(halfRoom-width,y,zOffset-halfDepth);glVertex3f(halfRoom-width,y,zOffset+halfDepth);
+    glEnd();endOcclusion();
+}
+
 Vec3 cross3(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
@@ -123,11 +198,28 @@ void cube() {
     glEnd();
 }
 
-void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha) {
+unsigned int particleCubeList() {
+    static unsigned int list=0;
+    if(!list){list=glGenLists(1);glNewList(list,GL_COMPILE);cube();glEndList();}
+    return list;
+}
+
+void drawParticleCube(const Vec3& p,float size,float spin,float r,float g,float b,float a){
+    glPushMatrix();glTranslatef(p.x,p.y,p.z);glRotatef(spin*180.0f/PI,0.57735027f,0.57735027f,0.57735027f);
+    glScalef(size,size,size);gradedColor(r,g,b,a);glCallList(particleCubeList());glPopMatrix();
+}
+
+void drawGroundShadow(const Vec3& caster, float halfWidth, float halfDepth, float height, float alpha, const Vec3& sunDirection) {
     constexpr int segments = 8;
-    const Vec3& sunDirection=render_contract::DesktopSceneLighting.sun.direction;
-    const float sunXOverY=sunDirection.x/sunDirection.y;
-    const float sunZOverY=sunDirection.z/sunDirection.y;
+    // Directional shadows become numerically unstable when the light is nearly
+    // parallel to the ground. Clamp only the projection denominator; the
+    // authored direction itself remains unchanged.
+    constexpr float minVerticalLight = 0.08f;
+    const float verticalLight = std::abs(sunDirection.y) < minVerticalLight
+        ? std::copysign(minVerticalLight, sunDirection.y == 0.0f ? 1.0f : sunDirection.y)
+        : sunDirection.y;
+    const float sunXOverY=sunDirection.x/verticalLight;
+    const float sunZOverY=sunDirection.z/verticalLight;
     const Vec3 center{
         caster.x-height*SHADOW_PROJECTION_SCALE*sunXOverY,
         0.012f,
@@ -179,17 +271,26 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
     glPopMatrix();
 }
 
-void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b) {
+void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b,
+                                float perceptionHeadYaw=0.0f,float perceptionHeadPitch=0.0f) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
-    const HumanVisualPose pose = makeHumanVisualPose(target.visualYaw, target.scale, time, target.visualReaction, aliveHuman);
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const bool fallen=physicalBody&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f);
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,perceptionHeadYaw,perceptionHeadPitch);
+    const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
     const float collapseScale = std::max(0.18f, 1.0f - pose.collapse * 0.62f);
-    const Vec3 root = target.pos + Vec3{0.0f, spec.rootGroundOffset + pose.rootBob, 0.0f};
+    const float bodyCompressionScale=physicalBody?1.0f-enemyPose.bodyCompression:1.0f;
+    const float verticalScale=collapseScale*bodyCompressionScale;
+    const float plantedWeight=physicalBody?std::max(target.physicalLeftFootWeight,target.physicalRightFootWeight):1.0f;
+    const float physicalBob=physicalBody?std::max(0.0f,pose.rootBob)*(1.0f-clampf(plantedWeight,0.0f,1.0f)):pose.rootBob;
     const float yaw = pose.yaw;
     const Vec3 forward{-std::sin(yaw),0,-std::cos(yaw)};
     const Vec3 right{std::cos(yaw),0,-std::sin(yaw)};
+    const float supportShift=physicalBody?physicalSupportLateralShift(target.physicalLeftFootWeight,target.physicalRightFootWeight,s):0.0f;
+    const Vec3 root = target.pos + right*supportShift + Vec3{0.0f, spec.rootGroundOffset + physicalBob, 0.0f};
     const float footY=0.03f*s;
     const float shinY=footY+spec.footHeight*s*0.5f+spec.shinLength*s*0.5f;
     const float thighY=footY+spec.footHeight*s+spec.shinLength*s+spec.thighLength*s*0.5f;
@@ -197,19 +298,20 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     const float torsoY=pelvisY+(spec.pelvisHeight+spec.torsoHeight)*s*0.5f;
     const float headY=spec.totalHeight*s-spec.headRadius*s;
     const float armY=torsoY+spec.torsoHeight*s*0.18f;
-    roundedEllipsoid(root+Vec3{0,pelvisY*collapseScale,0},{spec.pelvisWidth*s,spec.pelvisHeight*s*collapseScale,spec.pelvisDepth*s},0,yaw,0,r,g,b);
-    roundedEllipsoid(root+Vec3{0,torsoY*collapseScale,0}+forward*((pose.hitLean + pose.vacuumLean * 0.06f)*s),{spec.torsoWidth*s,spec.torsoHeight*s*collapseScale,spec.torsoDepth*s},pose.torsoPitch,yaw,pose.torsoRoll,r,g,b);
-    roundedEllipsoid(root+Vec3{0,headY,0}+forward*(pose.headPitch*0.03f),{spec.headRadius*2*s,spec.headRadius*2*s,spec.headRadius*2*s},pose.headPitch,yaw,0,r,g,b);
+    roundedEllipsoid(root+Vec3{0,pelvisY*verticalScale,0},{spec.pelvisWidth*s,spec.pelvisHeight*s*verticalScale,spec.pelvisDepth*s},0,yaw,0,r,g,b);
+    roundedEllipsoid(root+Vec3{0,torsoY*verticalScale,0}+forward*((pose.hitLean + pose.vacuumLean * 0.06f)*s),{spec.torsoWidth*s,spec.torsoHeight*s*verticalScale,spec.torsoDepth*s},pose.torsoPitch,yaw,pose.torsoRoll,r,g,b);
+    roundedEllipsoid(root+Vec3{0,headY*bodyCompressionScale,0}+forward*(pose.headPitch*0.03f),{spec.headRadius*2*s,spec.headRadius*2*s,spec.headRadius*2*s},pose.headPitch,yaw+pose.headYaw,0,r,g,b);
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;
         const float legSwing=side<0?pose.leftLegSwing:pose.rightLegSwing;
-        const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY,0};
-        roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*collapseScale,0},{0.055f*s,spec.upperArmLength*s*collapseScale,0.065f*s},armSwing,yaw,0,r,g,b);
-        roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s*collapseScale,0},{0.052f*s,spec.forearmLength*s*collapseScale,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
+        const float knee=physicalBody?(fallen?0.58f:std::max(0.0f,legSwing)*0.72f):std::abs(legSwing)*0.35f;
+        const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY*bodyCompressionScale,0};
+        roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*verticalScale,0},{0.055f*s,spec.upperArmLength*s*verticalScale,0.065f*s},armSwing,yaw,0,r,g,b);
+        roundedEllipsoid(shoulder+forward*(armSwing*0.11f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength*0.5f)*s*verticalScale,0},{0.052f*s,spec.forearmLength*s*verticalScale,0.060f*s},armSwing*0.7f,yaw,0,r,g,b);
         roundedEllipsoid(shoulder+forward*(armSwing*0.14f*s)+Vec3{0,-(spec.upperArmLength+spec.forearmLength)*s,0},{spec.handSize*s,spec.handSize*s,spec.handSize*0.75f*s},0,yaw,0,r,g,b);
         const Vec3 hip=root+right*(side*spec.pelvisWidth*0.28f*s);
-        roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY*collapseScale,0},{0.075f*s,spec.thighLength*s*collapseScale,0.080f*s},legSwing,yaw,0,r,g,b);
-        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*collapseScale,0},{0.070f*s,spec.shinLength*s*collapseScale,0.075f*s},-legSwing*0.65f,yaw,0,r,g,b);
+        roundedEllipsoid(hip+forward*(legSwing*0.05f*s)+Vec3{0,thighY*verticalScale,0},{0.075f*s,spec.thighLength*s*verticalScale,0.080f*s},legSwing,yaw,0,r,g,b);
+        roundedEllipsoid(hip-forward*(legSwing*0.05f*s)+Vec3{0,shinY*verticalScale,0},{0.070f*s,spec.shinLength*s*verticalScale,0.075f*s},-legSwing*0.65f+knee*0.72f,yaw,0,r,g,b);
         roundedEllipsoid(hip+forward*(spec.footLength*0.25f*s+legSwing*0.04f*s)+Vec3{0,footY,0},{0.075f*s,spec.footHeight*s,spec.footLength*s},0,yaw,0,r,g,b);
     }
 }
@@ -281,10 +383,25 @@ void DesktopRenderer::drawBox(const Vec3& p, const Vec3& s, float pitch, float y
     glScalef(s.x, s.y, s.z); gradedColor(r,g,b,a); cube(); glPopMatrix();
 }
 
+struct FixedRibbonGeometry { std::array<Vec3,50> vertices{}; };
+
+const FixedRibbonGeometry& fixedRibbonGeometry(float sweep){
+    struct Cache { FixedRibbonGeometry slash; FixedRibbonGeometry impact; };
+    static const Cache cache=[](){
+        Cache result{};
+        const auto fill=[](FixedRibbonGeometry& geometry,float arc,float innerRadius,float outerRadius){
+            constexpr int segments=24;
+            for(int i=0;i<=segments;++i){const float angle=arc*static_cast<float>(i)/segments,c=std::cos(angle),s=std::sin(angle);geometry.vertices[static_cast<std::size_t>(i)*2u]={c*outerRadius,s*outerRadius,0};geometry.vertices[static_cast<std::size_t>(i)*2u+1u]={c*innerRadius,s*innerRadius,0};}
+        };
+        fill(result.slash,PI*1.35f,0.494f,0.546f);fill(result.impact,PI*2.0f,0.318f,0.362f);return result;
+    }();
+    return sweep<PI*1.7f?cache.slash:cache.impact;
+}
+
 void fxRibbon(const Vec3& p,const Quat& q,const Vec3& scale,float start,float sweep,int segments,float inner,float outer,float r,float g,float b,float a){
     const float matrix[16]={1-2*(q.y*q.y+q.z*q.z),2*(q.x*q.y+q.z*q.w),2*(q.x*q.z-q.y*q.w),0,2*(q.x*q.y-q.z*q.w),1-2*(q.x*q.x+q.z*q.z),2*(q.y*q.z+q.x*q.w),0,2*(q.x*q.z+q.y*q.w),2*(q.y*q.z-q.x*q.w),1-2*(q.x*q.x+q.y*q.y),0,0,0,0,1};
     glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(scale.x,scale.y,scale.z); gradedColor(r,g,b,a);
-    glBegin(GL_TRIANGLE_STRIP); for(int i=0;i<=segments;++i){const float angle=start+sweep*static_cast<float>(i)/segments; const float c=std::cos(angle),s=std::sin(angle); glVertex3f(c*outer,s*outer,0); glVertex3f(c*inner,s*inner,0);} glEnd(); glPopMatrix();
+    glBegin(GL_TRIANGLE_STRIP);if(start==0.0f&&segments==24){for(const Vec3& vertex:fixedRibbonGeometry(sweep).vertices)glVertex3f(vertex.x,vertex.y,vertex.z);}else{for(int i=0;i<=segments;++i){const float angle=start+sweep*static_cast<float>(i)/segments;const float c=std::cos(angle),s=std::sin(angle);glVertex3f(c*outer,s*outer,0);glVertex3f(c*inner,s*inner,0);}}glEnd();glPopMatrix();
 }
 
 void fxStreak(const Vec3& p,const Quat& q,float length,float width,float r,float g,float b,float a){
@@ -769,9 +886,15 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
     glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(s.x,s.y,s.z); glCallList(list); glPopMatrix();
 }
 
-void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow) const {
-    humanModel_.skin(target.humanAnimationTime,target.attackTimer,target.attackVariant,humanVertices_);if(humanVertices_.empty())return;
-    const bool aliveHuman=!target.slurpable;const HumanVisualPose pose=makeHumanVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman);
+void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow,float perceptionHeadYaw,float perceptionHeadPitch) const {
+    const bool aliveHuman=!target.slurpable;
+    const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,perceptionHeadYaw,perceptionHeadPitch);
+    const HumanModelLegPlant legPlant{
+        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight,
+        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight};
+    humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_,legPlant,{visual.human.headYaw,visual.human.headPitch});if(humanVertices_.empty())return;
+    const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
     const float windup=std::sin(clampf(attackT/HUMAN_SWING_COMMIT_PHASE,0.0f,1.0f)*PI*0.5f)*(attackT<HUMAN_SWING_COMMIT_PHASE?1.0f:0.0f),strike=std::sin(clampf((attackT-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f)*PI);
     const float side=target.attackVariant%2==0?1.0f:-1.0f,low=target.attackVariant>=2?1.0f:0.0f;
@@ -781,20 +904,24 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const float forwardSpeed=dot3(target.vel,attackForward),sideSpeed=dot3(target.vel,bodyRight);
     const float speed=std::sqrt(target.vel.x*target.vel.x+target.vel.z*target.vel.z);
     const float plantedPulse=std::sin(target.visualWalkPhase*0.5f)*clampf(speed/5.0f,0.0f,1.0f);
-    const float motionPitch=clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
-    const float motionRoll=clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
+    const float motionPitch=physicalBody?visual.rootPitch:clampf(-forwardSpeed*0.052f,-0.34f,0.20f);
+    const float motionRoll=physicalBody?visual.rootRoll:clampf(sideSpeed*0.060f+plantedPulse*0.045f,-0.30f,0.30f);
     const float impactPitch=-target.hitFlash*0.24f-target.vacuumPullAmount*0.16f;
     const float impactRoll=target.hitDirectionLocal*target.hitFlash*0.30f;
     const Quat rootQ=quaternionFromEulerXYZ(
         motionPitch+impactPitch+(target.attackTimer>0?windup*0.08f-reach*(0.16f+low*0.05f):0),
-        target.visualYaw+PI,
+        visual.rootYaw,
         motionRoll+impactRoll+(target.attackTimer>0?side*(strike*0.18f-windup*0.24f):0));
     const Vec3 attackLunge=attackForward*(target.attackTimer>0?reach*0.075f*target.scale:0.0f);
-    const Vec3 root{target.pos.x+attackLunge.x,target.pos.y+(target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0),target.pos.z+attackLunge.z};
+    const float plantedWeight=physicalBody?std::max(target.physicalLeftFootWeight,target.physicalRightFootWeight):1.0f;
+    const float rootLift=physicalBody?std::max(0.0f,pose.rootBob)*(1.0f-clampf(plantedWeight,0.0f,1.0f)):0.0f;
+    const float supportShift=physicalBody?physicalSupportLateralShift(target.physicalLeftFootWeight,target.physicalRightFootWeight,target.scale):0.0f;
+    const Vec3 supportOffset=bodyRight*supportShift;
+    const Vec3 root{target.pos.x+attackLunge.x+supportOffset.x,target.pos.y+rootLift+(target.attackTimer>0?std::sin(attackT*PI)*0.024f*low:0),target.pos.z+attackLunge.z+supportOffset.z};
     const float matrix[16]={1-2*(rootQ.y*rootQ.y+rootQ.z*rootQ.z),2*(rootQ.x*rootQ.y+rootQ.z*rootQ.w),2*(rootQ.x*rootQ.z-rootQ.y*rootQ.w),0,2*(rootQ.x*rootQ.y-rootQ.z*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.z*rootQ.z),2*(rootQ.y*rootQ.z+rootQ.x*rootQ.w),0,2*(rootQ.x*rootQ.z+rootQ.y*rootQ.w),2*(rootQ.y*rootQ.z-rootQ.x*rootQ.w),1-2*(rootQ.x*rootQ.x+rootQ.y*rootQ.y),0,0,0,0,1};
     const VisualColor base{humanModel_.color[0],humanModel_.color[1],humanModel_.color[2]};const VisualColor damageColor=humanDamageSurfaceColor(base,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
     const bool parryCue=target.attackTimer>0&&attackT>=0.22f&&attackT<=0.46f;const float cue=parryCue?(0.10f+0.05f*std::sin(time*28.0f)):0.0f;const float cueColor[4]={damageColor.r+(0.55f-damageColor.r)*cue,damageColor.g+(0.96f-damageColor.g)*cue,damageColor.b+(1.0f-damageColor.b)*cue,humanModel_.color[3]};
-    glPushMatrix();glTranslatef(root.x,root.y,root.z);glMultMatrixf(matrix);glScalef(pose.scale,pose.scale,pose.scale);if(shadow)glColor4f(0.012f,0.018f,0.022f,0.28f);else gradedColor(cueColor[0],cueColor[1],cueColor[2],cueColor[3]);glBegin(GL_TRIANGLES);
+    glPushMatrix();glTranslatef(root.x,root.y,root.z);glMultMatrixf(matrix);glScalef(pose.scale,pose.scale*(1.0f-visual.bodyCompression),pose.scale);if(shadow)glColor4f(0.012f,0.018f,0.022f,0.28f);else gradedColor(cueColor[0],cueColor[1],cueColor[2],cueColor[3]);glBegin(GL_TRIANGLES);
     const float thinning=humanShellThinningAmount(target.armor,target.brute?4.0f:2.0f,target.slurpable);
     for(std::size_t i=0;i+8<humanVertices_.size();i+=9){const std::size_t triangle=i/9;const Vec3 rawA{humanVertices_[i],humanVertices_[i+1],humanVertices_[i+2]},rawB{humanVertices_[i+3],humanVertices_[i+4],humanVertices_[i+5]},rawC{humanVertices_[i+6],humanVertices_[i+7],humanVertices_[i+8]},center=(rawA+rawB+rawC)*(1.0f/3.0f);if(humanShellTriangleMissingTowardCrit(triangle,thinning,center))continue;const Vec3 a=humanShellAbsorbTowardCrit(rawA,triangle,thinning),b=humanShellAbsorbTowardCrit(rawB,triangle,thinning),c=humanShellAbsorbTowardCrit(rawC,triangle,thinning),n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);}glEnd();glPopMatrix();
 }
@@ -802,7 +929,8 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
 void DesktopRenderer::drawSoulFlesh(const TargetState& target,const Vec3& center){
     auto index=[](int x,int y,int z){return x+y*3+z*9;};
     auto emitQuad=[&](int ia,int ib,int ic,int id){const Vec3 a=center+target.latticeSurfacePos[ia],b=center+target.latticeSurfacePos[ib],c=center+target.latticeSurfacePos[ic],d=center+target.latticeSurfacePos[id];Vec3 n=normalized(cross3(b-a,c-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);glVertex3f(c.x,c.y,c.z);n=normalized(cross3(c-a,d-a));glNormal3f(n.x,n.y,n.z);glVertex3f(a.x,a.y,a.z);glVertex3f(c.x,c.y,c.z);glVertex3f(d.x,d.y,d.z);};
-    gradedColor(224.0f/255.0f,160.0f/255.0f,143.0f/255.0f);glBegin(GL_TRIANGLES);
+    const auto identity=soul_identity::visualSignature(target.soul.id,target.soul.brute,target.soul.originRoom);
+    gradedColor(0.58f+identity.red*0.34f,0.34f+identity.green*0.34f,0.32f+identity.blue*0.34f);glBegin(GL_TRIANGLES);
     for(int y=0;y<2;++y)for(int z=0;z<2;++z){emitQuad(index(0,y,z),index(0,y+1,z),index(0,y+1,z+1),index(0,y,z+1));emitQuad(index(2,y,z),index(2,y,z+1),index(2,y+1,z+1),index(2,y+1,z));}
     for(int x=0;x<2;++x)for(int z=0;z<2;++z){emitQuad(index(x,0,z),index(x,0,z+1),index(x+1,0,z+1),index(x+1,0,z));emitQuad(index(x,2,z),index(x+1,2,z),index(x+1,2,z+1),index(x,2,z+1));}
     for(int x=0;x<2;++x)for(int y=0;y<2;++y){emitQuad(index(x,y,0),index(x+1,y,0),index(x+1,y+1,0),index(x,y+1,0));emitQuad(index(x,y,2),index(x,y+1,2),index(x+1,y+1,2),index(x+1,y,2));}
@@ -836,8 +964,7 @@ void DesktopRenderer::drawSlopeWedge(const SlopeSupport& slope,float zOffset,con
     for(int i=0;i<mesh.vertexCount;++i){glNormal3f(mesh.normals[i*3],mesh.normals[i*3+1],mesh.normals[i*3+2]);glVertex3f(mesh.positions[i*3],mesh.positions[i*3+1],mesh.positions[i*3+2]);}glEnd();
 }
 
-void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const {
-    const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+void DesktopRenderer::drawRoomTile(const GameState& state,int tileIndex,const early_browser_visuals::RoomEnvironmentPlan& plan,const render_contract::RoomLightingProfile& lighting,const render_contract::SceneResponse& response) const {
     const float z0 = static_cast<float>(tileIndex) * ROOM_DEPTH;
     const float doorWidth = 5.35f;
     const float doorHeight = 3.95f;
@@ -847,11 +974,27 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     const float topY = doorHeight + topH * 0.5f;
     const float wallR = Pass7Visual::RoomWall.r, wallG = Pass7Visual::RoomWall.g, wallB = Pass7Visual::RoomWall.b;
     const bool field=plan.setting==early_browser_visuals::RoomSetting::Field,sterile=plan.setting==early_browser_visuals::RoomSetting::Sterile,coastal=plan.setting==early_browser_visuals::RoomSetting::Coastal;
-    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,field?Pass7Visual::FieldGround.r:(sterile?0.58f:(coastal?0.24f:Pass7Visual::RoomFloor.r)),field?Pass7Visual::FieldGround.g:(sterile?0.61f:(coastal?0.43f:Pass7Visual::RoomFloor.g)),field?Pass7Visual::FieldGround.b:(sterile?0.63f:(coastal?0.50f:Pass7Visual::RoomFloor.b)));
+    const auto floorMaterial=floorMaterialResponse(plan.setting,response.goalProgress,state.weather.wetness,state.weather.exposed);
+    const float wet=floorMaterial.wetness;
+    const VisualColor floorColor=floorMaterial.color;
+    if(wet>0.04f&&state.localSettings.graphicsPreset>0){
+        const GLfloat specular[]={floorMaterial.specular,floorMaterial.specular*1.12f,floorMaterial.specular*1.24f,1.0f};
+        glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,specular);glMaterialf(GL_FRONT_AND_BACK,GL_SHININESS,floorMaterial.shininess);
+    }
+    drawBox({0,-0.04f,z0},{ROOM_WIDTH,0.08f,ROOM_DEPTH},0,0,0,floorColor.r,floorColor.g,floorColor.b);
+    if(wet>0.04f&&state.localSettings.graphicsPreset>0){
+        const GLfloat noSpecular[]={0.0f,0.0f,0.0f,1.0f};glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,noSpecular);glMaterialf(GL_FRONT_AND_BACK,GL_SHININESS,0.0f);
+    }
+    drawRoomCornerOcclusion(z0,lighting.cornerOcclusion);
+    if(wet>0.04f){const float overlayWet=1.0f-wet*0.16f;gradedColor(overlayWet,overlayWet,overlayWet);}
     if(field&&plan.form==early_browser_visuals::RoomForm::Open)drawFieldGrass(tileIndex);
     if(plan.setting==early_browser_visuals::RoomSetting::City)drawCityGround(tileIndex);
+    if(wet>0.04f)gradedColor(1.0f,1.0f,1.0f);
     if(coastal)drawBox({0,0.005f,z0},{23.5f,0.01f,35.5f},0,0,0,0.64f,0.58f,0.43f);
-    if(sterile)drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
+    if(sterile){
+        drawBox({0,ROOM_WALL_HEIGHT+0.08f,z0},{ROOM_WIDTH,0.16f,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
+        for(int i=0;i<lighting.localLightCount;++i){const auto& fixture=lighting.localLights[i];drawLightPool(fixture,z0);if(fixture.visibleFixture)drawEmissiveBox(fixture.localPosition+Vec3{0,0,z0},fixture.fixtureSize,fixture.color,fixture.intensity);}
+    }
     for (float seam : {-ROOM_DEPTH*0.5f, ROOM_DEPTH*0.5f}) {
         drawBox({-sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);
         drawBox({ sideX,ROOM_WALL_HEIGHT*0.5f,z0+seam},{sideW,ROOM_WALL_HEIGHT,0.5f},0,0,0,wallR,wallG,wallB);
@@ -859,9 +1002,11 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
     }
     drawBox({-ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
     drawBox({ ROOM_WIDTH*0.5f,ROOM_WALL_HEIGHT*0.5f,z0},{0.5f,ROOM_WALL_HEIGHT,ROOM_DEPTH},0,0,0,wallR,wallG,wallB);
+    if(tileIndex==state.topology.currentTileIndex&&response.exitGlow>0.01f){const VisualColor guide=sterile?VisualColor{0.62f,0.88f,0.94f}:VisualColor{0.72f,0.90f,0.82f};drawEmissiveBox({0,doorHeight+0.12f,z0-ROOM_DEPTH*0.5f+0.27f},{doorWidth,0.12f,0.08f},guide,0.38f+response.exitGlow*0.62f);}
     const int authoredObstacleCount=(state.traversalLab||state.slopeLab)?state.debug.colliderCount:std::min(state.debug.colliderCount,plan.obstacleCount);
     for (int i=0;i<authoredObstacleCount;++i) {
         const RoomCollider& c=state.roomColliders[i];
+        drawContactOcclusion({c.center.x,0.0f,z0+c.center.z},c.width*0.62f,c.depth*0.62f,lighting.contactOcclusion);
         drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::RoomObstacle.r,Pass7Visual::RoomObstacle.g,Pass7Visual::RoomObstacle.b);
         if(plan.setting==early_browser_visuals::RoomSetting::City&&plan.form==early_browser_visuals::RoomForm::Corridor&&early_browser_visuals::obstacleRole(plan,state.roomSeed,state.roomIndex,i)==early_browser_visuals::EnvironmentRole::Landmark){
             const float tierH=gameplay::WORLD_SCALE.storyHeight*0.34f;
@@ -905,7 +1050,7 @@ void DesktopRenderer::drawRoomTile(const GameState& state, int tileIndex) const 
         else if(prop.primitive==EnvironmentPrimitive::Rock){const VisualColor substrate=roomSubstrateColor(plan.setting);drawFacetedRock(prop,state.roomSeed,state.roomIndex,i,z0,{substrate.r*0.82f,substrate.g*0.82f,substrate.b*0.82f});}
         else {for(const auto& part:marker_pillar_geometry::parts(prop,z0)){const VisualColor color=part.surface==0?VisualColor{0.48f,0.55f,0.58f}:VisualColor{0.72f,0.90f,0.94f};drawBox(part.center,part.size,0,0,0,color.r,color.g,color.b);}}
     }
-    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge};glDisable(GL_LIGHTING);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();glEnable(GL_LIGHTING);}
+    if(plan.grass){const int maximum=state.localSettings.graphicsPreset<=0?early_browser_visuals::GrassBladeCountLow:early_browser_visuals::GrassBladeCountHigh,grassCount=static_cast<int>(maximum*plan.grassAmount);early_browser_visuals::GrassBodyContact primary{},secondary{};for(const auto& target:state.targets){if(!target.alive||target.slurpable)continue;const float dz=std::abs(target.pos.z-(static_cast<float>(tileIndex)*ROOM_DEPTH));if(dz<ROOM_DEPTH*0.65f){const auto contact=early_browser_visuals::grassBodyContact(target.physicalLeftFootWorld,target.physicalLeftFootWeight,target.physicalRightFootWorld,target.physicalRightFootWeight,target.vel,target.scale);if(contact.strength>primary.strength){secondary=primary;primary=contact;}else if(contact.strength>secondary.strength)secondary=contact;}}early_browser_visuals::GrassReactionInputs reaction{state.player.pos,state.phoneTransform.vacuumPullPoint,state.environmentVisual.latestShotOrigin,state.vacuum.power,state.environmentVisual.latestShotAge,response.wind,state.weather.rain,state.weather.wetness,state.player.landingContactPosition,clampf(state.player.landingImpact/7.0f,0.0f,1.0f),primary.origin,primary.strength,secondary.origin,secondary.strength,primary.sweep,secondary.sweep,primary.radius,secondary.radius};glNormal3f(0,1,0);glBegin(GL_QUADS);for(int i=0;i<grassCount;++i){auto blade=early_browser_visuals::grassBlade(state.roomSeed,state.roomIndex,tileIndex,i);blade.root.z+=z0;const Vec3 tip=early_browser_visuals::grassTip(blade,state.time,reaction),side{std::cos(blade.phase)*blade.width*0.5f,0,std::sin(blade.phase)*blade.width*0.5f};const Vec3 rootL=blade.root-side,rootR=blade.root+side,tipL=tip-side*0.62f,tipR=tip+side*0.62f;gradedColor(Pass7Visual::GrassRoot.r,Pass7Visual::GrassRoot.g,Pass7Visual::GrassRoot.b);glVertex3f(rootL.x,rootL.y,rootL.z);glVertex3f(rootR.x,rootR.y,rootR.z);gradedColor(Pass7Visual::GrassTip.r,Pass7Visual::GrassTip.g,Pass7Visual::GrassTip.b);glVertex3f(tipR.x,tipR.y,tipR.z);glVertex3f(tipL.x,tipL.y,tipL.z);}glEnd();}
 }
 
 void DesktopRenderer::applyCamera(const GameState& state, float aspect) {
@@ -1042,14 +1187,14 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     }
     if(state.roomInspector){
         const auto& r=state.roomInspectorReport;const float panelW=std::min(780.0f,static_cast<float>(width_)-24.0f),panelX=(width_-panelW)*0.5f;
-        quad(panelX,12,panelW,132,0.005f,0.012f,0.016f,0.82f);quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
+        quad(panelX,12,panelW,148,0.005f,0.012f,0.016f,0.82f);quad(panelX,12,panelW,1,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.82f);
         text(std::string(early_browser_visuals::premiseName(r.premise))+"  "+early_browser_visuals::settingName(r.setting)+" / "+early_browser_visuals::formName(r.form)+" / "+early_browser_visuals::scaleName(r.scale)+" / "+early_browser_visuals::conditionName(r.condition)+" / INTENT "+early_browser_visuals::traversalIntentName(r.traversalIntent),panelX+12,20,1.30f,0.82f,1.0f,0.94f);
         text("SEED "+std::to_string(r.seed)+"  ROOM "+std::to_string(r.roomIndex)+"  ROUTE "+(r.requiredRouteValid?"VALID":"INVALID"),panelX+12,42,1.05f,1.0f,1.0f,1.0f);
         text("SURF "+std::to_string(r.traversalSurfaceCount)+"  EDGE "+std::to_string(r.traversalEdgeCount)+" (REQ "+std::to_string(r.requiredEdgeCount)+")  COLLIDER "+std::to_string(r.colliderCount)+"  PROP "+std::to_string(r.presentationPropCount),panelX+12,61,1.0f,0.72f,0.94f,1.0f);
         text("ROLE MASS "+std::to_string(r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Mass)])+"  LANDMARK "+std::to_string(r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Landmark)])+"  TRAVERSAL "+std::to_string(r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Traversal)])+"  DETAIL "+std::to_string(r.environmentRoleCounts[static_cast<int>(early_browser_visuals::EnvironmentRole::Detail)])+"  HUMAN "+std::to_string(gameplay::WORLD_SCALE.humanHeight).substr(0,4)+"  STORY "+std::to_string(gameplay::WORLD_SCALE.storyHeight).substr(0,4),panelX+12,80,0.88f,0.82f,0.94f,1.0f);
-        text("ENEMY "+std::to_string(r.enemyCount)+" / "+std::to_string(r.enemyBudget)+"  TRANSPARENT "+std::to_string(r.transparentPrimitiveCount)+"  VISIBLE~ "+std::to_string(r.visiblePrimitiveEstimate)+"  DRAW "+(r.drawCallBucket==0?"LOW":(r.drawCallBucket==1?"MED":"HIGH")),panelX+12,79,1.0f,0.82f,1.0f,0.88f);
-        text(std::string("[ ] PREMISE  R SEED  E ENEMIES ")+(state.roomInspectorEnemies?"ON":"OFF"),panelX+12,106,1.0f,1.0f,1.0f,1.0f);
-        text("5 KEEP  6 TUNE  7 REDESIGN  8 REMOVE",panelX+12,118,1.0f,0.72f,1.0f,0.74f);
+        text("ENEMY "+std::to_string(r.enemyCount)+" / "+std::to_string(r.enemyBudget)+"  TRANSPARENT "+std::to_string(r.transparentPrimitiveCount)+"  VISIBLE~ "+std::to_string(r.visiblePrimitiveEstimate)+"  DRAW "+(r.drawCallBucket==0?"LOW":(r.drawCallBucket==1?"MED":"HIGH")),panelX+12,96,1.0f,0.82f,1.0f,0.88f);
+        text(std::string("[ ] PREMISE  R SEED  E ENEMIES ")+(state.roomInspectorEnemies?"ON":"OFF"),panelX+12,116,1.0f,1.0f,1.0f,1.0f);
+        text("5 KEEP  6 TUNE  7 REDESIGN  8 REMOVE",panelX+12,132,1.0f,0.72f,1.0f,0.74f);
     }
     if(state.progression.run.accuracyStacks>0){char accuracy[32]{};std::snprintf(accuracy,sizeof(accuracy),"ACCURACY X%.2F",state.progression.run.accuracyMultiplier);text(accuracy,12,304,1.15f,Pass7Visual::SignalGreen.r,Pass7Visual::SignalGreen.g,Pass7Visual::SignalGreen.b);}
     if(state.progression.run.headshotRegenTax>0.01f){char tax[32]{};std::snprintf(tax,sizeof(tax),"REGEN -%d%%",static_cast<int>(std::round(state.progression.run.headshotRegenTax*100.0f)));text(tax,12,320,1.05f,1.0f,0.72f,0.62f);}
@@ -1128,7 +1273,28 @@ void DesktopRenderer::drawHud(const GameState& state) const {
     center=rotateCenter(-spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
     center=rotateCenter(spread,0); rotatedQuad(center.x,center.y,arm,thick,angle,rr,rg,rb,reticleAlpha);
 
-    if(state.upgradeMenu.active){
+    if(state.victory){
+        const float pw=std::min(700.0f,static_cast<float>(width_)-48.0f),ph=390.0f,px=(width_-pw)*0.5f,py=(height_-ph)*0.5f;
+        quad(0,0,static_cast<float>(width_),static_cast<float>(height_),0.005f,0.012f,0.016f,0.72f);
+        quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.94f);quad(px,py,pw,2,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.92f);
+        text("BREAKDOWN CONTAINED",px+24,py+24,2.65f,0.88f,1.0f,1.0f);
+        text("THE FINAL AUDIT",px+24,py+58,1.25f,Pass7Visual::WarmGold.r,Pass7Visual::WarmGold.g,Pass7Visual::WarmGold.b);
+        text("IDENTITIES SACRIFICED TO LEAVE",px+24,py+94,1.05f,0.68f,0.88f,0.92f);
+        int row=0;
+        for(int i=0;i<state.requiredSouls&&row<6;++i){
+            const SoulRecord soul=unpackSoulRecord(state.captures[i].packedSoul);if(!state.captures[i].filled||soul.id==0)continue;
+            const auto profile=soul_identity::profile(soul.id,soul.brute,soul.originRoom);
+            const std::string line=soul_identity::name(profile)+"  /  "+soul_identity::details(profile);
+            text(line,px+34,py+122+row*25,1.05f,row%2?0.72f:0.86f,0.96f,0.92f);++row;
+        }
+        if(row==0)text("RECORDS UNAVAILABLE",px+34,py+122,1.05f,0.72f,0.82f,0.84f);
+        if(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost){
+            text("HOST IS CHOOSING",px+24,py+ph-62,1.35f,0.72f,1.0f,0.86f);
+        }else{
+            text("ENTER / A  CONTINUE ENDLESS",px+24,py+ph-76,1.35f,0.72f,1.0f,0.86f);
+            text("R / X        BEGIN AGAIN",px+24,py+ph-46,1.35f,0.92f,0.84f,0.72f);
+        }
+    } else if(state.upgradeMenu.active){
         glPushMatrix();glScalef(menuUiScale,menuUiScale,1.0f);
         const float pw=std::min(680.0f,menuCanvasW-24.0f),ph=300.0f,px=(menuCanvasW-pw)*0.5f,py=(menuCanvasH-ph)*0.5f;
         quad(px,py,pw,ph,0.01f,0.03f,0.04f,0.16f);quad(px,py,pw,1,0.62f,0.96f,1,0.62f);quad(px,py+ph-1,pw,1,0.62f,0.96f,1,0.42f);text("ROUND "+std::to_string(state.roomIndex),px+18,py+16,2.0f);text(state.multiplayer.enabled&&!state.multiplayer.authoritativeHost?"HOST IS CHOOSING":"CHOOSE ONE RUN UPGRADE",px+18,py+42,1.25f,0.72f,1.0f,0.86f);
@@ -1201,32 +1367,172 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
     glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glDisable(GL_TEXTURE_2D);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
 }
 
-void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec) const {
+void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec,const std::array<gameplay::EnemyPerceptionState,TARGET_COUNT>* enemyPerceptions) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
-    const auto atmosphere=render_contract::sceneAtmosphere(state.time,state.roomIndex,state.vacuum.power*0.62f+state.energy.dischargePositionAmount);
-    glClearColor(atmosphere.background.r,atmosphere.background.g,atmosphere.background.b,1); glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    const auto roomPlan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
+    const float horizontalSpeed=std::sqrt(state.player.vel.x*state.player.vel.x+state.player.vel.z*state.player.vel.z);
+    const float goalProgress=state.requiredSouls>0?static_cast<float>(state.depositedSouls)/static_cast<float>(state.requiredSouls):0.0f;
+    auto lighting=render_contract::roomLightingProfile(roomPlan.setting,roomPlan.form,state.roomSeed,state.roomIndex,state.time,state.vacuum.power*0.62f+state.energy.dischargePositionAmount,goalProgress);
+    const auto response=render_contract::sceneResponse({state.time,horizontalSpeed,state.player.battery/100.0f,state.vacuum.power,state.energy.dischargePositionAmount,state.environmentVisual.latestShotAge,state.hud.criticalHitPulse,goalProgress,state.progression.run.roomHeat,state.player.grounded,state.roomClear});
+    lighting=render_contract::weatherLightingProfile(lighting,state.weather.exposed,state.weather.daylight,state.weather.rain);
+    lighting=render_contract::roomPressureLightingProfile(lighting,response.roomPressure);
+    glClearColor(lighting.skyTop.r,lighting.skyTop.g,lighting.skyTop.b,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);drawSkyGradient(lighting);
+    if(state.weather.exposed)drawNightSkyDetails(state.weather.daylight,state.weather.rain,state.roomSeed,state.localSettings.graphicsPreset);
     applyCamera(state, static_cast<float>(width_)/static_cast<float>(height_));
-    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0); glEnable(GL_LIGHT1); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
-    const auto& lighting=render_contract::DesktopSceneLighting;
-    const GLfloat ambient[]={atmosphere.ambient.r,atmosphere.ambient.g,atmosphere.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
-    const GLfloat sunDiffuse[]={atmosphere.sun.r,atmosphere.sun.g,atmosphere.sun.b,1.0f};
-    const GLfloat sunPos[]={
-        lighting.sun.direction.x,
-        lighting.sun.direction.y,
-        lighting.sun.direction.z,
-        0.0f
-    };
-    glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse); glLightfv(GL_LIGHT0,GL_POSITION,sunPos);
-    const GLfloat fillDiffuse[]={atmosphere.fill.r,atmosphere.fill.g,atmosphere.fill.b,1.0f}, fillPos[]={lighting.fill.direction.x,lighting.fill.direction.y,lighting.fill.direction.z,0.0f};
-    glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);
-    const GLfloat phoneDiffuse[]={atmosphere.phone.r,atmosphere.phone.g,atmosphere.phone.b,1.0f};
-    const GLfloat phoneLightPos[]={state.phoneTransform.screenCenter.x,state.phoneTransform.screenCenter.y,state.phoneTransform.screenCenter.z,1.0f};
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT2); glEnable(GL_COLOR_MATERIAL);
+    const GLfloat ambient[]={lighting.ambient.r,lighting.ambient.g,lighting.ambient.b,1.0f}; glLightModelfv(GL_LIGHT_MODEL_AMBIENT,ambient);
+    const GLfloat sunDiffuse[]={lighting.primary.r,lighting.primary.g,lighting.primary.b,1.0f};
+    const bool sterileFixtures=lighting.primarySource==render_contract::PrimaryLightSource::CeilingFixtures;
+    const GLfloat sunPos[]={lighting.primaryDirection.x,lighting.primaryDirection.y,lighting.primaryDirection.z,0.0f};
+    if(sterileFixtures){glDisable(GL_LIGHT0);glDisable(GL_LIGHT1);}else{glEnable(GL_LIGHT0);glEnable(GL_LIGHT1);glLightfv(GL_LIGHT0,GL_DIFFUSE,sunDiffuse);glLightfv(GL_LIGHT0,GL_POSITION,sunPos);}
+    const GLfloat fillDiffuse[]={lighting.fill.r,lighting.fill.g,lighting.fill.b,1.0f}, fillPos[]={lighting.fillDirection.x,lighting.fillDirection.y,lighting.fillDirection.z,0.0f};
+    if(!sterileFixtures){glLightfv(GL_LIGHT1,GL_DIFFUSE,fillDiffuse); glLightfv(GL_LIGHT1,GL_POSITION,fillPos);}
+    const float nightPhoneBoost=state.weather.exposed?1.0f+(1.0f-clampf(state.weather.daylight,0.0f,1.0f))*0.52f:1.0f;
+    const float phoneResponse=clampf(response.phoneLight*(1.0f+response.actionLight*0.72f)*nightPhoneBoost,0.0f,1.35f);const GLfloat phoneDiffuse[]={lighting.phone.r*phoneResponse+response.actionLight*0.16f+response.criticalLight*0.52f,lighting.phone.g*phoneResponse+response.actionLight*0.46f+response.criticalLight*0.15f,lighting.phone.b*phoneResponse+response.actionLight*0.62f+response.criticalLight*0.48f,1.0f};
+    const Vec3 phoneActionLightPosition=render_contract::phoneActionLightPosition(state.phoneTransform.screenCenter,state.phoneTransform.vacuumPullPoint,state.vacuum.power);
+    const GLfloat phoneLightPos[]={phoneActionLightPosition.x,phoneActionLightPosition.y,phoneActionLightPosition.z,1.0f};
     glLightfv(GL_LIGHT2,GL_DIFFUSE,phoneDiffuse);glLightfv(GL_LIGHT2,GL_POSITION,phoneLightPos);glLightf(GL_LIGHT2,GL_CONSTANT_ATTENUATION,1.0f);glLightf(GL_LIGHT2,GL_LINEAR_ATTENUATION,1.6f);
-    glEnable(GL_FOG);const GLfloat fogColor[]={atmosphere.fog.r,atmosphere.fog.g,atmosphere.fog.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,atmosphere.fogDensity);
+    if(sterileFixtures){
+        const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+        for(int i=0;i<3;++i){const GLenum light=GL_LIGHT3+i;if(i>=lighting.localLightCount){glDisable(light);continue;}const auto& local=lighting.localLights[i];const GLfloat diffuse[]={local.color.r*local.intensity,local.color.g*local.intensity,local.color.b*local.intensity,1.0f};const GLfloat position[]={local.localPosition.x,local.localPosition.y,tileOrigin+local.localPosition.z,1.0f};glEnable(light);glLightfv(light,GL_DIFFUSE,diffuse);glLightfv(light,GL_POSITION,position);glLightf(light,GL_CONSTANT_ATTENUATION,0.65f);glLightf(light,GL_LINEAR_ATTENUATION,0.05f);glLightf(light,GL_QUADRATIC_ATTENUATION,4.0f/(local.radius*local.radius));}
+    }else{glDisable(GL_LIGHT3);glDisable(GL_LIGHT4);glDisable(GL_LIGHT5);}
+    if(response.shotLight>0.001f){const GLfloat shotDiffuse[]={1.15f*response.shotLight,0.82f*response.shotLight,0.55f*response.shotLight,1.0f},shotPosition[]={state.environmentVisual.latestShotOrigin.x,state.environmentVisual.latestShotOrigin.y+0.2f,state.environmentVisual.latestShotOrigin.z,1.0f};glEnable(GL_LIGHT6);glLightfv(GL_LIGHT6,GL_DIFFUSE,shotDiffuse);glLightfv(GL_LIGHT6,GL_POSITION,shotPosition);glLightf(GL_LIGHT6,GL_CONSTANT_ATTENUATION,0.72f);glLightf(GL_LIGHT6,GL_LINEAR_ATTENUATION,0.22f);glLightf(GL_LIGHT6,GL_QUADRATIC_ATTENUATION,0.08f);}else glDisable(GL_LIGHT6);
+    if(response.exitGlow>0.01f){const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;const GLfloat exitDiffuse[]={0.34f*response.exitGlow,0.72f*response.exitGlow,0.68f*response.exitGlow,1.0f},exitPosition[]={0.0f,2.2f,tileOrigin-ROOM_DEPTH*0.5f+0.8f,1.0f};glEnable(GL_LIGHT7);glLightfv(GL_LIGHT7,GL_DIFFUSE,exitDiffuse);glLightfv(GL_LIGHT7,GL_POSITION,exitPosition);glLightf(GL_LIGHT7,GL_CONSTANT_ATTENUATION,0.8f);glLightf(GL_LIGHT7,GL_LINEAR_ATTENUATION,0.11f);glLightf(GL_LIGHT7,GL_QUADRATIC_ATTENUATION,0.035f);}else glDisable(GL_LIGHT7);
+    glEnable(GL_FOG);const GLfloat fogColor[]={lighting.fog.r,lighting.fog.g,lighting.fog.b,1.0f};glFogfv(GL_FOG_COLOR,fogColor);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,lighting.fogDensity);
     glEnable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glEnable(GL_LIGHTING); glEnable(GL_NORMALIZE);
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
     const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;const float maxDist=cheapVisuals?38.0f:55.0f;return lengthSq(delta)<maxDist*maxDist&&dot3(delta,state.camera.forward)>-8.0f;};
-    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile);
+    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile,roomPlan,lighting,response);
+
+    // Rain is presentation-only. Gameplay wetness is owned by GameState and
+    // feeds the existing locomotion traction boundary.
+    if(state.weather.exposed&&state.weather.rain>0.015f&&state.localSettings.particles){
+        glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        glLineWidth(1.0f);glBegin(GL_LINES);
+        const int drops=(state.localSettings.graphicsPreset<=0?12:24)+static_cast<int>(state.weather.rain*(state.localSettings.graphicsPreset<=0?32.0f:72.0f));
+        for(int i=0;i<drops;++i){
+            const float seed=static_cast<float>(i)*12.9898f+state.roomSeed*0.071f;
+            const float x=state.camera.pos.x+(std::sin(seed*1.37f)*0.5f)*26.0f;
+            const float z=state.camera.pos.z+(std::sin(seed*2.11f+3.1f)*0.5f)*30.0f;
+            const float fall=std::fmod(state.time*(9.0f+state.weather.rain*7.0f)+i*1.73f,10.0f);
+            const float y=10.0f-fall;
+            glColor4f(0.62f,0.72f,0.82f,0.18f+state.weather.rain*0.38f);
+            glVertex3f(x,y,z);glVertex3f(x+0.06f,y-0.58f,z+0.03f);
+        }
+        glEnd();glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+    }
+
+    // Dirt uses one irregular procedural footprint for both rendering and
+    // contact. Candidates overlapping authored room collision are rejected.
+    const auto dirtPatch=[&](int tile,int patch)->Vec3{
+        const float h=std::sin((static_cast<float>(state.roomSeed)*0.71f+tile*17.13f+patch*9.37f))*43758.5453f;
+        const float k=h-std::floor(h);
+        const float h2=std::sin((static_cast<float>(state.roomSeed)*1.13f+tile*7.91f+patch*19.71f))*24634.6345f;
+        const float k2=h2-std::floor(h2);
+        return {(k-0.5f)*(ROOM_WIDTH-4.0f),0.012f,static_cast<float>(tile)*ROOM_DEPTH+(k2-0.5f)*(ROOM_DEPTH-4.0f)};
+    };
+    const auto dirtAllowed=[&](int tile,const Vec3& d){
+        // Room colliders are stored in room-local coordinates. Test the dirt
+        // candidate in that same coordinate system for every rendered tile so
+        // repeated geometry cannot acquire dirt underneath it.
+        constexpr float dirtClearanceX=1.7f;
+        constexpr float dirtClearanceZ=1.2f;
+        const float localZ=d.z-static_cast<float>(tile)*ROOM_DEPTH;
+        for(int i=0;i<state.debug.colliderCount;++i){
+            const auto& c=state.roomColliders[i];
+            const bool overlapsX=d.x>c.minX-dirtClearanceX&&d.x<c.maxX+dirtClearanceX;
+            const bool overlapsZ=localZ>c.minZ-dirtClearanceZ&&localZ<c.maxZ+dirtClearanceZ;
+            if(overlapsX&&overlapsZ)return false;
+        }
+        return true;
+    };
+    const auto onDirt=[&](const Vec3& position)->bool{
+        const int tile=static_cast<int>(std::floor((position.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH));
+        const int patchCount=state.localSettings.graphicsPreset<=0?2:3;
+        for(int patch=0;patch<patchCount;++patch){const Vec3 d=dirtPatch(tile,patch);if(!dirtAllowed(tile,d))continue;
+            for(int lobe=0;lobe<3;++lobe){const auto shape=early_browser_visuals::dirtLobe(patch,lobe);if(early_browser_visuals::dirtLobeContains(shape,position.x-d.x,position.z-d.z))return true;}
+        }return false;
+    };
+    glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+    const int dirtPatchCount=state.localSettings.graphicsPreset<=0?2:3;
+    for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)for(int patch=0;patch<dirtPatchCount;++patch){const Vec3 d=dirtPatch(tile,patch);if(!dirtAllowed(tile,d))continue;
+        for(int lobe=0;lobe<3;++lobe){const auto shape=early_browser_visuals::dirtLobe(patch,lobe);const float alpha=lobe==0?0.13f:0.10f;const float wet=state.weather.exposed?state.weather.wetness:0.0f;glColor4f(0.22f*(1.0f-wet*0.38f),0.145f*(1.0f-wet*0.34f),0.075f*(1.0f-wet*0.28f),alpha+wet*0.025f);glBegin(GL_TRIANGLE_FAN);glVertex3f(d.x+shape.offsetX,d.y,d.z+shape.offsetZ);for(int n=0;n<=12;++n){const float q=shape.phase+static_cast<float>(n)/12.0f*PI*2.0f;const float irregular=1.0f+0.10f*std::sin(q*3.0f+shape.phase)+0.045f*std::sin(q*5.0f+patch);glVertex3f(d.x+shape.offsetX+std::cos(q)*shape.radiusX*irregular,d.y,d.z+shape.offsetZ+std::sin(q)*shape.radiusZ*irregular);}glEnd();}
+    }
+    glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+    if(state.localSettings.particles){
+        const auto dustAt=[&](const Vec3& foot,float weight,float speed,float phase){
+            if(weight<0.42f||speed<0.55f||!onDirt(foot))return;
+            const float wet=state.weather.exposed?state.weather.wetness:0.0f;
+            const float dustAmount=1.0f-wet;
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            if(dustAmount>0.06f)for(int n=0;n<3;++n){const float age=std::fmod(state.time*(1.2f+0.13f*n)+phase+n*0.37f,1.0f);const float spread=0.08f+age*0.22f;const Vec3 q=foot+Vec3{std::sin(phase*11.0f+n*2.1f)*spread,0.035f+age*0.18f,std::cos(phase*7.0f+n*1.7f)*spread};drawParticleCube(q,0.035f+age*0.025f,age*3.0f,0.48f,0.34f,0.20f,(1.0f-age)*0.30f*weight*dustAmount);}
+            // The same planted-foot contact becomes a low, dark disturbance
+            // when dirt is wet. This is not a second mud/particle system.
+            if(wet>0.12f){const float pulse=0.55f+0.45f*std::sin(state.time*7.0f+phase*5.0f);const Vec3 q=foot+Vec3{0.0f,0.018f,0.0f};drawParticleCube(q,0.045f+0.035f*wet,phase,0.18f,0.14f,0.09f,0.14f*wet*weight*pulse);}
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        };
+        const float playerSpeed=horizontalLength(state.player.vel);
+        if(state.player.grounded)dustAt(state.player.pos+Vec3{0,-PHONE_BODY_HEIGHT*0.45f,0},1.0f,playerSpeed,state.time*0.7f);
+        // Reuse the authoritative landing contact on dirt as a brief material
+        // response. Dry ground lifts dust; wet ground gives the same contact a
+        // low dark kick. No landing event queue or persistent decal is needed.
+        const float landingStrength=clampf(state.player.landingImpact/7.0f,0.0f,1.0f);
+        if(landingStrength>0.04f&&onDirt(state.player.landingContactPosition)){
+            const float wet=state.weather.exposed?state.weather.wetness:0.0f;
+            const auto contact=early_browser_visuals::dirtContactResponse(landingStrength,wet);
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            for(int n=0;n<3;++n){const float angle=state.time*1.7f+n*2.0943951f;const float spread=0.08f+0.12f*contact.dust;const Vec3 q=state.player.landingContactPosition+Vec3{std::cos(angle)*spread,0.025f+0.08f*contact.dust,std::sin(angle)*spread};if(contact.dust>0.04f)drawParticleCube(q,0.035f+0.025f*contact.dust,angle,0.48f,0.34f,0.20f,0.24f*contact.dust);}
+            if(contact.darkKick>0.04f)drawParticleCube(state.player.landingContactPosition+Vec3{0,0.018f,0},0.055f+0.035f*contact.darkKick,state.time,0.18f,0.14f,0.09f,0.18f*contact.darkKick);
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+        for(int i=0;i<TARGET_COUNT;++i){const auto& t=state.targets[i];if(!t.alive||t.slurpable)continue;const float speed=horizontalLength(t.vel);dustAt(t.physicalLeftFootWorld,t.physicalLeftFootWeight,speed,t.visualWalkPhase);dustAt(t.physicalRightFootWorld,t.physicalRightFootWeight,speed,t.visualWalkPhase+PI);}
+    }
+
+    // WORLD PRESENCE: cheap cues that make the existing simulation legible.
+    // These are deliberately presentation-only: no new collision or AI authority.
+    if(!cheapVisuals){
+        // Ground shadows remain exclusively owned by the existing authored
+        // lighting/shadow pipeline below. Do not add a second contact-shadow language.
+        // Sparse atmospheric motes. Their deterministic positions drift slowly,
+        // giving fog and light actual material without becoming a particle storm.
+        if(state.localSettings.particles){
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            const float tileZ=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+            for(int n=0;n<30;++n){
+                const float seed=static_cast<float>(state.roomSeed)*0.013f+n*4.731f;
+                const float x=std::sin(seed*1.7f)*ROOM_WIDTH*0.43f;
+                const float z=tileZ+std::cos(seed*2.3f)*ROOM_DEPTH*0.43f;
+                const float y=0.45f+std::fmod(std::abs(seed*3.17f),3.8f)+std::sin(state.time*0.23f+seed)*0.13f;
+                const float pulse=0.55f+0.45f*std::sin(state.time*0.47f+seed*5.0f);
+                drawParticleCube({x,y,z},0.012f+0.008f*pulse,state.time*0.11f+seed,lighting.primary.r,lighting.primary.g,lighting.primary.b,0.055f+0.045f*pulse);
+            }
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+
+        // Damage and hard reactions kick a few deterministic chips into the air.
+        // hitFlash already exists, so this adds no gameplay event plumbing.
+        if(state.localSettings.particles){
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            for(int i=0;i<TARGET_COUNT;++i){const auto& t=state.targets[i];if(!t.alive||t.hitFlash<0.08f)continue;
+                const float energy=clampf(t.hitFlash,0.0f,1.0f);
+                for(int chip=0;chip<4;++chip){const float a=i*2.17f+chip*1.57f;const float travel=(1.0f-energy)*0.28f;const Vec3 q=t.pos+Vec3{std::cos(a)*travel,0.55f*t.scale+std::sin(a*1.9f)*0.13f+travel,std::sin(a)*travel};drawParticleCube(q,0.018f+0.014f*energy,a+state.time*8.0f,0.46f,0.40f,0.32f,0.24f*energy);}
+            }
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+
+        // Fake volumetric shafts: translucent geometry under authored ceiling
+        // fixtures. No raymarching, framebuffer, or new shader path is required.
+        if(sterileFixtures&&lighting.localLightCount>0){
+            const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);glDepthMask(GL_FALSE);
+            for(int i=0;i<lighting.localLightCount&&i<3;++i){const auto& light=lighting.localLights[i];
+                const Vec3 center={light.localPosition.x,std::max(0.8f,light.localPosition.y*0.48f),tileOrigin+light.localPosition.z};
+                const float h=std::max(1.0f,light.localPosition.y*0.88f);
+                drawBox(center,{0.62f,h,0.62f},0,0,0,light.color.r,light.color.g,light.color.b,0.022f*light.intensity);
+            }
+            glDepthMask(GL_TRUE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+    }
 
     // The secret room is deliberately disconnected from the repeating corridor:
     // a tiny, cheap collection of boxes makes it feel like found backstage space.
@@ -1259,23 +1565,24 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     // A pause menu overlays the live world, so its frozen actors still own their
     // shadows. Only presentations that replace gameplay suppress world shadows.
     const bool menuPresentation=(((!state.started&&!state.dead)||state.dead||state.cinematic.introActive)&&!state.multiplayer.enabled&&!state.upgradeMenu.active);
-    const auto shadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,true);
+    const auto requestedShadowQuality=render_contract::shadowQualityFor(state.localSettings.graphicsPreset,state.localSettings.shadows,true);
+    const auto shadowQuality=sterileFixtures&&requestedShadowQuality==render_contract::ShadowQuality::Directional?render_contract::ShadowQuality::Cheap:requestedShadowQuality;
     if(shadowQuality==render_contract::ShadowQuality::Cheap){
     glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
-    if(!menuPresentation&&!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.phoneTransform.position,0.25f,0.18f,0.95f,0.20f);
-    if(!menuPresentation&&state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f);
+    if(!menuPresentation&&!state.camera.firstPerson&&state.player.alive)drawGroundShadow(state.phoneTransform.position,0.25f*response.contactShadowScale,0.18f*response.contactShadowScale,0.95f,0.20f*response.contactShadowScale,lighting.primaryDirection);
+    if(!menuPresentation&&state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive)drawGroundShadow(peer.player.pos,0.25f,0.18f,0.95f,0.20f,lighting.primaryDirection);
     if(!menuPresentation){
     const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f);}
-    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f);
-    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f);}
+    for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable)drawGroundShadow(target.pos,0.30f*target.scale,0.22f*target.scale,1.1f*target.scale,0.18f,lighting.primaryDirection);else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f)drawGroundShadow(target.pos,0.26f*target.scale,0.26f*target.scale,0.72f*target.scale,0.16f,lighting.primaryDirection);}
+    for(const auto& flower:state.flowers)if(flower.active)drawGroundShadow({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},0.27f,0.27f,0.72f,0.16f,lighting.primaryDirection);
+    for(const auto& bullet:state.bullets)if(bullet.alive){const float radius=0.40f*(bullet.brute?1.7f:1.0f);drawGroundShadow(bullet.pos,radius,radius,radius*2.0f,0.14f,lighting.primaryDirection);}
     // Static room geometry already provides the receiving floor and its own
     // lighting. Projecting every collider (including room-scale walls) onto the
     // floor created large overlapping black sheets unrelated to visible casters.
     }
     glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);}
     else if(shadowQuality==render_contract::ShadowQuality::Directional&&!menuPresentation){
-        const Vec3& sun=render_contract::DesktopSceneLighting.sun.direction;
+        const Vec3& sun=lighting.primaryDirection;
         const float shadowMatrix[16]={1,0,0,0,-sun.x/sun.y,0,-sun.z/sun.y,0,0,0,1,0,0.006f,0.012f,0.005f,1};
         glStencilMask(0xff);glClearStencil(0);glClear(GL_STENCIL_BUFFER_BIT);glEnable(GL_STENCIL_TEST);glStencilFunc(GL_ALWAYS,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);glDepthMask(GL_FALSE);glDisable(GL_DEPTH_TEST);glPushMatrix();glMultMatrixf(shadowMatrix);
@@ -1283,13 +1590,21 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0,0,0);}
         const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
         const auto roomSetting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;
-        for(int offset=-1;offset<=1;++offset)for(auto target:state.targets)if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true);else drawProceduralHumanDesktop(target,state.time,0,0,0);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}
+        for(int offset=-1;offset<=1;++offset)for(int targetIndex=0;targetIndex<TARGET_COUNT;++targetIndex){auto target=state.targets[targetIndex];if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;const auto* perception=!state.multiplayer.enabled&&enemyPerceptions?&(*enemyPerceptions)[targetIndex]:nullptr;const float headYaw=perception?perception->headYaw:0.0f,headPitch=perception?perception->headPitch:0.0f;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true,headYaw,headPitch);else drawProceduralHumanDesktop(target,state.time,0,0,0,headYaw,headPitch);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}}
         for(const auto& flower:state.flowers)if(flower.active)drawBox({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},{0.54f,0.22f,0.54f},0,flower.rotationY,0,0,0,0);
         for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0,0,0);}
         glPopMatrix();glEnable(GL_DEPTH_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glStencilMask(0);glStencilFunc(GL_EQUAL,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
         glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);drawBox({0,0.014f,shadowTileOrigin},{ROOM_WIDTH,0.008f,ROOM_DEPTH*3.0f},0,0,0,0.012f,0.018f,0.022f,0.24f);glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);glDisable(GL_STENCIL_TEST);
     }
 
+    if(state.cart.active){
+        const auto& cart=state.cart;const Vec3 f=rolling_vehicle::forward(cart.yaw),r=rolling_vehicle::right(cart.yaw);
+        for(const auto& part:shopping_cart_geometry::Parts){
+            const Vec3 p=cart.pos+r*part.offset.x+Vec3{0,part.offset.y,0}-f*part.offset.z;
+            if(part.kind==shopping_cart_geometry::PartKind::Wheel)drawBox(p,part.size,cart.wheelSpin[part.wheel],cart.yaw+cart.casterYaw[part.wheel],0,0.07f,0.08f,0.09f);
+            else{const bool basket=part.kind==shopping_cart_geometry::PartKind::Basket;drawBox(p,part.size,0,cart.yaw,0,basket?0.34f:0.62f,basket?0.42f:0.68f,basket?0.45f:0.70f,basket?0.68f:1.0f);}
+        }
+    }
     if (state.phoneVisual.visible) {
         const Vec3 phonePos=state.phoneTransform.position;
         const auto& pv=state.phoneVisual;
@@ -1317,11 +1632,11 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         glDisable(GL_BLEND); glEnable(GL_LIGHTING);
     }
 
-    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float distanceSquared; };
+    struct TranslucentSoulDraw { Vec3 center; Vec3 scale; float rotationY; VisualColor color; float opacity; float distanceSquared; };
     std::array<TranslucentSoulDraw,TARGET_COUNT*3> translucentSouls{};
     int translucentSoulCount=0;
     const float tileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
-    for(int offset=-1;offset<=1;++offset)for (auto target:state.targets) if (target.alive) {
+    for(int offset=-1;offset<=1;++offset)for(int targetIndex=0;targetIndex<TARGET_COUNT;++targetIndex){auto target=state.targets[targetIndex];if(target.alive) {
         Vec3 p=target.pos; p.z=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);
         if(!actorVisible(p))continue;
         const float mirrorShift=p.z-target.pos.z;
@@ -1329,7 +1644,8 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         target.pos = p;
         if (!target.slurpable) {
             const auto setting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;const VisualColor damageColor=humanDamageSurfaceColor(Pass7Visual::NormalEnemy,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
-            if(humanModel_.valid())drawHumanModel(target,state.time,setting);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b);
+            const auto* perception=!state.multiplayer.enabled&&enemyPerceptions?&(*enemyPerceptions)[targetIndex]:nullptr;const float headYaw=perception?perception->headYaw:0.0f,headPitch=perception?perception->headPitch:0.0f;
+            if(humanModel_.valid())drawHumanModel(target,state.time,setting,false,headYaw,headPitch);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b,headYaw,headPitch);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             const auto& sv=target.soulVisual;
@@ -1338,22 +1654,30 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
             drawSoulFlesh(target,soulCenter);
             const float cube=0.72f*0.78f*target.scale*sv.morphScale;
             const Vec3 delta=soulCenter-state.camera.pos;
-            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},sv.rotationY,sv.color,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
+            const auto identity=soul_identity::visualSignature(target.soul.id,target.soul.brute,target.soul.originRoom);
+            const VisualColor identityColor{sv.color.r*0.50f+identity.red*0.50f,sv.color.g*0.58f+identity.green*0.42f,sv.color.b*0.54f+identity.blue*0.46f};
+            translucentSouls[translucentSoulCount++]={soulCenter,{cube*sv.scale.x*identity.aspect,cube*sv.scale.y,cube*sv.scale.z/identity.aspect},sv.rotationY+identity.phase*0.34f,identityColor,sv.shellOpacity,delta.x*delta.x+delta.y*delta.y+delta.z*delta.z};
         }
-    }
+    }}
     std::sort(translucentSouls.begin(),translucentSouls.begin()+translucentSoulCount,[](const auto& a,const auto& b){return a.distanceSquared>b.distanceSquared;});
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
     // Draw one camera-facing surface of each convex shell. With culling
     // disabled, several cube faces compound alpha and produce false opacity.
     glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
-    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,0.68f);}
+    for(int i=0;i<translucentSoulCount;++i){const auto& soul=translucentSouls[i];drawBox(soul.center,soul.scale,0,soul.rotationY,0,soul.color.r,soul.color.g,soul.color.b,soul.opacity);}
     glDisable(GL_CULL_FACE); glDepthMask(GL_TRUE); glDisable(GL_BLEND);
     for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset)for (int captureIndex=0;captureIndex<state.requiredSouls;++captureIndex) {
         const auto& capture=state.captures[captureIndex];
         Vec3 p=capture.pos; p.z+=tileOrigin+static_cast<float>(offset)*ROOM_DEPTH;
         drawBox(p+Vec3{0,0,-0.04f},{0.72f,0.72f,0.06f},0,0,0,Pass7Visual::MetallicTeal.r*0.74f,Pass7Visual::MetallicTeal.g*0.74f,Pass7Visual::MetallicTeal.b*0.74f);
         drawBox(p,{0.52f,0.52f,0.08f},0,0,0,0.02f,0.03f,0.04f);
-        if(capture.filled) drawBox(p+Vec3{0,0,0.12f},{0.36f,0.36f,0.36f},state.time*1.5f,state.time*2.0f,state.time,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b);
+        if(capture.filled){
+            const SoulRecord depositedSoul=unpackSoulRecord(capture.packedSoul);
+            const auto identity=soul_identity::visualSignature(depositedSoul.id,depositedSoul.brute,depositedSoul.originRoom);
+            const float identityPhase=identity.phase;
+            const float identityScale=depositedSoul.brute?1.16f:1.0f;
+            drawBox(p+Vec3{0,0,0.12f},{0.36f*identityScale*identity.aspect,0.36f/identityScale,0.36f/identity.aspect},state.time*(1.15f+identityPhase*0.7f)*identity.spinRate,state.time*(1.55f+identityPhase)*identity.spinRate,identityPhase*PI,identity.red,identity.green,identity.blue);
+        }
     }
     for(const auto& flower:state.flowers) if(flower.active){
         for(int offset=-ROOM_VISUAL_HORIZON;offset<=ROOM_VISUAL_HORIZON;++offset){
@@ -1372,20 +1696,80 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     }
     for (const auto& bullet:state.bullets) if (bullet.alive) {
         const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);
-        drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,Pass7Visual::SoulBase.r,Pass7Visual::SoulBase.g,Pass7Visual::SoulBase.b,0.68f);
+        const auto identity=soul_identity::visualSignature(bullet.soul.id,bullet.soul.brute,bullet.soul.originRoom);
+        if(bullet.dropped){
+            // Recoverable combat capital settles into a grounded, coherent
+            // posture instead of reading like a projectile frozen in flight.
+            drawBox(bullet.pos,{size*1.02f*identity.aspect,size*0.78f,size*1.02f/identity.aspect},0,bullet.spin*identity.spinRate+identity.phase*PI,0,identity.red,identity.green,identity.blue,0.78f);
+        }else{
+            // Let velocity physically articulate flight. The mild stretch is
+            // the projectile itself, not a trail or targeting annotation.
+            const float speed=length(bullet.vel);const Vec3 direction=speed>0.001f?bullet.vel*(1.0f/speed):Vec3{0,0,1};
+            const float yaw=std::atan2(direction.x,direction.z),pitch=-std::asin(clampf(direction.y,-1.0f,1.0f));
+            drawBox(bullet.pos,{size*0.84f*identity.aspect,size*0.84f/identity.aspect,size*1.28f},pitch,yaw,bullet.spin*0.45f*identity.spinRate+identity.phase*PI,identity.red,identity.green,identity.blue,0.68f);
+        }
     }
+    const auto shellFragmentVisibility=[&](const ParticleState& particle){
+        if(particle.material!=ParticleMaterial::Environment)return 1.0f;
+        float visibility=1.0f;
+        for(const auto& target:state.targets){
+            if(!target.alive||!target.slurpable||target.soulMorph>=0.92f)continue;
+            Vec3 soul=target.pos;soul.z=tileOrigin+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);soul.y+=0.57f;
+            const Vec3 sight=soul-state.camera.pos;const float sightLengthSq=lengthSq(sight);if(sightLengthSq<0.001f)continue;
+            const float along=clampf(dot3(particle.pos-state.camera.pos,sight)/sightLengthSq,0.0f,1.0f);
+            const Vec3 nearest=state.camera.pos+sight*along;
+            const float revealRadius=0.20f+(1.0f-target.soulMorph)*0.34f;
+            if(along>0.04f&&along<1.0f&&lengthSq(particle.pos-nearest)<revealRadius*revealRadius)visibility=std::min(visibility,0.16f);
+        }
+        return visibility;
+    };
     if(state.localSettings.particles)for(const auto& particle:state.particles) if(particle.life>0.0f) {
         const float t=particle.maxLife>0.0f?clampf(particle.life/particle.maxLife,0.0f,1.0f):0.0f;
         const float size=particle.size*t;
         const VisualColor color=particleMaterialColor(particle.material,early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting,t);
-        drawBox(particle.pos,{size,size,size},particle.life*8.0f,particle.life*4.0f,particle.life*6.0f,color.r,color.g,color.b,(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f));
+        const float alpha=(particle.material==ParticleMaterial::Environment?0.82f*t:0.9f)*shellFragmentVisibility(particle);
+        Vec3 renderedPos=particle.pos;float renderedSpin=particle.life*6.0f;
+        if(state.vacuum.active&&state.vacuum.power>0.01f){const Vec3 toPhone=state.phoneTransform.vacuumPullPoint-particle.pos;const float distance=length(toPhone);if(distance>0.001f&&distance<7.5f){const float influence=(1.0f-distance/7.5f)*state.vacuum.power;renderedPos+=toPhone*(0.018f*influence);renderedSpin+=influence*0.85f;}}
+        drawParticleCube(renderedPos,size,renderedSpin,color.r,color.g,color.b,alpha);
     }
     if(state.localSettings.particles||state.localSettings.portalWindow)drawDoorDataMosh(state);
+    if(codec&&codec->inspectedTarget>=0&&codec->inspectedTarget<TARGET_COUNT){
+        const TargetState& inspected=state.targets[codec->inspectedTarget];
+        if(inspected.alive&&!inspected.slurpable){
+            const float h=(PASS7_HUMAN_VISUAL_SPEC.totalHeight+0.18f)*inspected.scale;
+            glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDepthMask(GL_FALSE);
+            drawBox(inspected.pos+Vec3{0,h*0.5f,0},{0.72f*inspected.scale,h,0.72f*inspected.scale},0,inspected.visualYaw,0,Pass7Visual::ElectricCyan.r,Pass7Visual::ElectricCyan.g,Pass7Visual::ElectricCyan.b,0.16f);
+            glDepthMask(GL_TRUE);glDisable(GL_BLEND);glEnable(GL_LIGHTING);
+        }
+    }
     if(codec&&codec->showColliders){
         glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);glLineWidth(2.0f);
         const float z0=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
         for(int i=0;i<state.debug.colliderCount;++i){const auto& c=state.roomColliders[i];drawBox({c.center.x,c.center.y,z0+c.center.z},{c.width,c.height,c.depth},0,0,0,Pass7Visual::ElectricMagenta.r,Pass7Visual::ElectricMagenta.g,Pass7Visual::ElectricMagenta.b);}
         glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);glEnable(GL_CULL_FACE);glEnable(GL_LIGHTING);
+    }
+
+    // Restrained screen-space artificial-sun flare. It only appears when the
+    // camera actually faces the authored key light and fades rapidly off-axis.
+    {
+        const Vec3 toSun=normalized(lighting.primaryDirection*-1.0f);
+        const Vec3 view=normalized(state.camera.forward);
+        const float facing=dot3(view,toSun);
+        if(state.localSettings.graphicsPreset>0&&facing>0.72f){
+            const Vec3 right=normalized(cross3(view,{0,1,0}));
+            const Vec3 up=normalized(cross3(right,view));
+            const float sx=static_cast<float>(width_)*0.5f+dot3(toSun,right)*static_cast<float>(width_)*0.62f;
+            const float sy=static_cast<float>(height_)*0.5f-dot3(toSun,up)*static_cast<float>(height_)*0.62f;
+            const float a=clampf((facing-0.72f)/0.28f,0.0f,1.0f);
+            glDisable(GL_DEPTH_TEST);glDisable(GL_LIGHTING);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);glDepthMask(GL_FALSE);
+            glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,width_,height_,0,-1,1);glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+            const auto flareQuad=[](float x,float y,float r,float red,float green,float blue,float alpha){glColor4f(red,green,blue,alpha);glBegin(GL_QUADS);glVertex2f(x-r,y-r);glVertex2f(x+r,y-r);glVertex2f(x+r,y+r);glVertex2f(x-r,y+r);glEnd();};
+            flareQuad(sx,sy,10.0f+16.0f*a,1.0f,0.93f,0.72f,0.22f*a);
+            const float cx=static_cast<float>(width_)*0.5f,cy=static_cast<float>(height_)*0.5f;
+            flareQuad(cx+(cx-sx)*0.34f,cy+(cy-sy)*0.34f,7.0f+7.0f*a,0.48f,0.72f,0.86f,0.055f*a);
+            flareQuad(cx+(cx-sx)*0.72f,cy+(cy-sy)*0.72f,4.0f+5.0f*a,0.92f,0.62f,0.38f,0.035f*a);
+            glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDepthMask(GL_TRUE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);glDisable(GL_BLEND);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
+        }
     }
     if(hudVisible_)drawHud(state);
     if(codec&&codec->open)drawDeveloperCodec(*codec);

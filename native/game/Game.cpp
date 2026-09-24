@@ -300,6 +300,7 @@ void syncTargetReactionVisual(TargetState& target) {
         target.attackVariant
     );
 }
+
 float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
 float secretDoorKnockPulse(float time) {
     constexpr float phraseSeconds = 11.8f;
@@ -314,6 +315,7 @@ float secretDoorKnockPulse(float time) {
     }
     return clampf(pulse, 0.0f, 1.0f);
 }
+
 bool secretDoorKnockPhraseActive(float time) {
     constexpr float phraseSeconds = 11.8f;
     constexpr float audibleSeconds = 5.4f;
@@ -414,6 +416,7 @@ void Game::reset() {
     state_.localSettings.menuScroll=0.0f;
     state_.localSettings.menuHistoryDepth=0;
     state_.localSettings.rebindingAction=-1;
+    if(enemyRuntime_)*enemyRuntime_=EnemyRuntimePool{};
     state_.secretTv.tolerance=2+(std::abs(state_.roomSeed)%3);
     resetRoom();
     state_.started=true;
@@ -421,6 +424,16 @@ void Game::reset() {
     state_.uiPaused=false;
     emitAudio(AudioCue::VcInvitation,0.58f);
     updatePhoneDisplay(0.0f);
+}
+
+Game::EnemyRuntimePool& Game::enemyRuntime() {
+    if(!enemyRuntime_)enemyRuntime_=std::make_unique<EnemyRuntimePool>();
+    return *enemyRuntime_;
+}
+
+const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>& Game::enemyPerceptions() const {
+    static const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> empty{};
+    return enemyRuntime_ ? enemyRuntime_->perceptions : empty;
 }
 
 void Game::restart() {
@@ -444,6 +457,19 @@ void Game::restart() {
     state_.cinematic.textInteraction = 1.0f;
     state_.cinematic.restartAwaken = 1.0f;
     updatePhoneDisplay(0.0f);
+}
+
+void Game::resolveVictory(bool continueEndless) {
+    if (!state_.victory) return;
+    if (state_.multiplayer.enabled && !state_.multiplayer.authoritativeHost) return;
+    if (!continueEndless) {
+        restart();
+        return;
+    }
+    state_.victory = false;
+    state_.endlessMode = true;
+    clearInputState();
+    setEnergyTicker("CONTAINMENT RELEASED / ENDLESS", 2);
 }
 
 void Game::debugStartSecretTvTest(bool enterRoom) {
@@ -539,14 +565,28 @@ void Game::debugStartTraversalLab() {
 void Game::debugStartSlopeLab(){
     reset();state_.slopeLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=true;
     state_.upgradeMenu.active=false;state_.cinematic.introActive=false;
-    for(auto& target:state_.targets)target=TargetState{};for(auto& capture:state_.captures)capture=CapturePointState{};
-    for(auto& collider:state_.roomColliders)collider=RoomCollider{};for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
+    for(auto& target:state_.targets)target=TargetState{};
+    for(auto& capture:state_.captures)capture=CapturePointState{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};
+    for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};
+    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
     state_.slopeSupports[0]={-3.0f,3.0f,2.0f,12.0f,0.0f,1.6f,SlopeAxis::NegativeZ};state_.slopeSupportCount=1;
     RoomCollider& plateau=state_.roomColliders[0];plateau.minX=-3.0f;plateau.maxX=3.0f;plateau.minZ=-8.0f;plateau.maxZ=2.0f;plateau.bottomY=0.0f;plateau.topY=1.6f;plateau.width=6.0f;plateau.depth=10.0f;plateau.height=1.6f;plateau.center={0.0f,0.8f,-3.0f};state_.debug.colliderCount=1;
     const early_browser_visuals::EnvironmentPropSpec rock{early_browser_visuals::EnvironmentPrimitive::Rock,early_browser_visuals::EnvironmentRole::Mass,{6.0f,0.0f,7.0f},{3.2f,0.62f,3.0f},0.24f,0};
     state_.rockSupports[0]={rock,73,4,0};state_.rockSupportCount=1;
     state_.player.pos={0.0f,GROUND_Y,16.0f};state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.airJumpsRemaining=1;state_.player.battery=100.0f;
     state_.camera.yaw=0.0f;state_.camera.pitch=-0.08f;state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
+}
+
+void Game::debugStartCartLab(){
+    reset();
+    if(state_.multiplayer.enabled)return;
+    state_.cartLab=true;state_.requiredSouls=0;state_.depositedSouls=0;state_.roomClear=false;
+    state_.cinematic.introActive=false;state_.dead=false;state_.started=true;
+    for(auto& target:state_.targets)target.alive=false;
+    state_.player.pos={0.0f,0.72f,7.0f};state_.player.vel={};state_.player.grounded=false;
+    auto& cart=state_.cart;cart={};cart.active=true;cart.occupied=true;cart.driverPlayerId=0;cart.pos={0.0f,rolling_vehicle::CartConfig.rideHeight,7.0f};cart.yaw=0.0f;
+    state_.camera.yaw=0.0f;state_.camera.pitch=-0.12f;
 }
 
 void Game::debugStartGeneratedRoomFixture(int roomSeed,int roomIndex){
@@ -578,7 +618,9 @@ void Game::debugStepRoomInspector(int delta,bool newSeed){
 }
 
 void Game::debugToggleRoomInspectorEnemies(){
-    if(!state_.roomInspector)return;state_.roomInspectorEnemies=!state_.roomInspectorEnemies;debugStepRoomInspector(0,false);
+    if(!state_.roomInspector)return;
+    state_.roomInspectorEnemies=!state_.roomInspectorEnemies;
+    debugStepRoomInspector(0,false);
 }
 
 void Game::refreshRoomInspectorReport(bool seedSelectionValid){
@@ -1143,8 +1185,10 @@ void Game::buildRoomColliders() {
     const auto geometry=routeValid?early_browser_visuals::roomGeometryCapacityPlan(plan,state_.roomSeed,state_.roomIndex,ROOM_COLLIDER_COUNT):early_browser_visuals::RoomGeometryCapacityPlan{};
     state_.debug.colliderCount=geometry.authoredColliderCount;
     for (auto& c : state_.roomColliders) c = RoomCollider{};
-    for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};state_.slopeSupportCount=0;
-    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};state_.rockSupportCount=0;
+    for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};
+    state_.slopeSupportCount=0;
+    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
+    state_.rockSupportCount=0;
     for (int i = 0; i < state_.debug.colliderCount; ++i) {
         const auto spec=early_browser_visuals::obstacle(plan,state_.roomSeed,state_.roomIndex,i);
         const float px=spec.center.x,pz=spec.center.z,w=spec.size.x,h=spec.size.y,d=spec.size.z;
@@ -1240,6 +1284,7 @@ void Game::chooseSecretTvEntrance() {
 void Game::resetRoom() {
     const int roomIndex = state_.roomIndex;
     const int roomSeed = state_.roomSeed;
+    enemyRuntime() = {};
     state_.roomClear = false;
     state_.player = PlayerState{};
     state_.player.pos = {0.0f, GROUND_Y, ROOM_START_Z};
@@ -1340,6 +1385,8 @@ void Game::clearInputState() {
     input.meleePressed = false;
     input.shootPressed = false;
     input.cameraTogglePressed = false;
+    input.dodgePressed = false;
+    input.blockHeld = false;
 }
 
 void Game::setTouch(int action, float x, float y, int pointerCount) {
@@ -1365,9 +1412,14 @@ void Game::setTouchControls(float moveX, float moveZ, float lookDeltaX, float lo
     if (cameraTogglePressed) input.cameraTogglePressed = true;
 }
 
+void Game::setDefensiveInput(bool dodgePressed, bool blockHeld) {
+    state_.input.blockHeld = blockHeld;
+    if (dodgePressed) state_.input.dodgePressed = true;
+}
+
 void Game::update(float dt) {
     dt = clampf(dt, 0.0f, 0.033f);
-    const bool soloSimulationPaused=state_.started&&state_.uiPaused&&!state_.multiplayer.enabled;
+    const bool soloSimulationPaused=(state_.started&&state_.uiPaused&&!state_.multiplayer.enabled)||state_.victory;
     if(!soloSimulationPaused){
         state_.time += dt;
         state_.environmentVisual.latestShotAge=std::min(9999.0f,state_.environmentVisual.latestShotAge+dt);
@@ -1410,6 +1462,12 @@ void Game::update(float dt) {
         state_.hud.batteryFill=clampf(state_.player.battery/100.0f,0.0f,1.0f);
         state_.hud.lowBattery=state_.player.battery<24.0f;
         state_.hud.gameOver=false;
+        return;
+    }
+    if(state_.victory){
+        state_.phoneVisual=makePhoneVisualState(0.0f,0.0f,0.0f,state_.time,state_.camera.firstPerson);
+        updatePhoneTransform();
+        updateCamera(0.0f);
         return;
     }
     if(state_.cinematic.introActive) {
@@ -1457,8 +1515,35 @@ void Game::update(float dt) {
     if(state_.multiplayer.enabled&&!state_.multiplayer.authoritativeHost){updateNetworkGuest(dt);return;}
     if(state_.attractMode)updateAttractInput(dt);
     updateSecretTv(dt);
+    // Open rooms have their own local weather clock. It advances only while
+    // gameplay advances, so menus and cinematics cannot age a room.
+    {
+        const auto plan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+        state_.weather.exposed=plan.form==early_browser_visuals::RoomForm::Open
+            || plan.setting==early_browser_visuals::RoomSetting::Field
+            || plan.setting==early_browser_visuals::RoomSetting::Coastal;
+        if(state_.weather.exposed){
+            constexpr float dayNightSeconds=180.0f;
+            state_.weather.cycleTime+=dt;
+            state_.weather.completedCycles=static_cast<int>(state_.weather.cycleTime/dayNightSeconds);
+            const float phase=std::fmod(state_.weather.cycleTime,dayNightSeconds)/dayNightSeconds;
+            state_.weather.daylight=clampf(0.5f+0.5f*std::cos((phase-0.25f)*DB_PI*2.0f),0.0f,1.0f);
+            // Deterministic, slow weather fronts. No per-frame RNG and no
+            // weather object graph: room identity plus cycle time is enough.
+            const float front=std::sin(state_.roomSeed*0.017f+state_.roomIndex*1.73f+state_.weather.cycleTime*0.019f)
+                +0.55f*std::sin(state_.roomSeed*0.031f-state_.weather.cycleTime*0.041f);
+            const float rainTarget=front>0.92f?clampf((front-0.92f)*1.8f,0.0f,1.0f):0.0f;
+            state_.weather.rain+=(rainTarget-state_.weather.rain)*std::min(1.0f,dt*0.32f);
+            state_.weather.wetness+=(state_.weather.rain-state_.weather.wetness)*std::min(1.0f,dt*(state_.weather.rain>state_.weather.wetness?0.16f:0.035f));
+            state_.progression.run.roomElapsed+=dt;
+        }else{
+            state_.weather.daylight=1.0f;
+            state_.weather.rain+=(0.0f-state_.weather.rain)*std::min(1.0f,dt*0.7f);
+            state_.weather.wetness+=(0.0f-state_.weather.wetness)*std::min(1.0f,dt*0.08f);
+        }
+    }
     updateInputActions(dt);
-    updatePlayer(dt);
+    if(state_.cartLab)updateCart(dt);else updatePlayer(dt);
     updateNetworkPeers(dt);
     updateTeamRevival(dt);
     state_.phoneVisual = makePhoneVisualState(state_.vacuum.pose, state_.vacuum.power, 0.0f, state_.time, state_.camera.firstPerson);
@@ -1529,12 +1614,15 @@ PlayerCommand Game::capturePlayerCommand(unsigned int sequence,unsigned int loca
     command.moveX=clampf((input.right?1.0f:0.0f)-(input.left?1.0f:0.0f)+input.touchMoveX,-1.0f,1.0f);
     command.moveZ=clampf((input.forward?1.0f:0.0f)-(input.back?1.0f:0.0f)+input.touchMoveZ,-1.0f,1.0f);
     command.yaw=state_.camera.yaw;command.pitch=state_.camera.pitch;
-    if(input.forward)command.buttons|=CommandForward;if(input.back)command.buttons|=CommandBack;
-    if(input.left)command.buttons|=CommandLeft;if(input.right)command.buttons|=CommandRight;
+    if(input.forward)command.buttons|=CommandForward;
+    if(input.back)command.buttons|=CommandBack;
+    if(input.left)command.buttons|=CommandLeft;
+    if(input.right)command.buttons|=CommandRight;
     if(input.sprint||input.touchSprint)command.buttons|=CommandSprint;
     if(input.jumpPressed)command.buttons|=CommandJump;
     if(input.primaryHeld||input.touchPrimaryHeld)command.buttons|=CommandVacuum;
-    if(input.meleePressed)command.buttons|=CommandMelee;if(input.shootPressed)command.buttons|=CommandShoot;
+    if(input.meleePressed)command.buttons|=CommandMelee;
+    if(input.shootPressed)command.buttons|=CommandShoot;
     if(input.cameraTogglePressed)command.buttons|=CommandCameraToggle;
     if(input.wiggleAxis<0)command.buttons|=CommandWiggleLeft;else if(input.wiggleAxis>0)command.buttons|=CommandWiggleRight;
     if(input.commSignalPressed==1)command.buttons|=CommandCommHelp;
@@ -1803,7 +1891,8 @@ WorldSupportSample Game::getWorldSupport(float x,float z,float radius) const {
     }
     for(int i=0;i<state_.rockSupportCount;++i){
         const auto sample=faceted_rock::sampleSupportFootprint(state_.rockSupports[i],x,localZ,radius);
-        if(!sample.inside)continue;const float candidate=sample.height+GROUND_Y;
+        if(!sample.inside)continue;
+        const float candidate=sample.height+GROUND_Y;
         if(candidate>support.height+0.0001f){support.height=candidate;support.normal=sample.normal;support.classification=SupportClassification::TraversableSlope;support.identity={SupportSource::Generated,i};}
     }
     support.height=std::min(support.height,getPlayerCeilingLimit());
@@ -2017,6 +2106,14 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
     Vec3 local = state_.player.pos; local.z = wrapZ(local.z);
     if (!isInsideDoorAperture(local, 0.04f)) return;
     if (state_.roomClear && currentTile < previousTile) {
+        if(state_.roomIndex==STORY_RUN_FINAL_ROOM&&!state_.endlessMode&&!state_.rallyLab&&!state_.traversalLab&&!state_.slopeLab&&!state_.cartLab&&!state_.roomInspector){
+            state_.player.pos.z=previousZ;
+            state_.player.vel={};
+            state_.victory=true;
+            clearInputState();
+            setEnergyTicker("BREAKDOWN CONTAINED",2);
+            return;
+        }
         state_.doorTransition.active=true; state_.doorTransition.progress=1.0f;
         state_.doorTransition.distanceTravelled=0.0f; state_.doorTransition.lastPlayerPos=state_.player.pos;
         if(state_.roomIndex<std::numeric_limits<int>::max())++state_.roomIndex;
@@ -2033,6 +2130,7 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.depositedSouls=0;
         state_.progression.run.roomHeat=0.0f;
         state_.progression.run.roomElapsed=0.0f;
+        state_.weather=RoomWeatherState{};
         state_.progression.run.roomCaptures=0;
         state_.vacuum=VacuumState{};
         state_.meleeVisual=MeleeVisualState{};
@@ -2265,18 +2363,38 @@ void Game::updatePlayer(float dt) {
     p.ledgeGrabCooldown=std::max(0.0f,p.ledgeGrabCooldown-dt);
     p.ledgeMantleTimer=std::max(0.0f,p.ledgeMantleTimer-dt);
     p.treeClimbCooldown=std::max(0.0f,p.treeClimbCooldown-dt);
+    p.landingImpact=std::max(0.0f,p.landingImpact-dt*7.5f);
     if (p.grounded) p.coyoteTimer = COYOTE_TIME; else p.coyoteTimer = std::max(0.0f, p.coyoteTimer - dt);
     MeleeVisualState& lunge=state_.meleeVisual;
     lunge.landingRecovery=std::max(0.0f,lunge.landingRecovery-dt);
     lunge.wallGripTimer=std::max(0.0f,lunge.wallGripTimer-dt);
     const bool running = input.sprint || input.touchSprint;
     const float power = batteryPower(p);
+    p.dodgeCooldown=std::max(0.0f,p.dodgeCooldown-dt);
+    p.dodgeTimer=std::max(0.0f,p.dodgeTimer-dt);
+    p.blocking=input.blockHeld&&p.grounded&&p.dodgeTimer<=0.0f&&p.grabbedByTarget<0;
+    if(input.dodgePressed&&p.grounded&&p.dodgeCooldown<=0.0f&&!p.blocking&&p.battery>=5.0f){
+        const float dodgeForward=(input.forward?1.0f:0.0f)-(input.back?1.0f:0.0f)+input.touchMoveZ;
+        const float dodgeSide=(input.right?1.0f:0.0f)-(input.left?1.0f:0.0f)+input.touchMoveX;
+        Vec3 dodge=cameraForwardFlat()*dodgeForward+cameraRightFlat()*dodgeSide;
+        if(lengthSq(dodge)<0.01f)dodge={-std::sin(p.yaw),0,-std::cos(p.yaw)};
+        p.dodgeDirection=normalized(dodge);p.dodgeTimer=0.34f;p.dodgeCooldown=0.62f;p.dodgeRoll=0.0f;
+        spendBattery(5.0f,BatteryReason::Melee);
+    }
+    if(p.dodgeTimer>0.0f){
+        const float phase=1.0f-p.dodgeTimer/0.34f;
+        const float envelope=0.72f+0.28f*std::sin(phase*3.14159265359f);
+        p.vel=p.dodgeDirection*(9.2f*envelope);
+        p.dodgeRoll=phase*3.14159265359f*2.0f;
+    }else p.dodgeRoll=0.0f;
     const bool committedLunge=state_.meleeVisual.locomotionLunge&&state_.meleeVisual.airLungeTimer>0.0f;
     const float lungeInfluence=std::min(0.42f,0.025f*static_cast<float>(upgradeLevel(UpgradeTrack::Lunge)));
     const float airControl = p.grounded ? 1.0f : AIR_ACCEL_MULT*(committedLunge?0.18f+lungeInfluence:1.0f);
     const float airSpeed = p.grounded ? 1.0f : AIR_MAX_SPEED_MULT;
-    const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl;
-    const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed;
+    const float defensiveMove=p.blocking?0.34f:1.0f;
+    const float dodgeMove=p.dodgeTimer>0.0f?0.0f:1.0f;
+    const float accel = (running ? RUN_ACCEL : WALK_ACCEL) * power * airControl * defensiveMove * dodgeMove;
+    const float maxSpeed = (running ? RUN_MAX_SPEED : WALK_MAX_SPEED) * power * airSpeed * defensiveMove;
     const float vacuumSlow = 1.0f - state_.vacuum.pose * (1.0f - VACUUM_MOVE_MULT);
     float forwardAxis = (input.forward ? 1.0f : 0.0f) - (input.back ? 1.0f : 0.0f) + input.touchMoveZ;
     float strafeAxis = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
@@ -2329,6 +2447,8 @@ void Game::updatePlayer(float dt) {
         const float support = getPlayerSupportY(p.pos.x, p.pos.z);
         if (p.pos.y <= support) {
             const float impactSpeed=std::max(0.0f,-p.jumpVel);
+            p.landingImpact=std::max(p.landingImpact,impactSpeed);
+            p.landingContactPosition={p.pos.x,support,p.pos.z};
             p.pos.y = support; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));
             state_.phonePose.doubleJumpTimer = 0.0f;
             if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
@@ -2347,6 +2467,8 @@ void Game::updatePlayer(float dt) {
         if (p.pos.y > supportAfter + 0.12f) p.grounded = false; else {p.pos.y = supportAfter;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));}
     } else if (!caughtLedge&&p.jumpVel <= 0 && p.pos.y <= supportAfter) {
         const float impactSpeed=std::max(0.0f,-p.jumpVel);
+        p.landingImpact=std::max(p.landingImpact,impactSpeed);
+        p.landingContactPosition={p.pos.x,supportAfter,p.pos.z};
         p.pos.y = supportAfter; p.jumpVel = 0; p.grounded = true; p.coyoteTimer = COYOTE_TIME; p.airJumpsRemaining = 1;adoptSupportIdentity(p,getPlayerSupport(p.pos.x,p.pos.z));
         state_.phonePose.doubleJumpTimer = 0.0f;
         if(lunge.airLungeLandingPending)finishAirLungeLanding(impactSpeed);
@@ -2359,6 +2481,8 @@ void Game::updatePlayer(float dt) {
     if(!p.ledgeHanging){p.targetYaw = state_.camera.yaw;p.yaw = state_.camera.yaw;}
     updatePhoneGait(dt, running);
     updatePhoneActionPose(dt, running, forwardAxis, strafeAxis);
+    if(p.dodgeTimer>0.0f){state_.phonePose.roll+=p.dodgeRoll;state_.phonePose.lift+=std::sin((1.0f-p.dodgeTimer/0.34f)*3.14159265359f)*0.10f;}
+    if(p.blocking){state_.phonePose.pitch-=0.16f;state_.phonePose.lift-=0.025f;}
     state_.debug.supportY = supportAfter;
     state_.debug.localZ = wrapZ(p.pos.z);
     state_.debug.horizontalSpeed = horizontalLength(p.vel);
@@ -2371,6 +2495,43 @@ void Game::updatePlayer(float dt) {
     state_.debug.phoneLift = state_.phonePose.lift;
     state_.debug.phoneForward = state_.phonePose.forward;
     state_.debug.phoneSide = state_.phonePose.side;
+}
+
+void Game::updateCart(float dt){
+    auto& cart=state_.cart;
+    if(!cart.active||state_.multiplayer.enabled){state_.cartLab=false;updatePlayer(dt);return;}
+    std::array<rolling_vehicle::Probe,rolling_vehicle::WheelCount> probes{};
+    for(int i=0;i<rolling_vehicle::WheelCount;++i){
+        const Vec3 p=rolling_vehicle::worldAnchor(cart,i);
+        const auto sample=getWorldSupport(p.x,p.z,0.06f);
+        probes[i]={true,sample.height,sample.normal};
+    }
+    const float throttle=clampf((state_.input.forward?1.0f:0.0f)-(state_.input.back?1.0f:0.0f)+state_.input.touchMoveZ,-1,1);
+    const float steer=clampf((state_.input.right?1.0f:0.0f)-(state_.input.left?1.0f:0.0f)+state_.input.touchMoveX,-1,1);
+    const rolling_vehicle::Input input{throttle,steer,(state_.input.sprint||state_.input.touchSprint)?1.0f:0.0f};
+    const Vec3 previous=cart.pos;
+    rolling_vehicle::update(cart,input,probes,dt);
+    constexpr float radius=0.57f;
+    const auto blocked=[&](float x,float z){
+        for(int i=0;i<state_.debug.colliderCount;++i){
+            const auto& c=state_.roomColliders[i];
+            if(cart.pos.y+0.52f<c.bottomY||cart.pos.y>c.topY)continue;
+            if(x+radius>c.minX&&x-radius<c.maxX&&z+radius>c.minZ&&z-radius<c.maxZ)return true;
+        }
+        return x-radius<-ROOM_WIDTH*0.5f||x+radius>ROOM_WIDTH*0.5f;
+    };
+    if(blocked(cart.pos.x,wrapZ(cart.pos.z))){
+        const bool xFree=!blocked(previous.x,wrapZ(cart.pos.z));
+        const bool zFree=!blocked(cart.pos.x,wrapZ(previous.z));
+        if(xFree){cart.pos.x=previous.x;cart.vel.x=0;}
+        else if(zFree){cart.pos.z=previous.z;cart.vel.z=0;}
+        else{cart.pos.x=previous.x;cart.pos.z=previous.z;cart.vel.x=cart.vel.z=0;cart.yawRate=0;}
+    }
+    const Vec3 f=rolling_vehicle::forward(cart.yaw);
+    state_.player.pos=cart.pos-f*0.34f+Vec3{0,0.90f,0};state_.player.vel=cart.vel;
+    state_.player.yaw=state_.player.targetYaw=cart.yaw;state_.player.grounded=false;state_.player.jumpVel=0;
+    state_.vacuum=VacuumState{};state_.meleeVisual=MeleeVisualState{};
+    state_.debug.supportY=cart.supportHeight;state_.debug.horizontalSpeed=horizontalLength(cart.vel);
 }
 
 void Game::updatePhoneTransform() {
@@ -2898,6 +3059,15 @@ void Game::updateCamera(float dt) {
         camera.forward = normalized(camera.lookTarget - camera.pos);
         return;
     }
+    if(state_.cartLab&&state_.cart.active&&state_.cart.occupied){
+        const Vec3 focus=state_.cart.pos+Vec3{0,0.68f,0};
+        const float cartPitchCos=std::cos(camera.pitch);
+        const Vec3 orbitForward=normalized({-std::sin(camera.yaw)*cartPitchCos,std::sin(camera.pitch),-std::cos(camera.yaw)*cartPitchCos});
+        const Vec3 desired=focus-orbitForward*3.8f+Vec3{0,0.65f,0};
+        const float response=dt>0?1.0f-std::exp(-7.0f*dt):1.0f;
+        camera.pos+=(desired-camera.pos)*response;camera.lookTarget+=(focus-camera.lookTarget)*response;
+        camera.forward=normalized(camera.lookTarget-camera.pos);camera.firstPerson=false;return;
+    }
     if (camera.firstPerson) {
         camera.pos = player.pos + Vec3{0, 0.72f, 0} + aimForward * 0.18f;
         camera.lookTarget = camera.pos + aimForward * 10.0f;
@@ -3171,6 +3341,10 @@ int Game::applyMeleeHits() {
 }
 
 Vec3 Game::targetHeadCenter(const TargetState& target) const {
+    if(target.physicalBodyMarker<0.0f&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f)){
+        const Vec3 forward{-std::sin(target.visualYaw),0.0f,-std::cos(target.visualYaw)};
+        return target.pos+forward*(0.42f*target.scale)+Vec3{0.0f,0.24f*target.scale,0.0f};
+    }
     // The authoritative FBX is normalized from the floor to HUMAN_MODEL_HEIGHT.
     // Its head sphere therefore sits one visual head radius below that top.
     return {target.pos.x,
@@ -3264,6 +3438,9 @@ bool Game::damageSoulShell(int index, float amount) {
         t.hitFlash=1.0f;
         if(t.armor<=0.0f) {
             t.armor=0.0f; t.slurpable=true; t.soulState=SoulState::Free; t.soulMorph=0.0f; t.hitFlash=1.35f;
+            t.capture=0.0f;t.latticeVisualPull=0.0f;t.latticeVisualPullVelocity=0.0f;t.tetherWidth=0.0f;
+            t.floatOffset=seededRoomValue(430+index)*DB_PI*2.0f;
+            t.spinSpeed=0.4f+seededRoomValue(435+index)*0.8f;
             if(t.grabbedPlayerId>=0) releaseTargetGrab(index);
             spawnShellShatter(t);
             if(t.brute && nextFlowerRandom()<FLOWER_DROP_CHANCE) spawnFlowerPowerup(t.pos.x,GROUND_Y+0.42f,t.pos.z);
@@ -3273,6 +3450,9 @@ bool Game::damageSoulShell(int index, float amount) {
     }
     Vec3 away=normalized(Vec3{t.pos.x-state_.player.pos.x,0.0f,t.pos.z-state_.player.pos.z});
     t.vel.x+=away.x*2.4f; t.vel.z+=away.z*2.4f; t.vel.y=std::max(t.vel.y,1.2f);
+    auto& runtime=enemyRuntime();
+    if(!t.slurpable&&runtime.bodies[index].initialized)
+        gameplay::applyPhysicalEnemyImpact(runtime.bodies[index],away*(2.4f+amount));
     feedSupplementalBattery(FLOWER_ATTACK_FEED);
     spawnParticleBurst(t.pos+Vec3{0,0.65f,0},ParticleMaterial::Flesh);
     return true;
@@ -3463,6 +3643,10 @@ void Game::updateRoomPopulation(float dt) {
     }
 }
 void Game::respawnTarget(int index) {
+    auto& runtime=enemyRuntime();
+    runtime.motors[index] = {};
+    runtime.bodies[index] = {};
+    runtime.perceptions[index] = {};
     TargetState& t = state_.targets[index]; t = TargetState{}; t.alive = true;
     t.brute = seededRoomValue(520 + index) < 0.18f;
     t.soul = makeSoulRecord(t.brute,state_.roomIndex);
@@ -3565,6 +3749,9 @@ void Game::releaseTargetGrab(int targetIndex){if(targetIndex<0||targetIndex>=TAR
 void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_.targets[targetIndex];const int id=target.grabbedPlayerId;PlayerState* player=id==0?&state_.player:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].player:nullptr);InputState* input=id==0?&state_.input:(id>0&&id<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[id].active?&state_.multiplayer.peers[id].input:nullptr);if(!player||!input||!player->alive||player->downed){releaseTargetGrab(targetIndex);return;}const Vec3 forward{-std::sin(target.visualYaw),0,-std::cos(target.visualYaw)};player->pos=target.pos+forward*0.46f+Vec3{0,0.78f,0};player->vel={};player->jumpVel=0;player->grounded=false;player->battery=std::max(0.0f,player->battery-6.0f*dt);const float axis=std::abs(input->wiggleAxis)>0.001f?input->wiggleAxis:((input->right?1.0f:0.0f)-(input->left?1.0f:0.0f)+input->touchMoveX);input->wiggleAxis=0.0f;const int direction=axis>0.55f?1:(axis<-0.55f?-1:0);if(direction!=0&&direction!=player->grabLastDirection){player->grabLastDirection=direction;player->grabEscape=std::min(1.0f,player->grabEscape+0.20f);}if(player->grabEscape>=1.0f){releaseTargetGrab(targetIndex);player->vel=forward*3.0f;return;}if(player->battery<=0.0f){if(state_.multiplayer.enabled){player->downed=true;player->bleedoutTimer=15.0f;player->reviveCharge=0;}else if(player->souls>0&&!player->soloSoulRebootUsed){consumeStoredSoul(*player);player->battery=15.0f;player->soloSoulRebootUsed=true;}else triggerRunDeath();releaseTargetGrab(targetIndex);}}
 
 void Game::updateTargets(float dt) {
+    auto& runtimePool=enemyRuntime();
+    const int perceptionFirst=runtimePool.perceptionCursor%TARGET_COUNT;
+    const int perceptionSecond=(perceptionFirst+1)%TARGET_COUNT;
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
     if(state_.enemyAttackOwner>=0){const TargetState& owner=state_.targets[state_.enemyAttackOwner];if(!owner.alive||owner.slurpable||owner.attackTimer<=0.0f)state_.enemyAttackOwner=-1;}
     // Preserve the shipped network cadence until the protocol carries the
@@ -3574,6 +3761,25 @@ void Game::updateTargets(float dt) {
     const float pursuitSpeed=state_.multiplayer.enabled?0.72f:HUMAN_WALK_SPEED;
     const float attackCooldown=state_.multiplayer.enabled?1.15f:HUMAN_ATTACK_COOLDOWN;
     const float attackCadence=state_.multiplayer.enabled?0.34f:0.14f;
+    // One shared material sample drives both physical grip and how clearly body
+    // movement carries through the current floor; avoid recomputing it per animal.
+    const auto roomFloorMaterial=floorMaterialResponse(
+        early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex).setting,
+        0.0f,state_.weather.wetness,state_.weather.exposed);
+    // Herd information is intentionally coarse: nearby violence raises alarm,
+    // while individual health remains authoritative. The weakest member becomes
+    // a spatial concern, not a shared HP bar.
+    state_.herd.alarm=std::max(0.0f,state_.herd.alarm-dt*0.22f);
+    state_.herd.injuryPressure=0.0f;state_.herd.weakestTarget=-1;
+    float weakestHealth=2.0f;int livingHerd=0;
+    for(int h=0;h<TARGET_COUNT;++h){const auto& member=state_.targets[h];if(!member.alive||member.slurpable)continue;++livingHerd;
+        if(member.hitFlash>0.01f)state_.herd.alarm=std::min(1.0f,state_.herd.alarm+dt*2.8f);
+        state_.herd.injuryPressure+=1.0f-clampf(member.health,0.0f,1.0f);
+        if(member.health<weakestHealth){weakestHealth=member.health;state_.herd.weakestTarget=h;state_.herd.retreatCenter=member.pos;}
+    }
+    if(livingHerd>0)state_.herd.injuryPressure/=static_cast<float>(livingHerd);
+    const float depthCohesion=clampf(std::log2(2.0f+static_cast<float>(std::max(0,state_.roomIndex)))/5.0f,0.0f,1.0f);
+    state_.herd.cohesion=clampf(0.16f+depthCohesion*0.62f+state_.herd.alarm*0.22f,0.0f,1.0f);
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
         if (!t.alive) continue;
@@ -3588,11 +3794,81 @@ void Game::updateTargets(float dt) {
         if (t.slurpable) {
             t.soulMorph = std::min(1.0f, t.soulMorph + dt / SOUL_MORPH_DURATION);
             t.locomotionAmount = 0.0f;
+            t.physicalLeftFootWeight=0.0f;
+            t.physicalRightFootWeight=0.0f;
         } else {
             t.soulMorph = 0.0f;
             const WorldSupportSample supportBefore=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
             const bool supportedBefore=std::abs(t.pos.y-supportBefore.height)<=0.06f&&t.vel.y<=0.0f;
             if(supportedBefore){t.pos.y=supportBefore.height;t.vel.y=0.0f;}
+            const auto advancePhysicalBody=[&](const Vec3& desiredVelocity,float desiredYaw,float brace,float individuality){
+                auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 bodyForward{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const Vec3 bodyRight{bodyForward.z,0.0f,-bodyForward.x};
+                const float gaitAsymmetry=individuality*0.16f;
+                const float leftStride=std::sin(physicalBody.gaitPhase+gaitAsymmetry);
+                const float rightStride=-std::sin(physicalBody.gaitPhase-gaitAsymmetry);
+                constexpr float footHalfWidth=0.125f;
+                // Longer, lower steps read as a body being carried from one
+                // support to the next instead of toes cycling underneath it.
+                constexpr float strideReach=0.225f;
+                constexpr float stepHeight=0.075f;
+                const Vec3 leftFoot=t.pos+bodyRight*footHalfWidth+bodyForward*(leftStride*strideReach);
+                const Vec3 rightFoot=t.pos-bodyRight*footHalfWidth+bodyForward*(rightStride*strideReach);
+                WorldSupportSample leftSupport{};
+                WorldSupportSample rightSupport{};
+                // The ground plane is continuous and already authoritative in
+                // supportBefore. Only elevated/generated support needs the
+                // more expensive independent footprint probes.
+                if(supportBefore.identity.source!=SupportSource::Ground){
+                    leftSupport=getWorldSupport(leftFoot.x,leftFoot.z,0.035f);
+                    rightSupport=getWorldSupport(rightFoot.x,rightFoot.z,0.035f);
+                }
+                const float leftFootHeight=t.pos.y+std::max(0.0f,leftStride)*stepHeight;
+                const float rightFootHeight=t.pos.y+std::max(0.0f,rightStride)*stepHeight;
+                const auto contactAmount=[&](float footHeight,const WorldSupportSample& support){
+                    if(!supportedBefore)return 0.0f;
+                    return clampf(1.0f-std::abs(footHeight-support.height)/0.055f,0.0f,1.0f);
+                };
+                const float leftContact=contactAmount(leftFootHeight,leftSupport);
+                const float rightContact=contactAmount(rightFootHeight,rightSupport);
+                gameplay::PhysicalEnemyBodyInput bodyInput{};
+                bodyInput.desiredVelocity=desiredVelocity;
+                bodyInput.actualVelocity=t.vel;
+                bodyInput.bodyPosition=t.pos;
+                bodyInput.centerOfMassHeight=PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale*0.52f;
+                bodyInput.desiredYaw=desiredYaw;
+                bodyInput.individuality=individuality;
+                bodyInput.brace=brace;
+                // MaterialResponse is the shared weather/surface authority: the
+                // same wetness that darkens and shines the floor also limits the
+                // planted-foot reaction available to the physical animal.
+                bodyInput.surfaceTraction=roomFloorMaterial.traction;
+                bodyInput.dt=dt;
+                bodyInput.grounded=supportedBefore;
+                bodyInput.leftFootContact=leftContact;
+                bodyInput.rightFootContact=rightContact;
+                bodyInput.leftFootPosition={leftFoot.x,leftSupport.height,leftFoot.z};
+                bodyInput.rightFootPosition={rightFoot.x,rightSupport.height,rightFoot.z};
+                const float leftWeight=bodyInput.leftFootContact;
+                const float rightWeight=bodyInput.rightFootContact;
+                const float supportWeight=leftWeight+rightWeight;
+                bodyInput.supportNormal=supportWeight>0.001f
+                    ? normalized(leftSupport.normal*leftWeight+rightSupport.normal*rightWeight)
+                    : supportBefore.normal;
+                const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
+                t.vel.x=body.velocity.x;
+                t.vel.z=body.velocity.z;
+                t.visualYaw=body.yaw;
+                t.locomotionAmount=body.locomotion;
+                t.visualWalkPhase=physicalBody.gaitPhase;
+                t.physicalBodyMarker=-1.0f;
+                t.physicalBodyPitch=physicalBody.bodyPitch;
+                t.physicalBodyRoll=physicalBody.bodyRoll;
+                return body;
+            };
+            if(!state_.multiplayer.enabled&&!runtimePool.bodies[i].initialized)
+                advancePhysicalBody({},t.visualYaw,0.5f,std::sin(static_cast<float>(i)*12.9898f));
             t.armorRegenDelay=std::max(0.0f,t.armorRegenDelay-dt);
             if(t.armorRegenDelay<=0.0f){
                 const float fullArmor=t.brute?SOUL_ARMOR_BRUTE:SOUL_ARMOR_NORMAL;
@@ -3610,20 +3886,175 @@ void Game::updateTargets(float dt) {
             Vec3 attackedPlayerPos=state_.player.pos;
             float nearestPlayerDistance=state_.player.downed?9999.0f:horizontalLength(Vec3{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z});
             if(state_.multiplayer.authoritativeHost){for(int id=1;id<NETWORK_PLAYER_COUNT;++id){const auto& peer=state_.multiplayer.peers[id];if(!peer.active||!peer.player.alive||peer.player.downed)continue;const float distance=horizontalLength(Vec3{peer.player.pos.x-t.pos.x,0,peer.player.pos.z-t.pos.z});if(distance<nearestPlayerDistance){nearestPlayerDistance=distance;attackedPlayerId=id;attackedPlayerPos=peer.player.pos;}}}
+            const Vec3 actualPlayerPosition=attackedPlayerPos;
+            const PlayerState* attackedPlayer=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
+            gameplay::EnemyPerceptionOutput perception{};
+            if(!state_.multiplayer.enabled){
+                auto& perceptionState=runtimePool.perceptions[i];
+                const bool sampled=i==perceptionFirst||i==perceptionSecond;
+                const Vec3 headOrigin=t.pos+Vec3{0.0f,(PASS7_HUMAN_VISUAL_SPEC.totalHeight-PASS7_HUMAN_VISUAL_SPEC.headRadius)*t.scale,0.0f};
+                float transmission=1.0f;
+                if(sampled){
+                    const Vec3 targetPoint=actualPlayerPosition+Vec3{0.0f,PHONE_SOLID_HALF_Y*0.35f,0.0f};
+                    const float localHeadZ=wrapZ(headOrigin.z);
+                    float targetDeltaZ=wrapZ(targetPoint.z)-localHeadZ;
+                    if(targetDeltaZ>ROOM_DEPTH*0.5f)targetDeltaZ-=ROOM_DEPTH;
+                    if(targetDeltaZ<-ROOM_DEPTH*0.5f)targetDeltaZ+=ROOM_DEPTH;
+                    // Resolve the target to the nearest repeated Z tile. Body
+                    // collision may move either actor to an equivalent tile
+                    // before perception runs, while X remains bounded.
+                    const Vec3 localHead{headOrigin.x,headOrigin.y,localHeadZ};
+                    const Vec3 localTarget{targetPoint.x,targetPoint.y,localHeadZ+targetDeltaZ};
+                    float nearestOpaque=2.0f;
+                    for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){
+                        const RoomCollider& c=state_.roomColliders[colliderIndex];
+                        for(int tileOffset=-1;tileOffset<=1;++tileOffset){float entry=1.0f;const float zOffset=static_cast<float>(tileOffset)*ROOM_DEPTH;
+                            if(gameplay::perceptionSegmentHitsBox(localHead,localTarget,{c.minX,c.bottomY+GROUND_Y,c.minZ+zOffset},{c.maxX,c.topY+GROUND_Y,c.maxZ+zOffset},entry))nearestOpaque=std::min(nearestOpaque,entry);
+                        }
+                    }
+                    for(int rockIndex=0;rockIndex<state_.rockSupportCount;++rockIndex){
+                        const auto& rock=state_.rockSupports[rockIndex];
+                        const auto bounds=faceted_rock::meshBounds(faceted_rock::makeMesh(rock.prop,rock.roomSeed,rock.roomIndex,rock.propIndex));
+                        for(int tileOffset=-1;tileOffset<=1;++tileOffset){float entry=1.0f;const Vec3 offset{0.0f,0.0f,static_cast<float>(tileOffset)*ROOM_DEPTH};
+                            if(gameplay::perceptionSegmentHitsBox(localHead,localTarget,bounds.minimum+offset,bounds.maximum+offset,entry))nearestOpaque=std::min(nearestOpaque,entry);
+                        }
+                    }
+                    if(nearestOpaque<=1.0f)transmission=0.0f;
+                    if(transmission>0.0f){
+                        const auto roomPlan=early_browser_visuals::roomPlan(state_.roomSeed,state_.roomIndex);
+                        for(int propIndex=0;propIndex<early_browser_visuals::environmentPropCount(roomPlan);++propIndex){
+                            const auto prop=early_browser_visuals::environmentProp(roomPlan,state_.roomSeed,state_.roomIndex,propIndex);
+                            if(prop.primitive!=early_browser_visuals::EnvironmentPrimitive::Tree)continue;
+                            for(const auto& crown:tree_geometry::crownParts(prop)){
+                                const Vec3 half=crown.size*0.5f;
+                                for(int tileOffset=-1;tileOffset<=1;++tileOffset){float entry=1.0f;const Vec3 offset{0.0f,0.0f,static_cast<float>(tileOffset)*ROOM_DEPTH};
+                                    if(gameplay::perceptionSegmentHitsBox(localHead,localTarget,crown.center-half+offset,crown.center+half+offset,entry))transmission*=0.90f;
+                                }
+                            }
+                        }
+                    }
+                    const Vec3 perceivedTargetPoint{targetPoint.x,targetPoint.y,headOrigin.z+targetDeltaZ};
+                    const Vec3 targetDelta=perceivedTargetPoint-headOrigin;const float distance=horizontalLength(targetDelta);
+                    const float worldHeadYaw=t.visualYaw+perceptionState.headYaw;
+                    const Vec3 headForward{-std::sin(worldHeadYaw),0.0f,-std::cos(worldHeadYaw)};
+                    const Vec3 targetDirection=distance>0.001f?Vec3{targetDelta.x/distance,0.0f,targetDelta.z/distance}:headForward;
+                    transmission=gameplay::visualAcquisitionStrength(distance,dot3(headForward,targetDirection),horizontalLength(attackedPlayer->vel),transmission);
+                    if(runtimePool.bodies[i].fallen)transmission*=0.30f;
+                    // Weather modifies the perception signal rather than the
+                    // animal brain. Darkness narrows reliable visual contact;
+                    // rain adds uncertainty without granting hidden knowledge.
+                    if(state_.weather.exposed){
+                        float nightVisibility=0.28f+0.72f*state_.weather.daylight;
+                        // Existing high-energy phone actions make the player easier
+                        // to acquire in darkness instead of creating a separate light AI.
+                        const float shotFlash=state_.environmentVisual.latestShotAge<0.32f
+                            ?1.0f-clampf(state_.environmentVisual.latestShotAge/0.32f,0.0f,1.0f):0.0f;
+                        const float phoneSignature=std::max(shotFlash,state_.vacuum.active?state_.vacuum.power*0.72f:0.0f);
+                        nightVisibility=std::max(nightVisibility,0.28f+phoneSignature*0.58f);
+                        const float rainVisibility=1.0f-state_.weather.rain*0.24f;
+                        transmission*=nightVisibility*rainVisibility;
+                    }
+                }
+                // Weather owns one attenuation boundary for nonvisual cues. Applying
+                // rain again after individual cues previously made shot/vacuum hearing
+                // lose signal twice while herd cues lost it once.
+                const float rainHearing=gameplay::environmentalCueTransmission(state_.weather.rain,state_.weather.exposed);
+                const float playerDistance=horizontalLength(actualPlayerPosition-t.pos);
+                // Ground contact turns physical movement into a directionless surface cue.
+                // Running nearby makes an uncertain animal search harder, while an
+                // airborne body cannot emit footfall evidence through the floor.
+                float vagueAwareness=gameplay::movementAwarenessStrength(
+                    playerDistance,horizontalLength(attackedPlayer->vel),rainHearing,
+                    roomFloorMaterial.movementCueTransmission,attackedPlayer->grounded?1.0f:0.0f);
+                Vec3 environmentalCuePosition{};
+                float environmentalCueStrength=0.0f;
+                const float landingDistance=horizontalLength(attackedPlayer->landingContactPosition-t.pos);
+                const float landingCue=gameplay::landingAwarenessStrength(
+                    landingDistance,attackedPlayer->landingImpact,rainHearing,roomFloorMaterial.movementCueTransmission);
+                if(landingCue>0.0f){
+                    vagueAwareness=std::max(vagueAwareness,landingCue);
+                    environmentalCueStrength=landingCue;
+                    environmentalCuePosition=attackedPlayer->landingContactPosition;
+                }
+                // Existing player actions become imperfect environmental cues.
+                // They raise suspicion without granting a precise player position.
+                if(state_.environmentVisual.latestShotAge<1.15f){
+                    const float shotDistance=horizontalLength(state_.environmentVisual.latestShotOrigin-t.pos);
+                    const float shotCue=(1.0f-clampf(shotDistance/13.0f,0.0f,1.0f))
+                        *(1.0f-clampf(state_.environmentVisual.latestShotAge/1.15f,0.0f,1.0f));
+                    const float audibleShotCue=shotCue*0.72f*rainHearing;
+                    vagueAwareness=std::max(vagueAwareness,audibleShotCue);
+                    if(audibleShotCue>environmentalCueStrength){environmentalCueStrength=audibleShotCue;environmentalCuePosition=state_.environmentVisual.latestShotOrigin;}
+                }
+                if(state_.vacuum.active&&state_.vacuum.power>0.04f){
+                    const float vacuumDistance=horizontalLength(state_.phoneTransform.vacuumPullPoint-t.pos);
+                    const float vacuumCue=(1.0f-clampf(vacuumDistance/8.5f,0.0f,1.0f))*state_.vacuum.power;
+                    const float audibleVacuumCue=vacuumCue*0.56f*rainHearing;
+                    vagueAwareness=std::max(vagueAwareness,audibleVacuumCue);
+                    // Vacuum noise already raises suspicion; give that same event a
+                    // location so uncertain perception can investigate the phone
+                    // action instead of scanning directionlessly. This is a cue,
+                    // never authoritative player truth.
+                    if(audibleVacuumCue>environmentalCueStrength){environmentalCueStrength=audibleVacuumCue;environmentalCuePosition=state_.phoneTransform.vacuumPullPoint;}
+                }
+                for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
+                    if(allyIndex==i||!gameplay::isActiveHuman(state_.targets[allyIndex]))continue;
+                    const auto& ally=state_.targets[allyIndex];
+                    const Vec3 allyDelta=ally.pos-t.pos;
+                    const float allyDistance=horizontalLength(allyDelta);
+                    if(allyDistance>=7.0f)continue;
+                    // Existing nearby-herd awareness now has a location: an animal can
+                    // orient toward an injured/agitated herd mate without learning the
+                    // hidden player's position. Reuse the same weather hearing loss.
+                    const float allyActivity=(ally.hitFlash>0.01f)?0.52f:
+                        ((ally.attackTimer>0.0f||horizontalLength(ally.vel)>2.0f)?0.34f:0.0f);
+                    // Actual loss of physical support is socially readable too: a
+                    // nearby animal can notice a herd mate scramble/fall without
+                    // learning anything about the hidden player that caused it.
+                    const float allyDisruption=runtimePool.bodies[allyIndex].disruption;
+                    const float socialCue=gameplay::physicalHerdCueStrength(
+                        allyDistance,allyActivity,allyDisruption,rainHearing);
+                    if(socialCue>0.0f){
+                        vagueAwareness=std::max(vagueAwareness,socialCue);
+                        if(socialCue>environmentalCueStrength){environmentalCueStrength=socialCue;environmentalCuePosition=ally.pos;}
+                    }
+                }
+                gameplay::EnemyPerceptionInput perceptionInput{};
+                perceptionInput.observerPosition=headOrigin;
+                Vec3 perceivedPlayerPosition=actualPlayerPosition;
+                float perceivedDeltaZ=wrapZ(actualPlayerPosition.z)-wrapZ(headOrigin.z);
+                if(perceivedDeltaZ>ROOM_DEPTH*0.5f)perceivedDeltaZ-=ROOM_DEPTH;
+                if(perceivedDeltaZ<-ROOM_DEPTH*0.5f)perceivedDeltaZ+=ROOM_DEPTH;
+                perceivedPlayerPosition.z=headOrigin.z+perceivedDeltaZ;
+                perceptionInput.targetPosition=perceivedPlayerPosition;
+                perceptionInput.targetVelocity=attackedPlayer->vel;
+                perceptionInput.bodyYaw=t.visualYaw;
+                perceptionInput.bodyPitch=runtimePool.bodies[i].bodyPitch;
+                perceptionInput.bodyRoll=runtimePool.bodies[i].bodyRoll;
+                perceptionInput.visibility=transmission;
+                perceptionInput.vagueAwareness=vagueAwareness;
+                perceptionInput.environmentalCuePosition=environmentalCuePosition;
+                perceptionInput.environmentalCueStrength=environmentalCueStrength;
+                perceptionInput.roomMemoryPressure=clampf(state_.progression.run.roomHeat,0.0f,1.0f);
+                perceptionInput.individuality=std::sin(static_cast<float>(i)*12.9898f);
+                perceptionInput.dt=dt;perceptionInput.sampled=sampled;
+                perception=gameplay::updateEnemyPerception(perceptionInput,perceptionState);
+                attackedPlayerPos=perception.hasSpatialBelief?perception.believedPosition:t.pos;
+            }
             Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
-            float playerDist=horizontalLength(toPlayer);
+            float playerDist=state_.multiplayer.enabled?horizontalLength(toPlayer):(perception.hasSpatialBelief?horizontalLength(toPlayer):9999.0f);
             const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
                 const float humanBottom=t.pos.y;
-                const float humanTop=t.pos.y+PASS7_HUMAN_VISUAL_SPEC.totalHeight*t.scale;
+                const float bodyHeight=runtimePool.bodies[i].fallen?0.34f:PASS7_HUMAN_VISUAL_SPEC.totalHeight;
+                const float humanTop=t.pos.y+bodyHeight*t.scale;
                 const float playerBottom=playerPosition.y-PHONE_SOLID_HALF_Y;
                 const float playerTop=playerPosition.y+PHONE_SOLID_HALF_Y;
                 return playerBottom<=humanTop+HUMAN_ATTACK_VERTICAL_MARGIN&&
                        playerTop>=humanBottom-HUMAN_ATTACK_VERTICAL_MARGIN;
             };
-            const PlayerState* attackedPlayer=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
             const RoomCollider* pursuedTree=nullptr;
             Vec3 treeGripPoint{};
-            if(attackedPlayer->treeClimbing&&
+            if((state_.multiplayer.enabled||perception.confirmed)&&attackedPlayer->treeClimbing&&
                attackedPlayer->treeCollider>=0&&attackedPlayer->treeCollider<state_.debug.colliderCount){
                 const RoomCollider& tree=state_.roomColliders[attackedPlayer->treeCollider];
                 if(tree.kind==RoomColliderKind::TreeTrunk){
@@ -3657,7 +4088,7 @@ void Game::updateTargets(float dt) {
                     if(towardLength>0.001f)t.visualYaw=std::atan2(-towardTree.x/towardLength,-towardTree.z/towardLength);
                 }
             }
-            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
+            if(!climbedTreeThisFrame&&playerDist>0.001f&&playerDist<noticeRange&&state_.multiplayer.enabled)t.visualYaw=std::atan2(-toPlayer.x/playerDist,-toPlayer.z/playerDist);
             if(climbedTreeThisFrame){
                 // Tree climbing is physical pursuit, not an attack shortcut.
                 // The existing vertical-overlap contract decides when combat
@@ -3665,13 +4096,17 @@ void Game::updateTargets(float dt) {
             } else if(t.attackTimer>0.0f){
                 t.attackTimer=std::max(0.0f,t.attackTimer-dt); t.locomotionAmount=0.0f;
                 const float progress=1.0f-clampf(t.attackTimer/HUMAN_ATTACK_DURATION,0.0f,1.0f);
-                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
+                if(progress<HUMAN_SWING_COMMIT_PHASE&&playerDist>0.001f){t.attackDirection=toPlayer*(1.0f/playerDist);t.attackTargetPlayerId=attackedPlayerId;if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);}
                 else {
-                    t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    if(state_.multiplayer.enabled)t.visualYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
                     attackedPlayerId=t.attackTargetPlayerId;
                     attackedPlayerPos=state_.player.pos;
                     if(attackedPlayerId>0&&attackedPlayerId<NETWORK_PLAYER_COUNT&&state_.multiplayer.peers[attackedPlayerId].active)attackedPlayerPos=state_.multiplayer.peers[attackedPlayerId].player.pos;
                     else attackedPlayerId=0;
+                }
+                if(!state_.multiplayer.enabled){
+                    const float attackYaw=std::atan2(-t.attackDirection.x,-t.attackDirection.z);
+                    advancePhysicalBody({},attackYaw,0.88f,std::sin(static_cast<float>(i)*12.9898f));
                 }
                 const float sweepT=clampf((progress-HUMAN_SWING_COMMIT_PHASE)/(HUMAN_SWING_END_PHASE-HUMAN_SWING_COMMIT_PHASE),0.0f,1.0f);
                 const float side=t.attackVariant%2==0?1.0f:-1.0f;
@@ -3683,33 +4118,89 @@ void Game::updateTargets(float dt) {
                 if(!t.attackHit && progress>=HUMAN_SWING_COMMIT_PHASE && progress<=HUMAN_SWING_END_PHASE && liveDist<=HUMAN_ATTACK_HIT_RANGE+0.18f && sweepFacing>=0.90f&&canReachPlayerVertically(attackedPlayerPos)){
                     const Vec3 away=liveDist>0.001f?liveToPlayer*(-1.0f/liveDist):Vec3{0,0,1};
                     PlayerState* victim=attackedPlayerId==0?&state_.player:&state_.multiplayer.peers[attackedPlayerId].player;
-                    if(victim->battery<22.0f&&!victim->downed&&victim->grabbedByTarget<0&&t.grabCooldown<=0.0f){victim->grabbedByTarget=i;victim->grabEscape=0;victim->grabLastDirection=0;t.grabbedPlayerId=attackedPlayerId;t.attackTimer=0.0f;state_.enemyAttackOwner=-1;}
-                    else if(attackedPlayerId==0){state_.player.vel+=away*HUMAN_ATTACK_KNOCKBACK;spendBattery(HUMAN_ATTACK_BATTERY_COST,BatteryReason::Hit);}
+                    const bool localBlock=attackedPlayerId==0&&state_.player.blocking;
+                    if(victim->battery<22.0f&&!localBlock&&!victim->downed&&victim->grabbedByTarget<0&&t.grabCooldown<=0.0f){victim->grabbedByTarget=i;victim->grabEscape=0;victim->grabLastDirection=0;t.grabbedPlayerId=attackedPlayerId;t.attackTimer=0.0f;state_.enemyAttackOwner=-1;}
+                    else if(attackedPlayerId==0){
+                        state_.player.vel+=away*(localBlock?HUMAN_ATTACK_KNOCKBACK*0.22f:HUMAN_ATTACK_KNOCKBACK);
+                        spendBattery(HUMAN_ATTACK_BATTERY_COST*(localBlock?0.46f:1.0f),BatteryReason::Hit);
+                        if(localBlock){t.vel-=away*1.25f;t.attackCooldown+=0.28f;}
+                    }
                     else {NetworkPeerState local;savePlayerContext(local);loadPlayerContext(state_.multiplayer.peers[attackedPlayerId]);simulationPlayerId_=attackedPlayerId;state_.player.vel+=away*HUMAN_ATTACK_KNOCKBACK;spendBattery(HUMAN_ATTACK_BATTERY_COST,BatteryReason::Hit);savePlayerContext(state_.multiplayer.peers[attackedPlayerId]);simulationPlayerId_=0;loadPlayerContext(local);}
                     if(state_.time-state_.audio.lastDamageAckTime>=0.18f){state_.audio.lastDamageAckTime=state_.time;emitAudio(AudioCue::NegativeAck,0.26f);}
                     t.attackHit=true;
                 }
                 if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=attackCadence;}
-            } else if(playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+            } else if(!runtimePool.bodies[i].fallen&&(state_.multiplayer.enabled||perception.confirmed)&&playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
                 t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=attackCooldown;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
-                Vec3 destination=pursuedTree?treeGripPoint:((playerDist<noticeRange && playerDist>HUMAN_ATTACK_START_RANGE*0.88f)?attackedPlayerPos:t.walkTarget);
+                const bool pursuingPlayer=!pursuedTree&&playerDist<noticeRange&&playerDist>HUMAN_ATTACK_START_RANGE*0.88f;
+                Vec3 destination=pursuedTree?treeGripPoint:(pursuingPlayer?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
+                const bool physicalPursuit=!state_.multiplayer.enabled;
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=noticeRange){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
                     Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
-                    const bool physicalPursuit=!state_.multiplayer.enabled;
                     if(physicalPursuit){
-                        const Vec3 desired=dir*speed;
-                        const float response=1.0f-std::exp(-(t.brute?5.5f:8.0f)*dt);
-                        t.vel.x+=(desired.x-t.vel.x)*response;
-                        t.vel.z+=(desired.z-t.vel.z)*response;
+                        Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
+                        for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
+                            if(allyIndex==i||!gameplay::isActiveHuman(state_.targets[allyIndex]))continue;
+                            const Vec3 toAlly{state_.targets[allyIndex].pos.x-t.pos.x,0,state_.targets[allyIndex].pos.z-t.pos.z};
+                            const float allyDistance=horizontalLength(toAlly);
+                            if(allyDistance<nearestAllyDistance){nearestAllyDistance=allyDistance;nearestAllyDirection=allyDistance>0.001f?toAlly*(1.0f/allyDistance):Vec3{};}
+                        }
+                        const Vec3 perceivedVelocity=perception.perceivedVelocity;
+                        const float playerVelocityScale=std::max(6.0f,horizontalLength(perceivedVelocity));
+                        gameplay::EnemyMotorInput motorInput{};
+                        motorInput.toPlayer=playerDist>0.001f?toPlayer*(1.0f/playerDist):dir;
+                        motorInput.playerDistance=playerDist;
+                        motorInput.playerVelocity={perceivedVelocity.x/playerVelocityScale,0,perceivedVelocity.z/playerVelocityScale};
+                        motorInput.toNearestAlly=nearestAllyDirection;
+                        motorInput.nearestAllyDistance=nearestAllyDistance;
+                        motorInput.vacuumPressure=state_.vacuum.active?clampf(state_.vacuum.power,0.0f,1.0f):0.0f;
+                        const float endlessDepth=state_.endlessMode?std::log2(static_cast<float>(std::max(1,state_.roomIndex))+1.0f)/6.0f:0.0f;
+                        const float roomAgePressure=state_.weather.exposed
+                            ? std::min(0.42f,static_cast<float>(state_.weather.completedCycles)*0.07f) : 0.0f;
+                        motorInput.roomPressure=clampf(state_.progression.run.roomHeat,0.0f,1.0f)+endlessDepth+roomAgePressure;
+                        motorInput.bodySpeed=horizontalLength(t.vel);
+                        motorInput.pursuitProgress=pursuingPlayer?clampf(dot3(t.vel,motorInput.toPlayer)/6.0f,-1.0f,1.0f):0.0f;
+                        const auto& motorBody=runtimePool.bodies[i];
+                        motorInput.traction=motorBody.supportContact;
+                        motorInput.physicalDisruption=motorBody.disruption;
+                        motorInput.pursuitCertainty=state_.multiplayer.enabled?1.0f:(perception.confirmed?1.0f:perception.confidence);
+                        auto motor=gameplay::updateEnemyMotor(motorInput,runtimePool.motors[i],dt,std::sin(static_cast<float>(i)*12.9898f));
+                if(!state_.multiplayer.enabled&&perception.hasSpatialBelief&&state_.herd.alarm>0.08f&&state_.herd.weakestTarget>=0){
+                    const bool weakest=i==state_.herd.weakestTarget;
+                    const Vec3 weakPos=state_.targets[state_.herd.weakestTarget].pos;
+                    // Herd protection may react to an injured ally, but its threat
+                    // direction must come through this animal's perception. Using
+                    // authoritative player state here would let social behavior see
+                    // through darkness, occlusion, and lost contact.
+                    Vec3 fromPlayer={weakPos.x-attackedPlayerPos.x,0,weakPos.z-attackedPlayerPos.z};
+                    if(lengthSq(fromPlayer)>0.001f)fromPlayer=normalized(fromPlayer);
+                    if(weakest&&t.health<0.58f){
+                        motor.steering=normalized(motor.steering*(1.0f-state_.herd.cohesion*0.78f)+fromPlayer*(state_.herd.cohesion*0.92f));
+                        motor.speedScale=std::max(motor.speedScale,0.68f+state_.herd.alarm*0.16f);
+                    }else if(!weakest&&t.health>0.48f){
+                        Vec3 screenPoint=weakPos-fromPlayer*(1.05f+0.55f*state_.herd.cohesion);
+                        Vec3 toScreen={screenPoint.x-t.pos.x,0,screenPoint.z-t.pos.z};
+                        if(lengthSq(toScreen)>0.04f)motor.steering=normalized(motor.steering*(1.0f-state_.herd.cohesion*0.38f)+normalized(toScreen)*(state_.herd.cohesion*0.48f));
+                    }
+                }
+                        const Vec3 playerTangent{motorInput.toPlayer.z,0,-motorInput.toPlayer.x};
+                        const float steeringOffset=dot3(motor.steering,playerTangent);
+                        const Vec3 authoredTangent{dir.z,0,-dir.x};
+                        const float commitment=motor.attackCommitment;
+                        const float probeAuthority=0.18f+0.34f*(1.0f-commitment);
+                        const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*probeAuthority));
+                        const float approachPulse=0.82f+0.18f*commitment;
+                        const Vec3 desired=desiredDirection*(speed*motor.speedScale*approachPulse);
+                        advancePhysicalBody(desired,std::atan2(-desiredDirection.x,-desiredDirection.z),motor.brace,std::sin(static_cast<float>(i)*12.9898f));
                         const float horizontalSpeed=horizontalLength(t.vel);
-                        const float maximum=speed*(t.brute?1.30f:1.45f);
+                        const float maximum=speed*motor.speedScale*(t.brute?1.30f:1.45f);
                         if(horizontalSpeed>maximum){const float scale=maximum/horizontalSpeed;t.vel.x*=scale;t.vel.z*=scale;}
                     }else{t.vel.x=dir.x*speed;t.vel.z=dir.z*speed;}
                     float step=std::min(dist,physicalPursuit?horizontalLength(t.vel)*dt:speed*dt);
@@ -3766,17 +4257,43 @@ void Game::updateTargets(float dt) {
                             }
                             if(found)break;
                         }
-                        if(!found){next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
+                        if(!found){
+                            if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{dot3(t.vel,obstructionNormal),0,horizontalLength(t.vel)});
+                            next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                        }
                         else if(physicalPursuit){const float redirectedSpeed=horizontalLength(t.vel);t.vel.x=dir.x*redirectedSpeed;t.vel.z=dir.z*redirectedSpeed;}
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;}
-                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
-                    t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
-                } else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)){
+                        if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{t.vel.x,0,t.vel.z});
+                        chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                    }
+                    const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;if(!physicalPursuit){const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);}t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
+                    if(!physicalPursuit)t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;
+                } else {
+                    if(physicalPursuit)advancePhysicalBody({},t.visualYaw,0.55f,std::sin(static_cast<float>(i)*12.9898f));
+                    else {t.locomotionAmount=0.0f;t.vel.x*=std::exp(-8.0f*dt);t.vel.z*=std::exp(-8.0f*dt);}
+                }
             }
             if(!attachedToTreeThisFrame){
                 const WorldSupportSample supportAfter=getWorldSupport(t.pos.x,t.pos.z,HUMAN_SUPPORT_RADIUS);
                 if(supportedBefore&&supportAfter.height>=supportBefore.height-0.12f){t.pos.y=supportAfter.height;t.vel.y=0.0f;}
                 else {t.vel.y-=GRAVITY*dt;t.pos.y+=t.vel.y*dt;if(t.pos.y<=supportAfter.height){t.pos.y=supportAfter.height;t.vel.y=0.0f;}}
+            }
+            if(!state_.multiplayer.enabled){
+                const auto& physicalBody=runtimePool.bodies[i];
+                const Vec3 facing{-std::sin(t.visualYaw),0.0f,-std::cos(t.visualYaw)};
+                const float inverseScale=1.0f/std::max(0.001f,t.scale);
+                const auto projectFoot=[&](const Vec3& plant,float weight,float& forward,float& height,float& visualWeight){
+                    const Vec3 relative=plant-t.pos;
+                    forward=clampf(dot3(relative,facing)*inverseScale,-0.32f,0.32f);
+                    height=clampf(relative.y*inverseScale,-0.14f,0.26f);
+                    visualWeight=clampf(weight,0.0f,1.0f);
+                };
+                projectFoot(physicalBody.leftFootPlant,physicalBody.leftPlantWeight,
+                            t.physicalLeftFootForward,t.physicalLeftFootHeight,t.physicalLeftFootWeight);
+                projectFoot(physicalBody.rightFootPlant,physicalBody.rightPlantWeight,
+                            t.physicalRightFootForward,t.physicalRightFootHeight,t.physicalRightFootWeight);
+                t.physicalLeftFootWorld=physicalBody.leftFootPlant;
+                t.physicalRightFootWorld=physicalBody.rightFootPlant;
             }
         }
         t.soulCubeAmount = t.slurpable ? smooth01(t.soulMorph) : 0.0f;
@@ -3785,10 +4302,11 @@ void Game::updateTargets(float dt) {
             const float distance=std::sqrt(physicalTravel.x*physicalTravel.x+physicalTravel.z*physicalTravel.z)+std::abs(physicalTravel.y)*0.45f;
             // The walk clip follows actual body travel, so feet do not cycle
             // faster or slower than the root that owns contact.
-            t.humanAnimationTime += distance*0.68f;
+            if(t.physicalBodyMarker>=0.0f)t.humanAnimationTime += distance*0.68f;
         }
         syncTargetReactionVisual(t);
     }
+    if(!state_.multiplayer.enabled)runtimePool.perceptionCursor=(runtimePool.perceptionCursor+2)%TARGET_COUNT;
 }
 
 void Game::updateVacuum(float dt) {
@@ -4079,7 +4597,7 @@ void Game::updateBullets(float dt) {
                 }
                 if(!sphereHit && !wallHit) continue;
                 int filledSlot=0;
-                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
+                for(int fill=0;fill<state_.requiredSouls;++fill) if(!state_.captures[fill].filled){state_.captures[fill].filled=true; state_.captures[fill].packedSoul=packSoulRecord(b.soul); awardGoalToken(state_.captures[fill]); ++state_.depositedSouls; filledSlot=fill; break;}
                 emitAudio(static_cast<AudioCue>(static_cast<int>(AudioCue::Capture1)+state_.captureSoundSlots[filledSlot%5]),0.72f);emitAudio(AudioCue::RewardNice,0.28f);
                 spawnParticleBurst(b.pos,ParticleMaterial::Soul);
                 spawnParticleBurst(goal,ParticleMaterial::Soul);
@@ -4146,7 +4664,10 @@ void Game::updateCaptures(float dt) {
     state_.depositedSouls=filled;
     const bool wasClear=state_.roomClear;
     state_.roomClear = filled >= state_.requiredSouls;
-    if(state_.roomClear && !wasClear){emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}}
+    if(state_.roomClear && !wasClear){
+        emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);
+        if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}
+    }
 }
 void Game::clampRoom(Vec3& pos) {
     pos.x = clampf(pos.x, -ROOM_WIDTH * 0.5f + PLAYER_WALL_MARGIN, ROOM_WIDTH * 0.5f - PLAYER_WALL_MARGIN);

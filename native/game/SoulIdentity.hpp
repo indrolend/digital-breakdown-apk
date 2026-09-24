@@ -16,6 +16,18 @@ struct Profile {
     int age=0;
 };
 
+// A restrained, deterministic material signature carried by the same identity
+// through loose soul, projectile, recovery, and goal deposit. This is derived
+// presentation data: it introduces no lifecycle state or gameplay authority.
+struct VisualSignature {
+    float red=0.76f;
+    float green=0.96f;
+    float blue=0.72f;
+    float phase=0.0f;
+    float spinRate=1.0f;
+    float aspect=1.0f;
+};
+
 inline std::uint64_t mix(std::uint64_t value){
     value^=value>>30;value*=0xbf58476d1ce4e5b9ULL;
     value^=value>>27;value*=0x94d049bb133111ebULL;
@@ -49,6 +61,23 @@ inline Profile profile(std::uint64_t soulId,bool brute,int originRoom){
     result.occupation=Occupation[(seed>>16)%Occupation.size()];
     result.gender=static_cast<Gender>((seed>>24)%3ULL);
     result.age=18+static_cast<int>((seed>>32)%70ULL);
+    return result;
+}
+
+inline VisualSignature visualSignature(std::uint64_t soulId,bool brute,int originRoom){
+    if(soulId==0)return {};
+    const std::uint64_t seed=mix(soulId^(static_cast<std::uint64_t>(static_cast<std::uint32_t>(originRoom))*0x9e3779b97f4a7c15ULL)^(brute?0xd1b54a32d192ed03ULL:0ULL));
+    const float a=static_cast<float>((seed>>8)&255ULL)/255.0f;
+    const float b=static_cast<float>((seed>>24)&255ULL)/255.0f;
+    VisualSignature result;
+    // Keep every soul inside one recognizable family while preserving enough
+    // variation to follow a particular person through each physical form.
+    result.red=0.62f+0.22f*a;
+    result.green=0.86f+0.12f*b;
+    result.blue=0.66f+0.24f*(1.0f-a);
+    result.phase=static_cast<float>((seed>>40)&1023ULL)/1023.0f;
+    result.spinRate=0.86f+0.34f*static_cast<float>((seed>>50)&255ULL)/255.0f;
+    result.aspect=0.92f+0.16f*static_cast<float>((seed>>58)&63ULL)/63.0f;
     return result;
 }
 

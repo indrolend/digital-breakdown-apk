@@ -92,7 +92,7 @@ inline constexpr TraversalPresentation traversalPresentationFor(RoomSetting sett
     return {{0.49f,0.54f,0.57f},false};
 }
 struct GrassBlade { Vec3 root; float height = 0.3f; float width = 0.035f; float phase = 0.0f; };
-struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; };
+struct GrassReactionInputs { Vec3 player; Vec3 vacuumOrigin; Vec3 shotOrigin; float vacuumStrength=0.0f; float shotAge=9999.0f; float ambientWind=0.0f; float rain=0.0f; float wetness=0.0f; Vec3 landingOrigin{10000.0f,0.0f,10000.0f}; float landingStrength=0.0f; Vec3 disturbanceOrigin{10000.0f,0.0f,10000.0f}; float disturbanceStrength=0.0f; Vec3 secondaryDisturbanceOrigin{10000.0f,0.0f,10000.0f}; float secondaryDisturbanceStrength=0.0f; Vec3 disturbanceSweep{}; Vec3 secondaryDisturbanceSweep{}; float disturbanceRadius=1.15f; float secondaryDisturbanceRadius=1.15f; };
 
 constexpr int GrassBladeCountLow = 160;
 constexpr int GrassBladeCountHigh = 320;
@@ -505,14 +505,75 @@ inline GrassBlade grassBlade(int roomSeed,int roomIndex,int tileIndex,int index)
 }
 
 inline float smooth01(float value){value=std::max(0.0f,std::min(1.0f,value));return value*value*(3.0f-2.0f*value);}
+
+// Dirt is a presentation/contact footprint, not a field of independent decals.
+// Keep each deterministic lobe overlapping the patch center so the renderer
+// reads one worn patch instead of several small coins scattered on the floor.
+struct DirtLobe { float offsetX=0.0f,offsetZ=0.0f,radiusX=1.0f,radiusZ=1.0f,phase=0.0f; };
+inline DirtLobe dirtLobe(int patch,int lobe) {
+    const int bounded=std::max(0,std::min(2,lobe));
+    const float phase=patch*1.31f+bounded*2.0943951f;
+    const float reach=bounded==0?0.0f:(bounded==1?0.34f:0.42f);
+    const float rx=bounded==0?1.18f:(bounded==1?0.92f:0.78f);
+    const float rz=bounded==0?0.76f:(bounded==1?0.62f:0.70f);
+    return {std::cos(phase)*reach,std::sin(phase)*reach,rx,rz,phase};
+}
+inline bool dirtLobeContains(const DirtLobe& lobe,float x,float z) {
+    const float dx=x-lobe.offsetX,dz=z-lobe.offsetZ;
+    return dx*dx/(lobe.radiusX*lobe.radiusX)+dz*dz/(lobe.radiusZ*lobe.radiusZ)<1.0f;
+}
+struct DirtContactResponse { float dust=0.0f; float darkKick=0.0f; };
+inline DirtContactResponse dirtContactResponse(float contactStrength,float wetness) {
+    const float contact=clampf(contactStrength,0.0f,1.0f),wet=clampf(wetness,0.0f,1.0f);
+    // One physical contact fact changes presentation with the existing weather
+    // authority: dry dirt lifts, saturated dirt stays low and dark.
+    return {contact*(1.0f-wet),contact*wet};
+}
+struct GrassBodyContact { Vec3 origin{}; float strength=0.0f; Vec3 sweep{}; float radius=1.15f; };
+inline GrassBodyContact grassBodyContact(const Vec3& leftPlant,float leftWeight,const Vec3& rightPlant,float rightWeight,const Vec3& velocity,float bodyScale=1.0f) {
+    const float left=clampf(leftWeight,0.0f,1.0f),right=clampf(rightWeight,0.0f,1.0f),load=std::max(left,right);
+    if(load<=0.01f)return {};
+    // Preserve support transfer instead of snapping the vegetation disturbance
+    // between feet. The weighted support center is already implied by the two
+    // authoritative planted-foot loads, so presentation follows the body's
+    // actual stance without introducing another locomotion or contact state.
+    const float support=left+right;
+    const Vec3 origin=support>0.001f?(leftPlant*(left/support)+rightPlant*(right/support)):(left>=right?leftPlant:rightPlant);
+    // A planted body presses vegetation even while still; travel increases the sweep.
+    const float speed=std::sqrt(velocity.x*velocity.x+velocity.z*velocity.z);
+    const float travel=clampf(speed/5.0f,0.0f,1.0f);
+    const float motion=0.18f+0.82f*travel;
+    const float invSpeed=speed>0.001f?1.0f/speed:0.0f;
+    // Actual body travel biases the vegetation sweep. A stationary planted
+    // foot still presses grass radially; locomotion adds readable follow-through.
+    const Vec3 sweep{velocity.x*invSpeed*travel,0.0f,velocity.z*invSpeed*travel};
+    // Reuse the rendered/physical body scale as weight/footprint presentation: larger
+    // animals press the same authoritative support contact more strongly without
+    // inventing mass state or changing locomotion. Keep the multiplier bounded.
+    const float scaleLoad=clampf(0.72f+0.28f*std::max(0.5f,bodyScale),0.86f,1.28f);
+    const float footprintRadius=clampf(1.15f*(0.88f+0.12f*std::max(0.5f,bodyScale)),1.08f,1.34f);
+    return {origin,load*motion*scaleLoad,sweep,footprintRadius};
+}
 inline Vec3 grassTip(const GrassBlade& blade,float time,const GrassReactionInputs& input) {
     Vec3 tip{blade.root.x,blade.root.y+blade.height,blade.root.z};
     const Vec3 playerDelta=blade.root-input.player;const float playerDistance=std::sqrt(playerDelta.x*playerDelta.x+playerDelta.z*playerDelta.z);
     const float windMask=1.0f-smooth01((playerDistance-4.0f)/8.0f);
-    tip.x+=std::sin(time*2.0f+blade.root.x*0.65f+blade.root.z*0.45f+blade.phase)*0.07f*windMask;
+    const float rain=clampf(input.rain,0.0f,1.0f),wetness=clampf(input.wetness,0.0f,1.0f);
+    const float windAmplitude=(0.025f+0.055f*clampf(input.ambientWind+rain*0.32f,0.0f,1.0f)*(0.65f+0.35f*windMask))*(1.0f-wetness*0.24f);
+    const float localWindZ=std::remainder(blade.root.z,36.0f);
+    tip.x+=std::sin(time*(2.0f+rain*0.55f)+blade.root.x*0.65f+localWindZ*0.45f+blade.phase)*windAmplitude;
+    tip.y-=blade.height*wetness*0.045f;
     if(playerDistance<0.9f&&playerDistance>0.001f){const float power=1.0f-playerDistance/0.9f;tip.x+=playerDelta.x/playerDistance*power*0.3f;tip.z+=playerDelta.z/playerDistance*power*0.3f;tip.y-=power*0.08f;}
     if(input.shotAge>=0.0f&&input.shotAge<1.4f){const Vec3 delta=blade.root-input.shotOrigin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f;const float wave=input.shotAge*7.5f,ring=1.0f-smooth01(std::abs(distance-wave)/0.85f),range=1.0f-smooth01(distance/7.5f),decay=std::exp(-input.shotAge*2.4f),wobble=std::sin(input.shotAge*18.0f-distance*2.0f)*decay,blast=ring*range*decay,after=wobble*range*0.22f;tip.x+=delta.x*inv*(blast*0.9f+after);tip.z+=delta.z*inv*(blast*0.9f+after);tip.y-=blast*0.14f;}
     if(input.vacuumStrength>0.01f){const Vec3 delta=input.vacuumOrigin-blade.root;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z),inv=distance>0.001f?1.0f/distance:0.0f,pullMask=1.0f-smooth01((distance-0.5f)/7.5f),pulse=0.75f+0.25f*std::sin(time*2.0f*18.0f+distance*3.0f),pull=pullMask*pulse*input.vacuumStrength;tip.x+=delta.x*inv*pull*0.45f;tip.z+=delta.z*inv*pull*0.45f;tip.y-=pull*0.1f;}
+    const float wetContactLateralResponse=1.0f-wetness*0.22f;
+    // Reuse the player's authoritative landing contact as a brief physical
+    // disturbance. This is presentation of an existing contact fact, not a
+    // persistent vegetation state or a second landing simulation.
+    if(input.landingStrength>0.01f){const Vec3 delta=blade.root-input.landingOrigin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z);if(distance<1.55f&&distance>0.001f){const float power=(1.0f-smooth01(distance/1.55f))*clampf(input.landingStrength,0.0f,1.0f),inv=1.0f/distance;tip.x+=delta.x*inv*power*0.34f*wetContactLateralResponse;tip.z+=delta.z*inv*power*0.34f*wetContactLateralResponse;tip.y-=power*(0.09f+0.04f*wetness);}}
+    const auto applyBodyDisturbance=[&](const Vec3& origin,float strength,const Vec3& sweep,float radius){if(strength<=0.01f)return;radius=clampf(radius,0.5f,1.5f);const Vec3 delta=blade.root-origin;const float distance=std::sqrt(delta.x*delta.x+delta.z*delta.z);if(distance<radius&&distance>0.001f){const float power=(1.0f-smooth01(distance/radius))*clampf(strength,0.0f,1.0f),inv=1.0f/distance;tip.x+=(delta.x*inv*0.16f+sweep.x*0.13f)*power*wetContactLateralResponse;tip.z+=(delta.z*inv*0.16f+sweep.z*0.13f)*power*wetContactLateralResponse;tip.y-=power*(0.06f+0.05f*wetness);}};
+    applyBodyDisturbance(input.disturbanceOrigin,input.disturbanceStrength,input.disturbanceSweep,input.disturbanceRadius);
+    applyBodyDisturbance(input.secondaryDisturbanceOrigin,input.secondaryDisturbanceStrength,input.secondaryDisturbanceSweep,input.secondaryDisturbanceRadius);
     return tip;
 }
 

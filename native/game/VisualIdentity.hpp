@@ -113,6 +113,7 @@ struct SoulVisualState {
     float verticalOffset = 0.0f;
     float rotationY = 0.0f;
     float morphScale = 0.0f;
+    float shellOpacity = 0.68f;
     bool visible = true;
 };
 
@@ -164,6 +165,15 @@ inline SoulVisualState makeSoulVisualState(int soulState, float vacuumPull, floa
     visual.scale = {uniformScale, uniformScale, uniformScale};
     visual.deformation = {0.0f, 0.0f, 0.0f};
     visual.emission = std::max(0.0f, std::min(1.5f, 0.42f + visual.pullAmount * 0.18f + visual.latchAmount * 0.25f + visual.ingestAmount * 0.48f + visual.hitAmount * 0.38f));
+    // The deformable lattice already carries extraction's directional and
+    // staged physical truth. Keep the free soul's shell coherent, then make
+    // that shell optically permissive as the phone takes control so the
+    // existing lattice—not another indicator—becomes the readable surface.
+    const float attractionExposure = visualSmooth01(visual.pullAmount) * 0.28f;
+    const float latchExposure = visual.latchAmount * 0.38f;
+    const float ingestExposure = visualSmooth01(visual.ingestAmount) * 0.35f;
+    visual.shellOpacity = std::max(0.10f, 0.68f - attractionExposure - latchExposure - ingestExposure);
+    if (soulState == 4) visual.shellOpacity = 0.52f;
     const float flash = visual.hitAmount;
     visual.color = {
         Pass7Visual::SoulBase.r + (1.0f - Pass7Visual::SoulBase.r) * flash,

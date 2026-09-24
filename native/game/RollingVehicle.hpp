@@ -61,7 +61,15 @@ inline bool reduceSupport(const std::array<Probe,WheelCount>& probes,float& heig
     std::array<float,WheelCount> h{}; normal={}; count=0;
     for(const auto& p:probes)if(p.supported){h[count++]=p.height;normal+=p.normal;}
     if(count<2){normal={0,1,0};return false;}
-    std::sort(h.begin(),h.begin()+count);
+    // At most four values are present. A tiny insertion sort keeps the bounded
+    // range explicit and avoids relying on a generic sorter for a partial
+    // fixed-size array.
+    for(int i=1;i<count;++i){
+        const float value=h[i];
+        int j=i;
+        while(j>0&&h[j-1]>value){h[j]=h[j-1];--j;}
+        h[j]=value;
+    }
     if(count==4)height=(h[1]+h[2])*0.5f;
     else if(count==3)height=h[1];
     else height=std::abs(h[1]-h[0])<=0.65f?(h[0]+h[1])*0.5f:std::min(h[0],h[1]);
@@ -69,7 +77,8 @@ inline bool reduceSupport(const std::array<Probe,WheelCount>& probes,float& heig
 }
 
 inline void update(State& s,const Input& raw,const std::array<Probe,WheelCount>& probes,float dt,const Config& c=CartConfig){
-    if(!s.active||dt<=0.0f)return;dt=clampf(dt,0.0f,1.0f/30.0f);
+    if(!s.active||dt<=0.0f)return;
+    dt=clampf(dt,0.0f,1.0f/30.0f);
     Input in{clampf(raw.throttle,-1,1),clampf(raw.steer,-1,1),clampf(raw.brake,0,1)};
     float support=0;Vec3 normal;int contacts=0;const bool grounded=reduceSupport(probes,support,normal,contacts);
     s.contactCount=contacts;s.supportNormal=normal;

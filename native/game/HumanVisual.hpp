@@ -69,6 +69,7 @@ struct HumanVisualPose {
     float torsoPitch = 0.0f;
     float torsoRoll = 0.0f;
     float headPitch = 0.0f;
+    float headYaw = 0.0f;
     float leftArmSwing = 0.0f;
     float rightArmSwing = 0.0f;
     float leftLegSwing = 0.0f;
@@ -78,6 +79,28 @@ struct HumanVisualPose {
     float vacuumLean = 0.0f;
     float collapse = 0.0f;
 };
+
+// The renderer-facing boundary between enemy embodiment and representation.
+// Gameplay owns the physical root facts; renderers decide whether those facts
+// drive the mature mesh, the procedural fallback, or a debug visualization.
+struct EnemyVisualPose {
+    HumanVisualPose human{};
+    float animationTime = 0.0f;
+    float rootPitch = 0.0f;
+    float rootYaw = 0.0f;
+    float rootRoll = 0.0f;
+    float bodyCompression = 0.0f;
+};
+
+// Presentation-only projection of existing physical foot support. The body
+// simulation owns contact and weight; renderers only expose that fact by
+// moving the visible mass a few centimeters toward the loaded foot.
+inline float physicalSupportLateralShift(float leftWeight,float rightWeight,float scale) {
+    const float left=clampf(leftWeight,0.0f,1.0f);
+    const float right=clampf(rightWeight,0.0f,1.0f);
+    const float support=std::max(left,right);
+    return clampf((right-left)*support,-1.0f,1.0f)*0.045f*std::max(0.0f,scale);
+}
 
 struct HumanReactionVisual {
     float locomotionPhase = 0.0f;
@@ -264,4 +287,46 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
 inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float walkPhase, float time, float hitFlash, float soulMorphPhase, bool aliveHuman) {
     const HumanReactionVisual reaction = makeHumanReactionVisual(walkPhase, aliveHuman ? 1.0f : 0.0f, hitFlash, 0.0f, 0.0f, 0.0f, soulMorphPhase, true);
     return makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
+}
+
+inline EnemyVisualPose makeEnemyVisualPose(
+    float yaw,
+    float scale,
+    float time,
+    const HumanReactionVisual& reaction,
+    bool aliveHuman,
+    bool physicalBody,
+    float bodyPitch,
+    float bodyRoll,
+    float gaitPhase,
+    float locomotionAmount,
+    float legacyAnimationTime,
+    float perceptionHeadYaw = 0.0f,
+    float perceptionHeadPitch = 0.0f)
+{
+    EnemyVisualPose visual;
+    visual.human = makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
+    visual.animationTime = physicalBody ? gaitPhase : legacyAnimationTime;
+    visual.rootPitch = physicalBody ? bodyPitch : 0.0f;
+    visual.rootYaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
+    visual.rootRoll = physicalBody ? bodyRoll : 0.0f;
+
+    if (physicalBody && aliveHuman) {
+        const bool fallen = std::abs(bodyPitch) > 0.82f || std::abs(bodyRoll) > 0.76f;
+        const float stride = std::sin(gaitPhase);
+        const float amplitude = fallen ? 0.16f : clampf(locomotionAmount, 0.0f, 1.0f) * 0.62f;
+        visual.human.torsoPitch = bodyPitch;
+        visual.human.torsoRoll = bodyRoll;
+        visual.human.headPitch = -bodyPitch * 0.28f;
+        visual.human.headYaw = clampf(perceptionHeadYaw,-1.18f,1.18f);
+        visual.human.headPitch += clampf(perceptionHeadPitch,-0.48f,0.48f);
+        visual.human.leftLegSwing = stride * amplitude;
+        visual.human.rightLegSwing = -stride * amplitude;
+        visual.human.leftArmSwing = -visual.human.rightLegSwing * 0.72f - bodyRoll * 0.24f;
+        visual.human.rightArmSwing = -visual.human.leftLegSwing * 0.72f + bodyRoll * 0.24f;
+        const float movement = clampf(locomotionAmount, 0.0f, 1.0f);
+        visual.bodyCompression = clampf(std::abs(bodyPitch), 0.0f, 0.44f) * 0.14f;
+        visual.human.rootBob = std::abs(stride) * 0.022f * movement * visual.human.scale;
+    }
+    return visual;
 }

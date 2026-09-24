@@ -2,6 +2,7 @@
 
 #include "Game.hpp"
 #include "ModelData.hpp"
+#include "RenderContracts.hpp"
 #include "HumanModelData.hpp"
 #include "DeveloperCodec.hpp"
 
@@ -16,7 +17,8 @@ public:
     void setAssetRoot(const std::filesystem::path& root);
     void resize(int width, int height);
     void setHudVisible(bool visible);
-    void draw(const GameState& state, const DeveloperCodecState* codec=nullptr) const;
+    void draw(const GameState& state, const DeveloperCodecState* codec=nullptr,
+              const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>* enemyPerceptions=nullptr) const;
 
 private:
     static void drawFacetedRock(const early_browser_visuals::EnvironmentPropSpec& prop, int roomSeed, int roomIndex, int propIndex, float zOffset, const VisualColor& color);
@@ -42,12 +44,13 @@ private:
     mutable int datamoshHeight_ = 0;
     bool hudVisible_ = true;
 
-    void drawRoomTile(const GameState& state, int tileIndex) const;
+    void drawRoomTile(const GameState& state, int tileIndex, const early_browser_visuals::RoomEnvironmentPlan& plan, const render_contract::RoomLightingProfile& lighting, const render_contract::SceneResponse& response) const;
     void drawFieldGrass(int tileIndex) const;
     void drawCityGround(int tileIndex) const;
     static void applyCamera(const GameState& state, float aspect);
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
-    void drawHumanModel(const TargetState& target, float time, early_browser_visuals::RoomSetting setting, bool shadow = false) const;
+    void drawHumanModel(const TargetState& target, float time, early_browser_visuals::RoomSetting setting, bool shadow = false,
+                        float perceptionHeadYaw = 0.0f, float perceptionHeadPitch = 0.0f) const;
     static void drawSoulFlesh(const TargetState& target,const Vec3& center);
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
     void drawPhoneDisplayTexture(const GameState& state) const;

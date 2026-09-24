@@ -25,6 +25,13 @@ struct HumanModelPose {
   float scale[3];
 };
 
+struct HumanModelLegPlant {
+  float leftForward = 0.0f, leftHeight = 0.0f, leftWeight = 0.0f;
+  float rightForward = 0.0f, rightHeight = 0.0f, rightWeight = 0.0f;
+};
+
+struct HumanModelLook { float yaw = 0.0f, pitch = 0.0f; };
+
 struct HumanModelData {
   std::vector<HumanModelVertex> vertices;
   std::vector<HumanModelBone> bones;
@@ -100,7 +107,9 @@ struct HumanModelData {
   }
 
   void skin(float animationTime, float attackTimer, int attackVariant,
-            std::vector<float> &output) const {
+            std::vector<float> &output,
+            const HumanModelLegPlant &legPlant = {},
+            const HumanModelLook &look = {}) const {
     if (!valid()) {
       output.clear();
       return;
@@ -126,6 +135,8 @@ struct HumanModelData {
       slerp(a.quaternion, b.quaternion, blend, q);
       if (attackTimer > 0.0f)
         applyAttack(bones[i], attackTimer, attackVariant, q);
+      applyLegPlant(bones[i], legPlant, q);
+      applyLook(bones[i], look, q);
       float local[16];
       compose(p, q, s, local);
       float *world = worlds.data() + i * 16u;
@@ -288,6 +299,56 @@ private:
   }
   static bool rigIsLeftArm(const HumanModelBone &bone) { return bone.flags & 4; }
   static bool rigIsRightArm(const HumanModelBone &bone) { return bone.flags & 8; }
+
+  static void solveLegPlant(float forward, float height, float &hip,
+                            float &knee, float &foot) {
+    constexpr float thigh = 0.33f, shin = 0.32f;
+    const float down = std::max(0.12f, thigh + shin - height);
+    const float distance = std::clamp(std::sqrt(forward * forward + down * down),
+                                      std::abs(thigh - shin) + 0.001f,
+                                      thigh + shin - 0.001f);
+    const float hipInterior = std::acos(std::clamp(
+        (thigh * thigh + distance * distance - shin * shin) /
+            (2.0f * thigh * distance),
+        -1.0f, 1.0f));
+    const float kneeInterior = std::acos(std::clamp(
+        (thigh * thigh + shin * shin - distance * distance) /
+            (2.0f * thigh * shin),
+        -1.0f, 1.0f));
+    hip = std::atan2(forward, down) - hipInterior;
+    knee = 3.14159265358979323846f - kneeInterior;
+    foot = -(hip + knee);
+  }
+
+  static void applyLegPlant(const HumanModelBone &bone,
+                            const HumanModelLegPlant &plant, float *q) {
+    const RigRegion region = rigRegion(bone);
+    if (region != RigThigh && region != RigShin && region != RigFoot &&
+        region != RigToe)
+      return;
+    const bool left = bone.side < 0;
+    const float weight = std::clamp(left ? plant.leftWeight : plant.rightWeight,
+                                    0.0f, 1.0f);
+    if (weight <= 0.001f)
+      return;
+    float hip = 0.0f, knee = 0.0f, foot = 0.0f;
+    solveLegPlant(left ? plant.leftForward : plant.rightForward,
+                  left ? plant.leftHeight : plant.rightHeight, hip, knee, foot);
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    quaternionToEuler(q, x, y, z);
+    const float target = region == RigThigh ? hip : (region == RigShin ? knee : foot);
+    x += (target - x) * weight;
+    eulerToQuaternion(x, y, z, q);
+  }
+
+  static void applyLook(const HumanModelBone &bone,const HumanModelLook &look,float *q) {
+    if (rigRegion(bone) != RigHead) return;
+    float x=0.0f,y=0.0f,z=0.0f;
+    quaternionToEuler(q,x,y,z);
+    x += std::clamp(look.pitch,-0.48f,0.48f);
+    y += std::clamp(look.yaw,-1.18f,1.18f);
+    eulerToQuaternion(x,y,z,q);
+  }
 
   static void applyAttack(const HumanModelBone &bone, float timer, int variant,
                           float *q) {

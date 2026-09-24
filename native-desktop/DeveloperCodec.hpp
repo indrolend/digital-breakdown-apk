@@ -10,7 +10,8 @@ enum class DeveloperCodecCommand : unsigned char {
     EnemiesOn, EnemiesOff, EnemiesToggle,
     RoomNext, RoomReroll,
     CollidersShow, CollidersHide, CollidersToggle,
-    PlaytestRally, PlaytestTraversal, PlaytestRooms
+    InspectHuman, InspectClear,
+    PlaytestRally, PlaytestTraversal, PlaytestRooms, PlaytestCart
 };
 
 struct DeveloperCodecParseResult {
@@ -35,10 +36,13 @@ inline DeveloperCodecParseResult parseDeveloperCodecCommand(const std::string& i
     if(exact("colliders","show"))return {DeveloperCodecCommand::CollidersShow,true};
     if(exact("colliders","hide"))return {DeveloperCodecCommand::CollidersHide,true};
     if(exact("colliders","toggle"))return {DeveloperCodecCommand::CollidersToggle,true};
+    if(exact("inspect","human"))return {DeveloperCodecCommand::InspectHuman,true};
+    if(exact("inspect","clear"))return {DeveloperCodecCommand::InspectClear,true};
     if(exact("playtest","rally"))return {DeveloperCodecCommand::PlaytestRally,true};
     if(exact("playtest","traversal"))return {DeveloperCodecCommand::PlaytestTraversal,true};
     if(exact("playtest","rooms"))return {DeveloperCodecCommand::PlaytestRooms,true};
-    const bool known=words[0]=="help"||words[0]=="state"||words[0]=="soul"||words[0]=="battery"||words[0]=="enemies"||words[0]=="room"||words[0]=="colliders"||words[0]=="playtest";
+    if(exact("playtest","cart"))return {DeveloperCodecCommand::PlaytestCart,true};
+    const bool known=words[0]=="help"||words[0]=="state"||words[0]=="soul"||words[0]=="battery"||words[0]=="enemies"||words[0]=="room"||words[0]=="colliders"||words[0]=="inspect"||words[0]=="playtest";
     return {DeveloperCodecCommand::Invalid,known};
 }
 
@@ -46,6 +50,7 @@ struct DeveloperCodecState {
     static constexpr int LineCount=9;
     bool open=false;
     bool showColliders=false;
+    int inspectedTarget=-1;
     std::string input;
     std::array<std::string,LineCount> output{};
     std::array<std::string,LineCount> history{};

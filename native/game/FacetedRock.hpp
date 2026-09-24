@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <limits>
 
 namespace faceted_rock {
 
@@ -19,6 +20,20 @@ struct Mesh {
     std::array<float,VertexCount*3> normals{};
     int vertexCount=0;
 };
+
+struct Bounds { Vec3 minimum{};Vec3 maximum{}; };
+
+inline Bounds meshBounds(const Mesh& mesh){
+    Bounds bounds{{std::numeric_limits<float>::max(),std::numeric_limits<float>::max(),std::numeric_limits<float>::max()},
+                  {std::numeric_limits<float>::lowest(),std::numeric_limits<float>::lowest(),std::numeric_limits<float>::lowest()}};
+    if(mesh.vertexCount<=0)return {};
+    for(int vertex=0;vertex<mesh.vertexCount;++vertex){
+        const Vec3 point{mesh.positions[vertex*3],mesh.positions[vertex*3+1],mesh.positions[vertex*3+2]};
+        bounds.minimum.x=std::min(bounds.minimum.x,point.x);bounds.minimum.y=std::min(bounds.minimum.y,point.y);bounds.minimum.z=std::min(bounds.minimum.z,point.z);
+        bounds.maximum.x=std::max(bounds.maximum.x,point.x);bounds.maximum.y=std::max(bounds.maximum.y,point.y);bounds.maximum.z=std::max(bounds.maximum.z,point.z);
+    }
+    return bounds;
+}
 
 constexpr float WalkableNormalY=0.819152044f; // cos(35 degrees)
 
