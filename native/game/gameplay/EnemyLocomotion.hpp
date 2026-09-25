@@ -277,15 +277,28 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     const Vec3 projectedCom = input.bodyPosition
         + forward * (std::sin(input.bodyPitch) * input.centerOfMassHeight)
         - right * (std::sin(input.bodyRoll) * input.centerOfMassHeight);
+    // Planned travel is not a balance emergency. Predict only the momentum
+    // that the requested gait does not explain (overspeed, shove or lateral
+    // drift), otherwise every ordinary forward step continually enters the
+    // corrective-step/crouch path.
+    const float requestedAlongTravel = horizontalLength(requestedDirection) > 0.5f
+        ? std::max(0.0f, dot3(input.bodyVelocity, requestedDirection)) : 0.0f;
+    const Vec3 plannedVelocity = requestedDirection
+        * std::min(requestedSpeed, requestedAlongTravel);
+    const Vec3 unexpectedVelocity = input.bodyVelocity - plannedVelocity;
     const Vec3 predictedCom = enemyCapturePoint(
-        projectedCom, input.bodyVelocity, input.centerOfMassHeight);
+        projectedCom, unexpectedVelocity, input.centerOfMassHeight);
     const EnemySupportRegion support = enemySupportRegion(
         locomotion.left.plantPosition, leftSupportLoad, locomotion.left.contact,
         locomotion.right.plantPosition, rightSupportLoad, locomotion.right.contact,
         predictedCom);
     const Vec3 supportEscape = support.error;
     const float outsideSupport = std::max(0.0f, support.distance - support.margin);
-    const float urgencyTarget = std::max(0.0f, std::min(1.0f, outsideSupport / 0.42f));
+    const float unexpectedSpeed = horizontalLength(unexpectedVelocity);
+    const float travelRecoveryScale = requestedSpeed > 0.08f
+        ? std::max(0.15f, std::min(1.0f, unexpectedSpeed / 0.90f)) : 1.0f;
+    const float urgencyTarget = std::max(0.0f, std::min(
+        1.0f, outsideSupport / 0.42f)) * travelRecoveryScale;
     locomotion.recoveryUrgency += (urgencyTarget - locomotion.recoveryUrgency)
         * std::min(1.0f, dt * (urgencyTarget > locomotion.recoveryUrgency ? 13.0f : 4.0f));
     locomotion.crouch += ((locomotion.recoveryUrgency * 0.72f) - locomotion.crouch)
@@ -435,7 +448,7 @@ inline EnemyLocomotionOutput updateEnemyLocomotion(
     // speed changes commitment and target reach, but stance geometry bounds
     // the velocity that loaded feet can physically support.
     const float supportLimitedSpeed = std::min(
-        requestedSpeed, (0.94f + locomotion.recoveryUrgency * 0.18f)
+        requestedSpeed, (1.35f + locomotion.recoveryUrgency * 0.12f)
             * (1.0f + std::max(-1.0f, std::min(1.0f, input.individuality)) * 0.12f));
     output.supportedDesiredVelocity = locomotion.committedTravelDirection
         * (supportLimitedSpeed * plantedAuthority

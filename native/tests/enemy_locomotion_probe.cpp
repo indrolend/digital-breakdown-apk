@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
 
     assert(walk.sawStep && walk.displacement.z < -0.25f);
     assert(turn.sawStep && std::abs(turn.yaw) > 0.20f);
-    assert(moderate.sawCorrectiveStep);
+    assert(moderate.sawCorrectiveStep && !moderate.sawFall);
     assert(strong.sawFall);
     assert(strong.sawSupportedRise);
     std::puts("ENEMY_LOCOMOTION_PROBE_OK walk=STEP turn=STEP moderate=CORRECTIVE strong=FALL_SUPPORTED_RISE");

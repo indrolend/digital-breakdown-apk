@@ -315,9 +315,13 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
             body.supportFailureTime += dt * (1.0f + outsideSupport * 1.8f);
             const float recoveryUrgency = std::max(0.0f, std::min(
                 1.0f, finitePhysicalValue(input.recoveryUrgency)));
-            const bool recoveryWindow = input.correctiveStepActive
-                && recoveryUrgency > 0.08f && outsideSupport < 0.72f
-                && body.supportFailureTime < 0.48f;
+            // Locomotion and body update once per frame. Give locomotion a
+            // bounded window to begin or chain the next corrective step;
+            // requiring the step flag on every threatened frame made the body
+            // fall during the tiny unload/cooldown gap between valid steps.
+            const bool recoveryWindow = recoveryUrgency > 0.08f
+                && outsideSupport < 0.72f
+                && body.supportFailureTime < 0.62f;
             if (!recoveryWindow) {
                 body.fallen = true;
                 body.recovery = 0.0f;

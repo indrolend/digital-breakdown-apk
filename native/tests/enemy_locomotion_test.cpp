@@ -67,6 +67,25 @@ int main() {
     assert(sawNewPlant);
     assert(walker.physicalGaitPhase > 3.0f);
 
+    // Intended forward momentum must not be mistaken for a shove. Normal
+    // travel should stay out of emergency crouch/corrective-step behavior.
+    EnemyLocomotionState cruising{};
+    input.bodyPosition = {};
+    input.bodyVelocity = {0.0f, 0.0f, -1.25f};
+    input.desiredTravelDirection = {0.0f, 0.0f, -1.0f};
+    input.desiredSpeed = 2.0f;
+    initializeEnemyLocomotion(cruising, input, flatSupport);
+    float maximumCruiseUrgency = 0.0f;
+    float supportedCruiseSpeed = 0.0f;
+    for (int frame = 0; frame < 30; ++frame) {
+        const auto cruise = updateEnemyLocomotion(cruising, input, flatSupport);
+        maximumCruiseUrgency = std::max(maximumCruiseUrgency, cruise.recoveryUrgency);
+        supportedCruiseSpeed = std::max(
+            supportedCruiseSpeed, horizontalLength(cruise.supportedDesiredVelocity));
+    }
+    assert(maximumCruiseUrgency < 0.05f);
+    assert(supportedCruiseSpeed > 1.20f);
+
     // A route commitment supplied by collision handling survives the direct
     // navigation request long enough for the feet to execute the turn.
     EnemyLocomotionState routed{};

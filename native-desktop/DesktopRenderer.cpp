@@ -305,7 +305,14 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     roundedEllipsoid(root+Vec3{0,headY*bodyCompressionScale,0}+forward*(pose.headPitch*0.03f),{spec.headRadius*2*s,spec.headRadius*2*s,spec.headRadius*2*s},pose.headPitch,yaw+pose.headYaw,0,r,g,b);
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;
-        const float legSwing=side<0?pose.leftLegSwing:pose.rightLegSwing;
+        // The fallback procedural body consumes the same authoritative foot
+        // placement as the skinned model. A gait oscillator must not make a
+        // planted leg swing through a world-space contact.
+        const float physicalFootForward=side<0
+            ?target.physicalLeftFootForward:target.physicalRightFootForward;
+        const float legSwing=physicalBody
+            ?clampf(physicalFootForward/0.32f,-1.0f,1.0f)*0.62f
+            :(side<0?pose.leftLegSwing:pose.rightLegSwing);
         const float knee=physicalBody?(fallen?0.58f:std::max(0.0f,legSwing)*0.72f):std::abs(legSwing)*0.35f;
         const Vec3 shoulder=root+right*(side*spec.shoulderWidth*0.5f*s)+Vec3{0,armY*bodyCompressionScale,0};
         roundedEllipsoid(shoulder+forward*(armSwing*0.06f*s)+Vec3{0,-spec.upperArmLength*0.5f*s*verticalScale,0},{0.055f*s,spec.upperArmLength*s*verticalScale,0.065f*s},armSwing,yaw,0,r,g,b);
