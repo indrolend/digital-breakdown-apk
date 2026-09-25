@@ -150,6 +150,20 @@ inline PhysicalSupportBalance physicalSupportBalance(
     return support;
 }
 
+inline Vec3 physicalSupportCuePosition(
+    const PhysicalEnemyBodyState& body,
+    const Vec3& bodyPosition)
+{
+    const float leftWeight=body.leftFootPlanted
+        ?std::max(0.0f,std::min(1.0f,finitePhysicalValue(body.leftPlantWeight))):0.0f;
+    const float rightWeight=body.rightFootPlanted
+        ?std::max(0.0f,std::min(1.0f,finitePhysicalValue(body.rightPlantWeight))):0.0f;
+    const float totalWeight=leftWeight+rightWeight;
+    if(totalWeight<=0.001f)return finitePhysicalVector(bodyPosition);
+    return (finitePhysicalVector(body.leftFootPlant)*leftWeight
+        +finitePhysicalVector(body.rightFootPlant)*rightWeight)*(1.0f/totalWeight);
+}
+
 inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     PhysicalEnemyBodyState& body,
     const PhysicalEnemyBodyInput& input,

@@ -4031,17 +4031,32 @@ void Game::updateTargets(float dt) {
                     // Existing nearby-herd awareness now has a location: an animal can
                     // orient toward an injured/agitated herd mate without learning the
                     // hidden player's position. Reuse the same weather hearing loss.
-                    const float allyActivity=(ally.hitFlash>0.01f)?0.52f:
-                        ((ally.attackTimer>0.0f||horizontalLength(ally.vel)>2.0f)?0.34f:0.0f);
+                    const float allyMovementContact=gameplay::herdMovementContactActivity(
+                        horizontalLength(ally.vel),runtimePool.bodies[allyIndex].supportContact,
+                        roomFloorMaterial.movementCueTransmission);
+                    const float allySocialActivity=(ally.hitFlash>0.01f)?0.52f:
+                        (ally.attackTimer>0.0f?0.34f:0.0f);
+                    const float allyActivity=std::max(allyMovementContact,allySocialActivity);
                     // Actual loss of physical support is socially readable too: a
                     // nearby animal can notice a herd mate scramble/fall without
                     // learning anything about the hidden player that caused it.
                     const float allyDisruption=runtimePool.bodies[allyIndex].disruption;
                     const float socialCue=gameplay::physicalHerdCueStrength(
-                        allyDistance,allyActivity,allyDisruption,rainHearing);
+                        allyDistance,allyActivity,allyDisruption,
+                        runtimePool.bodies[allyIndex].supportContact,rainHearing,
+                        roomFloorMaterial.movementCueTransmission);
                     if(socialCue>0.0f){
                         vagueAwareness=std::max(vagueAwareness,socialCue);
-                        if(socialCue>environmentalCueStrength){environmentalCueStrength=socialCue;environmentalCuePosition=ally.pos;}
+                        if(socialCue>environmentalCueStrength){
+                            environmentalCueStrength=socialCue;
+                            const float allyDisruptionContact=gameplay::herdDisruptionContactActivity(
+                                allyDisruption,runtimePool.bodies[allyIndex].supportContact,
+                                roomFloorMaterial.movementCueTransmission);
+                            const float allyFloorActivity=std::max(allyMovementContact,allyDisruptionContact);
+                            environmentalCuePosition=allyFloorActivity>=allySocialActivity
+                                ?gameplay::physicalSupportCuePosition(runtimePool.bodies[allyIndex],ally.pos)
+                                :ally.pos;
+                        }
                     }
                 }
                 gameplay::EnemyPerceptionInput perceptionInput{};
@@ -4166,7 +4181,16 @@ void Game::updateTargets(float dt) {
                 const bool physicalPursuit=!state_.multiplayer.enabled;
                 if(dist<HUMAN_WALK_TARGET_RADIUS && playerDist>=noticeRange){chooseHumanWalkTarget(i); delta=t.walkTarget-t.pos; delta.y=0; dist=horizontalLength(delta);}
                 if(dist>0.001f){
-                    Vec3 dir=delta*(1.0f/dist); const float aggro=playerDist<noticeRange?1.28f:1.0f;
+                    Vec3 dir=delta*(1.0f/dist);
+                    // Collision probes must honor the same bounded route that
+                    // the planted feet are executing. Probing the direct pursuit
+                    // ray here rediscovered the same wall every frame and stopped
+                    // the body before its tangent step could make progress.
+                    const auto& routeLocomotion=runtimePool.locomotions[i];
+                    if(physicalPursuit&&routeLocomotion.directionalCommitmentTimer>0.0f
+                        && horizontalLength(routeLocomotion.committedTravelDirection)>0.5f)
+                        dir=routeLocomotion.committedTravelDirection;
+                    const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
                     if(physicalPursuit){
@@ -4306,7 +4330,7 @@ void Game::updateTargets(float dt) {
                             // committed stance direction.
                             auto& locomotion=runtimePool.locomotions[i];
                             locomotion.committedTravelDirection=dir;
-                            locomotion.directionalCommitmentTimer=0.34f;
+                            locomotion.directionalCommitmentTimer=1.35f;
                             const float intoObstacle=dot3(t.vel,obstructionNormal);
                             if(intoObstacle<0.0f)t.vel-=obstructionNormal*intoObstacle;
                             next=t.pos;

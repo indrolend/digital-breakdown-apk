@@ -112,12 +112,30 @@ inline float landingEvidenceAwarenessStrength(float distance,float impactEvidenc
     return impactEvidence*(1.0f-std::min(1.0f,distance/range))*0.68f*transmission*surfaceTransmission;
 }
 
-inline float physicalHerdCueStrength(float distance,float activity,float physicalDisruption,float transmission){
+inline float herdMovementContactActivity(float speed,float supportContact,float surfaceTransmission=1.0f){
+    speed=std::max(0.0f,std::min(12.0f,finitePerceptionValue(speed)));
+    supportContact=std::max(0.0f,std::min(1.0f,finitePerceptionValue(supportContact)));
+    surfaceTransmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(surfaceTransmission,1.0f)));
+    // Airborne horizontal motion cannot become a floor-borne herd cue.
+    const float travel=std::max(0.0f,std::min(1.0f,(speed-0.75f)/3.25f));
+    return travel*supportContact*surfaceTransmission*0.34f;
+}
+
+inline float herdDisruptionContactActivity(float physicalDisruption,float supportContact,float surfaceTransmission=1.0f){
+    physicalDisruption=std::max(0.0f,std::min(1.0f,finitePerceptionValue(physicalDisruption)));
+    supportContact=std::max(0.0f,std::min(1.0f,finitePerceptionValue(supportContact)));
+    surfaceTransmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(surfaceTransmission,1.0f)));
+    return physicalDisruption*supportContact*surfaceTransmission*0.42f;
+}
+
+inline float physicalHerdCueStrength(float distance,float activity,float physicalDisruption,float supportContact,float transmission,float surfaceTransmission=1.0f){
     distance=std::max(0.0f,finitePerceptionValue(distance,1000.0f));
     activity=std::max(0.0f,std::min(1.0f,finitePerceptionValue(activity)));
     physicalDisruption=std::max(0.0f,std::min(1.0f,finitePerceptionValue(physicalDisruption)));
+    supportContact=std::max(0.0f,std::min(1.0f,finitePerceptionValue(supportContact)));
     transmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(transmission)));
-    const float contactAlarm=physicalDisruption*0.42f;
+    surfaceTransmission=std::max(0.0f,std::min(1.0f,finitePerceptionValue(surfaceTransmission,1.0f)));
+    const float contactAlarm=herdDisruptionContactActivity(physicalDisruption,supportContact,surfaceTransmission);
     const float source=std::max(activity,contactAlarm);
     return source*(1.0f-std::min(1.0f,distance/7.0f))*transmission;
 }

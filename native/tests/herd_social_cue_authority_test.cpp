@@ -6,10 +6,10 @@
 int main(){
     std::ifstream f("native/game/Game.cpp"); assert(f);
     std::ostringstream ss; ss<<f.rdbuf(); const std::string s=ss.str();
-    assert(s.find("environmentalCuePosition=ally.pos")!=std::string::npos);
+    assert(s.find("physicalSupportCuePosition(runtimePool.bodies[allyIndex],ally.pos)")!=std::string::npos);
     assert(s.find("socialCue=gameplay::physicalHerdCueStrength")!=std::string::npos);
-    assert(s.find("allyDistance,allyActivity,allyDisruption,rainHearing")!=std::string::npos);
-    const auto begin=s.find("const float allyActivity=");
+    assert(s.find("runtimePool.bodies[allyIndex].supportContact,rainHearing")!=std::string::npos);
+    const auto begin=s.find("const float allyMovementContact=");
     const auto end=s.find("gameplay::EnemyPerceptionInput perceptionInput",begin);
     assert(begin!=std::string::npos&&end!=std::string::npos);
     const auto block=s.substr(begin,end-begin);
