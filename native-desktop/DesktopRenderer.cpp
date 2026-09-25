@@ -301,7 +301,7 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
     const float headY=spec.totalHeight*s-spec.headRadius*s;
     const float armY=torsoY+spec.torsoHeight*s*0.18f;
     roundedEllipsoid(root+Vec3{0,pelvisY*verticalScale,0},{spec.pelvisWidth*s,spec.pelvisHeight*s*verticalScale,spec.pelvisDepth*s},0,yaw,0,r,g,b);
-    roundedEllipsoid(root+Vec3{0,torsoY*verticalScale,0}+forward*((pose.hitLean + pose.vacuumLean * 0.06f)*s),{spec.torsoWidth*s,spec.torsoHeight*s*verticalScale,spec.torsoDepth*s},pose.torsoPitch,yaw,pose.torsoRoll,r,g,b);
+    roundedEllipsoid(root+Vec3{0,torsoY*verticalScale,0}+forward*((pose.hitLean + pose.vacuumLean * 0.06f)*s),{spec.torsoWidth*s,spec.torsoHeight*s*verticalScale,spec.torsoDepth*s},pose.torsoPitch+(physicalBody?enemyPose.rootPitch:0.0f),yaw,pose.torsoRoll+(physicalBody?enemyPose.rootRoll:0.0f),r,g,b);
     roundedEllipsoid(root+Vec3{0,headY*bodyCompressionScale,0}+forward*(pose.headPitch*0.03f),{spec.headRadius*2*s,spec.headRadius*2*s,spec.headRadius*2*s},pose.headPitch,yaw+pose.headYaw,0,r,g,b);
     for (int side : {-1,1}) {
         const float armSwing=side<0?pose.leftArmSwing:pose.rightArmSwing;

@@ -1090,6 +1090,9 @@ void Game::updateBattery(float dt) {
     const float strafe = (input.right ? 1.0f : 0.0f) - (input.left ? 1.0f : 0.0f) + input.touchMoveX;
     const bool moving = std::abs(forward) + std::abs(strafe) > 0.0f;
     const bool running = moving && (input.sprint || input.touchSprint);
+    gameplay::observePlayerBehavior(state_.progression.run.behaviorProfile,{
+        moving, running, !state_.player.grounded, state_.vacuum.active,
+        state_.meleeVisual.visualTimer > 0.0f || energy.dischargeTimer > 0.0f, dt});
     float drain = 0.0f;
     bool active = false;
     if (moving) { drain += running ? BATTERY_SPRINT_DRAIN : BATTERY_WALK_DRAIN; active = true; }
@@ -1336,6 +1339,7 @@ void Game::resetRoom() {
 
     state_.requiredSouls=static_cast<int>(clampf(5.0f+static_cast<float>(state_.runRules.requiredSlotStacks),1.0f,9.0f));
     state_.depositedSouls=0;
+    state_.roomObjective=gameplay::makeHarvestObjective(state_.requiredSouls);
     const float startX=-((static_cast<float>(state_.requiredSouls)-1.0f)*0.82f)*0.5f;
     for (int i = 0; i < CAPTURE_COUNT; ++i) {
         state_.captures[i] = CapturePointState{};
@@ -2131,6 +2135,7 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         state_.player.storedSouls.fill(SoulRecord{});
         state_.requiredSouls=std::min(9,5+state_.runRules.requiredSlotStacks);
         state_.depositedSouls=0;
+        state_.roomObjective=gameplay::makeHarvestObjective(state_.requiredSouls);
         state_.progression.run.roomHeat=0.0f;
         state_.progression.run.roomElapsed=0.0f;
         state_.weather=RoomWeatherState{};
@@ -3648,6 +3653,7 @@ void Game::updateRoomPopulation(float dt) {
 void Game::respawnTarget(int index) {
     auto& runtime=enemyRuntime();
     runtime.motors[index] = {};
+    runtime.behaviors[index] = {};
     runtime.locomotions[index] = {};
     runtime.bodies[index] = {};
     runtime.perceptions[index] = {};
@@ -4081,6 +4087,23 @@ void Game::updateTargets(float dt) {
                 perception=gameplay::updateEnemyPerception(perceptionInput,perceptionState);
                 attackedPlayerPos=perception.hasSpatialBelief?perception.believedPosition:t.pos;
             }
+            gameplay::EnemyBehaviorOutput behavior{};
+            if(!state_.multiplayer.enabled){
+                gameplay::EnemyBehaviorInput behaviorInput{};
+                behaviorInput.confidence=perception.confidence;
+                behaviorInput.uncertainty=perception.uncertainty;
+                behaviorInput.vagueAwareness=0.0f;
+                behaviorInput.physicalDisruption=runtimePool.bodies[i].disruption;
+                behaviorInput.confirmed=perception.confirmed;
+                behaviorInput.hasSpatialBelief=perception.hasSpatialBelief;
+                behaviorInput.dt=dt;
+                behavior=gameplay::updateEnemyBehavior(runtimePool.behaviors[i],behaviorInput);
+            }else{
+                behavior.mode=gameplay::EnemyBehaviorMode::Engage;
+                behavior.travelScale=1.0f;
+                behavior.commitment=1.0f;
+                behavior.mayAttack=true;
+            }
             Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
             float playerDist=state_.multiplayer.enabled?horizontalLength(toPlayer):(perception.hasSpatialBelief?horizontalLength(toPlayer):9999.0f);
             const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
@@ -4170,7 +4193,7 @@ void Game::updateTargets(float dt) {
                     t.attackHit=true;
                 }
                 if(t.attackTimer<=0.0f&&state_.enemyAttackOwner==i){state_.enemyAttackOwner=-1;state_.enemyAttackCadence=attackCadence;}
-            } else if(!runtimePool.bodies[i].fallen&&(state_.multiplayer.enabled||perception.confirmed)&&playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
+            } else if(!runtimePool.bodies[i].fallen&&(state_.multiplayer.enabled||behavior.mayAttack)&&playerDist<HUMAN_ATTACK_START_RANGE&&canReachPlayerVertically(attackedPlayerPos) && t.attackCooldown<=0.0f && state_.enemyAttackOwner<0 && state_.enemyAttackCadence<=0.0f){
                 t.attackTimer=HUMAN_ATTACK_DURATION; t.attackCooldown=attackCooldown;
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
@@ -4192,7 +4215,8 @@ void Game::updateTargets(float dt) {
                         dir=routeLocomotion.committedTravelDirection;
                     const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
-                    const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation;
+                    const float behaviorTravelScale=state_.multiplayer.enabled?1.0f:behavior.travelScale;
+                    const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation*behaviorTravelScale;
                     if(physicalPursuit){
                         Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
                         for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
@@ -4734,11 +4758,18 @@ void Game::updateBullets(float dt) {
     }
 }
 void Game::updateCaptures(float dt) {
-    (void)dt;
     int filled = 0; for(int i=0;i<state_.requiredSouls;++i) if(state_.captures[i].filled) ++filled;
     state_.depositedSouls=filled;
     const bool wasClear=state_.roomClear;
-    state_.roomClear = filled >= state_.requiredSouls;
+    // Legacy fixtures and multiplayer snapshots may still author requiredSouls
+    // directly. Harvest mirrors that compatibility field until all callers own
+    // RoomObjectiveState explicitly.
+    if(state_.roomObjective.type==gameplay::RoomObjectiveType::Harvest)
+        state_.roomObjective.target=std::max(1,state_.requiredSouls);
+    // Room completion now flows through a canonical objective contract. Harvest
+    // preserves the shipping soul-slot behavior while freeing future rooms from
+    // encoding their purpose directly in roomClear.
+    state_.roomClear = gameplay::updateHarvestObjective(state_.roomObjective, filled, dt);
     if(state_.roomClear && !wasClear){
         emitAudio(AudioCue::PaymentSuccess,0.68f);emitAudio(AudioCue::RewardWoah,0.44f);
         if(secretTvAppearsInRoom(state_.roomIndex)){state_.secretTv.knockCueTimer=5.4f;setEnergyTicker("KNOCK KNOCK",2);}

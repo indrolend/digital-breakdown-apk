@@ -320,8 +320,9 @@ inline EnemyVisualPose makeEnemyVisualPose(
         const bool fallen = std::abs(bodyPitch) > 0.82f || std::abs(bodyRoll) > 0.76f;
         const float stride = std::sin(gaitPhase);
         const float amplitude = fallen ? 0.16f : clampf(locomotionAmount, 0.0f, 1.0f) * 0.62f;
-        visual.human.torsoPitch = bodyPitch;
-        visual.human.torsoRoll = bodyRoll;
+        // Physical pitch/roll are applied once at the rendered root. Keep the
+        // torso's independent reaction articulation instead of applying the same
+        // whole-body lean a second time.
         visual.human.headPitch = -bodyPitch * 0.28f;
         visual.human.headYaw = clampf(perceptionHeadYaw,-1.18f,1.18f);
         visual.human.headPitch += clampf(perceptionHeadPitch,-0.48f,0.48f);

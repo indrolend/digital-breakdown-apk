@@ -20,9 +20,13 @@
 #include "MarkerPillarGeometry.hpp"
 #include "RollingVehicle.hpp"
 #include "gameplay/EnemyMotor.hpp"
+#include "gameplay/EnemyBehaviorState.hpp"
 #include "gameplay/EnemyLocomotion.hpp"
 #include "gameplay/EnemyPerception.hpp"
 #include "gameplay/PhysicalEnemyBody.hpp"
+#include "gameplay/RoomObjective.hpp"
+#include "gameplay/RunPressure.hpp"
+#include "gameplay/PlayerBehaviorProfile.hpp"
 
 constexpr int TARGET_COUNT = 32;
 constexpr int CAPTURE_COUNT = 9;
@@ -504,6 +508,7 @@ struct RunProgressionState {
     float lastStandCooldown = 0.0f;
     float lungeReboundTimer = 0.0f;
     float headshotRechargeBoost = 0.0f;
+    gameplay::PlayerBehaviorProfile behaviorProfile{};
 };
 
 struct ProgressionState {
@@ -785,6 +790,7 @@ struct GameState {
     int roomSeed = 12345;
     int requiredSouls = 5;
     int depositedSouls = 0;
+    gameplay::RoomObjectiveState roomObjective{};
     bool roomClear = false;
     bool victory = false;
     bool endlessMode = false;
@@ -886,6 +892,7 @@ private:
     enum class BatteryReason { Continuous, Jump, DoubleJump, Melee, Shoot, Hit, Climb, Ingest, NextRoom, Combo, Chain, Headshot, Loop };
     struct EnemyRuntimePool {
         std::array<gameplay::EnemyMotorMemory, TARGET_COUNT> motors{};
+        std::array<gameplay::EnemyBehaviorState, TARGET_COUNT> behaviors{};
         std::array<gameplay::EnemyLocomotionState, TARGET_COUNT> locomotions{};
         std::array<gameplay::PhysicalEnemyBodyState, TARGET_COUNT> bodies{};
         std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> perceptions{};
