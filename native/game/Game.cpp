@@ -4351,10 +4351,15 @@ void Game::updateTargets(float dt) {
                             if(found)break;
                         }
                         if(!found){
-                            if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],
-                                {dot3(t.vel,obstructionNormal)*labProfile.consequences.impactResponse,0,
-                                 horizontalLength(t.vel)*labProfile.consequences.impactResponse});
-                            next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                            if(physicalPursuit){
+                                const float closingSpeed=std::max(0.0f,-dot3(t.vel,obstructionNormal));
+                                gameplay::applyPhysicalEnemyWorldImpact(runtimePool.bodies[i],
+                                    obstructionNormal*(closingSpeed*labProfile.consequences.impactResponse),t.visualYaw);
+                            }
+                            next=t.pos;
+                            t.vel=gameplay::physicalEnemyCollisionVelocity(t.vel,obstructionNormal);
+                            if(labProfile.locomotionAuthority==gameplay::EnemyLocomotionAuthority::PhysicalSupport)
+                                runtimePool.bodies[i].supportDrivenVelocity=t.vel;
                         }
                         else if(physicalPursuit){
                             // Collision chooses a new intention; it does not rotate
@@ -4368,12 +4373,17 @@ void Game::updateTargets(float dt) {
                             if(intoObstacle<0.0f)t.vel-=obstructionNormal*intoObstacle;
                             next=t.pos;
                         }
-                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)
+                    }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS,&obstructionNormal)
                         && !plantedFootSupportsMotion(motionDir)){
-                        if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],
-                            {t.vel.x*labProfile.consequences.impactResponse,0,
-                             t.vel.z*labProfile.consequences.impactResponse});
-                        chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
+                        if(physicalPursuit){
+                            const float closingSpeed=std::max(0.0f,-dot3(t.vel,obstructionNormal));
+                            gameplay::applyPhysicalEnemyWorldImpact(runtimePool.bodies[i],
+                                obstructionNormal*(closingSpeed*labProfile.consequences.impactResponse),t.visualYaw);
+                        }
+                        chooseHumanWalkTarget(i);next=t.pos;
+                        t.vel=gameplay::physicalEnemyCollisionVelocity(t.vel,obstructionNormal);
+                        if(labProfile.locomotionAuthority==gameplay::EnemyLocomotionAuthority::PhysicalSupport)
+                            runtimePool.bodies[i].supportDrivenVelocity=t.vel;
                     }
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;if(!physicalPursuit){const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);}t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
                     if(!physicalPursuit)t.locomotionAmount=travelled>0.00001f?1.0f:0.0f;

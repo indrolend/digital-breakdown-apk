@@ -459,4 +459,36 @@ inline void applyPhysicalEnemyImpact(PhysicalEnemyBodyState& body, const Vec3& l
         std::min(1.0f, horizontalLength(impulse) / 4.0f));
 }
 
+inline Vec3 physicalEnemyCollisionVelocity(
+    const Vec3& velocity,
+    const Vec3& obstructionNormal,
+    float restitution = 0.18f)
+{
+    const Vec3 motion=boundedPhysicalMotion(velocity);
+    Vec3 normal=finitePhysicalVector(obstructionNormal);
+    const float normalLength=horizontalLength(normal);
+    if(normalLength<=0.0001f)return motion;
+    normal=normal*(1.0f/normalLength);
+    const float closingSpeed=std::max(0.0f,-dot3(motion,normal));
+    const float bounce=std::max(0.0f,std::min(0.35f,
+        finitePhysicalValue(restitution,0.18f)));
+    // Resolve only motion entering the obstacle. A glancing impact retains
+    // tangential momentum instead of reversing the animal's entire velocity.
+    return boundedPhysicalMotion(motion+normal*(closingSpeed*(1.0f+bounce)));
+}
+
+inline Vec3 physicalEnemyLocalImpact(const Vec3& worldImpulse,float yaw) {
+    const Vec3 impulse=boundedPhysicalMotion(worldImpulse);
+    const float safeYaw=physicalWrappedAngle(yaw);
+    const Vec3 facing{-std::sin(safeYaw),0.0f,-std::cos(safeYaw)};
+    const Vec3 right{facing.z,0.0f,-facing.x};
+    return {dot3(impulse,right),impulse.y,dot3(impulse,facing)};
+}
+
+inline void applyPhysicalEnemyWorldImpact(
+    PhysicalEnemyBodyState& body,const Vec3& worldImpulse,float yaw)
+{
+    applyPhysicalEnemyImpact(body,physicalEnemyLocalImpact(worldImpulse,yaw));
+}
+
 } // namespace gameplay

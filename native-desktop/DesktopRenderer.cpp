@@ -905,9 +905,14 @@ void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_
     const auto lab=gameplay::enemyLabProfile(labVariant);
     const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch,labVariant);
     const float contactAuthority=lab.presentation.ordinaryGait==gameplay::EnemyGaitAuthority::PhysicalContacts?1.0f:0.0f;
+    const Vec3 physicalFacing{-std::sin(target.visualYaw),0.0f,-std::cos(target.visualYaw)};
+    const Vec3 physicalRight{physicalFacing.z,0.0f,-physicalFacing.x};
+    const float physicalInverseScale=1.0f/std::max(0.001f,target.scale);
+    const float leftLateral=clampf(dot3(target.physicalLeftFootWorld-target.pos,physicalRight)*physicalInverseScale,-0.30f,0.30f);
+    const float rightLateral=clampf(dot3(target.physicalRightFootWorld-target.pos,physicalRight)*physicalInverseScale,-0.30f,0.30f);
     const HumanModelLegPlant legPlant{
-        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight*contactAuthority,
-        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight*contactAuthority};
+        target.physicalLeftFootForward,target.physicalLeftFootHeight,leftLateral,target.physicalLeftFootWeight*contactAuthority,
+        target.physicalRightFootForward,target.physicalRightFootHeight,rightLateral,target.physicalRightFootWeight*contactAuthority};
     humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_,legPlant,{visual.human.headYaw,visual.human.headPitch},{target.hitFlash,target.hitDirectionLocal,time});if(humanVertices_.empty())return;
     const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;

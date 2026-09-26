@@ -1853,7 +1853,7 @@ int runSoulLifecycleCapture(GLFWwindow* window,HostState& host,const std::filesy
 int runModelTest(const std::filesystem::path& root) {
     HumanModelData human;StaticModelData phone,flower;
     if(!human.load((root/"models"/"human.dbhuman").string())||!phone.load((root/"models"/"phone.dbmesh").string())||!flower.load((root/"models"/"flower.dbmesh").string())){std::fprintf(stderr,"MODEL_TEST_FAILED load\n");return 1;}
-    std::vector<float> idle,walk,attack,planted;human.skin(0.0f,0.0f,0,idle);human.skin(0.25f,0.0f,0,walk);human.skin(0.25f,0.24f,1,attack);human.skin(0.25f,0.0f,0,planted,HumanModelLegPlant{-0.18f,0.08f,1.0f,0.12f,0.0f,0.8f});
+    std::vector<float> idle,walk,attack,planted;human.skin(0.0f,0.0f,0,idle);human.skin(0.25f,0.0f,0,walk);human.skin(0.25f,0.24f,1,attack);human.skin(0.25f,0.0f,0,planted,HumanModelLegPlant{-0.18f,0.08f,0.0f,1.0f,0.12f,0.0f,0.0f,0.8f});
     auto finite=[](const std::vector<float>& v){return !v.empty()&&std::all_of(v.begin(),v.end(),[](float x){return std::isfinite(x)&&std::abs(x)<100.0f;});};
     auto differs=[](const std::vector<float>& a,const std::vector<float>& b){if(a.size()!=b.size())return true;for(std::size_t i=0;i<a.size();++i)if(std::abs(a[i]-b[i])>0.00001f)return true;return false;};
     float minY=100,maxY=-100;for(std::size_t i=1;i<idle.size();i+=3){minY=std::min(minY,idle[i]);maxY=std::max(maxY,idle[i]);}

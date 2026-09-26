@@ -26,9 +26,14 @@ struct HumanModelPose {
 };
 
 struct HumanModelLegPlant {
-  float leftForward = 0.0f, leftHeight = 0.0f, leftWeight = 0.0f;
-  float rightForward = 0.0f, rightHeight = 0.0f, rightWeight = 0.0f;
+  float leftForward = 0.0f, leftHeight = 0.0f, leftLateral = 0.0f, leftWeight = 0.0f;
+  float rightForward = 0.0f, rightHeight = 0.0f, rightLateral = 0.0f, rightWeight = 0.0f;
 };
+
+inline float humanLegLateralPlantAngle(float lateral) {
+  if (!std::isfinite(lateral)) lateral = 0.0f;
+  return std::atan2(std::clamp(lateral, -0.30f, 0.30f), 0.58f);
+}
 
 struct HumanModelLook { float yaw = 0.0f, pitch = 0.0f; };
 struct HumanModelExpressiveness { float hitAmount = 0.0f, hitDirection = 0.0f, time = 0.0f; };
@@ -341,6 +346,11 @@ private:
     quaternionToEuler(q, x, y, z);
     const float target = region == RigThigh ? hip : (region == RigShin ? knee : foot);
     x += (target - x) * weight;
+    const float lateral = left ? plant.leftLateral : plant.rightLateral;
+    const float lateralAngle = humanLegLateralPlantAngle(lateral);
+    const float lateralTarget = region == RigThigh ? lateralAngle
+        : (region == RigShin ? -lateralAngle * 0.35f : -lateralAngle * 0.65f);
+    z += lateralTarget * weight;
     eulerToQuaternion(x, y, z, q);
   }
 

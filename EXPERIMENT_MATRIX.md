@@ -63,7 +63,8 @@ perception + memory -> cognition -> pursuit intention
 - Traversal capability describes *which skills may solve the route*.
 - Motor competence controls speed, commitment and recklessness.
 - Presentation chooses one ordinary gait authority, avoiding authored gait plus physical leg overwrite at the same time.
-- Physics remains the authority for collision, support, imbalance, falling and recovery consequences.
+- Physics remains the authority for collision, support, imbalance, falling and recovery consequences. Glancing collisions resolve only the closing normal component, preserve tangent motion, and apply the same world impact to body pitch/roll.
+- Contact-gait variants project both forward and lateral placement from their real foot contacts; lateral placement is derived in the renderer and does not expand gameplay or network state.
 
 ## Visual playtest checklist
 
@@ -82,9 +83,11 @@ Automated checks cannot judge knee direction, foot sliding, silhouette quality, 
 ## Verification record
 
 - Native desktop release build: PASS.
-- CTest behavioral suite: PASS, 75/75 from a clean short-path build.
+- CTest behavioral suite: PASS, 76/76 from a clean short-path release build.
+- Release smoke launch: PASS for `rabid-animator`, `euphoria-lite`, `traversal-predator`, `feral-hybrid`, and the `support-driven` diagnostic.
 - Support-driven locomotion authority contract: PASS; intention alone cannot translate the root and contact transfer earns bounded translation.
 - New variant selection/profile contract: PASS.
+- Collision tangent preservation, world-to-body impact mapping, and lateral foot-plant contracts: PASS.
 - Existing perception, cognition, locomotion, recovery, physical-authority, multiplayer determinism, traversal calibration, slope traversal, and Pass 7 parity contracts: PASS.
-- The high-level `desktop-test` wrapper reached compilation but reported a Windows/MSBuild path-generation failure in two third-party miniaudio sample-library targets. The game executable and all 74 registered behavioral tests built/running independently were successful; this is recorded rather than hidden.
-- Visual playtesting of all four variants: REQUIRED.
+- The high-level `desktop-test` wrapper encountered Windows path-length bookkeeping failures in third-party miniaudio targets. The established short-drive build avoided that environment limitation and completed the same release build and all 76 tests successfully.
+- Visual playtesting of the four primary variants and the support-driven diagnostic: REQUIRED.

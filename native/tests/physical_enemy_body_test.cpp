@@ -115,6 +115,23 @@ int main() {
     gameplay::applyPhysicalEnemyImpact(body, {0.0f, 0.0f, 3.0f});
     assert(body.pitchVelocity > pitchVelocityBefore);
 
+    const Vec3 glancing=gameplay::physicalEnemyCollisionVelocity(
+        {2.0f,0.0f,-3.0f},{0.0f,0.0f,1.0f});
+    assert(std::abs(glancing.x-2.0f)<0.0001f);
+    assert(glancing.z>0.50f&&glancing.z<0.56f);
+    const Vec3 separating=gameplay::physicalEnemyCollisionVelocity(
+        {2.0f,0.0f,1.0f},{0.0f,0.0f,1.0f});
+    assert(std::abs(separating.x-2.0f)<0.0001f);
+    assert(std::abs(separating.z-1.0f)<0.0001f);
+
+    gameplay::PhysicalEnemyBodyState forwardImpact{},sideImpact{};
+    gameplay::applyPhysicalEnemyWorldImpact(forwardImpact,{0.0f,0.0f,-3.0f},0.0f);
+    gameplay::applyPhysicalEnemyWorldImpact(sideImpact,{0.0f,0.0f,-3.0f},1.57079632679f);
+    assert(forwardImpact.pitchVelocity>0.9f);
+    assert(std::abs(forwardImpact.rollVelocity)<0.001f);
+    assert(std::abs(sideImpact.pitchVelocity)<0.001f);
+    assert(std::abs(sideImpact.rollVelocity)>0.9f);
+
     // Representative worst-case CPU probe: every pooled enemy updates for one
     // simulated minute. This measures controller cost, not rendering.
     std::array<gameplay::PhysicalEnemyBodyState,32> crowd{};
