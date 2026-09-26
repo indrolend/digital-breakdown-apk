@@ -50,7 +50,8 @@ private:
     static void applyCamera(const GameState& state, float aspect);
     static void drawStaticModel(unsigned int list, const Vec3& position, const Vec3& scale, const Quat& orientation);
     void drawHumanModel(const TargetState& target, float time, early_browser_visuals::RoomSetting setting, bool shadow = false,
-                        float perceptionHeadYaw = 0.0f, float perceptionHeadPitch = 0.0f) const;
+                        float perceptionHeadYaw = 0.0f, float perceptionHeadPitch = 0.0f,
+                        gameplay::EnemyLabVariant labVariant = gameplay::EnemyLabVariant::RabidAnimator) const;
     static void drawSoulFlesh(const TargetState& target,const Vec3& center);
     void drawSecretTvScreen(const GameState& state, float phoneProximity) const;
     void drawPhoneDisplayTexture(const GameState& state) const;

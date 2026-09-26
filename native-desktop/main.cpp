@@ -1468,6 +1468,7 @@ void printUsage() {
     std::printf("  --slope-lab          Start the deterministic physical-slope fixture.\n");
     std::printf("  --cart-lab           Start mounted in the shopping-cart vehicle lab.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
+    std::printf("  --enemy-variant NAME Select rabid-animator, euphoria-lite, traversal-predator, or feral-hybrid.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --room-inspector-premise N  Select a fixed inspector premise for deterministic capture.\n");
@@ -1987,6 +1988,12 @@ int main(int argc, char** argv) {
     const bool slopeLab=hasArg(argc,argv,"--slope-lab");
     const bool cartLab=hasArg(argc,argv,"--cart-lab");
     const bool rallyLab=hasArg(argc,argv,"--rally-lab");
+    gameplay::EnemyLabVariant enemyLabVariant=gameplay::EnemyLabVariant::RabidAnimator;
+    if(const char* value=argValue(argc,argv,"--enemy-variant")){
+        if(!gameplay::parseEnemyLabVariant(value,enemyLabVariant)){
+            std::fprintf(stderr,"ENEMY_VARIANT_INVALID value=%s\n",value);return 2;
+        }
+    }
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool agentPlaytest=hasArg(argc,argv,"--agent-playtest");
     const char* agentFrameArg=argValue(argc,argv,"--agent-frame");
@@ -2088,6 +2095,8 @@ int main(int argc, char** argv) {
     std::printf("Persistent save: %s%s\n",host.progressionPath.string().c_str(),agentPlaytest?" (bypassed for agent playtest)":(recoveredPersistentSave?" (recovered backup)":(loadedPersistentSave?" (loaded)":"")));
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
+    host.game.setEnemyLabVariant(enemyLabVariant);
+    std::printf("ENEMY_VARIANT_SELECTED name=%s\n",gameplay::enemyLabVariantName(enemyLabVariant).data());
     if((!capturePath&&!captureDemo&&!agentPlaytest)||captureStart)host.game.prepareAttractScreen();
     if(captureMenu){
         const char* page=captureMenuPage;

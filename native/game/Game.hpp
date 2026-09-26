@@ -21,6 +21,7 @@
 #include "RollingVehicle.hpp"
 #include "gameplay/EnemyMotor.hpp"
 #include "gameplay/EnemyBehaviorState.hpp"
+#include "gameplay/EnemyLabVariant.hpp"
 #include "gameplay/EnemyLocomotion.hpp"
 #include "gameplay/EnemyPerception.hpp"
 #include "gameplay/PhysicalEnemyBody.hpp"
@@ -817,6 +818,7 @@ struct GameState {
     float enemyAttackCadence = 0.0f;
     HerdState herd;
     MultiplayerRuntimeState multiplayer;
+    gameplay::EnemyLabVariant enemyLabVariant = gameplay::EnemyLabVariant::RabidAnimator;
 };
 
 struct HostRemotePeerSimulationIsolationAccess;
@@ -873,6 +875,7 @@ public:
     void disableNetwork();
     void setNetworkRoom(const char* code, const char* status, bool connected);
     void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);
+    void setEnemyLabVariant(gameplay::EnemyLabVariant variant) { state_.enemyLabVariant=variant; }
     bool chooseTemporaryUpgrade(int track);
     bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);

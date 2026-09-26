@@ -6,6 +6,7 @@
 
 #include "Math.hpp"
 #include "../gameplay/EnemyMotionFacts.hpp"
+#include "gameplay/EnemyLabVariant.hpp"
 
 constexpr float HUMAN_SWING_ATTACK_DURATION = 0.86f;
 constexpr float HUMAN_SWING_COMMIT_PHASE = 0.30f;
@@ -304,14 +305,17 @@ inline EnemyVisualPose makeEnemyVisualPose(
     float legacyAnimationTime,
     float physicalCrouch = 0.0f,
     float perceptionHeadYaw = 0.0f,
-    float perceptionHeadPitch = 0.0f)
+    float perceptionHeadPitch = 0.0f,
+    gameplay::EnemyLabVariant labVariant = gameplay::EnemyLabVariant::RabidAnimator)
 {
+    const auto lab=gameplay::enemyLabProfile(labVariant);
     EnemyVisualPose visual;
     visual.human = makeHumanVisualPose(yaw, scale, time, reaction, aliveHuman);
-    visual.animationTime = physicalBody ? gaitPhase : legacyAnimationTime;
-    visual.rootPitch = physicalBody ? bodyPitch : 0.0f;
+    const bool contactGait=lab.presentation.ordinaryGait==gameplay::EnemyGaitAuthority::PhysicalContacts;
+    visual.animationTime = physicalBody&&contactGait ? gaitPhase : legacyAnimationTime;
+    visual.rootPitch = physicalBody ? bodyPitch*lab.presentation.physicalPoseAuthority : 0.0f;
     visual.rootYaw = yaw + PASS7_HUMAN_VISUAL_SPEC.forwardYawOffset;
-    visual.rootRoll = physicalBody ? bodyRoll : 0.0f;
+    visual.rootRoll = physicalBody ? bodyRoll*lab.presentation.physicalPoseAuthority : 0.0f;
     const float hit=clampf(reaction.hitAmount,0.0f,1.0f);
     const float rubberPulse=hit*(0.78f+std::sin(time*23.0f)*0.22f);
     visual.expressiveScale={1.0f+rubberPulse*0.10f,1.0f-rubberPulse*0.14f,1.0f+rubberPulse*0.075f};
@@ -326,10 +330,12 @@ inline EnemyVisualPose makeEnemyVisualPose(
         visual.human.headPitch = -bodyPitch * 0.28f;
         visual.human.headYaw = clampf(perceptionHeadYaw,-1.18f,1.18f);
         visual.human.headPitch += clampf(perceptionHeadPitch,-0.48f,0.48f);
-        visual.human.leftLegSwing = stride * amplitude;
-        visual.human.rightLegSwing = -stride * amplitude;
-        visual.human.leftArmSwing = -visual.human.rightLegSwing * 0.72f - bodyRoll * 0.24f;
-        visual.human.rightArmSwing = -visual.human.leftLegSwing * 0.72f + bodyRoll * 0.24f;
+        if(contactGait){
+            visual.human.leftLegSwing = stride * amplitude;
+            visual.human.rightLegSwing = -stride * amplitude;
+        }
+        visual.human.leftArmSwing += (-visual.human.rightLegSwing*0.72f-bodyRoll*0.24f-visual.human.leftArmSwing)*lab.presentation.proceduralExpression;
+        visual.human.rightArmSwing += (-visual.human.leftLegSwing*0.72f+bodyRoll*0.24f-visual.human.rightArmSwing)*lab.presentation.proceduralExpression;
         const float movement = clampf(locomotionAmount, 0.0f, 1.0f);
         visual.bodyCompression = std::max(
             clampf(std::abs(bodyPitch), 0.0f, 0.44f) * 0.14f,

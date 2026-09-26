@@ -409,10 +409,12 @@ int secretTvSignalGain(int souls) {
 void Game::reset() {
     const PermanentProgressionState permanent=state_.progression.permanent;
     const LocalSettingsState localSettings=state_.localSettings;
+    const gameplay::EnemyLabVariant enemyLabVariant=state_.enemyLabVariant;
     auto freshState=std::make_unique<GameState>();
     state_ = std::move(*freshState);
     state_.progression.permanent=permanent;
     state_.localSettings=localSettings;
+    state_.enemyLabVariant=enemyLabVariant;
     state_.localSettings.menuPage=LocalMenuPage::Main;
     state_.localSettings.menuScroll=0.0f;
     state_.localSettings.menuHistoryDepth=0;
@@ -3760,6 +3762,7 @@ void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_
 
 void Game::updateTargets(float dt) {
     auto& runtimePool=enemyRuntime();
+    const auto labProfile=gameplay::enemyLabProfile(state_.enemyLabVariant);
     const int perceptionFirst=runtimePool.perceptionCursor%TARGET_COUNT;
     const int perceptionSecond=(perceptionFirst+1)%TARGET_COUNT;
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
@@ -4117,7 +4120,8 @@ void Game::updateTargets(float dt) {
             };
             const RoomCollider* pursuedTree=nullptr;
             Vec3 treeGripPoint{};
-            if((state_.multiplayer.enabled||perception.confirmed)&&attackedPlayer->treeClimbing&&
+            if((state_.multiplayer.enabled||labProfile.traversal.mayClimb)&&
+               (state_.multiplayer.enabled||perception.confirmed)&&attackedPlayer->treeClimbing&&
                attackedPlayer->treeCollider>=0&&attackedPlayer->treeCollider<state_.debug.colliderCount){
                 const RoomCollider& tree=state_.roomColliders[attackedPlayer->treeCollider];
                 if(tree.kind==RoomColliderKind::TreeTrunk){
@@ -4216,7 +4220,8 @@ void Game::updateTargets(float dt) {
                     const float aggro=playerDist<noticeRange?1.28f:1.0f;
                     const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float behaviorTravelScale=state_.multiplayer.enabled?1.0f:behavior.travelScale;
-                    const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation*behaviorTravelScale;
+                    const float labSpeed=state_.multiplayer.enabled?1.0f:labProfile.motor.speedScale;
+                    const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation*behaviorTravelScale*labSpeed;
                     if(physicalPursuit){
                         Vec3 nearestAllyDirection{};float nearestAllyDistance=10.0f;
                         for(int allyIndex=0;allyIndex<TARGET_COUNT;++allyIndex){
@@ -4269,7 +4274,7 @@ void Game::updateTargets(float dt) {
                         const float commitment=motor.attackCommitment;
                         const float probeAuthority=0.18f+0.34f*(1.0f-commitment);
                         const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*probeAuthority));
-                        const float approachPulse=0.82f+0.18f*commitment;
+                        const float approachPulse=0.82f+0.18f*commitment+labProfile.motor.recklessness*0.08f;
                         const Vec3 desired=desiredDirection*(speed*motor.speedScale*approachPulse);
                         advancePhysicalBody(desired,std::atan2(-desiredDirection.x,-desiredDirection.z),motor.brace,std::sin(static_cast<float>(i)*12.9898f));
                         const float horizontalSpeed=horizontalLength(t.vel);
@@ -4344,7 +4349,9 @@ void Game::updateTargets(float dt) {
                             if(found)break;
                         }
                         if(!found){
-                            if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{dot3(t.vel,obstructionNormal),0,horizontalLength(t.vel)});
+                            if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],
+                                {dot3(t.vel,obstructionNormal)*labProfile.consequences.impactResponse,0,
+                                 horizontalLength(t.vel)*labProfile.consequences.impactResponse});
                             next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
                         }
                         else if(physicalPursuit){
@@ -4354,14 +4361,16 @@ void Game::updateTargets(float dt) {
                             // committed stance direction.
                             auto& locomotion=runtimePool.locomotions[i];
                             locomotion.committedTravelDirection=dir;
-                            locomotion.directionalCommitmentTimer=1.35f;
+                            locomotion.directionalCommitmentTimer=1.35f*labProfile.motor.turnCommitmentScale;
                             const float intoObstacle=dot3(t.vel,obstructionNormal);
                             if(intoObstacle<0.0f)t.vel-=obstructionNormal*intoObstacle;
                             next=t.pos;
                         }
                     }else if(isHumanMovementBlocked(next.x,next.z,t.pos.y,HUMAN_BODY_RADIUS)
                         && !plantedFootSupportsMotion(motionDir)){
-                        if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],{t.vel.x,0,t.vel.z});
+                        if(physicalPursuit)gameplay::applyPhysicalEnemyImpact(runtimePool.bodies[i],
+                            {t.vel.x*labProfile.consequences.impactResponse,0,
+                             t.vel.z*labProfile.consequences.impactResponse});
                         chooseHumanWalkTarget(i);next=t.pos;t.vel.x*=-0.18f;t.vel.z*=-0.18f;
                     }
                     const float travelled=horizontalLength(next-t.pos);if(travelled>0.00001f){t.pos=next;if(!physicalPursuit){const Vec3 physicalDirection=normalized(Vec3{t.vel.x,0,t.vel.z});t.visualYaw=std::atan2(-physicalDirection.x,-physicalDirection.z);}t.visualWalkPhase+=travelled*HUMAN_WALK_PHASE_PER_METER;}
@@ -4401,7 +4410,7 @@ void Game::updateTargets(float dt) {
             const float distance=std::sqrt(physicalTravel.x*physicalTravel.x+physicalTravel.z*physicalTravel.z)+std::abs(physicalTravel.y)*0.45f;
             // The walk clip follows actual body travel, so feet do not cycle
             // faster or slower than the root that owns contact.
-            if(t.physicalBodyMarker>=0.0f)t.humanAnimationTime += distance*0.68f;
+            t.humanAnimationTime += distance*(0.64f+labProfile.motor.speedScale*0.08f);
         }
         syncTargetReactionVisual(t);
     }

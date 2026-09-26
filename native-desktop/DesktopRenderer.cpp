@@ -273,13 +273,15 @@ void roundedEllipsoid(const Vec3& p, const Vec3& scale, float pitch, float yaw, 
 }
 
 void drawProceduralHumanDesktop(const TargetState& target, float time, float r, float g, float b,
-                                float perceptionHeadYaw=0.0f,float perceptionHeadPitch=0.0f) {
+                                float perceptionHeadYaw=0.0f,float perceptionHeadPitch=0.0f,
+                                gameplay::EnemyLabVariant labVariant=gameplay::EnemyLabVariant::RabidAnimator) {
     const HumanVisualSpec& spec = PASS7_HUMAN_VISUAL_SPEC;
     const bool aliveHuman = !target.slurpable;
     const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
     const bool fallen=physicalBody&&(std::abs(target.physicalBodyPitch)>0.82f||std::abs(target.physicalBodyRoll)>0.76f);
     const float physicalCrouch=physicalBody?clampf(-target.physicalBodyMarker-1.0f,0.0f,1.0f):0.0f;
-    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch);
+    const auto lab=gameplay::enemyLabProfile(labVariant);
+    const EnemyVisualPose enemyPose=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch,labVariant);
     const HumanVisualPose& pose=enemyPose.human;
     if (pose.scale <= 0.001f) return;
     const float s = pose.scale;
@@ -310,7 +312,8 @@ void drawProceduralHumanDesktop(const TargetState& target, float time, float r, 
         // planted leg swing through a world-space contact.
         const float physicalFootForward=side<0
             ?target.physicalLeftFootForward:target.physicalRightFootForward;
-        const float legSwing=physicalBody
+        const bool contactGait=lab.presentation.ordinaryGait==gameplay::EnemyGaitAuthority::PhysicalContacts;
+        const float legSwing=physicalBody&&contactGait
             ?clampf(physicalFootForward/0.32f,-1.0f,1.0f)*0.62f
             :(side<0?pose.leftLegSwing:pose.rightLegSwing);
         const float knee=physicalBody?(fallen?0.58f:std::max(0.0f,legSwing)*0.72f):std::abs(legSwing)*0.35f;
@@ -895,14 +898,16 @@ void DesktopRenderer::drawStaticModel(unsigned int list, const Vec3& p, const Ve
     glPushMatrix(); glTranslatef(p.x,p.y,p.z); glMultMatrixf(matrix); glScalef(s.x,s.y,s.z); glCallList(list); glPopMatrix();
 }
 
-void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow,float perceptionHeadYaw,float perceptionHeadPitch) const {
+void DesktopRenderer::drawHumanModel(const TargetState& target,float time,early_browser_visuals::RoomSetting setting,bool shadow,float perceptionHeadYaw,float perceptionHeadPitch,gameplay::EnemyLabVariant labVariant) const {
     const bool aliveHuman=!target.slurpable;
     const bool physicalBody=aliveHuman&&target.physicalBodyMarker<0.0f;
     const float physicalCrouch=physicalBody?clampf(-target.physicalBodyMarker-1.0f,0.0f,1.0f):0.0f;
-    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch);
+    const auto lab=gameplay::enemyLabProfile(labVariant);
+    const EnemyVisualPose visual=makeEnemyVisualPose(target.visualYaw,target.scale,time,target.visualReaction,aliveHuman,physicalBody,target.physicalBodyPitch,target.physicalBodyRoll,target.visualWalkPhase,target.locomotionAmount,target.humanAnimationTime,physicalCrouch,perceptionHeadYaw,perceptionHeadPitch,labVariant);
+    const float contactAuthority=lab.presentation.ordinaryGait==gameplay::EnemyGaitAuthority::PhysicalContacts?1.0f:0.0f;
     const HumanModelLegPlant legPlant{
-        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight,
-        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight};
+        target.physicalLeftFootForward,target.physicalLeftFootHeight,target.physicalLeftFootWeight*contactAuthority,
+        target.physicalRightFootForward,target.physicalRightFootHeight,target.physicalRightFootWeight*contactAuthority};
     humanModel_.skin(visual.animationTime,target.attackTimer,target.attackVariant,humanVertices_,legPlant,{visual.human.headYaw,visual.human.headPitch},{target.hitFlash,target.hitDirectionLocal,time});if(humanVertices_.empty())return;
     const HumanVisualPose& pose=visual.human;
     const float attackT=target.attackTimer>0?1-clampf(target.attackTimer/HUMAN_SWING_ATTACK_DURATION,0.0f,1.0f):0;
@@ -1602,7 +1607,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if(state.multiplayer.enabled)for(const auto& peer:state.multiplayer.peers)if(peer.active&&peer.playerId!=state.multiplayer.localPlayerId&&peer.player.alive){if(phoneShadowList_)drawStaticModel(phoneShadowList_,peer.phoneTransform.position,peer.phoneVisual.bodyScale,peer.phoneTransform.orientation);else drawBox(peer.phoneTransform.position,{PHONE_BODY_WIDTH,PHONE_BODY_HEIGHT,PHONE_BODY_DEPTH},peer.phoneTransform.orientation,0,0,0);}
         const float shadowTileOrigin=static_cast<float>(state.topology.currentTileIndex)*ROOM_DEPTH;
         const auto roomSetting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;
-        for(int offset=-1;offset<=1;++offset)for(int targetIndex=0;targetIndex<TARGET_COUNT;++targetIndex){auto target=state.targets[targetIndex];if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;const auto* perception=!state.multiplayer.enabled&&enemyPerceptions?&(*enemyPerceptions)[targetIndex]:nullptr;const float headYaw=perception?perception->headYaw:0.0f,headPitch=perception?perception->headPitch:0.0f;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true,headYaw,headPitch);else drawProceduralHumanDesktop(target,state.time,0,0,0,headYaw,headPitch);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}}
+        for(int offset=-1;offset<=1;++offset)for(int targetIndex=0;targetIndex<TARGET_COUNT;++targetIndex){auto target=state.targets[targetIndex];if(target.alive){target.pos.z=shadowTileOrigin+static_cast<float>(offset)*ROOM_DEPTH+(target.pos.z-std::floor((target.pos.z+ROOM_DEPTH*0.5f)/ROOM_DEPTH)*ROOM_DEPTH);if(!actorVisible(target.pos))continue;const auto* perception=!state.multiplayer.enabled&&enemyPerceptions?&(*enemyPerceptions)[targetIndex]:nullptr;const float headYaw=perception?perception->headYaw:0.0f,headPitch=perception?perception->headPitch:0.0f;if(!target.slurpable){if(humanModel_.valid())drawHumanModel(target,state.time,roomSetting,true,headYaw,headPitch,state.enemyLabVariant);else drawProceduralHumanDesktop(target,state.time,0,0,0,headYaw,headPitch,state.enemyLabVariant);}else if(target.soulVisual.visible&&target.soulCubeAmount>0.001f){const auto& sv=target.soulVisual;const float cube=0.72f*0.78f*target.scale*sv.morphScale;drawBox(target.pos+Vec3{0,0.57f+sv.verticalOffset,0},{cube*sv.scale.x,cube*sv.scale.y,cube*sv.scale.z},0,sv.rotationY,0,0,0,0);}}}
         for(const auto& flower:state.flowers)if(flower.active)drawBox({flower.pos.x,flower.pos.y,flower.pos.z+shadowTileOrigin},{0.54f,0.22f,0.54f},0,flower.rotationY,0,0,0,0);
         for(const auto& bullet:state.bullets)if(bullet.alive){const float size=0.72f*1.12f*(bullet.brute?1.7f:1.0f);drawBox(bullet.pos,{size,size,size},bullet.spin*1.2f,bullet.spin*1.7f,bullet.spin*0.9f,0,0,0);}
         glPopMatrix();glEnable(GL_DEPTH_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glStencilMask(0);glStencilFunc(GL_EQUAL,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
@@ -1657,7 +1662,7 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
         if (!target.slurpable) {
             const auto setting=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex).setting;const VisualColor damageColor=humanDamageSurfaceColor(Pass7Visual::NormalEnemy,setting,target.armor,target.brute?4.0f:2.0f,target.slurpable,target.hitFlash);
             const auto* perception=!state.multiplayer.enabled&&enemyPerceptions?&(*enemyPerceptions)[targetIndex]:nullptr;const float headYaw=perception?perception->headYaw:0.0f,headPitch=perception?perception->headPitch:0.0f;
-            if(humanModel_.valid())drawHumanModel(target,state.time,setting,false,headYaw,headPitch);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b,headYaw,headPitch);
+            if(humanModel_.valid())drawHumanModel(target,state.time,setting,false,headYaw,headPitch,state.enemyLabVariant);else drawProceduralHumanDesktop(target,state.time,damageColor.r,damageColor.g,damageColor.b,headYaw,headPitch,state.enemyLabVariant);
         }
         if (target.slurpable && target.soulCubeAmount > 0.001f) {
             const auto& sv=target.soulVisual;
