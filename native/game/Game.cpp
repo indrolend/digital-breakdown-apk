@@ -3874,6 +3874,8 @@ void Game::updateTargets(float dt) {
                 bodyInput.correctiveStepActive=feet.correctiveStepActive;
                 bodyInput.turnStepActive=feet.turnStepActive;
                 bodyInput.supportRecoveryReady=feet.supportRecoveryReady;
+                bodyInput.supportDrivenLocomotion=
+                    labProfile.locomotionAuthority==gameplay::EnemyLocomotionAuthority::PhysicalSupport;
                 physicalBody.gaitPhase=feet.gaitPhase;
                 const auto body=gameplay::updatePhysicalEnemyBody(physicalBody,bodyInput,t.visualYaw);
                 physicalBody.gaitPhase=feet.gaitPhase;

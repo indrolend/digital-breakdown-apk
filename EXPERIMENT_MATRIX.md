@@ -11,6 +11,7 @@ DigitalBreakdown.exe --enemy-variant rabid-animator
 DigitalBreakdown.exe --enemy-variant euphoria-lite
 DigitalBreakdown.exe --enemy-variant traversal-predator
 DigitalBreakdown.exe --enemy-variant feral-hybrid
+DigitalBreakdown.exe --enemy-variant support-driven
 ```
 
 The default is `rabid-animator`. The selection survives in-game restart/reset. Multiplayer deliberately retains its shipped deterministic cadence and does not apply solo lab speed changes.
@@ -25,6 +26,20 @@ All variants share the same authoritative perception, evidence memory, cognition
 | Euphoria-Lite | Physical contact gait and planted-foot projection remain visible. | Baseline pursuit speed with softer turn commitment. | Same conservative traversal envelope as the baseline. | Strong impact/imbalance authority and slower recovery. | Heavy, reactive, stumbling. |
 | Traversal Predator | Distance-driven authored biped clip; no ordinary physical leg overwrite. | Fastest clean pursuit with strong turn commitment. | Aggressive routing profile with step, vault, mantle, climb and gap-jump capabilities exposed. | Moderate disruption, aggressive recovery. | Relentless, readable terrain hunter. |
 | Feral Hybrid | Physical contact gait with maximum procedural expression. | Fast, highly reckless pursuit. | Full aggressive traversal profile. | Maximum impact and imbalance authority with aggressive recovery. | Most chaotic and animalistic. |
+| Support Driven | Physical-contact gait reports the same contacts that earn movement. | Behavior supplies direction, target speed, urgency and facing only. | Full aggressive traversal profile. | Support loss, falling and recovery stay within the contact system. | Authority-inversion diagnostic: the body moves only as weighted support advances. |
+
+## Support-driven authority experiment
+
+`support-driven` is deliberately different from the first four variants. It selects `EnemyLocomotionAuthority::PhysicalSupport` and disables the desired-velocity-to-root acceleration path. A requested direction still chooses reachable swing-foot targets, but it cannot directly translate the root.
+
+The physical body tracks the weighted center of its planted contacts. Root velocity is generated only when an unload/swing/contact/load sequence advances that support center. If no viable step or load transfer occurs, the correct diagnostic result is no ordinary travel (or a genuine loss of support), not concealed kinematic motion.
+
+The automated invariant is:
+
+```text
+desired movement + unchanged loaded contacts = zero generated root travel
+advanced contact + real load transfer = bounded generated root travel
+```
 
 ## Authority boundaries
 
@@ -67,7 +82,8 @@ Automated checks cannot judge knee direction, foot sliding, silhouette quality, 
 ## Verification record
 
 - Native desktop release build: PASS.
-- CTest behavioral suite: PASS, 74/74 after rebuilding the changed posture contract.
+- CTest behavioral suite: PASS, 75/75 from a clean short-path build.
+- Support-driven locomotion authority contract: PASS; intention alone cannot translate the root and contact transfer earns bounded translation.
 - New variant selection/profile contract: PASS.
 - Existing perception, cognition, locomotion, recovery, physical-authority, multiplayer determinism, traversal calibration, slope traversal, and Pass 7 parity contracts: PASS.
 - The high-level `desktop-test` wrapper reached compilation but reported a Windows/MSBuild path-generation failure in two third-party miniaudio sample-library targets. The game executable and all 74 registered behavioral tests built/running independently were successful; this is recorded rather than hidden.

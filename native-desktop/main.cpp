@@ -1468,7 +1468,7 @@ void printUsage() {
     std::printf("  --slope-lab          Start the deterministic physical-slope fixture.\n");
     std::printf("  --cart-lab           Start mounted in the shopping-cart vehicle lab.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
-    std::printf("  --enemy-variant NAME Select rabid-animator, euphoria-lite, traversal-predator, or feral-hybrid.\n");
+    std::printf("  --enemy-variant NAME Select rabid-animator, euphoria-lite, traversal-predator, feral-hybrid, or support-driven.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --room-inspector-premise N  Select a fixed inspector premise for deterministic capture.\n");

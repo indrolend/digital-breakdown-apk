@@ -33,6 +33,9 @@ struct PhysicalEnemyBodyState {
     float rightPlantWeight = 0.0f;
     bool leftFootPlanted = false;
     bool rightFootPlanted = false;
+    bool supportAnchorInitialized = false;
+    Vec3 previousSupportCenter{};
+    Vec3 supportDrivenVelocity{};
 };
 
 struct PhysicalEnemyBodyInput {
@@ -59,6 +62,7 @@ struct PhysicalEnemyBodyInput {
     bool correctiveStepActive = false;
     bool turnStepActive = false;
     bool supportRecoveryReady = false;
+    bool supportDrivenLocomotion = false;
 };
 
 struct PhysicalEnemyBodyOutput {
@@ -276,7 +280,7 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
     // One locomotion authority: horizontal changes come from the ground
     // reaction available at actual planted support. Planner velocity is an
     // intention, not a velocity assignment.
-    if (!body.fallen && contact > 0.01f && support.totalWeight > minimumSupportWeight) {
+    if (!input.supportDrivenLocomotion && !body.fallen && contact > 0.01f && support.totalWeight > minimumSupportWeight) {
         const float supportLoad = std::max(0.0f, std::min(1.0f,
             body.leftPlantWeight * leftFootContact
             + body.rightPlantWeight * rightFootContact));
@@ -303,10 +307,36 @@ inline PhysicalEnemyBodyOutput updatePhysicalEnemyBody(
         }
 
         velocity += groundReaction * dt;
-    } else {
+    } else if (!input.supportDrivenLocomotion) {
         const float drag = std::exp(-(body.fallen ? 4.2f : 0.35f) * dt);
         velocity.x *= drag;
         velocity.z *= drag;
+    }
+
+    if (input.supportDrivenLocomotion) {
+        // Physical-support authority: root travel is earned only when the
+        // weighted support center advances during a real contact/load transfer.
+        // Desired velocity still plans steps, but it cannot translate the body.
+        const Vec3 supportCenter=physicalSupportCuePosition(body,input.bodyPosition);
+        if (!body.supportAnchorInitialized || support.totalWeight<=minimumSupportWeight || body.fallen) {
+            body.previousSupportCenter=supportCenter;
+            body.supportDrivenVelocity={};
+            body.supportAnchorInitialized=support.totalWeight>minimumSupportWeight;
+        } else if (dt>0.00001f) {
+            Vec3 earned=(supportCenter-body.previousSupportCenter)*(1.0f/dt);
+            earned.y=0.0f;
+            const float earnedSpeed=horizontalLength(earned);
+            const float speedLimit=std::max(0.0f,requestedSpeed)*1.08f+0.05f;
+            if (earnedSpeed>speedLimit&&earnedSpeed>0.0001f)earned=earned*(speedLimit/earnedSpeed);
+            body.supportDrivenVelocity += (earned-body.supportDrivenVelocity)*std::min(1.0f,dt*18.0f);
+            body.previousSupportCenter=supportCenter;
+        }
+        const float authority=body.fallen?0.0f:std::max(0.0f,std::min(1.0f,support.totalWeight));
+        velocity.x=body.supportDrivenVelocity.x*authority;
+        velocity.z=body.supportDrivenVelocity.z*authority;
+    } else {
+        body.supportAnchorInitialized=false;
+        body.supportDrivenVelocity={};
     }
 
     if (!body.fallen && support.totalWeight > minimumSupportWeight) {
