@@ -11,7 +11,8 @@ enum class DeveloperCodecCommand : unsigned char {
     RoomNext, RoomReroll,
     CollidersShow, CollidersHide, CollidersToggle,
     InspectHuman, InspectClear,
-    PlaytestRally, PlaytestTraversal, PlaytestRooms, PlaytestCart
+    MotorRelentless, MotorExisting, ZombieDebugOn, ZombieDebugOff,
+    PlaytestZombie, PlaytestRally, PlaytestTraversal, PlaytestRooms, PlaytestCart
 };
 
 struct DeveloperCodecParseResult {
@@ -38,11 +39,16 @@ inline DeveloperCodecParseResult parseDeveloperCodecCommand(const std::string& i
     if(exact("colliders","toggle"))return {DeveloperCodecCommand::CollidersToggle,true};
     if(exact("inspect","human"))return {DeveloperCodecCommand::InspectHuman,true};
     if(exact("inspect","clear"))return {DeveloperCodecCommand::InspectClear,true};
+    if(exact("motor","relentless"))return {DeveloperCodecCommand::MotorRelentless,true};
+    if(exact("motor","existing"))return {DeveloperCodecCommand::MotorExisting,true};
+    if(words.size()==3&&words[0]=="zombie"&&words[1]=="debug"&&words[2]=="on")return {DeveloperCodecCommand::ZombieDebugOn,true};
+    if(words.size()==3&&words[0]=="zombie"&&words[1]=="debug"&&words[2]=="off")return {DeveloperCodecCommand::ZombieDebugOff,true};
+    if(exact("playtest","zombie"))return {DeveloperCodecCommand::PlaytestZombie,true};
     if(exact("playtest","rally"))return {DeveloperCodecCommand::PlaytestRally,true};
     if(exact("playtest","traversal"))return {DeveloperCodecCommand::PlaytestTraversal,true};
     if(exact("playtest","rooms"))return {DeveloperCodecCommand::PlaytestRooms,true};
     if(exact("playtest","cart"))return {DeveloperCodecCommand::PlaytestCart,true};
-    const bool known=words[0]=="help"||words[0]=="state"||words[0]=="soul"||words[0]=="battery"||words[0]=="enemies"||words[0]=="room"||words[0]=="colliders"||words[0]=="inspect"||words[0]=="playtest";
+    const bool known=words[0]=="help"||words[0]=="state"||words[0]=="soul"||words[0]=="battery"||words[0]=="enemies"||words[0]=="room"||words[0]=="colliders"||words[0]=="inspect"||words[0]=="motor"||words[0]=="zombie"||words[0]=="playtest";
     return {DeveloperCodecCommand::Invalid,known};
 }
 
@@ -50,6 +56,7 @@ struct DeveloperCodecState {
     static constexpr int LineCount=9;
     bool open=false;
     bool showColliders=false;
+    bool showZombieDiagnostics=false;
     int inspectedTarget=-1;
     std::string input;
     std::array<std::string,LineCount> output{};

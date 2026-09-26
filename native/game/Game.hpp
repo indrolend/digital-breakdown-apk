@@ -24,6 +24,7 @@
 #include "gameplay/EnemyLabVariant.hpp"
 #include "gameplay/EnemyLocomotion.hpp"
 #include "gameplay/EnemyPerception.hpp"
+#include "gameplay/RelentlessZombieMotor.hpp"
 #include "gameplay/PhysicalEnemyBody.hpp"
 #include "gameplay/RoomObjective.hpp"
 #include "gameplay/RunPressure.hpp"
@@ -840,6 +841,8 @@ public:
     void debugStartCartLab();
     void debugStartGeneratedRoomFixture(int roomSeed,int roomIndex);
     void debugStartRoomInspector();
+    void debugStartZombieV1Benchmark();
+    void debugApplyEnemyImpulse(int targetIndex,const Vec3& worldImpulse);
     bool debugSpawnStoredSoul();
     void debugFillBattery();
     WorldSupportSample debugPlayerSupportAt(float x,float z) const { return getPlayerSupport(x,z); }
@@ -876,6 +879,8 @@ public:
     void setNetworkRoom(const char* code, const char* status, bool connected);
     void setPersistentProgression(std::int64_t tokens, int shotLevel, int lungeLevel, int attackLevel);
     void setEnemyLabVariant(gameplay::EnemyLabVariant variant) { state_.enemyLabVariant=variant; }
+    void setEnemyIntentionMode(gameplay::EnemyIntentionMode mode);
+    gameplay::EnemyIntentionMode enemyIntentionMode() const;
     bool chooseTemporaryUpgrade(int track);
     bool purchasePermanentUpgrade(int track);
     void setNetworkPeerActive(int playerId, bool active);
@@ -887,6 +892,7 @@ public:
     const GameState& state() const { return state_; }
     GameState& networkMutableState() { return state_; }
     const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>& enemyPerceptions() const;
+    const std::array<gameplay::ZombieV1Telemetry, TARGET_COUNT>& zombieV1Telemetry() const;
 
 private:
     friend struct HostRemotePeerSimulationIsolationAccess;
@@ -899,6 +905,8 @@ private:
         std::array<gameplay::EnemyLocomotionState, TARGET_COUNT> locomotions{};
         std::array<gameplay::PhysicalEnemyBodyState, TARGET_COUNT> bodies{};
         std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> perceptions{};
+        std::array<gameplay::ZombieV1Telemetry, TARGET_COUNT> zombieTelemetry{};
+        gameplay::EnemyIntentionMode intentionMode=gameplay::EnemyIntentionMode::ExistingMotor;
         int perceptionCursor = 0;
     };
     GameState state_;

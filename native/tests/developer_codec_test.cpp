@@ -11,6 +11,10 @@ int main(){
         parseDeveloperCodecCommand("inspect clear").command==DeveloperCodecCommand::InspectClear&&
         parseDeveloperCodecCommand("inspect human extra").command==DeveloperCodecCommand::Invalid&&
         parseDeveloperCodecCommand("playtest cart").command==DeveloperCodecCommand::PlaytestCart&&
+        parseDeveloperCodecCommand("playtest zombie").command==DeveloperCodecCommand::PlaytestZombie&&
+        parseDeveloperCodecCommand("motor relentless").command==DeveloperCodecCommand::MotorRelentless&&
+        parseDeveloperCodecCommand("motor existing").command==DeveloperCodecCommand::MotorExisting&&
+        parseDeveloperCodecCommand("zombie debug on").command==DeveloperCodecCommand::ZombieDebugOn&&
         parseDeveloperCodecCommand("not-real").command==DeveloperCodecCommand::Invalid&&
         parseDeveloperCodecCommand("soul spawn extra").command==DeveloperCodecCommand::Invalid&&
         parseDeveloperCodecCommand("help extra").command==DeveloperCodecCommand::Invalid;

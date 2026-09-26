@@ -18,7 +18,9 @@ public:
     void resize(int width, int height);
     void setHudVisible(bool visible);
     void draw(const GameState& state, const DeveloperCodecState* codec=nullptr,
-              const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>* enemyPerceptions=nullptr) const;
+              const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>* enemyPerceptions=nullptr,
+              const std::array<gameplay::ZombieV1Telemetry, TARGET_COUNT>* zombieTelemetry=nullptr,
+              bool showZombieDiagnostics=false) const;
 
 private:
     static void drawFacetedRock(const early_browser_visuals::EnvironmentPropSpec& prop, int roomSeed, int roomIndex, int propIndex, float zOffset, const VisualColor& color);

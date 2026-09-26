@@ -1387,7 +1387,7 @@ void DesktopRenderer::drawDoorDataMosh(const GameState& state) const {
     glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(GL_MODELVIEW);glDisable(GL_BLEND);glDisable(GL_TEXTURE_2D);glEnable(GL_DEPTH_TEST);glEnable(GL_LIGHTING);
 }
 
-void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec,const std::array<gameplay::EnemyPerceptionState,TARGET_COUNT>* enemyPerceptions) const {
+void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* codec,const std::array<gameplay::EnemyPerceptionState,TARGET_COUNT>* enemyPerceptions,const std::array<gameplay::ZombieV1Telemetry,TARGET_COUNT>* zombieTelemetry,bool showZombieDiagnostics) const {
     ++fpsFrames;const auto now=std::chrono::steady_clock::now();const float elapsed=std::chrono::duration<float>(now-fpsWindowStart).count();if(elapsed>=0.5f){displayedFps=fpsFrames/elapsed;fpsFrames=0;fpsWindowStart=now;}
     const auto roomPlan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
     const float horizontalSpeed=std::sqrt(state.player.vel.x*state.player.vel.x+state.player.vel.z*state.player.vel.z);
@@ -1423,6 +1423,22 @@ void DesktopRenderer::draw(const GameState& state,const DeveloperCodecState* cod
     const bool cheapVisuals=state.localSettings.graphicsPreset<=0;
     const auto actorVisible=[&](const Vec3& position){const Vec3 delta=position-state.camera.pos;const float maxDist=cheapVisuals?38.0f:55.0f;return lengthSq(delta)<maxDist*maxDist&&dot3(delta,state.camera.forward)>-8.0f;};
     for(int tile=state.topology.currentTileIndex-ROOM_VISUAL_HORIZON;tile<=state.topology.currentTileIndex+ROOM_VISUAL_HORIZON;++tile)drawRoomTile(state,tile,roomPlan,lighting,response);
+
+    if(showZombieDiagnostics&&zombieTelemetry){
+        glDisable(GL_LIGHTING);glDisable(GL_FOG);glLineWidth(3.0f);glBegin(GL_LINES);
+        const auto line=[](const Vec3& a,const Vec3& b,float r,float g,float bl){glColor3f(r,g,bl);glVertex3f(a.x,a.y,a.z);glVertex3f(b.x,b.y,b.z);};
+        for(int i=0;i<TARGET_COUNT;++i){
+            const auto& telemetry=(*zombieTelemetry)[i];if(!telemetry.active||!state.targets[i].alive)continue;
+            const Vec3 origin=state.targets[i].pos+Vec3{0.0f,1.05f*state.targets[i].scale,0.0f};
+            line(origin,telemetry.dataPosition,1.0f,0.08f,0.08f);
+            line(origin,origin+telemetry.requestedSteering*std::max(0.5f,telemetry.requestedSpeed),1.0f,0.86f,0.05f);
+            line(origin,origin+telemetry.actualVelocity,0.08f,0.28f,1.0f);
+            line(telemetry.leftFoot,telemetry.rightFoot,0.08f,1.0f,0.18f);
+            line(state.targets[i].pos+Vec3{0,0.08f,0},telemetry.swingTarget+Vec3{0,0.04f,0},0.08f,0.95f,1.0f);
+            line(telemetry.projectedCenterOfMass,telemetry.supportCenter,1.0f,1.0f,1.0f);
+        }
+        glEnd();glLineWidth(1.0f);glEnable(GL_FOG);glEnable(GL_LIGHTING);
+    }
 
     // Rain is presentation-only. Gameplay wetness is owned by GameState and
     // feeds the existing locomotion traction boundary.

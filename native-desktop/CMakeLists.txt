@@ -172,6 +172,12 @@ add_executable(
 )
 target_include_directories(Pass7ParityTest PRIVATE "${DB_GAME_ROOT}")
 target_compile_features(Pass7ParityTest PRIVATE cxx_std_17)
+if(MSVC)
+    # This monolithic parity fixture intentionally keeps many complete Game
+    # instances alive at once. Keep test-harness stack capacity independent of
+    # harmless compiler frame-layout changes in Game.cpp.
+    target_link_options(Pass7ParityTest PRIVATE /STACK:4194304)
+endif()
 
 add_executable(
     MultiplayerProtocolTest
@@ -281,6 +287,7 @@ db_add_contract_test(PlayerBehaviorProfileTest player_behavior_profile_test.cpp)
 db_add_contract_test(EnemyLandingCueTest enemy_landing_cue_test.cpp)
 db_add_contract_test(EnemyLocomotionTest enemy_locomotion_test.cpp)
 db_add_contract_test(EnemyLabVariantTest enemy_lab_variant_test.cpp)
+db_add_contract_test(RelentlessZombieMotorTest relentless_zombie_motor_test.cpp)
 db_add_contract_test(EnemySupportDrivenAuthorityTest enemy_support_driven_authority_test.cpp)
 db_add_contract_test(EnemyLocomotionRecoveryTest enemy_locomotion_recovery_test.cpp)
 db_add_contract_test(EnemyLocomotionProbe enemy_locomotion_probe.cpp)
@@ -307,6 +314,20 @@ db_add_contract_test(PlayerContactEvidenceTest player_contact_evidence_test.cpp)
 db_add_contract_test(SceneResponseRoomPressureTest scene_response_room_pressure_test.cpp)
 db_add_contract_test(WeatherStartupCompositionTest weather_startup_composition_test.cpp)
 db_add_contract_test(WeightedEnemyLocomotionTest weighted_enemy_locomotion_test.cpp)
+
+add_executable(
+    ZombieV1BenchmarkTest
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/tests/zombie_v1_benchmark_test.cpp"
+    "${DB_GAME_ROOT}/Game.cpp"
+)
+target_include_directories(ZombieV1BenchmarkTest PRIVATE "${DB_GAME_ROOT}")
+target_compile_features(ZombieV1BenchmarkTest PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(ZombieV1BenchmarkTest PRIVATE /UNDEBUG)
+else()
+    target_compile_options(ZombieV1BenchmarkTest PRIVATE -UNDEBUG)
+endif()
+add_test(NAME ZombieV1BenchmarkTest COMMAND ZombieV1BenchmarkTest)
 set_tests_properties(
     HerdPerceptionAuthorityTest
     HerdSocialCueAuthorityTest

@@ -410,6 +410,7 @@ void Game::reset() {
     const PermanentProgressionState permanent=state_.progression.permanent;
     const LocalSettingsState localSettings=state_.localSettings;
     const gameplay::EnemyLabVariant enemyLabVariant=state_.enemyLabVariant;
+    const gameplay::EnemyIntentionMode intentionMode=enemyIntentionMode();
     auto freshState=std::make_unique<GameState>();
     state_ = std::move(*freshState);
     state_.progression.permanent=permanent;
@@ -419,7 +420,7 @@ void Game::reset() {
     state_.localSettings.menuScroll=0.0f;
     state_.localSettings.menuHistoryDepth=0;
     state_.localSettings.rebindingAction=-1;
-    if(enemyRuntime_)*enemyRuntime_=EnemyRuntimePool{};
+    if(enemyRuntime_){*enemyRuntime_=EnemyRuntimePool{};enemyRuntime_->intentionMode=intentionMode;}
     state_.secretTv.tolerance=2+(std::abs(state_.roomSeed)%3);
     resetRoom();
     state_.started=true;
@@ -437,6 +438,16 @@ Game::EnemyRuntimePool& Game::enemyRuntime() {
 const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT>& Game::enemyPerceptions() const {
     static const std::array<gameplay::EnemyPerceptionState, TARGET_COUNT> empty{};
     return enemyRuntime_ ? enemyRuntime_->perceptions : empty;
+}
+
+const std::array<gameplay::ZombieV1Telemetry, TARGET_COUNT>& Game::zombieV1Telemetry() const {
+    static const std::array<gameplay::ZombieV1Telemetry, TARGET_COUNT> empty{};
+    return enemyRuntime_ ? enemyRuntime_->zombieTelemetry : empty;
+}
+
+void Game::setEnemyIntentionMode(gameplay::EnemyIntentionMode mode){enemyRuntime().intentionMode=mode;}
+gameplay::EnemyIntentionMode Game::enemyIntentionMode() const {
+    return enemyRuntime_?enemyRuntime_->intentionMode:gameplay::EnemyIntentionMode::ExistingMotor;
 }
 
 void Game::restart() {
@@ -516,6 +527,35 @@ void Game::debugStartRallyLab(){
     state_.depositedSouls=state_.requiredSouls;state_.roomClear=true;
     state_.player.souls=0;state_.player.storedSoulBrute.fill(false);state_.player.storedSouls.fill(SoulRecord{});
     debugSpawnStoredSoul();state_.camera.firstPerson=false;updatePhoneDisplay(0.0f);
+}
+
+void Game::debugStartZombieV1Benchmark(){
+    reset();
+    state_.cinematic.introActive=false;state_.started=true;state_.dead=false;state_.uiPaused=false;
+    state_.requiredSouls=1;state_.depositedSouls=0;state_.roomClear=false;
+    for(auto& target:state_.targets)target=TargetState{};
+    for(auto& capture:state_.captures)capture=CapturePointState{};
+    for(auto& collider:state_.roomColliders)collider=RoomCollider{};
+    for(auto& slope:state_.slopeSupports)slope=SlopeSupport{};
+    for(auto& rock:state_.rockSupports)rock=faceted_rock::Support{};
+    state_.debug.colliderCount=0;state_.slopeSupportCount=0;state_.rockSupportCount=0;
+    state_.player.pos={0.0f,GROUND_Y+PHONE_BODY_HEIGHT*0.5f,5.0f};
+    state_.player.vel={};state_.player.jumpVel=0.0f;state_.player.grounded=true;state_.player.battery=100.0f;
+    respawnTarget(0);
+    TargetState& zombie=state_.targets[0];
+    zombie.pos={0.0f,GROUND_Y,-5.0f};zombie.walkTarget=zombie.pos;zombie.vel={};
+    zombie.attackCooldown=0.0f;zombie.visualYaw=DB_PI;
+    state_.camera.yaw=0.0f;state_.camera.pitch=-0.10f;state_.camera.firstPerson=false;
+    enemyRuntime_=std::make_unique<EnemyRuntimePool>();
+    enemyRuntime_->intentionMode=gameplay::EnemyIntentionMode::RelentlessZombie;
+    updatePhoneDisplay(0.0f);updatePhoneTransform();updateCamera(0.0f);
+}
+
+void Game::debugApplyEnemyImpulse(int targetIndex,const Vec3& worldImpulse){
+    if(targetIndex<0||targetIndex>=TARGET_COUNT||!state_.targets[targetIndex].alive)return;
+    TargetState& target=state_.targets[targetIndex];
+    target.vel+=worldImpulse;
+    gameplay::applyPhysicalEnemyWorldImpact(enemyRuntime().bodies[targetIndex],worldImpulse,target.visualYaw);
 }
 
 bool Game::debugSpawnStoredSoul(){
@@ -3763,6 +3803,8 @@ void Game::updateTargetGrab(int targetIndex,float dt){TargetState& target=state_
 void Game::updateTargets(float dt) {
     auto& runtimePool=enemyRuntime();
     const auto labProfile=gameplay::enemyLabProfile(state_.enemyLabVariant);
+    const bool relentlessAuthority=!state_.multiplayer.enabled&&
+        runtimePool.intentionMode==gameplay::EnemyIntentionMode::RelentlessZombie;
     const int perceptionFirst=runtimePool.perceptionCursor%TARGET_COUNT;
     const int perceptionSecond=(perceptionFirst+1)%TARGET_COUNT;
     state_.enemyAttackCadence=std::max(0.0f,state_.enemyAttackCadence-dt);
@@ -3795,6 +3837,7 @@ void Game::updateTargets(float dt) {
     state_.herd.cohesion=clampf(0.16f+depthCohesion*0.62f+state_.herd.alarm*0.22f,0.0f,1.0f);
     for (int i = 0; i < TARGET_COUNT; ++i) {
         TargetState& t = state_.targets[i];
+        runtimePool.zombieTelemetry[i].active=false;
         if (!t.alive) continue;
         const Vec3 physicalFrameStart=t.pos;
         gameplay::updateLooseSoulMotion(t, dt);
@@ -3890,6 +3933,18 @@ void Game::updateTargets(float dt) {
                 t.physicalBodyMarker=-1.0f-feet.crouch;
                 t.physicalBodyPitch=physicalBody.bodyPitch;
                 t.physicalBodyRoll=physicalBody.bodyRoll;
+                auto& telemetry=runtimePool.zombieTelemetry[i];
+                telemetry.actualVelocity=body.velocity;
+                telemetry.leftFoot=feet.leftFootPosition;telemetry.rightFoot=feet.rightFootPosition;
+                telemetry.leftLoad=feet.leftLoad;telemetry.rightLoad=feet.rightLoad;
+                telemetry.swingTarget=feet.leftContact<feet.rightContact?feet.leftFootPosition:feet.rightFootPosition;
+                telemetry.projectedCenterOfMass=feet.predictedCenterOfMass;
+                telemetry.supportCenter=gameplay::physicalSupportCuePosition(physicalBody,t.pos);
+                const auto support=gameplay::physicalSupportBalance(physicalBody,feet.predictedCenterOfMass);
+                telemetry.supportError=support.distance;
+                telemetry.disruption=physicalBody.disruption;telemetry.traction=roomFloorMaterial.traction;
+                telemetry.fallen=physicalBody.fallen;
+                telemetry.recovering=physicalBody.fallen&&feet.supportRecoveryReady;
                 return body;
             };
             if(!state_.multiplayer.enabled&&!runtimePool.bodies[i].initialized)
@@ -4092,8 +4147,12 @@ void Game::updateTargets(float dt) {
                 perception=gameplay::updateEnemyPerception(perceptionInput,perceptionState);
                 attackedPlayerPos=perception.hasSpatialBelief?perception.believedPosition:t.pos;
             }
+            if(relentlessAuthority)attackedPlayerPos=actualPlayerPosition;
             gameplay::EnemyBehaviorOutput behavior{};
-            if(!state_.multiplayer.enabled){
+            if(relentlessAuthority){
+                behavior.mode=gameplay::EnemyBehaviorMode::Engage;
+                behavior.travelScale=1.0f;behavior.commitment=1.0f;behavior.mayAttack=true;
+            }else if(!state_.multiplayer.enabled){
                 gameplay::EnemyBehaviorInput behaviorInput{};
                 behaviorInput.confidence=perception.confidence;
                 behaviorInput.uncertainty=perception.uncertainty;
@@ -4110,7 +4169,15 @@ void Game::updateTargets(float dt) {
                 behavior.mayAttack=true;
             }
             Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
-            float playerDist=state_.multiplayer.enabled?horizontalLength(toPlayer):(perception.hasSpatialBelief?horizontalLength(toPlayer):9999.0f);
+            float playerDist=(state_.multiplayer.enabled||relentlessAuthority)
+                ?horizontalLength(toPlayer):(perception.hasSpatialBelief?horizontalLength(toPlayer):9999.0f);
+            if(relentlessAuthority){
+                auto& telemetry=runtimePool.zombieTelemetry[i];
+                telemetry.active=true;telemetry.relentless=true;telemetry.dataPosition=actualPlayerPosition;
+                telemetry.dataDistance=playerDist;
+                const Vec3 direct=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{};
+                telemetry.progress=dot3(t.vel,direct);
+            }
             const auto canReachPlayerVertically=[&](const Vec3& playerPosition){
                 const float humanBottom=t.pos.y;
                 const float bodyHeight=runtimePool.bodies[i].fallen?0.34f:PASS7_HUMAN_VISUAL_SPEC.totalHeight;
@@ -4123,7 +4190,7 @@ void Game::updateTargets(float dt) {
             const RoomCollider* pursuedTree=nullptr;
             Vec3 treeGripPoint{};
             if((state_.multiplayer.enabled||labProfile.traversal.mayClimb)&&
-               (state_.multiplayer.enabled||perception.confirmed)&&attackedPlayer->treeClimbing&&
+               (state_.multiplayer.enabled||relentlessAuthority||perception.confirmed)&&attackedPlayer->treeClimbing&&
                attackedPlayer->treeCollider>=0&&attackedPlayer->treeCollider<state_.debug.colliderCount){
                 const RoomCollider& tree=state_.roomColliders[attackedPlayer->treeCollider];
                 if(tree.kind==RoomColliderKind::TreeTrunk){
@@ -4204,7 +4271,7 @@ void Game::updateTargets(float dt) {
                 t.attackVariant=(t.attackVariant+1)%4; t.attackHit=false; t.locomotionAmount=0.0f;
                 t.attackDirection=playerDist>0.001f?toPlayer*(1.0f/playerDist):Vec3{0,0,-1};t.attackTargetPlayerId=attackedPlayerId;state_.enemyAttackOwner=i;
             } else {
-                const bool pursuingPlayer=!pursuedTree&&playerDist<noticeRange&&playerDist>HUMAN_ATTACK_START_RANGE*0.88f;
+                const bool pursuingPlayer=!pursuedTree&&(relentlessAuthority||playerDist<noticeRange)&&playerDist>HUMAN_ATTACK_START_RANGE*0.88f;
                 Vec3 destination=pursuedTree?treeGripPoint:(pursuingPlayer?attackedPlayerPos:t.walkTarget);
                 Vec3 delta{destination.x-t.pos.x,0,destination.z-t.pos.z}; float dist=horizontalLength(delta);
                 const bool physicalPursuit=!state_.multiplayer.enabled;
@@ -4216,11 +4283,11 @@ void Game::updateTargets(float dt) {
                     // ray here rediscovered the same wall every frame and stopped
                     // the body before its tangent step could make progress.
                     const auto& routeLocomotion=runtimePool.locomotions[i];
-                    if(physicalPursuit&&routeLocomotion.directionalCommitmentTimer>0.0f
+                    if(physicalPursuit&&!relentlessAuthority&&routeLocomotion.directionalCommitmentTimer>0.0f
                         && horizontalLength(routeLocomotion.committedTravelDirection)>0.5f)
                         dir=routeLocomotion.committedTravelDirection;
                     const float aggro=playerDist<noticeRange?1.28f:1.0f;
-                    const float variation=0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
+                    const float variation=relentlessAuthority?1.0f:0.82f+0.18f*std::sin(static_cast<float>(i)*12.9898f);
                     const float behaviorTravelScale=state_.multiplayer.enabled?1.0f:behavior.travelScale;
                     const float labSpeed=state_.multiplayer.enabled?1.0f:labProfile.motor.speedScale;
                     const float speed=pursuitSpeed*aggro*(t.brute?0.56f:1.0f)*variation*behaviorTravelScale*labSpeed;
@@ -4251,8 +4318,15 @@ void Game::updateTargets(float dt) {
                         motorInput.traction=motorBody.supportContact;
                         motorInput.physicalDisruption=motorBody.disruption;
                         motorInput.pursuitCertainty=state_.multiplayer.enabled?1.0f:(perception.confirmed?1.0f:perception.confidence);
-                        auto motor=gameplay::updateEnemyMotor(motorInput,runtimePool.motors[i],dt,std::sin(static_cast<float>(i)*12.9898f));
-                if(!state_.multiplayer.enabled&&perception.hasSpatialBelief&&state_.herd.alarm>0.08f&&state_.herd.weakestTarget>=0){
+                        gameplay::EnemyMotorOutput motor{};
+                        if(relentlessAuthority){
+                            const auto direct=gameplay::relentlessZombieMotor({toPlayer,playerDist,attackedPlayer->alive&&!attackedPlayer->downed});
+                            motor.steering=direct.steering;motor.speedScale=direct.speedScale;
+                            motor.attackCommitment=direct.attackCommitment;motor.brace=direct.brace;
+                        }else{
+                            motor=gameplay::updateEnemyMotor(motorInput,runtimePool.motors[i],dt,std::sin(static_cast<float>(i)*12.9898f));
+                        }
+                if(!relentlessAuthority&&!state_.multiplayer.enabled&&perception.hasSpatialBelief&&state_.herd.alarm>0.08f&&state_.herd.weakestTarget>=0){
                     const bool weakest=i==state_.herd.weakestTarget;
                     const Vec3 weakPos=state_.targets[state_.herd.weakestTarget].pos;
                     // Herd protection may react to an injured ally, but its threat
@@ -4275,9 +4349,11 @@ void Game::updateTargets(float dt) {
                         const Vec3 authoredTangent{dir.z,0,-dir.x};
                         const float commitment=motor.attackCommitment;
                         const float probeAuthority=0.18f+0.34f*(1.0f-commitment);
-                        const Vec3 desiredDirection=normalized(dir+authoredTangent*(steeringOffset*probeAuthority));
+                        const Vec3 desiredDirection=relentlessAuthority?dir:normalized(dir+authoredTangent*(steeringOffset*probeAuthority));
                         const float approachPulse=0.82f+0.18f*commitment+labProfile.motor.recklessness*0.08f;
                         const Vec3 desired=desiredDirection*(speed*motor.speedScale*approachPulse);
+                        auto& telemetry=runtimePool.zombieTelemetry[i];
+                        telemetry.requestedSteering=motor.steering;telemetry.requestedSpeed=horizontalLength(desired);
                         advancePhysicalBody(desired,std::atan2(-desiredDirection.x,-desiredDirection.z),motor.brace,std::sin(static_cast<float>(i)*12.9898f));
                         const float horizontalSpeed=horizontalLength(t.vel);
                         const float maximum=speed*motor.speedScale*(t.brute?1.30f:1.45f);
@@ -4299,7 +4375,7 @@ void Game::updateTargets(float dt) {
                         return supports(locomotion.left)||supports(locomotion.right);
                     };
                     bool pursuitBlocked=false;Vec3 obstructionNormal{};int obstructionCollider=-1;
-                    if(playerDist<noticeRange){
+                    if(pursuingPlayer){
                         const float tileOrigin=getRoomTileOriginZ(getRoomTileIndex(t.pos.z));float nearestEntry=dist+1.0f;
                         for(int colliderIndex=0;colliderIndex<state_.debug.colliderCount;++colliderIndex){const RoomCollider& c=state_.roomColliders[colliderIndex];
                             if(t.pos.y>=c.topY+GROUND_Y-0.06f)continue;

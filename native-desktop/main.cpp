@@ -989,14 +989,15 @@ void executeDeveloperCodec(HostState& host){
     const auto parsed=parseDeveloperCodecCommand(input);
     const auto invalid=[&](){host.codec.write(parsed.recognizedVerb?"INVALID ARGUMENTS":"UNKNOWN COMMAND");host.codec.write("type: help");};
     switch(parsed.command){
-        case DeveloperCodecCommand::Help:host.codec.write("help | state | soul spawn | battery full");host.codec.write("enemies on/off/toggle | room next/reroll");host.codec.write("colliders show/hide/toggle | inspect human/clear");host.codec.write("playtest rally/traversal/rooms/cart");break;
+        case DeveloperCodecCommand::Help:host.codec.write("help | state | soul spawn | battery full");host.codec.write("motor relentless/existing | zombie debug on/off");host.codec.write("enemies on/off/toggle | room next/reroll");host.codec.write("playtest zombie/rally/traversal/rooms/cart");break;
         case DeveloperCodecCommand::State:{
             const auto& state=host.game.state();const auto& build=desktopBuildIdentity();const auto plan=early_browser_visuals::roomPlan(state.roomSeed,state.roomIndex);
             host.codec.write("build "+build.commitShort+"  version "+build.humanVersion);
             host.codec.write("room "+std::to_string(state.roomIndex)+" seed "+std::to_string(state.roomSeed));
             host.codec.write(std::string(early_browser_visuals::settingName(plan.setting))+" / "+early_browser_visuals::formName(plan.form)+" / intent "+early_browser_visuals::traversalIntentName(plan.traversalIntent));
             std::ostringstream status;status<<"souls "<<state.player.souls<<" battery "<<std::fixed<<std::setprecision(1)<<state.player.battery;host.codec.write(status.str());
-            host.codec.write(std::string("mode ")+(state.rallyLab?"rally":(state.traversalLab?"traversal":(state.roomInspector?"rooms":"game"))));break;}
+            host.codec.write(std::string("mode ")+(state.rallyLab?"rally":(state.traversalLab?"traversal":(state.roomInspector?"rooms":"game"))));
+            const auto& z=host.game.zombieV1Telemetry()[0];if(z.active){std::ostringstream evidence;evidence<<std::fixed<<std::setprecision(2)<<"zombie d "<<z.dataDistance<<" req "<<z.requestedSpeed<<" actual "<<horizontalLength(z.actualVelocity)<<" load "<<z.leftLoad<<"/"<<z.rightLoad<<" support_err "<<z.supportError<<" disrupt "<<z.disruption<<" traction "<<z.traction<<(z.fallen?" FALLEN":(z.recovering?" RECOVERING":""));host.codec.write(evidence.str());}break;}
         case DeveloperCodecCommand::SoulSpawn:host.codec.write(host.game.debugSpawnStoredSoul()?"SOUL SPAWNED":"SOUL WALLET FULL");break;
         case DeveloperCodecCommand::BatteryFull:host.game.debugFillBattery();host.codec.write("BATTERY FULL");break;
         case DeveloperCodecCommand::EnemiesOn:host.game.debugSetEnemies(1);host.codec.write("ENEMIES ON");break;
@@ -1018,6 +1019,11 @@ void executeDeveloperCodec(HostState& host){
             host.codec.write("SOURCE TargetState -> HumanVisual -> Renderer");break;
         }
         case DeveloperCodecCommand::InspectClear:host.codec.inspectedTarget=-1;host.codec.write("INSPECT CLEAR");break;
+        case DeveloperCodecCommand::MotorRelentless:host.game.setEnemyIntentionMode(gameplay::EnemyIntentionMode::RelentlessZombie);host.codec.write("MOTOR RELENTLESS");break;
+        case DeveloperCodecCommand::MotorExisting:host.game.setEnemyIntentionMode(gameplay::EnemyIntentionMode::ExistingMotor);host.codec.write("MOTOR EXISTING");break;
+        case DeveloperCodecCommand::ZombieDebugOn:host.codec.showZombieDiagnostics=true;host.codec.write("ZOMBIE DEBUG ON");break;
+        case DeveloperCodecCommand::ZombieDebugOff:host.codec.showZombieDiagnostics=false;host.codec.write("ZOMBIE DEBUG OFF");break;
+        case DeveloperCodecCommand::PlaytestZombie:host.game.debugStartZombieV1Benchmark();host.codec.showZombieDiagnostics=true;host.codec.write("PLAYTEST ZOMBIE V1");break;
         case DeveloperCodecCommand::PlaytestRally:host.game.debugStartRallyLab();host.codec.write("PLAYTEST RALLY");break;
         case DeveloperCodecCommand::PlaytestTraversal:host.game.debugStartTraversalLab();host.codec.write("PLAYTEST TRAVERSAL");break;
         case DeveloperCodecCommand::PlaytestRooms:host.game.debugStartRoomInspector();host.codec.write("PLAYTEST ROOMS");break;
@@ -1469,6 +1475,9 @@ void printUsage() {
     std::printf("  --cart-lab           Start mounted in the shopping-cart vehicle lab.\n");
     std::printf("  --rally-lab          Start with one reusable fired soul and no enemies.\n");
     std::printf("  --enemy-variant NAME Select rabid-animator, euphoria-lite, traversal-predator, feral-hybrid, or support-driven.\n");
+    std::printf("  --enemy-motor NAME   Select relentless (default) or existing intention authority.\n");
+    std::printf("  --zombie-v1-benchmark  Start flat ground with one DATA and one zombie.\n");
+    std::printf("  --zombie-debug       Draw intention, velocity, support, foot-target, and COM evidence.\n");
     std::printf("  --automation-playtest  Keep local play running across automation focus changes.\n");
     std::printf("  --room-inspector     Cycle deterministic room premises for playtesting.\n");
     std::printf("  --room-inspector-premise N  Select a fixed inspector premise for deterministic capture.\n");
@@ -1762,11 +1771,11 @@ bool parseAgentRecordStart(const std::string& line,std::string& name,int& fps,st
 }
 
 int runAgentPlaytest(GLFWwindow* window,HostState& host,const std::filesystem::path& framePath,int width,int height){
-    const auto observe=[&](){host.renderer.draw(host.game.state());glFinish();const bool captured=captureFramebuffer(framePath,width,height);glfwSwapBuffers(window);glfwPollEvents();printAgentObservation(host.game.state(),framePath,captured);return captured;};
+    const auto observe=[&](){host.renderer.draw(host.game.state(),&host.codec,&host.game.enemyPerceptions(),&host.game.zombieV1Telemetry(),host.codec.showZombieDiagnostics);glFinish();const bool captured=captureFramebuffer(framePath,width,height);glfwSwapBuffers(window);glfwPollEvents();printAgentObservation(host.game.state(),framePath,captured);return captured;};
     AgentPlaytestRecording recording;
     const auto captureRecordingFrame=[&](){
         char frameName[32];std::snprintf(frameName,sizeof(frameName),"frame-%06d.ppm",recording.capturedFrames);
-        host.renderer.draw(host.game.state());glFinish();
+        host.renderer.draw(host.game.state(),&host.codec,&host.game.enemyPerceptions(),&host.game.zombieV1Telemetry(),host.codec.showZombieDiagnostics);glFinish();
         const bool captured=captureFramebuffer(recording.directory/frameName,width,height);
         if(captured)++recording.capturedFrames;
         else std::printf("AGENT_RECORDING_ERROR capture_failed path=%s\n",(recording.directory/frameName).string().c_str());
@@ -1994,6 +2003,14 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,"ENEMY_VARIANT_INVALID value=%s\n",value);return 2;
         }
     }
+    gameplay::EnemyIntentionMode enemyIntentionMode=gameplay::EnemyIntentionMode::RelentlessZombie;
+    if(const char* value=argValue(argc,argv,"--enemy-motor")){
+        if(std::strcmp(value,"relentless")==0||std::strcmp(value,"zombie")==0)enemyIntentionMode=gameplay::EnemyIntentionMode::RelentlessZombie;
+        else if(std::strcmp(value,"existing")==0||std::strcmp(value,"experimental")==0)enemyIntentionMode=gameplay::EnemyIntentionMode::ExistingMotor;
+        else {std::fprintf(stderr,"ENEMY_MOTOR_INVALID value=%s\n",value);return 2;}
+    }
+    const bool zombieV1Benchmark=hasArg(argc,argv,"--zombie-v1-benchmark");
+    const bool zombieDebug=hasArg(argc,argv,"--zombie-debug");
     const bool automationPlaytest=hasArg(argc,argv,"--automation-playtest");
     const bool agentPlaytest=hasArg(argc,argv,"--agent-playtest");
     const char* agentFrameArg=argValue(argc,argv,"--agent-frame");
@@ -2096,7 +2113,10 @@ int main(int argc, char** argv) {
     if(const char* service=std::getenv("DIGITAL_BREAKDOWN_MULTIPLAYER_URL"))host.multiplayerService=service;
     host.game.reset();
     host.game.setEnemyLabVariant(enemyLabVariant);
+    host.game.setEnemyIntentionMode(enemyIntentionMode);
+    host.codec.showZombieDiagnostics=zombieDebug;
     std::printf("ENEMY_VARIANT_SELECTED name=%s\n",gameplay::enemyLabVariantName(enemyLabVariant).data());
+    std::printf("ENEMY_MOTOR_SELECTED name=%s\n",enemyIntentionMode==gameplay::EnemyIntentionMode::RelentlessZombie?"relentless":"existing");
     if((!capturePath&&!captureDemo&&!agentPlaytest)||captureStart)host.game.prepareAttractScreen();
     if(captureMenu){
         const char* page=captureMenuPage;
@@ -2131,6 +2151,7 @@ int main(int argc, char** argv) {
         host.game.debugStartRallyLab();
         std::printf("RALLY_LAB_READY souls=1 enemies=0 controls=Q/F/Space+F/vacuum\n");
     }
+    if(zombieV1Benchmark){host.game.debugStartZombieV1Benchmark();std::printf("ZOMBIE_V1_BENCHMARK_READY enemies=1 terrain=flat data_distance=10\n");}
     if(captureVictory){
         GameState& fixture=host.game.networkMutableState();
         fixture.started=true;fixture.attractMode=false;fixture.cinematic.introActive=false;fixture.uiPaused=false;
@@ -2631,7 +2652,8 @@ int main(int argc, char** argv) {
             renderState.camera.firstPerson=false;
         }
         const auto renderBegin=std::chrono::steady_clock::now();
-        host.renderer.draw(renderState,&host.codec,&host.game.enemyPerceptions());
+        host.renderer.draw(renderState,&host.codec,&host.game.enemyPerceptions(),
+            &host.game.zombieV1Telemetry(),host.codec.showZombieDiagnostics);
         if(host.automationCaptureDelayFrames>0&&--host.automationCaptureDelayFrames==0){
             glFinish();
             const auto path=automationPlaytestCapturePath();
