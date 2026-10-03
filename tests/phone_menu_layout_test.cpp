@@ -115,7 +115,8 @@ int main() {
     assert(selectionElement(controlsModel, 11).value == "Balanced");
     assert(selectionElement(controlsModel, 12).action == PhoneMenuAction::AdjustVibration);
     assert(selectionElement(controlsModel, 12).value == "Standard");
-    assert(selectionElement(controlsModel, 12).horizontal == PhoneMenuHorizontal::Adjust);
+    assert(selectionElement(controlsModel, 11).horizontal == PhoneMenuHorizontal::Cycle);
+    assert(selectionElement(controlsModel, 12).horizontal == PhoneMenuHorizontal::Cycle);
     assert(selectionElement(controlsModel, 13).action == PhoneMenuAction::Defaults);
     assert(selectionElement(controlsModel, 14).action == PhoneMenuAction::Back);
 
@@ -162,7 +163,7 @@ int main() {
     assert(audio.selectableCount == 5);
     assert(selectionRow(audio, 2).label == "Music");
     assert(selectionRow(audio, 2).value == "On");
-    assert(selectionRow(audio, 3).label == "Sound Effects");
+    assert(selectionRow(audio, 3).label == "Effects");
     assert(audio.maxScroll == 0.0f);
     assert(!phoneDisplayHasMoreAbove(audio));
     assert(!phoneDisplayHasMoreBelow(audio));
@@ -172,6 +173,7 @@ int main() {
     PhoneMenuPageViewModel graphicsModel = makePhoneMenuPageModel(state);
     assert(graphicsModel.tablePage);
     assert(selectionElement(graphicsModel, 0).action == PhoneMenuAction::GraphicsPreset);
+    assert(selectionElement(graphicsModel, 0).horizontal == PhoneMenuHorizontal::Cycle);
     assert(selectionElement(graphicsModel, 1).horizontal == PhoneMenuHorizontal::Toggle);
     applyPhoneGraphicsPreset(state.localSettings, 0);
     assert(state.localSettings.graphicsPreset == 0 && !state.localSettings.shadows && !state.localSettings.portalWindow && !state.localSettings.particles);

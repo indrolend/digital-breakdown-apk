@@ -153,6 +153,12 @@ int main() {
             return fail(iteration, "invalid_room_advance", advanced);
         }
 
+        const float presentationBefore = advanced.upgradeMenu.presentationTime;
+        step(game);
+        if (game.state().upgradeMenu.presentationTime <= presentationBefore) {
+            return fail(iteration, "upgrade_presentation_did_not_advance_while_paused", game.state());
+        }
+
         if (!game.chooseTemporaryUpgrade((iteration - 1) % 3)) {
             return fail(iteration, "upgrade_choice_failed", game.state());
         }

@@ -497,6 +497,9 @@ struct LocalSettingsState {
 
 struct UpgradeMenuState {
     bool active = false;
+    // Presentation-only age of the current rule-editing surface. Progression,
+    // input and multiplayer authority remain in their existing state paths.
+    float presentationTime = 0.0f;
 };
 
 struct DoorTransitionState {

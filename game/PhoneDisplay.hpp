@@ -69,6 +69,28 @@ struct PhoneDisplayState {
     PhoneDisplayLightingState lighting;
 };
 
+// One signal family with color reserved for semantic state, rather than menu
+// category. The accent follows the same mode transition that drives content,
+// emission, glass and the phone's local light.
+inline Vec3 phoneDisplayModeAccent(PhoneDisplayMode mode) {
+    switch (mode) {
+        case PhoneDisplayMode::Online:
+        case PhoneDisplayMode::JoinCode: return {0x4d/255.0f,0xe8/255.0f,0x8e/255.0f};
+        case PhoneDisplayMode::Pause: return {0x4f/255.0f,0x4c/255.0f,0xb1/255.0f};
+        case PhoneDisplayMode::Upgrade: return {0xd4/255.0f,0xec/255.0f,0x8e/255.0f};
+        case PhoneDisplayMode::Warning: return {0xaa/255.0f,0x80/255.0f,0x66/255.0f};
+        default: return {0x78/255.0f,0xd5/255.0f,0xe1/255.0f};
+    }
+}
+
+inline Vec3 phoneDisplayResolvedAccent(const PhoneDisplayState& display) {
+    const float t=clampf(display.transitionProgress,0.0f,1.0f);
+    const float eased=t*t*(3.0f-2.0f*t);
+    const Vec3 from=phoneDisplayModeAccent(display.previousMode);
+    const Vec3 to=phoneDisplayModeAccent(display.mode);
+    return from+(to-from)*eased;
+}
+
 inline const char* phoneDisplayModeName(PhoneDisplayMode mode) {
     switch (mode) {
         case PhoneDisplayMode::Off: return "Off";

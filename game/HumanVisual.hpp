@@ -90,6 +90,14 @@ struct HumanReactionVisual {
     float soulCubeAmount = 0.0f;
     float attackTimer = 0.0f;
     int attackVariant = 0;
+    // Presentation-only projection of the enemy's existing cognition/body
+    // state. These values never drive gameplay; they make intent legible.
+    float awareness = 0.0f;
+    float uncertainty = 1.0f;
+    float commitment = 0.0f;
+    float disruption = 0.0f;
+    float searchAmount = 0.0f;
+    float individuality = 0.0f;
 };
 
 inline float smoothStep01(float x) {
@@ -147,7 +155,13 @@ inline HumanReactionVisual makeHumanReactionVisual(
     float soulMorphPhase,
     bool humanVisible,
     float attackTimer = 0.0f,
-    int attackVariant = 0
+    int attackVariant = 0,
+    float awareness = 0.0f,
+    float uncertainty = 1.0f,
+    float commitment = 0.0f,
+    float disruption = 0.0f,
+    float searchAmount = 0.0f,
+    float individuality = 0.0f
 ) {
     HumanReactionVisual visual;
     visual.locomotionPhase = walkPhase;
@@ -160,6 +174,12 @@ inline HumanReactionVisual makeHumanReactionVisual(
     visual.soulCubeAmount = smoothStep01(soulMorphPhase);
     visual.attackTimer = std::max(0.0f, attackTimer);
     visual.attackVariant = std::max(0, std::min(3, attackVariant));
+    visual.awareness = clampf(awareness, 0.0f, 1.0f);
+    visual.uncertainty = clampf(uncertainty, 0.0f, 1.0f);
+    visual.commitment = clampf(commitment, 0.0f, 1.0f);
+    visual.disruption = clampf(disruption, 0.0f, 1.0f);
+    visual.searchAmount = clampf(searchAmount, 0.0f, 1.0f);
+    visual.individuality = clampf(individuality, -1.0f, 1.0f);
     return visual;
 }
 
@@ -190,6 +210,22 @@ inline HumanVisualPose makeHumanVisualPose(float yaw, float scale, float time, c
     pose.leftLegSwing = stride * 0.36f * active - pose.collapse * 0.24f;
     pose.rightLegSwing = counterStride * 0.36f * active - pose.collapse * 0.24f;
     pose.hitLean = reaction.hitAmount * 0.08f;
+    // Cognition is expressed as body language, not a floating HUD marker.
+    // Searchers scan asymmetrically; committed enemies lean into pursuit;
+    // disruption visibly steals their balance.
+    const float temperament = reaction.individuality;
+    const float scan = std::sin(time * (1.35f + std::abs(temperament) * 0.55f)
+        + temperament * 2.7f) * reaction.searchAmount;
+    const float doubt = reaction.uncertainty * reaction.awareness;
+    pose.torsoPitch -= reaction.commitment * 0.12f;
+    pose.torsoRoll += scan * (0.055f + doubt * 0.055f)
+        + temperament * reaction.disruption * 0.10f;
+    pose.headPitch += scan * 0.085f + doubt * 0.035f
+        - reaction.commitment * 0.045f;
+    pose.leftArmSwing += scan * 0.11f - reaction.disruption * 0.16f;
+    pose.rightArmSwing -= scan * 0.11f + reaction.disruption * 0.16f;
+    pose.leftLegSwing -= reaction.disruption * 0.09f;
+    pose.rightLegSwing -= reaction.disruption * 0.09f;
     const float rubberPulse = reaction.hitAmount * (0.78f + std::sin(time * 23.0f) * 0.22f);
     pose.expressiveScale = {
         1.0f + rubberPulse * 0.10f,

@@ -24,6 +24,10 @@ int main() {
     assert(dbmenu::wheelSelection(0, 16, -1) == 0);
     assert(dbmenu::wheelSelection(15, 16, 1) == 15);
     assert(dbmenu::wheelSelection(3, 0, 1) == 3);
+    assert(dbmenu::linearSelection(-1, 4, true) == 3);
+    assert(dbmenu::linearSelection(4, 4, true) == 0);
+    assert(dbmenu::linearSelection(-1, 4, false) == 0);
+    assert(dbmenu::linearSelection(4, 4, false) == 3);
     const auto deep = dbmenu::controllerTriggerThresholds(0);
     const auto balanced = dbmenu::controllerTriggerThresholds(1);
     const auto hair = dbmenu::controllerTriggerThresholds(2);

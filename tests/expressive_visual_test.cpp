@@ -33,5 +33,17 @@ int main() {
     assert(expressive.expressiveScale.y < 1.0f);
     assert(expressive.expressiveScale.z > 1.0f);
 
-    std::puts("EXPRESSIVE_VISUAL_OK phone=INGEST_SPRING enemy=IMPACT_SQUASH_ARM_REBOUND");
+    const auto searchingReaction = makeHumanReactionVisual(
+        0.0f, 0.25f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, true,
+        0.0f, 0, 0.8f, 0.9f, 0.35f, 0.0f, 1.0f, -0.6f);
+    const auto searching = makeHumanVisualPose(0.0f, 1.0f, 0.73f, searchingReaction, true);
+    const auto committedReaction = makeHumanReactionVisual(
+        0.0f, 0.8f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, true,
+        0.0f, 0, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.6f);
+    const auto committed = makeHumanVisualPose(0.0f, 1.0f, 0.73f, committedReaction, true);
+    assert(std::abs(searching.torsoRoll) > 0.03f);
+    assert(committed.torsoPitch < searching.torsoPitch - 0.04f);
+    assert(std::abs(searching.leftArmSwing-searching.rightArmSwing) > 0.08f);
+
+    std::puts("EXPRESSIVE_VISUAL_OK phone=INGEST_SPRING enemy=IMPACT_COGNITION_CONTACT");
 }

@@ -273,7 +273,8 @@ float smooth01(float t) {
     t = clampf(t, 0.0f, 1.0f);
     return t * t * (3.0f - 2.0f * t);
 }
-void syncTargetReactionVisual(TargetState& target) {
+void syncTargetReactionVisual(TargetState& target,float awareness=0.0f,float uncertainty=1.0f,
+    float commitment=0.0f,float disruption=0.0f,float searchAmount=0.0f,float individuality=0.0f) {
     target.visualReaction = makeHumanReactionVisual(
         target.visualWalkPhase,
         target.locomotionAmount,
@@ -284,7 +285,8 @@ void syncTargetReactionVisual(TargetState& target) {
         target.soulMorph,
         target.visibility > 0.5f,
         target.attackTimer,
-        target.attackVariant
+        target.attackVariant,
+        awareness,uncertainty,commitment,disruption,searchAmount,individuality
     );
 }
 float smoothRange(float value,float edge0,float edge1){return smooth01((value-edge0)/std::max(0.0001f,edge1-edge0));}
@@ -704,6 +706,7 @@ bool Game::chooseTemporaryUpgrade(int track){
     state_.cinematic.textInteraction=1.0f;
     level=std::min(12,level+1);
     state_.upgradeMenu.active=false;
+    state_.upgradeMenu.presentationTime=0.0f;
     state_.uiPaused=false;
     clearInputState();
     return true;
@@ -1390,6 +1393,11 @@ void Game::update(float dt) {
     state_.cinematic.textInteraction*=std::exp(-7.0f*dt);
     state_.cinematic.overlayFade += ((state_.dead ? 1.0f : 0.0f) - state_.cinematic.overlayFade) * std::min(1.0f, dt * 4.0f);
     state_.cinematic.restartAwaken = std::max(0.0f, state_.cinematic.restartAwaken - dt * 1.8f);
+    if(state_.upgradeMenu.active){
+        state_.upgradeMenu.presentationTime=std::min(30.0f,state_.upgradeMenu.presentationTime+dt);
+    }else{
+        state_.upgradeMenu.presentationTime=0.0f;
+    }
     if(state_.cinematic.menuEnterActive){
         state_.cinematic.menuEnterElapsed=std::min(MENU_ENTER_FADE_DURATION,state_.cinematic.menuEnterElapsed+dt);
         if(state_.cinematic.menuEnterElapsed>=MENU_ENTER_FADE_DURATION)state_.cinematic.menuEnterActive=false;
@@ -2060,6 +2068,7 @@ void Game::updateRoomTopology(float previousZ, float currentZ) {
         for(auto& request:state_.respawnQueue) request=HumanRespawnRequest{};
         for(int i=0;i<TARGET_COUNT;++i){if(i<activeHumanTarget()) respawnTarget(i); else state_.targets[i]=TargetState{};}
         state_.upgradeMenu.active=true;
+        state_.upgradeMenu.presentationTime=0.0f;
         state_.uiPaused=true;
         clearInputState();
     } else if(!state_.roomClear) {
@@ -2450,6 +2459,8 @@ void Game::updatePhoneDisplay(float dt) {
     const Vec3 copper{0.70f, 0.34f, 0.18f};
     const Vec3 white{0.90f, 0.98f, 1.0f};
     Vec3 color = mix3(baseCyan, activeCyan, display.brightness);
+    const Vec3 channelAccent=phoneDisplayResolvedAccent(display);
+    color=mix3(color,channelAccent,menuMode?0.30f:0.08f);
     color = mix3(color, copper, finiteClamped(display.lowBatteryPulse, 0.0f, 1.0f) * 0.42f);
     color = mix3(color, white, finiteClamped(discharge + display.capturePulse, 0.0f, 1.0f) * 0.22f);
     const Vec3 magenta{VisualIdentity::ElectricMagenta.r, VisualIdentity::ElectricMagenta.g, VisualIdentity::ElectricMagenta.b};
@@ -3595,6 +3606,9 @@ void Game::updateTargets(float dt) {
         TargetState& t = state_.targets[i];
         if (!t.alive) continue;
         const Vec3 physicalFrameStart=t.pos;
+        float presentationAwareness=0.0f,presentationUncertainty=1.0f;
+        float presentationCommitment=0.0f,presentationDisruption=0.0f,presentationSearch=0.0f;
+        const float presentationIndividuality=std::sin(static_cast<float>(i)*12.9898f);
         gameplay::updateLooseSoulMotion(t, dt);
         t.hitFlash = std::max(0.0f, t.hitFlash - TARGET_HITFLASH_DECAY_PER_FRAME);
         t.visibility = 1.0f;
@@ -3771,6 +3785,13 @@ void Game::updateTargets(float dt) {
                 behavior.mayAttack=true;
                 behavior.settled=false;
             }
+            presentationAwareness=state_.multiplayer.enabled?1.0f:std::max(perception.confidence,vagueAwareness);
+            presentationUncertainty=state_.multiplayer.enabled?0.0f:perception.uncertainty;
+            presentationCommitment=behavior.commitment;
+            presentationDisruption=enemyRuntimeState.bodies[i].disruption;
+            presentationSearch=behavior.mode==gameplay::EnemyBehaviorMode::Search?1.0f:
+                behavior.mode==gameplay::EnemyBehaviorMode::Investigate?0.62f:
+                behavior.mode==gameplay::EnemyBehaviorMode::Orient?0.34f:0.0f;
             Vec3 toPlayer{attackedPlayerPos.x-t.pos.x,0,attackedPlayerPos.z-t.pos.z};
             float playerDist=state_.multiplayer.enabled?horizontalLength(toPlayer):(perception.hasSpatialBelief?horizontalLength(toPlayer):9999.0f);
             float motorPaceExpression=1.0f;
@@ -3997,7 +4018,8 @@ void Game::updateTargets(float dt) {
             // faster or slower than the root that owns contact.
             t.humanAnimationTime += distance*0.68f;
         }
-        syncTargetReactionVisual(t);
+        syncTargetReactionVisual(t,presentationAwareness,presentationUncertainty,
+            presentationCommitment,presentationDisruption,presentationSearch,presentationIndividuality);
     }
     if(!state_.multiplayer.enabled)enemyRuntimeState.perceptionCursor=(enemyRuntimeState.perceptionCursor+2)%TARGET_COUNT;
 }

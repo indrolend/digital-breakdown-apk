@@ -62,6 +62,7 @@ struct PhoneDisplayMenuLayout {
     PhoneDisplayRect content;
     PhoneDisplayRect footer;
     std::string title;
+    std::string navigationHint;
     float titleCenterY = 0.0f;
     float titlePx = 52.0f;
     float titleMaxWidth = 0.0f;
@@ -87,6 +88,7 @@ inline PhoneDisplayMenuLayout makePhoneDisplayMenuLayout(const GameState& state,
     const PhoneMenuPageViewModel page = makePhoneMenuPageModel(state);
     PhoneDisplayMenuLayout layout;
     layout.title = page.title;
+    layout.navigationHint = page.navigationHint;
     layout.paletteTitle = page.paletteTitle;
     layout.joinCode = page.joinCode;
     layout.tablePage = page.tablePage;

@@ -55,6 +55,12 @@ inline int wheelSelection(int current, int count, int direction) {
     return std::max(0, std::min(count - 1, current + (direction > 0 ? 1 : -1)));
 }
 
+inline int linearSelection(int requested, int count, bool wrap) {
+    if (count <= 0) return 0;
+    if (!wrap) return std::max(0, std::min(count - 1, requested));
+    return (requested % count + count) % count;
+}
+
 struct TriggerThresholds {
     float left;
     float right;
